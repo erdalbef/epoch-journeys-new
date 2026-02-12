@@ -1,0 +1,58 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
+// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+
+model User {
+  id       String @id @default(cuid())
+  email    String @unique
+  password String
+
+  role     Role    @default(AGENT)
+  approved Boolean @default(false)
+
+  // distinguishes Travel Agents vs Group Leaders
+  partnerType PartnerType @default(TRAVEL_AGENT)
+
+  /**
+   * Commercial rules
+   * - Travel Agent: commissionRate (e.g., 0.12 for 12%)
+   * - Group Leader: fixedPayoutPerPax (e.g., 150.00)
+   */
+  commissionRate    Float? // 0.12 = 12%
+  fixedPayoutPerPax Float? // 150
+
+  /**
+   * Partner profile fields (admin-editable)
+   */
+  fullName     String?
+  travelAgency String? // always label as “Travel Agency” in UI
+  phone        String?
+  website      String?
+  membership   String? // ASTA / NTA / IATA / CLIA (one line)
+  notes        String? // internal admin notes
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+enum Role {
+  ADMIN
+  AGENT
+}
+
+enum PartnerType {
+  TRAVEL_AGENT
+  GROUP_LEADER
+}
