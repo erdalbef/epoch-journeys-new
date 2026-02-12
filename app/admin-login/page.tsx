@@ -1,5 +1,5 @@
-// app/admin-login/page.tsx
-import { AdminLoginForm } from "@/components/auth/AdminLoginForm";
+import { Suspense } from "react";
+import AdminLoginClient from "./AdminLoginClient";
 
 export default function AdminLoginPage() {
   return (
@@ -9,7 +9,9 @@ export default function AdminLoginPage() {
         Sign in with your admin email and password.
       </p>
 
-      <AdminLoginForm />
+      <Suspense fallback={<div className="mt-6 text-sm text-muted-foreground">Loading…</div>}>
+        <AdminLoginClient />
+      </Suspense>
     </main>
   );
 }
