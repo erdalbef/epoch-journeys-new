@@ -46,7 +46,7 @@ export function PublicHeader() {
             <Link href="/request-partnership">Request Partnership</Link>
           </Button>
           <Button variant="outline" asChild>
-            <Link href="/b2b/dashboard">Agent Login</Link>
+            <Link href="/agent-login">Agent Login</Link>
           </Button>
         </nav>
       </div>

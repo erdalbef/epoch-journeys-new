@@ -18,7 +18,6 @@ model User {
   id       String @id @default(cuid())
   email    String @unique
   password String
-
   role     Role    @default(AGENT)
   approved Boolean @default(false)
 
