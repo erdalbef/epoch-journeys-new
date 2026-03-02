@@ -1,17 +1,22 @@
 "use client";
 
 import { useMemo, useState, useTransition } from "react";
+import type { $Enums } from "@prisma/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 
-type PartnerType = "TRAVEL_AGENT" | "GROUP_LEADER" | null;
+type PartnerType = $Enums.PartnerType | null;
 
 type Props = {
   agentId: string;
-  partnerType: PartnerType;
+  partnerType: $Enums.PartnerType; // comes from Prisma
   commissionRate: number | null; // stored as 0.12
   fixedPayoutPerPax: number | null; // stored as 150
 };
+
+function usesCommission(pt: $Enums.PartnerType) {
+  return pt === "TOUR_OPERATOR" || pt === "TRAVEL_AGENCY" || pt === "TRAVEL_EXPERT";
+}
 
 export function AgentCommercialForm({
   agentId,
@@ -21,14 +26,11 @@ export function AgentCommercialForm({
 }: Props) {
   const [isPending, startTransition] = useTransition();
 
-  const [partnerType, setPartnerType] = useState<PartnerType>(
-    initialPartnerType ?? null
-  );
+  const [partnerType, setPartnerType] = useState<PartnerType>(initialPartnerType);
 
-  // show commission as percent in UI
+  // UI shows percent: 0.12 -> "12"
   const initialCommissionPercent = useMemo(() => {
     if (commissionRate == null) return "";
-    // Keep as plain number (no forced rounding if you prefer decimals)
     return String(Math.round(commissionRate * 100));
   }, [commissionRate]);
 
@@ -49,24 +51,20 @@ export function AgentCommercialForm({
   function validate(): string | null {
     if (!partnerType) return "Please select a partner type.";
 
-    if (partnerType === "TRAVEL_AGENT") {
-      if (!commissionPercent.trim())
-        return "Commission % is required for Travel Agents.";
-
+    if (usesCommission(partnerType)) {
+      if (!commissionPercent.trim()) return "Commission % is required.";
       const n = Number(commissionPercent);
       if (!Number.isFinite(n) || n < 0 || n > 100) {
         return "Commission % must be between 0 and 100.";
       }
+      return null;
     }
 
-    if (partnerType === "GROUP_LEADER") {
-      if (!payoutPerPax.trim())
-        return "Payout per passenger is required for Group Leaders.";
-
-      const n = Number(payoutPerPax);
-      if (!Number.isFinite(n) || n < 0) {
-        return "Payout per passenger must be 0 or higher.";
-      }
+    // GROUP_LEADER
+    if (!payoutPerPax.trim()) return "Payout per passenger is required.";
+    const n = Number(payoutPerPax);
+    if (!Number.isFinite(n) || n < 0) {
+      return "Payout per passenger must be 0 or higher.";
     }
 
     return null;
@@ -77,11 +75,10 @@ export function AgentCommercialForm({
     setError(null);
     setSaved(false);
 
-    // Reset irrelevant fields so we don't accidentally submit stale values
-    if (next === "TRAVEL_AGENT") {
+    // reset irrelevant fields
+    if (next && usesCommission(next)) {
       setPayoutPerPax("");
-    }
-    if (next === "GROUP_LEADER") {
+    } else if (next === "GROUP_LEADER") {
       setCommissionPercent("");
     }
   }
@@ -96,18 +93,22 @@ export function AgentCommercialForm({
       return;
     }
 
-    const body =
-      partnerType === "TRAVEL_AGENT"
-        ? {
-            partnerType,
-            commissionRate: Number(commissionPercent) / 100,
-            fixedPayoutPerPax: null,
-          }
-        : {
-            partnerType,
-            commissionRate: null,
-            fixedPayoutPerPax: Number(payoutPerPax),
-          };
+    if (!partnerType) {
+      setError("Please select a partner type.");
+      return;
+    }
+
+    const body = usesCommission(partnerType)
+      ? {
+          partnerType,
+          commissionRate: Number(commissionPercent) / 100,
+          fixedPayoutPerPax: null,
+        }
+      : {
+          partnerType, // GROUP_LEADER
+          commissionRate: null,
+          fixedPayoutPerPax: Number(payoutPerPax),
+        };
 
     startTransition(async () => {
       const res = await fetch(`/api/admin/agents/${agentId}`, {
@@ -119,19 +120,18 @@ export function AgentCommercialForm({
       if (!res.ok) {
         const data = await res.json().catch(() => null);
         setError(
-          data?.error
-            ? String(data.error)
-            : `Failed to save changes (HTTP ${res.status}).`
+          data?.error ? String(data.error) : `Failed to save changes (HTTP ${res.status}).`
         );
         return;
       }
 
       setSaved(true);
-
-      // simplest for now
       window.location.reload();
     });
   }
+
+  const showCommission = partnerType ? usesCommission(partnerType) : false;
+  const showPayout = partnerType === "GROUP_LEADER";
 
   return (
     <div className="space-y-4">
@@ -140,19 +140,21 @@ export function AgentCommercialForm({
         <select
           value={partnerType ?? ""}
           onChange={(e) => {
-            const v = e.target.value as "TRAVEL_AGENT" | "GROUP_LEADER" | "";
+            const v = e.target.value as $Enums.PartnerType | "";
             onPartnerTypeChange(v === "" ? null : v);
           }}
           className="h-10 w-full rounded-md border bg-white px-3 text-sm"
           disabled={isPending}
         >
           <option value="">Select...</option>
-          <option value="TRAVEL_AGENT">Travel Agent</option>
+          <option value="TOUR_OPERATOR">Tour Operator</option>
+          <option value="TRAVEL_AGENCY">Travel Agency</option>
+          <option value="TRAVEL_EXPERT">Travel Expert</option>
           <option value="GROUP_LEADER">Group Leader</option>
         </select>
       </div>
 
-      {partnerType === "TRAVEL_AGENT" ? (
+      {showCommission ? (
         <div className="grid gap-2">
           <label className="text-sm font-medium">Commission (%)</label>
           <Input
@@ -176,7 +178,7 @@ export function AgentCommercialForm({
         </div>
       ) : null}
 
-      {partnerType === "GROUP_LEADER" ? (
+      {showPayout ? (
         <div className="grid gap-2">
           <label className="text-sm font-medium">Payout per Passenger ($)</label>
           <Input

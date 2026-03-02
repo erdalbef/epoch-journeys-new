@@ -3,7 +3,7 @@ import { db } from "@/lib/db";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/authOptions";
 
-type PartnerType = "TRAVEL_AGENT" | "GROUP_LEADER";
+type PartnerType = "TRAVEL_AGENCY" | "GROUP_LEADER";
 
 function isFiniteNumber(n: unknown): n is number {
   return typeof n === "number" && Number.isFinite(n);
@@ -47,7 +47,7 @@ export async function PATCH(
 
     // partnerType is required for this endpoint (keeps rules strict)
     const partnerType = body.partnerType ?? null;
-    if (partnerType !== "TRAVEL_AGENT" && partnerType !== "GROUP_LEADER") {
+    if (partnerType !== "TRAVEL_AGENCY" && partnerType !== "GROUP_LEADER") {
       return NextResponse.json(
         { ok: false, error: "Invalid partnerType" },
         { status: 400 }
@@ -55,7 +55,7 @@ export async function PATCH(
     }
 
     // Validate commercial rules
-    if (partnerType === "TRAVEL_AGENT") {
+    if (partnerType === "TRAVEL_AGENCY") {
       const cr = body.commissionRate;
       if (!isFiniteNumber(cr) || cr < 0 || cr > 1) {
         return NextResponse.json(
@@ -91,7 +91,7 @@ export async function PATCH(
         partnerType,
 
         // Commercial rules (enforced)
-        commissionRate: partnerType === "TRAVEL_AGENT" ? body.commissionRate! : null,
+        commissionRate: partnerType === "TRAVEL_AGENCY" ? body.commissionRate! : null,
         fixedPayoutPerPax:
           partnerType === "GROUP_LEADER" ? body.fixedPayoutPerPax! : null,
 
