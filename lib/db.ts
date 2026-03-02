@@ -1,9 +1,7 @@
-
 import { PrismaClient } from "@prisma/client";
 import { PrismaPg } from "@prisma/adapter-pg";
 
 declare global {
-  // eslint-disable-next-line no-var
   var prisma: PrismaClient | undefined;
 }
 
@@ -17,4 +15,6 @@ export const db =
     adapter,
   });
 
-if (process.env.NODE_ENV !== "production") global.prisma = db;
+if (process.env.NODE_ENV !== "production") {
+  global.prisma = db;
+}
