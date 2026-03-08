@@ -10,7 +10,7 @@ export function PublicHeader() {
          {/* Logo */}
         <Link href="/" className="flex items-center">
           <Image
-            src="/logo-epoch-transparent.png"
+            src="/epoch-logo.png"
             alt="Epoch Journeys"
             width={200}
             height={200}
