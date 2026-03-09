@@ -1,47 +1,60 @@
+
 import { NextResponse } from "next/server";
-import { db } from "@/lib/db";
-import { sendAgentApprovedEmail } from "@/lib/email";
-import { getServerSession } from "next-auth";
-import { authOptions } from "@/lib/authOptions";
+import { prisma } from "@/lib/prisma";
+import { sendEmail } from "@/lib/email/sendEmail";
+import { agentApprovalEmail } from "@/lib/email/templates/agentApprovalEmail";
 
 export async function POST(
-  _req: Request,
-  { params }: { params: Promise<{ agentId: string }> }
+  req: Request,
+  context: { params: Promise<{ agentId: string }> }
 ) {
-  const session = await getServerSession(authOptions);
-
-  if (!session?.user || session.user.role !== "ADMIN") {
-    return NextResponse.json({ ok: false, error: "Forbidden" }, { status: 403 });
-  }
-
   try {
-    const { agentId } = await params;
+    const { agentId } = await context.params;
 
-    if (!agentId) {
+    console.log("agentId:", agentId);
+
+    const existingAgent = await prisma.user.findUnique({
+      where: { id: agentId },
+    });
+
+    if (!existingAgent) {
       return NextResponse.json(
-        { ok: false, error: "Missing agentId" },
+        { success: false, message: "Agent not found." },
+        { status: 404 }
+      );
+    }
+
+    if (existingAgent.approved) {
+      return NextResponse.json(
+        { success: false, message: "Agent already approved." },
         { status: 400 }
       );
     }
 
-    const agent = await db.user.update({
+    const agent = await prisma.user.update({
       where: { id: agentId },
       data: { approved: true },
-      select: { id: true, email: true, approved: true },
     });
 
-    // Email send should NOT block approval
     try {
-      await sendAgentApprovedEmail(agent.email);
-    } catch (emailErr) {
-      console.warn("Approval email failed:", emailErr);
+      await sendEmail({
+        to: agent.email,
+        subject: "Your Epoch Journeys Agent Account Has Been Approved",
+        html: agentApprovalEmail(agent.fullName || "Partner"),
+      });
+    } catch (emailError) {
+      console.error("EMAIL_ERROR", emailError);
     }
 
-    return NextResponse.json({ ok: true, agent });
-  } catch (err) {
-    console.error("Approve agent failed:", err);
+    return NextResponse.json({
+      success: true,
+      message: "Agent approved and email sent.",
+    });
+  } catch (error) {
+    console.error("APPROVE_AGENT_ERROR", error);
+
     return NextResponse.json(
-      { ok: false, error: "Failed to approve agent" },
+      { success: false, message: "Failed to approve agent." },
       { status: 500 }
     );
   }

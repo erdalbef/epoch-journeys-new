@@ -16,33 +16,62 @@ model User {
 
   role     Role    @default(AGENT)
   approved Boolean @default(false)
+  status   AgentStatus @default(ACTIVE)
 
-  /// Partner classification
   partnerType PartnerType @default(TRAVEL_AGENCY)
 
-  /**
-   * Commercial Rules
-   * TOUR_OPERATOR / TRAVEL_AGENCY / TRAVEL_EXPERT:
-   *    → commissionRate (e.g. 0.12 = 12%)
-   *
-   * GROUP_LEADER:
-   *    → fixedPayoutPerPax (e.g. 150)
-   */
-  commissionRate    Float?
-  fixedPayoutPerPax Float?
+  commissionRate Float?
+  payoutPerPax   Float?
 
-  /**
-   * Partner Profile (admin-editable)
-   */
   fullName     String?
-  travelAgency String?  // Required for TOUR_OPERATOR & TRAVEL_AGENCY
+  travelAgency String?
   phone        String?
-  website      String?  // Required for TOUR_OPERATOR & TRAVEL_AGENCY
-  membership   String?  // ASTA / NTA / IATA / CLIA / None
-  notes        String?  // Internal admin notes only
+  website      String?
+  membership   String?
+  notes        String?
+
+  signupIp        String?
+  signupUserAgent String?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+}
+
+model Tour {
+  id                String   @id @default(cuid())
+  title             String
+  slug              String   @unique
+
+  category          String
+  subcategories     String[]
+  tags              String[]
+
+  destinations      String[]
+  duration          Int
+
+  shortDescription  String?
+  overview          String?
+  tourIntroduction  String?
+  tourSignificance  String?
+  destinationBriefs String?
+
+  highlights        String[]
+  inclusions        String[]
+  exclusions        String[]
+  accommodations    String[]
+  overviewItinerary String?
+  itinerary         String?
+
+  mainImageUrl      String?
+  mapImageUrl       String?
+  brochureUrl       String?
+
+  featured          Boolean  @default(false)
+  isPublished       Boolean  @default(false)
+  requiresQuote     Boolean  @default(false)
+
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
 }
 
 enum Role {
@@ -55,4 +84,10 @@ enum PartnerType {
   TRAVEL_AGENCY
   TRAVEL_EXPERT
   GROUP_LEADER
+}
+
+enum AgentStatus {
+  ACTIVE
+  SUSPENDED
+  BLOCKED
 }

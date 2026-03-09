@@ -9,18 +9,22 @@ import { UnapproveAgentButton } from "./UnapproveAgentButton";
 function formatPartnerInfo(u: {
   partnerType: string | null;
   commissionRate: number | null;
-  fixedPayoutPerPax: number | null;
+  payoutPerPax: number | null;
 }) {
   if (!u.partnerType) return "-";
 
-  if (u.partnerType === "TRAVEL_AGENT") {
-    if (u.commissionRate == null) return "Travel Agent • (no commission set)";
-    return `Travel Agent • ${(u.commissionRate * 100).toFixed(0)}% commission`;
+  if (
+    u.partnerType === "TOUR_OPERATOR" ||
+    u.partnerType === "TRAVEL_AGENCY" ||
+    u.partnerType === "TRAVEL_EXPERT"
+  ) {
+    if (u.commissionRate == null) return `${u.partnerType} • (no commission set)`;
+    return `${u.partnerType} • ${(u.commissionRate * 100).toFixed(0)}% commission`;
   }
 
   if (u.partnerType === "GROUP_LEADER") {
-    if (u.fixedPayoutPerPax == null) return "Group Leader • (no payout set)";
-    return `Group Leader • $${u.fixedPayoutPerPax.toFixed(0)} / pax`;
+    if (u.payoutPerPax == null) return "Group Leader • (no payout set)";
+    return `Group Leader • $${u.payoutPerPax.toFixed(0)} / pax`;
   }
 
   return u.partnerType;
@@ -42,7 +46,7 @@ export default async function AdminAgentsPage() {
       createdAt: true,
       partnerType: true,
       commissionRate: true,
-      fixedPayoutPerPax: true,
+      payoutPerPax: true,
     },
   });
 
@@ -55,7 +59,7 @@ export default async function AdminAgentsPage() {
       createdAt: true,
       partnerType: true,
       commissionRate: true,
-      fixedPayoutPerPax: true,
+      payoutPerPax: true,
     },
   });
 
@@ -148,7 +152,7 @@ export default async function AdminAgentsPage() {
                   </div>
 
                   <div className="text-xs text-muted-foreground">
-                    Approved (created): {new Date(u.createdAt).toLocaleString()}
+                    Created: {new Date(u.createdAt).toLocaleString()}
                   </div>
                 </div>
 

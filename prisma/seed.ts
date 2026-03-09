@@ -1,4 +1,4 @@
-import { PrismaClient, PartnerType, Role } from "@prisma/client";
+import { PrismaClient } from "@prisma/client";
 import bcrypt from "bcryptjs";
 
 const prisma = new PrismaClient();
@@ -17,21 +17,21 @@ async function main() {
     where: { email },
     update: {
       password: hashed,
-      role: Role.ADMIN,
+      role: "ADMIN",
       approved: true,
       fullName,
-      // ✅ must be a valid enum value that exists in your schema NOW
-      partnerType: PartnerType.TRAVEL_AGENCY,
+      partnerType: "TRAVEL_AGENCY",
     },
     create: {
       email,
       password: hashed,
-      role: Role.ADMIN,
-      approved: true,
+      role: "ADMIN",
+      approved: true,      
+      status: "ACTIVE",
       fullName,
-      partnerType: PartnerType.TRAVEL_AGENCY,
+      partnerType: "TRAVEL_AGENCY",
     },
-  });
+ });
 
   console.log("✅ Admin ready:", admin.email);
 }

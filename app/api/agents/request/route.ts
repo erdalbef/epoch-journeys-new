@@ -1,51 +1,7 @@
-// app/api/agents/request/route.ts
 import { NextResponse } from "next/server";
-import { db } from "@/lib/db";
 import bcrypt from "bcryptjs";
-
-function normalizeEmail(email: string) {
-  return email.trim().toLowerCase();
-}
-
-function isValidEmail(email: string) {
-  const re = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
-  return re.test(email);
-}
-
-function normalizeText(v: unknown) {
-  return typeof v === "string" ? v.trim() : "";
-}
-
-// Allow "none" for website input (store null)
-function normalizeWebsite(raw: string): string | null {
-  const v = raw.trim();
-  if (!v) return null;
-  if (v.toLowerCase() === "none") return null;
-  if (v.toLowerCase() === "n/a") return null;
-  if (v.toLowerCase() === "na") return null;
-
-  // If user types "example.com" without protocol, add https://
-  const withProtocol = v.startsWith("http://") || v.startsWith("https://") ? v : `https://${v}`;
-  return withProtocol;
-}
-
-function isValidWebsiteUrl(url: string) {
-  try {
-    const u = new URL(url);
-    return u.protocol === "http:" || u.protocol === "https:";
-  } catch {
-    return false;
-  }
-}
-
-// Optional phone sanity check (very forgiving)
-function normalizePhone(raw: string): string | null {
-  const v = raw.trim();
-  if (!v) return null;
-  // keep +, digits, space, parentheses, hyphen
-  const cleaned = v.replace(/[^\d+\-\s()]/g, "");
-  return cleaned || null;
-}
+import { db } from "@/lib/db";
+import { checkRateLimit } from "@/lib/rate-limit";
 
 type PartnerType =
   | "TOUR_OPERATOR"
@@ -53,167 +9,221 @@ type PartnerType =
   | "TRAVEL_EXPERT"
   | "GROUP_LEADER";
 
+function isValidEmail(email: string) {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(email.trim().toLowerCase());
+}
+
+function getClientIp(req: Request) {
+  const forwardedFor = req.headers.get("x-forwarded-for");
+  if (forwardedFor) {
+    return forwardedFor.split(",")[0]?.trim() || "unknown";
+  }
+
+  return req.headers.get("x-real-ip") || "unknown";
+}
+
+async function verifyTurnstile(token: string, ip?: string) {
+  const secret = process.env.TURNSTILE_SECRET_KEY;
+
+  if (!secret) {
+    return { success: false, error: "Turnstile secret key is missing." };
+  }
+
+  const response = await fetch(
+    "https://challenges.cloudflare.com/turnstile/v0/siteverify",
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/x-www-form-urlencoded",
+      },
+      body: new URLSearchParams({
+        secret,
+        response: token,
+        ...(ip ? { remoteip: ip } : {}),
+      }),
+    }
+  );
+
+  const data = (await response.json()) as {
+    success: boolean;
+    "error-codes"?: string[];
+  };
+
+  return {
+    success: data.success,
+    error: data["error-codes"]?.join(", ") || null,
+  };
+}
+
 export async function POST(req: Request) {
   try {
-    const body = (await req.json()) as Partial<{
-      email: string;
-      password: string;
-      fullName: string;
-      travelAgency: string;
-      phone: string;
-      website: string; // required in UI, but can be "none"
-      membership: string; // optional for now (you can make required later)
-      partnerType: PartnerType; // optional (defaults TRAVEL_AGENT)
-    }>;
+    const ip = getClientIp(req);
+    const userAgent = req.headers.get("user-agent") || null;
 
-    const email = normalizeEmail(body.email ?? "");
-    const password = body.password ?? "";
+    const rate = checkRateLimit(`partner-request:${ip}`, 5, 10 * 60 * 1000);
 
-    const fullName = normalizeText(body.fullName);
-    const travelAgency = normalizeText(body.travelAgency);
-    const membership = normalizeText(body.membership);
-    const phone = normalizePhone(normalizeText(body.phone));
-
-    // ✅ Website: required as a field in the UI, but can be "none"
-    const websiteRaw = normalizeText(body.website);
-    const website = normalizeWebsite(websiteRaw);
-
-    // partnerType: optional -> defaults TRAVEL_AGENT
-
-    const allowedTypes: PartnerType[] = [
-  "TOUR_OPERATOR",
-  "TRAVEL_AGENCY",
-  "TRAVEL_EXPERT",
-  "GROUP_LEADER",
-];
-
-const partnerType: PartnerType = allowedTypes.includes(
-  body.partnerType as PartnerType
-)
-  ? (body.partnerType as PartnerType)
-  : "TRAVEL_AGENCY";
-
-    // --------------------
-    // Validation
-    // --------------------
-    if (!email || !password) {
+    if (!rate.allowed) {
       return NextResponse.json(
-        { ok: false, error: "Email and password are required." },
+        { error: `Too many requests. Please wait ${rate.retryAfter} seconds.` },
+        { status: 429 }
+      );
+    }
+
+    const body = await req.json();
+
+    const {
+      partnerType,
+      fullName,
+      travelAgency,
+      phone,
+      website,
+      membership,
+      email,
+      password,
+      companyName,
+      turnstileToken,
+    } = body as {
+      partnerType?: PartnerType;
+      fullName?: string;
+      travelAgency?: string | null;
+      phone?: string;
+      website?: string | null;
+      membership?: string;
+      email?: string;
+      password?: string;
+      companyName?: string;
+      turnstileToken?: string;
+    };
+
+    if (companyName && companyName.trim() !== "") {
+      return NextResponse.json({ error: "Invalid request." }, { status: 400 });
+    }
+
+    if (
+      partnerType !== "TOUR_OPERATOR" &&
+      partnerType !== "TRAVEL_AGENCY" &&
+      partnerType !== "TRAVEL_EXPERT" &&
+      partnerType !== "GROUP_LEADER"
+    ) {
+      return NextResponse.json(
+        { error: "Partner type is required." },
         { status: 400 }
       );
     }
 
-    if (!isValidEmail(email)) {
+    if (!fullName?.trim()) {
       return NextResponse.json(
-        { ok: false, error: "Please enter a valid email address (example: name@domain.com)." },
+        { error: "Full name is required." },
         { status: 400 }
       );
     }
 
-    if (password.length < 8) {
+    if (!phone?.trim()) {
       return NextResponse.json(
-        { ok: false, error: "Password must be at least 8 characters." },
+        { error: "Phone is required." },
         { status: 400 }
       );
     }
 
-    // Recommended required fields to reduce fake requests
-    if (!fullName) {
+    const websiteRequired =
+      partnerType === "TOUR_OPERATOR" || partnerType === "TRAVEL_AGENCY";
+
+    const agencyRequired =
+      partnerType === "TOUR_OPERATOR" || partnerType === "TRAVEL_AGENCY";
+
+    if (agencyRequired && !travelAgency?.trim()) {
       return NextResponse.json(
-        { ok: false, error: "Full Name is required." },
+        { error: "Travel Agency is required." },
         { status: 400 }
       );
     }
 
-    if (!travelAgency) {
+    if (websiteRequired && !website?.trim()) {
       return NextResponse.json(
-        { ok: false, error: "Travel Agency is required." },
+        { error: "Website is required." },
         { status: 400 }
       );
     }
 
-    // Website field is required in the form, but we accept "none" -> null
-    // If user provided a real value, validate it
-    if (website !== null && !isValidWebsiteUrl(website)) {
+    if (!membership?.trim()) {
       return NextResponse.json(
-        {
-          ok: false,
-          error: 'Website must be a valid URL (e.g., "https://example.com") or type "none".',
-        },
+        { error: "Membership is required." },
         { status: 400 }
       );
     }
 
-    // --------------------
-    // Existing user checks
-    // --------------------
-    const existing = await db.user.findUnique({ where: { email } });
+    const normalizedEmail = email?.trim().toLowerCase() || "";
+
+    if (!normalizedEmail || !isValidEmail(normalizedEmail)) {
+      return NextResponse.json(
+        { error: "Valid email is required." },
+        { status: 400 }
+      );
+    }
+
+    if (!password || password.length < 8) {
+      return NextResponse.json(
+        { error: "Password must be at least 8 characters." },
+        { status: 400 }
+      );
+    }
+
+    if (!turnstileToken) {
+      return NextResponse.json(
+        { error: "Security verification is required." },
+        { status: 400 }
+      );
+    }
+
+    const turnstile = await verifyTurnstile(turnstileToken, ip);
+
+    if (!turnstile.success) {
+      return NextResponse.json(
+        { error: "Security verification failed. Please try again." },
+        { status: 400 }
+      );
+    }
+
+    const existing = await db.user.findUnique({
+      where: { email: normalizedEmail },
+    });
 
     if (existing) {
-      if (existing.role === "AGENT" && existing.approved === false) {
-        return NextResponse.json(
-          {
-            ok: false,
-            error: "You already requested partnership access. Your request is pending approval.",
-          },
-          { status: 409 }
-        );
-      }
-
-      if (existing.role === "AGENT" && existing.approved === true) {
-        return NextResponse.json(
-          { ok: false, error: "Your account is already approved. Please sign in." },
-          { status: 409 }
-        );
-      }
-
       return NextResponse.json(
-        { ok: false, error: "This email is already registered. Please sign in." },
-        { status: 409 }
+        { error: "An account with this email already exists." },
+        { status: 400 }
       );
     }
 
-    // --------------------
-    // Create user
-    // --------------------
-    const hashed = await bcrypt.hash(password, 10);
+    const hashedPassword = await bcrypt.hash(password, 10);
 
-    const user = await db.user.create({
+    await db.user.create({
       data: {
-        email,
-        password: hashed,
+        email: normalizedEmail,
+        password: hashedPassword,
         role: "AGENT",
         approved: false,
-
-        // profile fields
-        fullName,
-        travelAgency,
-        phone,
-        website, // null if "none"
-        membership: membership || null,
-
+        status: "ACTIVE",
         partnerType,
-      },
-      select: {
-        id: true,
-        email: true,
-        role: true,
-        approved: true,
-        partnerType: true,
-        fullName: true,
-        travelAgency: true,
-        phone: true,
-        website: true,
-        membership: true,
-        createdAt: true,
+        fullName: fullName.trim(),
+        travelAgency: travelAgency?.trim() || null,
+        phone: phone.trim(),
+        website: website?.trim() || null,
+        membership: membership.trim(),
+        signupIp: ip,
+        signupUserAgent: userAgent,
       },
     });
 
-    return NextResponse.json({ ok: true, user });
-  } catch (err) {
-    console.error("POST /api/agents/request failed:", err);
+    return NextResponse.json({
+      success: true,
+      message: "Request submitted. Pending approval.",
+    });
+  } catch (error) {
+    console.error("Partner request error:", error);
+
     return NextResponse.json(
-      { ok: false, error: "Something went wrong. Please try again." },
+      { error: "Something went wrong." },
       { status: 500 }
     );
   }
