@@ -1,5 +1,3 @@
-// Prisma schema
-
 generator client {
   provider = "prisma-client-js"
 }
@@ -14,8 +12,8 @@ model User {
   email    String @unique
   password String
 
-  role     Role    @default(AGENT)
-  approved Boolean @default(false)
+  role     Role        @default(AGENT)
+  approved Boolean     @default(false)
   status   AgentStatus @default(ACTIVE)
 
   partnerType PartnerType @default(TRAVEL_AGENCY)
