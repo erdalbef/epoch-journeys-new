@@ -35,10 +35,11 @@ model User {
   updatedAt DateTime @updatedAt
 }
 
+
 model Tour {
-  id                String   @id @default(cuid())
+  id                String          @id @default(cuid())
   title             String
-  slug              String   @unique
+  slug              String          @unique
 
   category          String
   subcategories     String[]
@@ -64,12 +65,41 @@ model Tour {
   mapImageUrl       String?
   brochureUrl       String?
 
-  featured          Boolean  @default(false)
-  isPublished       Boolean  @default(false)
-  requiresQuote     Boolean  @default(false)
+  featured          Boolean         @default(false)
+  isPublished       Boolean         @default(false)
+  requiresQuote     Boolean         @default(false)
 
-  createdAt         DateTime @default(now())
-  updatedAt         DateTime @updatedAt
+  departureDates    DepartureDate[]
+
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
+}
+
+model DepartureDate {
+  id                    String           @id @default(cuid())
+  tourId                String
+  tour                  Tour             @relation(fields: [tourId], references: [id], onDelete: Cascade)
+
+  date                  DateTime
+  season                String
+  price                 Float
+  status                DepartureStatus  @default(AVAILABLE)
+
+  earlyDiscountPercent  Float?
+  earlyDiscountDeadline DateTime?
+
+  capacity              Int              @default(0)
+  bookedSeats           Int              @default(0)
+
+  createdAt             DateTime         @default(now())
+  updatedAt             DateTime         @updatedAt
+}
+
+enum DepartureStatus {
+  EARLY_BOOKING
+  AVAILABLE
+  SOLD_OUT
+  CLOSED
 }
 
 enum Role {
