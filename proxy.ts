@@ -6,6 +6,10 @@ export default withAuth(
     const token = req.nextauth.token;
     const { pathname } = req.nextUrl;
 
+    console.log("MIDDLEWARE_PATH:", pathname);
+    console.log("MIDDLEWARE_ROLE:", token?.role);
+    console.log("MIDDLEWARE_APPROVED:", token?.approved);
+
     // 🚫 Not logged in
     if (!token) {
       if (pathname.startsWith("/admin")) {

@@ -28,25 +28,28 @@ model User {
   membership   String?
   notes        String?
 
+  agentLogoUrl String?
+
   signupIp        String?
   signupUserAgent String?
+
+  bookings Booking[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 }
 
-
 model Tour {
-  id                String          @id @default(cuid())
-  title             String
-  slug              String          @unique
+  id    String @id @default(cuid())
+  title String
+  slug  String @unique
 
-  category          String
-  subcategories     String[]
-  tags              String[]
+  category      String
+  subcategories String[]
+  tags          String[]
 
-  destinations      String[]
-  duration          Int
+  destinations String[]
+  duration     Int
 
   shortDescription  String?
   overview          String?
@@ -61,38 +64,138 @@ model Tour {
   overviewItinerary String?
   itinerary         String?
 
-  mainImageUrl      String?
-  mapImageUrl       String?
-  brochureUrl       String?
+  mainImageUrl String?
+  mapImageUrl  String?
+  brochureUrl  String?
 
-  featured          Boolean         @default(false)
-  isPublished       Boolean         @default(false)
-  requiresQuote     Boolean         @default(false)
+  featured      Boolean @default(false)
+  isPublished   Boolean @default(false)
+  requiresQuote Boolean @default(false)
 
-  departureDates    DepartureDate[]
+  departureDates DepartureDate[]
+  bookings       Booking[]
 
-  createdAt         DateTime        @default(now())
-  updatedAt         DateTime        @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }
 
 model DepartureDate {
-  id                    String           @id @default(cuid())
-  tourId                String
-  tour                  Tour             @relation(fields: [tourId], references: [id], onDelete: Cascade)
+  id     String @id @default(cuid())
+  tourId String
+  tour   Tour   @relation(fields: [tourId], references: [id], onDelete: Cascade)
 
-  date                  DateTime
-  season                String
-  price                 Float
-  status                DepartureStatus  @default(AVAILABLE)
+  date   DateTime
+  season String
+  price  Float
+  status DepartureStatus @default(AVAILABLE)
 
   earlyDiscountPercent  Float?
   earlyDiscountDeadline DateTime?
 
-  capacity              Int              @default(0)
-  bookedSeats           Int              @default(0)
+  capacity    Int @default(0)
+  bookedSeats Int @default(0)
 
-  createdAt             DateTime         @default(now())
-  updatedAt             DateTime         @updatedAt
+  bookings Booking[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Booking {
+  id               String @id @default(cuid())
+  bookingReference String @unique
+
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  tourId String
+  tour   Tour   @relation(fields: [tourId], references: [id], onDelete: Restrict)
+
+  departureDateId String
+  departureDate   DepartureDate @relation(fields: [departureDateId], references: [id], onDelete: Restrict)
+
+  status        BookingStatus @default(PENDING)
+  paymentStatus PaymentStatus @default(UNPAID)
+
+  // Core booking summary
+  numberOfGuests Int
+  totalPrice     Float
+
+  // Commercial snapshot
+  grossAmount            Float
+  commissionRateSnapshot Float?
+  payoutPerPaxSnapshot   Float?
+  commissionAmount       Float  @default(0)
+  netAmount              Float
+  currency               String @default("EUR")
+
+  // Agent snapshot
+  agentNameSnapshot   String?
+  agentEmailSnapshot  String?
+  agentPhoneSnapshot  String?
+  agencyNameSnapshot  String?
+  partnerTypeSnapshot PartnerType?
+  membershipSnapshot  String?
+
+  // Tour snapshot
+  tourTitleSnapshot     String
+  tourSlugSnapshot      String
+  categorySnapshot      String
+  subcategoriesSnapshot String[]
+  tagsSnapshot          String[]
+  destinationsSnapshot  String[]
+  durationSnapshot      Int
+
+  shortDescriptionSnapshot String?
+  overviewSnapshot         String?
+  brochureUrlSnapshot      String?
+  mainImageUrlSnapshot     String?
+  mapImageUrlSnapshot      String?
+
+  // Departure snapshot
+  departureDateSnapshot         DateTime
+  seasonSnapshot                String
+  pricePerPersonSnapshot        Float
+  earlyDiscountPercentSnapshot  Float?
+  earlyDiscountDeadlineSnapshot DateTime?
+
+  // Lead traveler / customer
+  customerName  String?
+  customerEmail String?
+  customerPhone String?
+
+  leadFirstName String?
+  leadLastName  String?
+  leadEmail     String?
+  leadPhone     String?
+
+  // Rooming / pax split
+  adults   Int @default(1)
+  children Int @default(0)
+  infants  Int @default(0)
+
+  singleRooms Int @default(0)
+  doubleRooms Int @default(0)
+  twinRooms   Int @default(0)
+
+  // Service details
+  landOnly     Boolean @default(true)
+  needsFlights Boolean @default(false)
+
+  // Notes
+  notes           String?
+  specialRequests String?
+  internalNotes   String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([userId])
+  @@index([tourId])
+  @@index([departureDateId])
+  @@index([status])
+  @@index([paymentStatus])
+  @@index([createdAt])
 }
 
 enum DepartureStatus {
@@ -118,4 +221,18 @@ enum AgentStatus {
   ACTIVE
   SUSPENDED
   BLOCKED
+}
+
+enum BookingStatus {
+  PENDING
+  CONFIRMED
+  ON_REQUEST
+  CANCELLED
+}
+
+enum PaymentStatus {
+  UNPAID
+  PARTIALLY_PAID
+  PAID
+  REFUNDED
 }
