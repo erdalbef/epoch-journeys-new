@@ -1,7 +1,7 @@
 "use client";
 
 import Script from "next/script";
-import { useMemo, useRef, useState, useTransition } from "react";
+import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 
@@ -24,6 +24,7 @@ declare global {
         }
       ) => string;
       reset: (widgetId?: string) => void;
+      remove?: (widgetId?: string) => void;
     };
   }
 }
@@ -45,10 +46,14 @@ export function RequestPartnershipForm() {
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [companyName, setCompanyName] = useState("");
+
   const [turnstileToken, setTurnstileToken] = useState("");
+  const [scriptLoaded, setScriptLoaded] = useState(false);
   const [turnstileReady, setTurnstileReady] = useState(false);
+  const [turnstileError, setTurnstileError] = useState<string | null>(null);
 
   const widgetIdRef = useRef<string | null>(null);
+  const containerRef = useRef<HTMLDivElement | null>(null);
 
   const [error, setError] = useState<string | null>(null);
   const [passwordError, setPasswordError] = useState<string | null>(null);
@@ -94,11 +99,83 @@ export function RequestPartnershipForm() {
     }
 
     if (!turnstileToken) {
-      return "Security verification failed. Please try again.";
+      return "Please complete the security verification.";
     }
 
     return null;
   }
+
+  function resetTurnstileState() {
+    setTurnstileToken("");
+    setTurnstileReady(false);
+    setTurnstileError(null);
+  }
+
+  function resetWidget() {
+    if (window.turnstile && widgetIdRef.current) {
+      window.turnstile.reset(widgetIdRef.current);
+    }
+    setTurnstileToken("");
+    setTurnstileError(null);
+  }
+
+  function renderTurnstile() {
+    if (!window.turnstile) return;
+    if (!containerRef.current) return;
+    if (widgetIdRef.current) return;
+
+    const sitekey = process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY;
+    if (!sitekey) {
+      setTurnstileError("Security verification is not configured correctly.");
+      return;
+    }
+
+    try {
+      widgetIdRef.current = window.turnstile.render(containerRef.current, {
+        sitekey,
+        callback: (token: string) => {
+          setTurnstileToken(token);
+          setTurnstileError(null);
+          setTurnstileReady(true);
+        },
+        "expired-callback": () => {
+          setTurnstileToken("");
+          setTurnstileError("Security verification expired. Please verify again.");
+        },
+        "error-callback": () => {
+          setTurnstileToken("");
+          setTurnstileError(
+            "Security verification could not be completed. Please retry."
+          );
+        },
+      });
+
+      setTurnstileReady(true);
+      setTurnstileError(null);
+    } catch {
+      setTurnstileError(
+        "Security verification failed to load. Please retry or use another browser."
+      );
+    }
+  }
+
+  function retryTurnstile() {
+    setTurnstileToken("");
+    setTurnstileError(null);
+
+    if (window.turnstile && widgetIdRef.current) {
+      window.turnstile.reset(widgetIdRef.current);
+      return;
+    }
+
+    renderTurnstile();
+  }
+
+  useEffect(() => {
+    if (scriptLoaded) {
+      renderTurnstile();
+    }
+  }, [scriptLoaded]);
 
   function resetForm() {
     setPartnerType("");
@@ -111,37 +188,9 @@ export function RequestPartnershipForm() {
     setPassword("");
     setConfirmPassword("");
     setCompanyName("");
-    setTurnstileToken("");
     setError(null);
     setPasswordError(null);
-
-    if (window.turnstile && widgetIdRef.current) {
-      window.turnstile.reset(widgetIdRef.current);
-    }
-  }
-
-  function renderTurnstile() {
-    if (!window.turnstile || widgetIdRef.current) return;
-
-    const el = document.getElementById("turnstile-container");
-    const sitekey = process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY;
-
-    if (!el || !sitekey) return;
-
-    widgetIdRef.current = window.turnstile.render(el, {
-      sitekey,
-      callback: (token: string) => {
-        setTurnstileToken(token);
-      },
-      "expired-callback": () => {
-        setTurnstileToken("");
-      },
-      "error-callback": () => {
-        setTurnstileToken("");
-      },
-    });
-
-    setTurnstileReady(true);
+    resetWidget();
   }
 
   function onSubmit(e: React.FormEvent<HTMLFormElement>) {
@@ -185,12 +234,7 @@ export function RequestPartnershipForm() {
         setError(
           data?.error ? String(data.error) : `Request failed (HTTP ${res.status}).`
         );
-
-        if (window.turnstile && widgetIdRef.current) {
-          window.turnstile.reset(widgetIdRef.current);
-          setTurnstileToken("");
-        }
-
+        resetWidget();
         return;
       }
 
@@ -206,15 +250,12 @@ export function RequestPartnershipForm() {
           <h2 className="text-2xl font-bold text-green-800">
             Request Submitted Successfully
           </h2>
-
           <p className="text-sm text-green-800">
             Thank you for your interest in partnering with us.
           </p>
-
           <p className="text-sm text-green-800">
             Your application has been received and is currently under review by our team.
           </p>
-
           <p className="text-sm text-green-800">
             Once approved, you will be able to access the B2B platform.
           </p>
@@ -223,12 +264,19 @@ export function RequestPartnershipForm() {
     );
   }
 
+  const submitDisabled = isPending || !turnstileToken;
+
   return (
     <div className="mt-6 rounded-2xl border bg-white p-6 shadow-sm">
       <Script
         src="https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit"
         strategy="afterInteractive"
-        onLoad={renderTurnstile}
+        onLoad={() => setScriptLoaded(true)}
+        onError={() =>
+          setTurnstileError(
+            "Security verification script could not be loaded. Please retry or use another browser."
+          )
+        }
       />
 
       <div className="mb-6 space-y-2">
@@ -392,10 +440,31 @@ export function RequestPartnershipForm() {
           <label className="text-sm font-medium">
             Security Check <span className="text-red-700">*</span>
           </label>
-          <div id="turnstile-container" />
-          {!turnstileReady ? (
+
+          <div ref={containerRef} id="turnstile-container" />
+
+          {!scriptLoaded && !turnstileError ? (
             <p className="text-xs text-muted-foreground">
               Loading security verification...
+            </p>
+          ) : null}
+
+          {turnstileError ? (
+            <div className="space-y-2">
+              <p className="text-sm text-red-700">{turnstileError}</p>
+              <button
+                type="button"
+                onClick={retryTurnstile}
+                className="text-sm font-medium text-red-700 underline"
+              >
+                Retry security check
+              </button>
+            </div>
+          ) : null}
+
+          {turnstileReady && !turnstileToken && !turnstileError ? (
+            <p className="text-xs text-muted-foreground">
+              Please complete the security verification before submitting.
             </p>
           ) : null}
         </div>
@@ -414,10 +483,14 @@ export function RequestPartnershipForm() {
         <Button
           type="submit"
           className="w-full bg-[#8B0000] hover:bg-[#6f0000]"
-          disabled={isPending}
+          disabled={submitDisabled}
         >
           {isPending ? "Submitting..." : "Submit Request"}
         </Button>
+
+        <p className="text-xs text-muted-foreground">
+          If security verification keeps failing, please contact us directly so we can review your application manually.
+        </p>
       </form>
     </div>
   );

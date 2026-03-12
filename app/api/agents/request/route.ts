@@ -2,6 +2,8 @@ import { NextResponse } from "next/server";
 import bcrypt from "bcryptjs";
 import { db } from "@/lib/db";
 import { checkRateLimit } from "@/lib/rate-limit";
+import { sendPartnerRequestEmail } from "@/lib/email/templates/sendPartnerRequestEmail";
+import { sendPartnerRequestConfirmationEmail } from "@/lib/email/templates/sendPartnerRequestConfirmationEmail";
 
 type PartnerType =
   | "TOUR_OPERATOR"
@@ -15,18 +17,32 @@ function isValidEmail(email: string) {
 
 function getClientIp(req: Request) {
   const forwardedFor = req.headers.get("x-forwarded-for");
+
   if (forwardedFor) {
-    return forwardedFor.split(",")[0]?.trim() || "unknown";
+    const firstIp = forwardedFor.split(",")[0]?.trim();
+    if (firstIp) return firstIp;
   }
 
-  return req.headers.get("x-real-ip") || "unknown";
+  const realIp = req.headers.get("x-real-ip");
+  if (realIp) return realIp.trim();
+
+  return "";
 }
 
 async function verifyTurnstile(token: string, ip?: string) {
   const secret = process.env.TURNSTILE_SECRET_KEY;
 
   if (!secret) {
-    return { success: false, error: "Turnstile secret key is missing." };
+    return { success: false, error: "missing-secret" };
+  }
+
+  const body = new URLSearchParams({
+    secret,
+    response: token,
+  });
+
+  if (ip) {
+    body.append("remoteip", ip);
   }
 
   const response = await fetch(
@@ -36,22 +52,20 @@ async function verifyTurnstile(token: string, ip?: string) {
       headers: {
         "Content-Type": "application/x-www-form-urlencoded",
       },
-      body: new URLSearchParams({
-        secret,
-        response: token,
-        ...(ip ? { remoteip: ip } : {}),
-      }),
+      body,
     }
   );
 
   const data = (await response.json()) as {
     success: boolean;
     "error-codes"?: string[];
+    hostname?: string;
   };
 
   return {
     success: data.success,
-    error: data["error-codes"]?.join(", ") || null,
+    errorCodes: data["error-codes"] ?? [],
+    hostname: data.hostname ?? null,
   };
 }
 
@@ -60,7 +74,11 @@ export async function POST(req: Request) {
     const ip = getClientIp(req);
     const userAgent = req.headers.get("user-agent") || null;
 
-    const rate = checkRateLimit(`partner-request:${ip}`, 5, 10 * 60 * 1000);
+    const rate = checkRateLimit(
+      `partner-request:${ip || "unknown"}`,
+      5,
+      10 * 60 * 1000
+    );
 
     if (!rate.allowed) {
       return NextResponse.json(
@@ -95,10 +113,12 @@ export async function POST(req: Request) {
       turnstileToken?: string;
     };
 
+    // Honeypot protection
     if (companyName && companyName.trim() !== "") {
       return NextResponse.json({ error: "Invalid request." }, { status: 400 });
     }
 
+    // Validate partner type
     if (
       partnerType !== "TOUR_OPERATOR" &&
       partnerType !== "TRAVEL_AGENCY" &&
@@ -168,18 +188,28 @@ export async function POST(req: Request) {
       );
     }
 
-    if (!turnstileToken) {
+    if (!turnstileToken?.trim()) {
       return NextResponse.json(
         { error: "Security verification is required." },
         { status: 400 }
       );
     }
 
-    const turnstile = await verifyTurnstile(turnstileToken, ip);
+    const turnstile = await verifyTurnstile(turnstileToken, ip || undefined);
 
     if (!turnstile.success) {
+      console.error("TURNSTILE_VERIFICATION_FAILED", {
+        email: normalizedEmail,
+        ip,
+        hostname: turnstile.hostname,
+        errorCodes: turnstile.errorCodes,
+      });
+
       return NextResponse.json(
-        { error: "Security verification failed. Please try again." },
+        {
+          error:
+            "Security verification failed. Please retry the security check.",
+        },
         { status: 400 }
       );
     }
@@ -210,17 +240,42 @@ export async function POST(req: Request) {
         phone: phone.trim(),
         website: website?.trim() || null,
         membership: membership.trim(),
-        signupIp: ip,
+        signupIp: ip || "unknown",
         signupUserAgent: userAgent,
       },
     });
+
+    // Email to admin
+    try {
+      await sendPartnerRequestEmail({
+        fullName: fullName.trim(),
+        email: normalizedEmail,
+        partnerType,
+        travelAgency: travelAgency?.trim() || null,
+        phone: phone.trim(),
+        website: website?.trim() || null,
+        membership: membership.trim(),
+      });
+    } catch (error) {
+      console.error("ADMIN_EMAIL_ERROR", error);
+    }
+
+    // Email to applicant
+    try {
+      await sendPartnerRequestConfirmationEmail({
+        fullName: fullName.trim(),
+        email: normalizedEmail,
+      });
+    } catch (error) {
+      console.error("CONFIRMATION_EMAIL_ERROR", error);
+    }
 
     return NextResponse.json({
       success: true,
       message: "Request submitted. Pending approval.",
     });
   } catch (error) {
-    console.error("Partner request error:", error);
+    console.error("PARTNER_REQUEST_ERROR", error);
 
     return NextResponse.json(
       { error: "Something went wrong." },
