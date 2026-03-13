@@ -33,40 +33,56 @@ async function verifyTurnstile(token: string, ip?: string) {
   const secret = process.env.TURNSTILE_SECRET_KEY;
 
   if (!secret) {
-    return { success: false, error: "missing-secret" };
+    return {
+      success: false,
+      error: "missing-secret",
+      errorCodes: ["missing-secret"],
+      hostname: null,
+    };
   }
 
-  const body = new URLSearchParams({
-    secret,
-    response: token,
-  });
+  try {
+    const body = new URLSearchParams({
+      secret,
+      response: token,
+    });
 
-  if (ip) {
-    body.append("remoteip", ip);
-  }
-
-  const response = await fetch(
-    "https://challenges.cloudflare.com/turnstile/v0/siteverify",
-    {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/x-www-form-urlencoded",
-      },
-      body,
+    if (ip) {
+      body.append("remoteip", ip);
     }
-  );
 
-  const data = (await response.json()) as {
-    success: boolean;
-    "error-codes"?: string[];
-    hostname?: string;
-  };
+    const response = await fetch(
+      "https://challenges.cloudflare.com/turnstile/v0/siteverify",
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/x-www-form-urlencoded",
+        },
+        body,
+      }
+    );
 
-  return {
-    success: data.success,
-    errorCodes: data["error-codes"] ?? [],
-    hostname: data.hostname ?? null,
-  };
+    const data = (await response.json()) as {
+      success: boolean;
+      "error-codes"?: string[];
+      hostname?: string;
+    };
+
+    return {
+      success: data.success,
+      errorCodes: data["error-codes"] ?? [],
+      hostname: data.hostname ?? null,
+    };
+  } catch (error) {
+    console.error("TURNSTILE_VERIFY_REQUEST_FAILED", error);
+
+    return {
+      success: false,
+      error: "verification-request-failed",
+      errorCodes: ["verification-request-failed"],
+      hostname: null,
+    };
+  }
 }
 
 export async function POST(req: Request) {
@@ -87,20 +103,7 @@ export async function POST(req: Request) {
       );
     }
 
-    const body = await req.json();
-
-    const {
-      partnerType,
-      fullName,
-      travelAgency,
-      phone,
-      website,
-      membership,
-      email,
-      password,
-      companyName,
-      turnstileToken,
-    } = body as {
+    const body = (await req.json()) as {
       partnerType?: PartnerType;
       fullName?: string;
       travelAgency?: string | null;
@@ -113,12 +116,24 @@ export async function POST(req: Request) {
       turnstileToken?: string;
     };
 
+    const {
+      partnerType,
+      fullName,
+      travelAgency,
+      phone,
+      website,
+      membership,
+      email,
+      password,
+      companyName,
+      turnstileToken,
+    } = body;
+
     // Honeypot protection
     if (companyName && companyName.trim() !== "") {
       return NextResponse.json({ error: "Invalid request." }, { status: 400 });
     }
 
-    // Validate partner type
     if (
       partnerType !== "TOUR_OPERATOR" &&
       partnerType !== "TRAVEL_AGENCY" &&
@@ -197,6 +212,14 @@ export async function POST(req: Request) {
 
     const turnstile = await verifyTurnstile(turnstileToken, ip || undefined);
 
+    console.log("TURNSTILE_RESULT", {
+      success: turnstile.success,
+      hostname: turnstile.hostname,
+      errorCodes: turnstile.errorCodes,
+      ip,
+      email: normalizedEmail,
+    });
+
     if (!turnstile.success) {
       console.error("TURNSTILE_VERIFICATION_FAILED", {
         email: normalizedEmail,
@@ -245,7 +268,6 @@ export async function POST(req: Request) {
       },
     });
 
-    // Email to admin
     try {
       await sendPartnerRequestEmail({
         fullName: fullName.trim(),
@@ -260,7 +282,6 @@ export async function POST(req: Request) {
       console.error("ADMIN_EMAIL_ERROR", error);
     }
 
-    // Email to applicant
     try {
       await sendPartnerRequestConfirmationEmail({
         fullName: fullName.trim(),

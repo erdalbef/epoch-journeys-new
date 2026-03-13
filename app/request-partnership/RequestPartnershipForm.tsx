@@ -64,6 +64,8 @@ export function RequestPartnershipForm() {
     partnerType === "TOUR_OPERATOR" || partnerType === "TRAVEL_AGENCY";
 
   function renderTurnstile() {
+    if (typeof window === "undefined") return;
+
     const sitekey = process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY;
 
     if (!sitekey) {
@@ -72,7 +74,9 @@ export function RequestPartnershipForm() {
       return;
     }
 
-    if (!window.turnstile || !containerRef.current || widgetRef.current) return;
+    if (!window.turnstile) return;
+    if (!containerRef.current) return;
+    if (widgetRef.current) return;
 
     widgetRef.current = window.turnstile.render(containerRef.current, {
       sitekey,
@@ -135,17 +139,21 @@ export function RequestPartnershipForm() {
   }
 
   function resetWidget() {
+    if (typeof window === "undefined") return;
+
     if (window.turnstile && widgetRef.current) {
       window.turnstile.reset(widgetRef.current);
     }
+
     setTurnstileToken("");
   }
 
-  function onSubmit(e: React.SubmitEvent<HTMLFormElement>) {
+  function onSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
 
     setError(null);
     setPasswordError(null);
+    setTurnstileError(null);
 
     const err = validate();
 
@@ -159,36 +167,45 @@ export function RequestPartnershipForm() {
     }
 
     startTransition(async () => {
-      const res = await fetch("/api/agents/request", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          partnerType,
-          fullName: fullName.trim(),
-          travelAgency: travelAgency.trim() || null,
-          phone: phone.trim(),
-          website: website.trim() || null,
-          membership: membership.trim(),
-          email: emailNormalized,
-          password,
-          companyName,
-          turnstileToken,
-        }),
-      });
+      try {
+        const res = await fetch("/api/agents/request", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            partnerType,
+            fullName: fullName.trim(),
+            travelAgency: travelAgency.trim() || null,
+            phone: phone.trim(),
+            website: website.trim() || null,
+            membership: membership.trim(),
+            email: emailNormalized,
+            password,
+            companyName,
+            turnstileToken,
+          }),
+        });
 
-      const data = await res.json().catch(() => null);
+        const data = await res.json().catch(() => null);
 
-      if (!res.ok) {
-        setError(
-          data?.error
-            ? String(data.error)
-            : `Request failed (HTTP ${res.status}).`
-        );
+        if (!res.ok) {
+          setError(
+            data?.error
+              ? String(data.error)
+              : `Request failed (HTTP ${res.status}).`
+          );
+          resetWidget();
+          return;
+        }
+
+        setOk(true);
+        setError(null);
+        setPasswordError(null);
+        setTurnstileError(null);
+      } catch (err) {
+        console.error("Request partnership failed:", err);
+        setError("Something went wrong while submitting your request.");
         resetWidget();
-        return;
       }
-
-      setOk(true);
     });
   }
 
@@ -269,7 +286,8 @@ export function RequestPartnershipForm() {
 
         <div className="space-y-2">
           <label className="text-sm font-medium">
-            Travel Agency {agencyRequired ? <span className="text-red-700">*</span> : null}
+            Travel Agency{" "}
+            {agencyRequired ? <span className="text-red-700">*</span> : null}
           </label>
           <Input
             placeholder="Your travel agency name"
@@ -293,7 +311,8 @@ export function RequestPartnershipForm() {
 
         <div className="space-y-2">
           <label className="text-sm font-medium">
-            Website {websiteRequired ? <span className="text-red-700">*</span> : null}
+            Website{" "}
+            {websiteRequired ? <span className="text-red-700">*</span> : null}
           </label>
           <Input
             placeholder="https://..."
@@ -395,8 +414,8 @@ export function RequestPartnershipForm() {
         </div>
 
         <div className="rounded-md border bg-slate-50 px-4 py-3 text-sm text-muted-foreground">
-          Access is granted only after your application is reviewed and approved by
-          our team.
+          Access is granted only after your application is reviewed and approved
+          by our team.
         </div>
 
         {error ? <div className="text-sm text-red-700">{error}</div> : null}
