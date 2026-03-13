@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import Script from "next/script";
 import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { Button } from "@/components/ui/button";
@@ -32,16 +33,30 @@ function isValidEmail(email: string) {
   return /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(email.trim().toLowerCase());
 }
 
+const countryCodes = [
+  { code: "+1", label: "US / Canada (+1)" },
+  { code: "+44", label: "UK (+44)" },
+  { code: "+34", label: "Spain (+34)" },
+  { code: "+49", label: "Germany (+49)" },
+  { code: "+30", label: "Greece (+30)" },
+  { code: "+33", label: "France (+33)" },
+  { code: "+39", label: "Italy (+39)" },
+  { code: "+90", label: "Türkiye (+90)" },
+  { code: "+359", label: "Bulgaria (+359)" },
+];
+
 export function RequestPartnershipForm() {
   const [isPending, startTransition] = useTransition();
 
   const [partnerType, setPartnerType] = useState<PartnerType | "">("");
   const [fullName, setFullName] = useState("");
   const [travelAgency, setTravelAgency] = useState("");
-  const [phone, setPhone] = useState("");
+  const [countryCode, setCountryCode] = useState("+1");
+  const [phoneNumber, setPhoneNumber] = useState("");
   const [website, setWebsite] = useState("");
   const [membership, setMembership] = useState("");
   const [email, setEmail] = useState("");
+  const [confirmEmail, setConfirmEmail] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [companyName, setCompanyName] = useState("");
@@ -49,6 +64,7 @@ export function RequestPartnershipForm() {
   const [turnstileToken, setTurnstileToken] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [passwordError, setPasswordError] = useState<string | null>(null);
+  const [emailError, setEmailError] = useState<string | null>(null);
   const [turnstileError, setTurnstileError] = useState<string | null>(null);
   const [ok, setOk] = useState(false);
 
@@ -56,12 +72,18 @@ export function RequestPartnershipForm() {
   const containerRef = useRef<HTMLDivElement | null>(null);
 
   const emailNormalized = useMemo(() => email.trim().toLowerCase(), [email]);
+  const confirmEmailNormalized = useMemo(
+    () => confirmEmail.trim().toLowerCase(),
+    [confirmEmail]
+  );
 
   const websiteRequired =
     partnerType === "TOUR_OPERATOR" || partnerType === "TRAVEL_AGENCY";
 
   const agencyRequired =
     partnerType === "TOUR_OPERATOR" || partnerType === "TRAVEL_AGENCY";
+
+  const fullPhone = `${countryCode} ${phoneNumber.trim()}`.trim();
 
   function renderTurnstile() {
     if (typeof window === "undefined") return;
@@ -103,7 +125,8 @@ export function RequestPartnershipForm() {
       return "Travel Agency is required.";
     }
 
-    if (!phone.trim()) return "Phone is required.";
+    if (!countryCode.trim()) return "Country code is required.";
+    if (!phoneNumber.trim()) return "Phone number is required.";
 
     if (websiteRequired && !website.trim()) {
       return "Website is required.";
@@ -115,6 +138,14 @@ export function RequestPartnershipForm() {
 
     if (!isValidEmail(emailNormalized)) {
       return "Please enter a valid email address.";
+    }
+
+    if (!confirmEmailNormalized) {
+      return "Please confirm your email address.";
+    }
+
+    if (emailNormalized !== confirmEmailNormalized) {
+      return "Email addresses do not match.";
     }
 
     if (!password) return "Password is required.";
@@ -153,6 +184,7 @@ export function RequestPartnershipForm() {
 
     setError(null);
     setPasswordError(null);
+    setEmailError(null);
     setTurnstileError(null);
 
     const err = validate();
@@ -160,6 +192,8 @@ export function RequestPartnershipForm() {
     if (err) {
       if (err === "Passwords do not match.") {
         setPasswordError(err);
+      } else if (err === "Email addresses do not match.") {
+        setEmailError(err);
       } else {
         setError(err);
       }
@@ -175,7 +209,7 @@ export function RequestPartnershipForm() {
             partnerType,
             fullName: fullName.trim(),
             travelAgency: travelAgency.trim() || null,
-            phone: phone.trim(),
+            phone: fullPhone,
             website: website.trim() || null,
             membership: membership.trim(),
             email: emailNormalized,
@@ -200,6 +234,7 @@ export function RequestPartnershipForm() {
         setOk(true);
         setError(null);
         setPasswordError(null);
+        setEmailError(null);
         setTurnstileError(null);
       } catch (err) {
         console.error("Request partnership failed:", err);
@@ -215,13 +250,31 @@ export function RequestPartnershipForm() {
 
   if (ok) {
     return (
-      <div className="mt-6 rounded-2xl border border-green-200 bg-green-50 p-6 shadow-sm">
+      <div className="mt-6 rounded-2xl border border-green-200 bg-green-50 p-6 shadow-sm text-center">
         <h2 className="text-xl font-bold text-green-800">
           Request Submitted Successfully
         </h2>
+
         <p className="mt-2 text-sm text-green-800">
-          Your partnership request has been received and is under review.
+          Your partnership request has been received and is under review. You
+          will receive an email once your account is approved.
         </p>
+
+        <div className="mt-6 flex flex-col justify-center gap-3 sm:flex-row">
+          <Link
+            href="/"
+            className="rounded-md border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-100"
+          >
+            Back to Home
+          </Link>
+
+          <Link
+            href="/agent-login"
+            className="rounded-md bg-[#8B0000] px-4 py-2 text-sm font-medium text-white transition hover:bg-[#6f0000]"
+          >
+            Agent Login
+          </Link>
+        </div>
       </div>
     );
   }
@@ -239,8 +292,8 @@ export function RequestPartnershipForm() {
           Request Partnership
         </h2>
         <p className="text-sm text-muted-foreground">
-          Travel advisors and group leaders may request access. Your account will
-          be reviewed before approval.
+          Travel advisors and group leaders may request access. Your account
+          will be reviewed before approval.
         </p>
       </div>
 
@@ -301,12 +354,28 @@ export function RequestPartnershipForm() {
           <label className="text-sm font-medium">
             Phone <span className="text-red-700">*</span>
           </label>
-          <Input
-            placeholder="+1 ..."
-            value={phone}
-            onChange={(e) => setPhone(e.target.value)}
-            disabled={isPending}
-          />
+
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-[180px_1fr]">
+            <select
+              value={countryCode}
+              onChange={(e) => setCountryCode(e.target.value)}
+              className="h-10 rounded-md border bg-white px-3 text-sm"
+              disabled={isPending}
+            >
+              {countryCodes.map((item) => (
+                <option key={item.code} value={item.code}>
+                  {item.label}
+                </option>
+              ))}
+            </select>
+
+            <Input
+              placeholder="Phone number"
+              value={phoneNumber}
+              onChange={(e) => setPhoneNumber(e.target.value)}
+              disabled={isPending}
+            />
+          </div>
         </div>
 
         <div className="space-y-2">
@@ -352,9 +421,31 @@ export function RequestPartnershipForm() {
             placeholder="name@domain.com"
             type="email"
             value={email}
-            onChange={(e) => setEmail(e.target.value)}
+            onChange={(e) => {
+              setEmail(e.target.value);
+              setEmailError(null);
+            }}
             disabled={isPending}
           />
+        </div>
+
+        <div className="space-y-2">
+          <label className="text-sm font-medium">
+            Confirm Email <span className="text-red-700">*</span>
+          </label>
+          <Input
+            placeholder="Re-enter your email address"
+            type="email"
+            value={confirmEmail}
+            onChange={(e) => {
+              setConfirmEmail(e.target.value);
+              setEmailError(null);
+            }}
+            disabled={isPending}
+          />
+          {emailError ? (
+            <p className="text-sm text-red-700">{emailError}</p>
+          ) : null}
         </div>
 
         <div className="space-y-2">
