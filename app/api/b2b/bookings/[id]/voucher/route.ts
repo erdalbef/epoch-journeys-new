@@ -20,6 +20,14 @@ function formatCurrency(value: number) {
   }).format(value);
 }
 
+function formatEnum(value: string) {
+  return value
+    .toLowerCase()
+    .split("_")
+    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+    .join(" ");
+}
+
 function drawLabelValue(
   page: import("pdf-lib").PDFPage,
   label: string,
@@ -43,6 +51,7 @@ function drawLabelValue(
     size: 10,
     font,
     color: rgb(0.2, 0.2, 0.2),
+    maxWidth: 320,
   });
 }
 
@@ -72,7 +81,12 @@ export async function GET(
       },
     });
 
-    if (!user || user.role !== "AGENT" || !user.approved || user.status !== "ACTIVE") {
+    if (
+      !user ||
+      user.role !== "AGENT" ||
+      !user.approved ||
+      user.status !== "ACTIVE"
+    ) {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
 
@@ -86,7 +100,10 @@ export async function GET(
     });
 
     if (!booking) {
-      return NextResponse.json({ error: "Booking not found." }, { status: 404 });
+      return NextResponse.json(
+        { error: "Booking not found." },
+        { status: 404 }
+      );
     }
 
     const pdfDoc = await PDFDocument.create();
@@ -95,27 +112,33 @@ export async function GET(
     const font = await pdfDoc.embedFont(StandardFonts.Helvetica);
     const boldFont = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
 
+    let agentLogoImage: import("pdf-lib").PDFImage | null = null;
+
+    if (user.agentLogoUrl) {
+      try {
+        const response = await fetch(user.agentLogoUrl);
+        const logoBytes = await response.arrayBuffer();
+
+        if (user.agentLogoUrl.toLowerCase().endsWith(".png")) {
+          agentLogoImage = await pdfDoc.embedPng(logoBytes);
+        } else {
+          agentLogoImage = await pdfDoc.embedJpg(logoBytes);
+        }
+      } catch (err) {
+        console.error("AGENT_LOGO_LOAD_FAILED", err);
+      }
+    }
+
     const { width, height } = page.getSize();
 
     const agencyName =
-      booking.agencyNameSnapshot ||
-      user.travelAgency ||
-      "Epoch Journeys";
+      booking.agencyNameSnapshot || user.travelAgency || "Epoch Journeys";
 
-    const agentName =
-      booking.agentNameSnapshot ||
-      user.fullName ||
-      "Agent";
+    const agentName = booking.agentNameSnapshot || user.fullName || "Agent";
 
-    const agentEmail =
-      booking.agentEmailSnapshot ||
-      user.email ||
-      "-";
+    const agentEmail = booking.agentEmailSnapshot || user.email || "-";
 
-    const agentPhone =
-      booking.agentPhoneSnapshot ||
-      user.phone ||
-      "-";
+    const agentPhone = booking.agentPhoneSnapshot || user.phone || "-";
 
     page.drawRectangle({
       x: 0,
@@ -124,6 +147,23 @@ export async function GET(
       height: 110,
       color: rgb(0.0, 0.12, 0.25),
     });
+
+    if (agentLogoImage) {
+      const maxLogoWidth = 120;
+      const maxLogoHeight = 50;
+
+      const original = agentLogoImage.scale(1);
+      const widthRatio = maxLogoWidth / original.width;
+      const heightRatio = maxLogoHeight / original.height;
+      const scale = Math.min(widthRatio, heightRatio, 1);
+
+      page.drawImage(agentLogoImage, {
+        x: width - original.width * scale - 40,
+        y: height - 85,
+        width: original.width * scale,
+        height: original.height * scale,
+      });
+    }
 
     page.drawText(agencyName, {
       x: 40,
@@ -177,10 +217,28 @@ export async function GET(
 
     y -= 28;
 
-    drawLabelValue(page, "Reference", booking.bookingReference, 40, y, font, boldFont);
+    drawLabelValue(
+      page,
+      "Reference",
+      booking.bookingReference,
+      40,
+      y,
+      font,
+      boldFont
+    );
     y -= 18;
-    drawLabelValue(page, "Tour", booking.tourTitleSnapshot, 40, y, font, boldFont);
+
+    drawLabelValue(
+      page,
+      "Tour",
+      booking.tourTitleSnapshot,
+      40,
+      y,
+      font,
+      boldFont
+    );
     y -= 18;
+
     drawLabelValue(
       page,
       "Departure",
@@ -191,8 +249,18 @@ export async function GET(
       boldFont
     );
     y -= 18;
-    drawLabelValue(page, "Season", booking.seasonSnapshot, 40, y, font, boldFont);
+
+    drawLabelValue(
+      page,
+      "Season",
+      booking.seasonSnapshot || "-",
+      40,
+      y,
+      font,
+      boldFont
+    );
     y -= 18;
+
     drawLabelValue(
       page,
       "Booked On",
@@ -215,19 +283,81 @@ export async function GET(
 
     y -= 28;
 
-    drawLabelValue(page, "Guests", String(booking.numberOfGuests), 40, y, font, boldFont);
+    drawLabelValue(
+      page,
+      "Guests",
+      String(booking.numberOfGuests),
+      40,
+      y,
+      font,
+      boldFont
+    );
     y -= 18;
-    drawLabelValue(page, "Adults", String(booking.adults), 40, y, font, boldFont);
+
+    drawLabelValue(
+      page,
+      "Adults",
+      String(booking.adults),
+      40,
+      y,
+      font,
+      boldFont
+    );
     y -= 18;
-    drawLabelValue(page, "Children", String(booking.children), 40, y, font, boldFont);
+
+    drawLabelValue(
+      page,
+      "Children",
+      String(booking.children),
+      40,
+      y,
+      font,
+      boldFont
+    );
     y -= 18;
-    drawLabelValue(page, "Infants", String(booking.infants), 40, y, font, boldFont);
+
+    drawLabelValue(
+      page,
+      "Infants",
+      String(booking.infants),
+      40,
+      y,
+      font,
+      boldFont
+    );
     y -= 18;
-    drawLabelValue(page, "Amount", formatCurrency(booking.grossAmount), 40, y, font, boldFont);
+
+    drawLabelValue(
+      page,
+      "Amount",
+      formatCurrency(booking.grossAmount),
+      40,
+      y,
+      font,
+      boldFont
+    );
     y -= 18;
-    drawLabelValue(page, "Status", booking.status, 40, y, font, boldFont);
+
+    drawLabelValue(
+      page,
+      "Status",
+      formatEnum(booking.status),
+      40,
+      y,
+      font,
+      boldFont
+    );
     y -= 18;
-    drawLabelValue(page, "Payment", booking.paymentStatus, 40, y, font, boldFont);
+
+    drawLabelValue(
+      page,
+      "Payment",
+      formatEnum(booking.paymentStatus),
+      40,
+      y,
+      font,
+      boldFont
+    );
 
     y -= 34;
 
@@ -241,11 +371,37 @@ export async function GET(
 
     y -= 28;
 
-    drawLabelValue(page, "Customer Name", booking.customerName || "-", 40, y, font, boldFont);
+    drawLabelValue(
+      page,
+      "Customer Name",
+      booking.customerName || "-",
+      40,
+      y,
+      font,
+      boldFont
+    );
     y -= 18;
-    drawLabelValue(page, "Customer Email", booking.customerEmail || "-", 40, y, font, boldFont);
+
+    drawLabelValue(
+      page,
+      "Customer Email",
+      booking.customerEmail || "-",
+      40,
+      y,
+      font,
+      boldFont
+    );
     y -= 18;
-    drawLabelValue(page, "Customer Phone", booking.customerPhone || "-", 40, y, font, boldFont);
+
+    drawLabelValue(
+      page,
+      "Customer Phone",
+      booking.customerPhone || "-",
+      40,
+      y,
+      font,
+      boldFont
+    );
 
     y -= 34;
 
@@ -261,10 +417,13 @@ export async function GET(
 
     drawLabelValue(page, "Agency", agencyName, 40, y, font, boldFont);
     y -= 18;
+
     drawLabelValue(page, "Agent", agentName, 40, y, font, boldFont);
     y -= 18;
+
     drawLabelValue(page, "Agent Email", agentEmail, 40, y, font, boldFont);
     y -= 18;
+
     drawLabelValue(page, "Agent Phone", agentPhone, 40, y, font, boldFont);
 
     y -= 34;

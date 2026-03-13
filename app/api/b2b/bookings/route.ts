@@ -57,6 +57,12 @@ function toBoolean(value: unknown, fallback: boolean): boolean {
   return fallback;
 }
 
+function cleanString(value: unknown): string | null {
+  if (typeof value !== "string") return null;
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : null;
+}
+
 export async function POST(request: Request) {
   try {
     const session = await getServerSession(authOptions);
@@ -266,7 +272,30 @@ export async function POST(request: Request) {
     const bookingReference = generateBookingReference();
 
     const booking = await prisma.$transaction(async (tx) => {
-      const currentDeparture = await tx.departureDate.findUnique({
+      const conditionalUpdate = await tx.departureDate.updateMany({
+        where: {
+          id: departure.id,
+          status: {
+            notIn: ["SOLD_OUT", "CLOSED"],
+          },
+          bookedSeats: {
+            lte: departure.capacity - numberOfGuests,
+          },
+        },
+        data: {
+          bookedSeats: {
+            increment: numberOfGuests,
+          },
+        },
+      });
+
+      if (conditionalUpdate.count === 0) {
+        throw new Error(
+          "This departure is no longer available or does not have enough remaining seats."
+        );
+      }
+
+      const updatedDeparture = await tx.departureDate.findUnique({
         where: { id: departure.id },
         select: {
           id: true,
@@ -276,25 +305,20 @@ export async function POST(request: Request) {
         },
       });
 
-      if (!currentDeparture) {
-        throw new Error("Departure not found during booking.");
+      if (!updatedDeparture) {
+        throw new Error("Departure not found after update.");
       }
 
       if (
-        currentDeparture.status === "SOLD_OUT" ||
-        currentDeparture.status === "CLOSED"
+        updatedDeparture.bookedSeats >= updatedDeparture.capacity &&
+        updatedDeparture.status !== "SOLD_OUT"
       ) {
-        throw new Error("This departure is no longer available.");
-      }
-
-      const seatsLeft = currentDeparture.capacity - currentDeparture.bookedSeats;
-
-      if (seatsLeft <= 0) {
-        throw new Error("No seats remaining for this departure.");
-      }
-
-      if (numberOfGuests > seatsLeft) {
-        throw new Error(`Only ${seatsLeft} seat(s) remaining.`);
+        await tx.departureDate.update({
+          where: { id: departure.id },
+          data: {
+            status: "SOLD_OUT",
+          },
+        });
       }
 
       const createdBooking = await tx.booking.create({
@@ -346,14 +370,14 @@ export async function POST(request: Request) {
           earlyDiscountDeadlineSnapshot:
             departure.earlyDiscountDeadline ?? null,
 
-          customerName: body.customerName ?? null,
-          customerEmail: body.customerEmail ?? null,
-          customerPhone: body.customerPhone ?? null,
+          customerName: cleanString(body.customerName),
+          customerEmail: cleanString(body.customerEmail),
+          customerPhone: cleanString(body.customerPhone),
 
-          leadFirstName: body.leadFirstName ?? null,
-          leadLastName: body.leadLastName ?? null,
-          leadEmail: body.leadEmail ?? null,
-          leadPhone: body.leadPhone ?? null,
+          leadFirstName: cleanString(body.leadFirstName),
+          leadLastName: cleanString(body.leadLastName),
+          leadEmail: cleanString(body.leadEmail),
+          leadPhone: cleanString(body.leadPhone),
 
           adults,
           children,
@@ -366,21 +390,8 @@ export async function POST(request: Request) {
           landOnly: toBoolean(body.landOnly, true),
           needsFlights: toBoolean(body.needsFlights, false),
 
-          notes: body.notes ?? null,
-          specialRequests: body.specialRequests ?? null,
-        },
-      });
-
-      const newBookedSeats = currentDeparture.bookedSeats + numberOfGuests;
-
-      await tx.departureDate.update({
-        where: { id: departure.id },
-        data: {
-          bookedSeats: newBookedSeats,
-          status:
-            newBookedSeats >= currentDeparture.capacity
-              ? "SOLD_OUT"
-              : currentDeparture.status,
+          notes: cleanString(body.notes),
+          specialRequests: cleanString(body.specialRequests),
         },
       });
 
@@ -404,7 +415,8 @@ export async function POST(request: Request) {
     if (
       message.includes("No seats remaining") ||
       message.includes("seat(s) remaining") ||
-      message.includes("no longer available")
+      message.includes("no longer available") ||
+      message.includes("does not have enough remaining seats")
     ) {
       return NextResponse.json({ error: message }, { status: 400 });
     }
