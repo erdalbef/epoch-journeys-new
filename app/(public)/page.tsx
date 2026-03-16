@@ -53,28 +53,8 @@ export default function HomePage() {
         </div>
       </section>
 
-      {/* Brand Statement */}
-      <section className="mx-auto max-w-4xl px-6 py-24 text-center sm:px-10 lg:px-16">
-        <div className="space-y-6">
-          <p className="text-lg leading-8 text-gray-700 sm:text-xl">
-            Epoch Journeys designs cultural, historical, and pilgrimage travel
-            experiences across Europe.
-          </p>
-
-          <p className="text-lg leading-8 text-gray-700 sm:text-xl">
-            Our programs explore the civilizations, traditions, and sacred
-            places that shaped the continent.
-          </p>
-
-          <p className="text-lg leading-8 text-gray-700 sm:text-xl">
-            Each journey is developed through deep destination knowledge and
-            decades of travel expertise.
-          </p>
-        </div>
-      </section>
-
       {/* Early Access / Soft Launch */}
-      <section className="mx-auto max-w-5xl px-6 py-12 pb-24 sm:px-10 lg:px-16">
+      <section className="mx-auto max-w-5xl px-6 py-16 pb-24 sm:px-10 lg:px-16">
         <div className="rounded-3xl border border-[#8B0000]/15 bg-[#faf7f4] p-8 text-center shadow-sm sm:p-10">
           <p className="text-sm font-medium uppercase tracking-[0.22em] text-[#8B0000]">
             Launch Notice
