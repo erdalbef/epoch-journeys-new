@@ -1,4 +1,4 @@
-import type { DefaultSession } from "next-auth";
+import { DefaultSession } from "next-auth";
 
 declare module "next-auth" {
   interface Session {
@@ -6,6 +6,7 @@ declare module "next-auth" {
       id: string;
       role: "ADMIN" | "AGENT";
       approved: boolean;
+      commissionRate?: number | null;
     } & DefaultSession["user"];
   }
 
@@ -13,15 +14,15 @@ declare module "next-auth" {
     id: string;
     role: "ADMIN" | "AGENT";
     approved: boolean;
+    commissionRate?: number | null;
   }
 }
 
 declare module "next-auth/jwt" {
   interface JWT {
-    id?: string;
-    role?: "ADMIN" | "AGENT";
-    approved?: boolean;
+    id: string;
+    role: "ADMIN" | "AGENT";
+    approved: boolean;
+    commissionRate?: number | null;
   }
 }
-
-export {};

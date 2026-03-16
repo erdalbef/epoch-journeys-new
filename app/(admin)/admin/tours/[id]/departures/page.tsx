@@ -1,12 +1,13 @@
-import { db } from "@/lib/db";
-import { DepartureStatus } from "@prisma/client";
-import { notFound, redirect } from "next/navigation";
 import Link from "next/link";
+import { notFound, redirect } from "next/navigation";
+import { DepartureStatus } from "@prisma/client";
+
+import { db } from "@/lib/db";
 
 type PageProps = {
-  params: Promise<{
+  params: {
     id: string;
-  }>;
+  };
 };
 
 function formatCurrency(value: number) {
@@ -15,6 +16,29 @@ function formatCurrency(value: number) {
     currency: "USD",
     maximumFractionDigits: 0,
   }).format(value);
+}
+
+function formatDate(value: Date | string) {
+  return new Date(value).toLocaleDateString("en-US", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+  });
+}
+
+function getStatusLabel(status: DepartureStatus) {
+  switch (status) {
+    case "EARLY_BOOKING":
+      return "Early Booking";
+    case "AVAILABLE":
+      return "Available";
+    case "SOLD_OUT":
+      return "Sold Out";
+    case "CLOSED":
+      return "Closed";
+    default:
+      return status;
+  }
 }
 
 async function createDeparture(tourId: string, formData: FormData) {
@@ -54,7 +78,8 @@ async function createDeparture(tourId: string, formData: FormData) {
     Number.isNaN(capacity) ||
     capacity < 0 ||
     Number.isNaN(bookedSeats) ||
-    bookedSeats < 0
+    bookedSeats < 0 ||
+    bookedSeats > capacity
   ) {
     return;
   }
@@ -66,7 +91,9 @@ async function createDeparture(tourId: string, formData: FormData) {
     "CLOSED",
   ];
 
-  const status = allowedStatuses.includes(statusValue as DepartureStatus)
+  const status: DepartureStatus = allowedStatuses.includes(
+    statusValue as DepartureStatus
+  )
     ? (statusValue as DepartureStatus)
     : "AVAILABLE";
 
@@ -76,10 +103,23 @@ async function createDeparture(tourId: string, formData: FormData) {
       ? Number(earlyDiscountPercentValue)
       : null;
 
+  const validEarlyDiscountPercent =
+    earlyDiscountPercent !== null &&
+    !Number.isNaN(earlyDiscountPercent) &&
+    earlyDiscountPercent >= 0
+      ? earlyDiscountPercent
+      : null;
+
   const earlyDiscountDeadline =
     typeof earlyDiscountDeadlineValue === "string" &&
     earlyDiscountDeadlineValue.trim() !== ""
       ? new Date(earlyDiscountDeadlineValue)
+      : null;
+
+  const validEarlyDiscountDeadline =
+    earlyDiscountDeadline &&
+    !Number.isNaN(earlyDiscountDeadline.getTime())
+      ? earlyDiscountDeadline
       : null;
 
   await db.departureDate.create({
@@ -91,14 +131,8 @@ async function createDeparture(tourId: string, formData: FormData) {
       capacity,
       bookedSeats,
       status,
-      earlyDiscountPercent:
-        earlyDiscountPercent !== null && !Number.isNaN(earlyDiscountPercent)
-          ? earlyDiscountPercent
-          : null,
-      earlyDiscountDeadline:
-        earlyDiscountDeadline && !Number.isNaN(earlyDiscountDeadline.getTime())
-          ? earlyDiscountDeadline
-          : null,
+      earlyDiscountPercent: validEarlyDiscountPercent,
+      earlyDiscountDeadline: validEarlyDiscountDeadline,
     },
   });
 
@@ -106,7 +140,7 @@ async function createDeparture(tourId: string, formData: FormData) {
 }
 
 export default async function TourDeparturesPage({ params }: PageProps) {
-  const { id } = await params;
+  const { id } = params;
 
   const tour = await db.tour.findUnique({
     where: { id },
@@ -125,8 +159,7 @@ export default async function TourDeparturesPage({ params }: PageProps) {
 
   return (
     <div className="space-y-6">
-      {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
         <div>
           <h1 className="text-2xl font-semibold">Departures — {tour.title}</h1>
           <p className="text-sm text-muted-foreground">
@@ -151,7 +184,6 @@ export default async function TourDeparturesPage({ params }: PageProps) {
         </div>
       </div>
 
-      {/* Add Departure Form */}
       <section className="rounded-lg border bg-white p-6">
         <div className="mb-4">
           <h2 className="text-lg font-semibold">Add Departure</h2>
@@ -297,8 +329,7 @@ export default async function TourDeparturesPage({ params }: PageProps) {
         </form>
       </section>
 
-      {/* Departures Table */}
-      <div className="rounded-lg border bg-white">
+      <div className="overflow-x-auto rounded-lg border bg-white">
         <table className="w-full text-sm">
           <thead className="border-b bg-gray-50">
             <tr>
@@ -314,45 +345,34 @@ export default async function TourDeparturesPage({ params }: PageProps) {
           </thead>
 
           <tbody>
-            {tour.departureDates.length === 0 && (
+            {tour.departureDates.length === 0 ? (
               <tr>
                 <td colSpan={8} className="p-6 text-center text-gray-500">
                   No departures created yet.
                 </td>
               </tr>
+            ) : (
+              tour.departureDates.map((departure) => (
+                <tr key={departure.id} className="border-b">
+                  <td className="p-3">{formatDate(departure.date)}</td>
+                  <td className="p-3">{departure.season}</td>
+                  <td className="p-3">{formatCurrency(departure.price)}</td>
+                  <td className="p-3">{departure.capacity}</td>
+                  <td className="p-3">{departure.bookedSeats}</td>
+                  <td className="p-3">
+                    {departure.earlyDiscountPercent != null
+                      ? `${departure.earlyDiscountPercent}%`
+                      : "-"}
+                  </td>
+                  <td className="p-3">
+                    {departure.earlyDiscountDeadline
+                      ? formatDate(departure.earlyDiscountDeadline)
+                      : "-"}
+                  </td>
+                  <td className="p-3">{getStatusLabel(departure.status)}</td>
+                </tr>
+              ))
             )}
-
-            {tour.departureDates.map((departure) => (
-              <tr key={departure.id} className="border-b">
-                <td className="p-3">
-                  {new Date(departure.date).toLocaleDateString()}
-                </td>
-
-                <td className="p-3">{departure.season}</td>
-
-                <td className="p-3">{formatCurrency(departure.price)}</td>
-
-                <td className="p-3">{departure.capacity}</td>
-
-                <td className="p-3">{departure.bookedSeats}</td>
-
-                <td className="p-3">
-                  {departure.earlyDiscountPercent != null
-                    ? `${departure.earlyDiscountPercent}%`
-                    : "-"}
-                </td>
-
-                <td className="p-3">
-                  {departure.earlyDiscountDeadline
-                    ? new Date(
-                        departure.earlyDiscountDeadline
-                      ).toLocaleDateString()
-                    : "-"}
-                </td>
-
-                <td className="p-3">{departure.status}</td>
-              </tr>
-            ))}
           </tbody>
         </table>
       </div>

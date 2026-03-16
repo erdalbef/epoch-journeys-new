@@ -1,14 +1,18 @@
-import { db } from "@/lib/db";
-import { notFound } from "next/navigation";
 import Link from "next/link";
+import { DepartureStatus } from "@prisma/client";
+import { getServerSession } from "next-auth";
+import { notFound } from "next/navigation";
+
+import { authOptions } from "@/lib/authOptions";
+import { db } from "@/lib/db";
 
 type PageProps = {
-  params: Promise<{
+  params: {
     id: string;
-  }>;
+  };
 };
 
-function formatDate(date: Date) {
+function formatDate(date: Date | string) {
   return new Date(date).toLocaleDateString("en-GB", {
     day: "2-digit",
     month: "short",
@@ -24,7 +28,19 @@ function formatCurrency(value: number) {
   }).format(value);
 }
 
-function getStatusBadgeClass(status: string) {
+function formatCommission(rate?: number | null) {
+  if (typeof rate !== "number" || Number.isNaN(rate)) {
+    return null;
+  }
+
+  if (rate <= 1) {
+    return `${(rate * 100).toFixed(0)}%`;
+  }
+
+  return `${rate.toFixed(0)}%`;
+}
+
+function getStatusBadgeClass(status: DepartureStatus) {
   switch (status) {
     case "EARLY_BOOKING":
       return "bg-blue-100 text-blue-700";
@@ -39,7 +55,7 @@ function getStatusBadgeClass(status: string) {
   }
 }
 
-function getStatusLabel(status: string) {
+function getStatusLabel(status: DepartureStatus) {
   switch (status) {
     case "EARLY_BOOKING":
       return "Early Booking";
@@ -55,7 +71,9 @@ function getStatusLabel(status: string) {
 }
 
 export default async function B2BTourDetailPage({ params }: PageProps) {
-  const { id } = await params;
+  const { id } = params;
+
+  const session = await getServerSession(authOptions);
 
   const tour = await db.tour.findUnique({
     where: { id },
@@ -79,12 +97,23 @@ export default async function B2BTourDetailPage({ params }: PageProps) {
   const firstBookableDeparture = visibleDepartures.find((departure) => {
     const seatsLeft = departure.capacity - departure.bookedSeats;
 
-    return (
-      departure.status !== "SOLD_OUT" &&
-      departure.status !== "CLOSED" &&
-      seatsLeft > 0
-    );
+    return departure.status !== "SOLD_OUT" && seatsLeft > 0;
   });
+
+  const agentName = session?.user?.name ?? "Travel Partner";
+  const agentCommissionRate =
+    typeof session?.user?.commissionRate === "number"
+      ? session.user.commissionRate
+      : null;
+
+  const commissionLabel = formatCommission(agentCommissionRate);
+
+  const lowestAvailablePrice =
+    visibleDepartures.length > 0
+      ? Math.min(...visibleDepartures.map((departure) => departure.price))
+      : null;
+
+  const nextDeparture = visibleDepartures[0] ?? null;
 
   return (
     <div className="space-y-8">
@@ -192,7 +221,14 @@ export default async function B2BTourDetailPage({ params }: PageProps) {
                 </a>
               ) : null}
 
-              {!tour.requiresQuote && firstBookableDeparture ? (
+              {tour.requiresQuote ? (
+                <Link
+                  href={`/b2b/tours/${tour.id}/quote`}
+                  className="rounded-lg border border-amber-300 bg-amber-50 px-4 py-2 text-sm font-medium text-amber-700 transition hover:bg-amber-100"
+                >
+                  Request Quote
+                </Link>
+              ) : firstBookableDeparture ? (
                 <Link
                   href={`/b2b/tours/${tour.id}/book?departureId=${firstBookableDeparture.id}`}
                   className="rounded-lg bg-red-700 px-4 py-2 text-sm font-medium text-white transition hover:bg-red-800"
@@ -201,13 +237,97 @@ export default async function B2BTourDetailPage({ params }: PageProps) {
                 </Link>
               ) : (
                 <span className="inline-flex rounded-lg bg-gray-200 px-4 py-2 text-sm font-medium text-gray-500">
-                  {tour.requiresQuote ? "Request Quote" : "Booking Not Available"}
+                  Booking Not Available
                 </span>
               )}
             </div>
           </div>
         </div>
       </section>
+
+      <div className="grid gap-6 lg:grid-cols-3">
+        <section className="rounded-2xl border bg-white p-6 shadow-sm lg:col-span-2">
+          <h2 className="text-xl font-semibold text-[#001F3F]">Tour Facts</h2>
+
+          <div className="mt-4 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+            <div className="rounded-xl border bg-gray-50 p-4">
+              <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                Duration
+              </p>
+              <p className="mt-2 text-lg font-semibold text-[#001F3F]">
+                {tour.duration} days
+              </p>
+            </div>
+
+            <div className="rounded-xl border bg-gray-50 p-4">
+              <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                Category
+              </p>
+              <p className="mt-2 text-lg font-semibold text-[#001F3F]">
+                {tour.category}
+              </p>
+            </div>
+
+            <div className="rounded-xl border bg-gray-50 p-4">
+              <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                Next Departure
+              </p>
+              <p className="mt-2 text-lg font-semibold text-[#001F3F]">
+                {nextDeparture ? formatDate(nextDeparture.date) : "TBC"}
+              </p>
+            </div>
+
+            <div className="rounded-xl border bg-gray-50 p-4">
+              <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                From Price
+              </p>
+              <p className="mt-2 text-lg font-semibold text-[#001F3F]">
+                {lowestAvailablePrice != null
+                  ? formatCurrency(lowestAvailablePrice)
+                  : "On Request"}
+              </p>
+            </div>
+          </div>
+        </section>
+
+        <section className="rounded-2xl border bg-white p-6 shadow-sm">
+          <h2 className="text-xl font-semibold text-[#001F3F]">Agent Info</h2>
+
+          <div className="mt-4 space-y-4">
+            <div className="rounded-xl border bg-gray-50 p-4">
+              <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                Logged-in Partner
+              </p>
+              <p className="mt-2 text-base font-semibold text-[#001F3F]">
+                {agentName}
+              </p>
+            </div>
+
+            <div className="rounded-xl border bg-gray-50 p-4">
+              <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                Commission
+              </p>
+              <p className="mt-2 text-base font-semibold text-[#001F3F]">
+                {commissionLabel ?? "Set by admin"}
+              </p>
+            </div>
+
+            <div className="rounded-xl border bg-gray-50 p-4">
+              <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                Booking Type
+              </p>
+              <p className="mt-2 text-base font-semibold text-[#001F3F]">
+                {tour.requiresQuote ? "Quote / Request Basis" : "Direct Booking"}
+              </p>
+            </div>
+
+            <p className="text-sm leading-6 text-gray-600">
+              Agent-specific commercial terms, payout logic, and final pricing
+              can be expanded later in this card.
+            </p>
+          </div>
+        </section>
+      </div>
 
       {tour.overview ? (
         <section className="rounded-2xl border bg-white p-6 shadow-sm">
@@ -382,7 +502,14 @@ export default async function B2BTourDetailPage({ params }: PageProps) {
                       </td>
 
                       <td className="p-3">
-                        {isBookable ? (
+                        {tour.requiresQuote ? (
+                          <Link
+                            href={`/b2b/tours/${tour.id}/quote?departureId=${departure.id}`}
+                            className="inline-flex rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-xs font-medium text-amber-700 transition hover:bg-amber-100"
+                          >
+                            Request Quote
+                          </Link>
+                        ) : isBookable ? (
                           <Link
                             href={`/b2b/tours/${tour.id}/book?departureId=${departure.id}`}
                             className="inline-flex rounded-lg bg-red-700 px-3 py-2 text-xs font-medium text-white transition hover:bg-red-800"
@@ -391,9 +518,7 @@ export default async function B2BTourDetailPage({ params }: PageProps) {
                           </Link>
                         ) : (
                           <span className="text-xs text-muted-foreground">
-                            {tour.requiresQuote
-                              ? "Quote Required"
-                              : departure.status === "SOLD_OUT"
+                            {departure.status === "SOLD_OUT"
                               ? "Sold Out"
                               : departure.status === "CLOSED"
                               ? "Closed"

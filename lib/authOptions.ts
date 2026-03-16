@@ -26,22 +26,20 @@ export const authOptions: NextAuthOptions = {
 
         if (!user) return null;
 
-        // ✅ Block ONLY unapproved AGENTs (admins can always sign in)
+        // Block unapproved agents
         if (user.role === "AGENT" && !user.approved) {
-          // NOTE: returning null keeps NextAuth behavior consistent
-          // (your UI shows "Invalid credentials, or pending approval")
           return null;
         }
 
         const ok = await bcrypt.compare(password, user.password);
         if (!ok) return null;
 
-        // ✅ IMPORTANT: include role/approved so callbacks can persist them into JWT
         return {
           id: user.id,
           email: user.email,
           role: user.role,
           approved: user.approved,
+          commissionRate: user.commissionRate ?? null,
         };
       },
     }),
@@ -49,21 +47,31 @@ export const authOptions: NextAuthOptions = {
 
   callbacks: {
     async jwt({ token, user }) {
-      // On first login, `user` exists, later requests only have `token`
+
       if (user) {
         token.id = user.id;
         token.role = user.role;
         token.approved = user.approved;
+        token.commissionRate = user.commissionRate ?? null;
       }
+
       return token;
     },
 
     async session({ session, token }) {
+
       if (session.user) {
         session.user.id = String(token.id ?? "");
         session.user.role = (token.role ?? "AGENT") as "ADMIN" | "AGENT";
         session.user.approved = Boolean(token.approved);
+
+        // ✅ Add commissionRate to session
+        session.user.commissionRate =
+          typeof token.commissionRate === "number"
+            ? token.commissionRate
+            : null;
       }
+
       return session;
     },
   },
