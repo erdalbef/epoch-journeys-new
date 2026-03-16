@@ -1,15 +1,6 @@
 import { db } from "@/lib/db";
 import { redirect } from "next/navigation";
 
-function generateSlug(title: string) {
-  return title
-    .toLowerCase()
-    .trim()
-    .replace(/[^a-z0-9\s-]/g, "")
-    .replace(/\s+/g, "-")
-    .replace(/-+/g, "-");
-}
-
 function parseCommaSeparated(value: FormDataEntryValue | null): string[] {
   if (!value || typeof value !== "string") return [];
 
@@ -48,8 +39,6 @@ async function createTour(formData: FormData) {
   if (!title || !category || Number.isNaN(duration) || duration < 1) {
     return;
   }
-
-  const slug = generateSlug(title);
 
   const destinations = parseCommaSeparated(formData.get("destinations"));
   const subcategories = parseCommaSeparated(formData.get("subcategories"));
@@ -104,7 +93,6 @@ export default function CreateTourPage() {
         action={createTour}
         className="space-y-8 rounded-lg border bg-white p-6"
       >
-        {/* Basic Information */}
         <section className="space-y-4">
           <div>
             <h2 className="text-lg font-semibold">Basic Information</h2>
@@ -179,7 +167,6 @@ export default function CreateTourPage() {
           </div>
         </section>
 
-        {/* Classification */}
         <section className="space-y-4">
           <div>
             <h2 className="text-lg font-semibold">Classification</h2>
@@ -236,7 +223,6 @@ export default function CreateTourPage() {
           </div>
         </section>
 
-        {/* Tour Meaning and Content */}
         <section className="space-y-4">
           <div>
             <h2 className="text-lg font-semibold">Tour Meaning and Content</h2>
@@ -300,7 +286,6 @@ export default function CreateTourPage() {
           </div>
         </section>
 
-        {/* Sales Content */}
         <section className="space-y-4">
           <div>
             <h2 className="text-lg font-semibold">Sales Content</h2>
@@ -372,12 +357,12 @@ export default function CreateTourPage() {
           </div>
         </section>
 
-        {/* Itinerary */}
         <section className="space-y-4">
           <div>
             <h2 className="text-lg font-semibold">Itinerary</h2>
             <p className="text-sm text-muted-foreground">
-              Add overview itinerary notes now. We will build a more advanced day-by-day builder next.
+              Add overview itinerary notes now. We will build a more advanced
+              day-by-day builder next.
             </p>
           </div>
 
@@ -410,7 +395,6 @@ export default function CreateTourPage() {
           </div>
         </section>
 
-        {/* Settings */}
         <section className="space-y-4">
           <div>
             <h2 className="text-lg font-semibold">Settings</h2>

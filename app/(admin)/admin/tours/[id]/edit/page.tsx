@@ -2,9 +2,9 @@ import { db } from "@/lib/db";
 import { notFound, redirect } from "next/navigation";
 
 type PageProps = {
-  params: Promise<{
+  params: {
     id: string;
-  }>;
+  };
 };
 
 function joinArray(arr: string[] | null) {
@@ -64,16 +64,13 @@ async function updateTour(id: string, formData: FormData) {
       inclusions: parseCommaSeparated(formData.get("inclusions")),
       exclusions: parseCommaSeparated(formData.get("exclusions")),
       accommodations: parseCommaSeparated(formData.get("accommodations")),
-
       shortDescription: parseOptionalString(formData.get("shortDescription")),
       overview: parseOptionalString(formData.get("overview")),
       tourIntroduction: parseOptionalString(formData.get("tourIntroduction")),
       tourSignificance: parseOptionalString(formData.get("tourSignificance")),
       destinationBriefs: parseOptionalString(formData.get("destinationBriefs")),
-
       overviewItinerary: parseOptionalString(formData.get("overviewItinerary")),
       itinerary: parseOptionalString(formData.get("itinerary")),
-
       isPublished: formData.get("isPublished") === "on",
       featured: formData.get("featured") === "on",
       requiresQuote: formData.get("requiresQuote") === "on",
@@ -84,7 +81,7 @@ async function updateTour(id: string, formData: FormData) {
 }
 
 export default async function EditTourPage({ params }: PageProps) {
-  const { id } = await params;
+  const { id } = params;
 
   const tour = await db.tour.findUnique({
     where: { id },
@@ -107,7 +104,6 @@ export default async function EditTourPage({ params }: PageProps) {
         action={updateTour.bind(null, tour.id)}
         className="space-y-8 rounded-lg border bg-white p-6"
       >
-        {/* Basic Information */}
         <section className="space-y-4">
           <div>
             <h2 className="text-lg font-semibold">Basic Information</h2>
@@ -179,7 +175,6 @@ export default async function EditTourPage({ params }: PageProps) {
           </div>
         </section>
 
-        {/* Classification */}
         <section className="space-y-4">
           <div>
             <h2 className="text-lg font-semibold">Classification</h2>
@@ -227,7 +222,6 @@ export default async function EditTourPage({ params }: PageProps) {
           </div>
         </section>
 
-        {/* Tour Meaning and Content */}
         <section className="space-y-4">
           <div>
             <h2 className="text-lg font-semibold">Tour Meaning and Content</h2>
@@ -264,7 +258,10 @@ export default async function EditTourPage({ params }: PageProps) {
             </div>
 
             <div>
-              <label htmlFor="destinationBriefs" className="text-sm font-medium">
+              <label
+                htmlFor="destinationBriefs"
+                className="text-sm font-medium"
+              >
                 Destination Briefs
               </label>
               <textarea
@@ -291,7 +288,6 @@ export default async function EditTourPage({ params }: PageProps) {
           </div>
         </section>
 
-        {/* Sales Content */}
         <section className="space-y-4">
           <div>
             <h2 className="text-lg font-semibold">Sales Content</h2>
@@ -351,7 +347,6 @@ export default async function EditTourPage({ params }: PageProps) {
           </div>
         </section>
 
-        {/* Itinerary */}
         <section className="space-y-4">
           <div>
             <h2 className="text-lg font-semibold">Itinerary</h2>
@@ -389,7 +384,6 @@ export default async function EditTourPage({ params }: PageProps) {
           </div>
         </section>
 
-        {/* Settings */}
         <section className="space-y-4">
           <div>
             <h2 className="text-lg font-semibold">Settings</h2>
