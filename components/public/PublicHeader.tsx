@@ -1,14 +1,15 @@
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
-import Image from "next/image"
+import Image from "next/image";
 
 export function PublicHeader() {
   return (
-    <header className="bg-white">
-      <div className="mx-auto flex max-w-6xl items-center justify-between px-4 py-4">
-         {/* Logo */}
-        <Link href="/" className="flex items-center">
+    <header className="w-full bg-white">
+      <div className="mx-auto flex max-w-7xl items-center justify-between px-6 py-4">
+        
+        {/* Logo */}
+        <Link href="/" className="flex items-center gap-3">
           <Image
             src="/epoch-logo.png"
             alt="Epoch Journeys"
@@ -17,9 +18,9 @@ export function PublicHeader() {
             className="h-12 w-auto"
             priority
           />
-        </Link>
-        <Link href="/" className="text-lg font-semibold tracking-tight">
-          Epoch Journeys
+          <span className="text-lg font-semibold tracking-tight">
+            Epoch Journeys
+          </span>
         </Link>
 
         <nav className="hidden items-center gap-2 sm:flex">
@@ -30,12 +31,15 @@ export function PublicHeader() {
           <Button variant="ghost" asChild>
             <Link href="/about">About</Link>
           </Button>
+
           <Button variant="ghost" asChild>
             <Link href="/themes">Themes</Link>
           </Button>
+
           <Button variant="ghost" asChild>
             <Link href="/destinations">Destinations</Link>
           </Button>
+
           <Button variant="ghost" asChild>
             <Link href="/why-partner">Why Partner</Link>
           </Button>
@@ -45,6 +49,7 @@ export function PublicHeader() {
           <Button className="bg-[#8B0000] text-white hover:bg-[#7A0000]" asChild>
             <Link href="/request-partnership">Request Partnership</Link>
           </Button>
+
           <Button variant="outline" asChild>
             <Link href="/agent-login">Agent Login</Link>
           </Button>
