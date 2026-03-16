@@ -5,6 +5,7 @@ import Script from "next/script";
 import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { PhoneInput } from "@/components/shared/form/phoneInput";
 
 type PartnerType =
   | "TOUR_OPERATOR"
@@ -33,26 +34,16 @@ function isValidEmail(email: string) {
   return /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(email.trim().toLowerCase());
 }
 
-const countryCodes = [
-  { code: "+1", label: "US / Canada (+1)" },
-  { code: "+44", label: "UK (+44)" },
-  { code: "+34", label: "Spain (+34)" },
-  { code: "+49", label: "Germany (+49)" },
-  { code: "+30", label: "Greece (+30)" },
-  { code: "+33", label: "France (+33)" },
-  { code: "+39", label: "Italy (+39)" },
-  { code: "+90", label: "Türkiye (+90)" },
-  { code: "+359", label: "Bulgaria (+359)" },
-];
-
 export function RequestPartnershipForm() {
   const [isPending, startTransition] = useTransition();
 
   const [partnerType, setPartnerType] = useState<PartnerType | "">("");
   const [fullName, setFullName] = useState("");
   const [travelAgency, setTravelAgency] = useState("");
+
   const [countryCode, setCountryCode] = useState("+1");
   const [phoneNumber, setPhoneNumber] = useState("");
+
   const [website, setWebsite] = useState("");
   const [membership, setMembership] = useState("");
   const [email, setEmail] = useState("");
@@ -179,7 +170,7 @@ export function RequestPartnershipForm() {
     setTurnstileToken("");
   }
 
-  function onSubmit(e: React.FormEvent<HTMLFormElement>) {
+  function onSubmit(e: React.SyntheticEvent<HTMLFormElement>) {
     e.preventDefault();
 
     setError(null);
@@ -250,7 +241,7 @@ export function RequestPartnershipForm() {
 
   if (ok) {
     return (
-      <div className="mt-6 rounded-2xl border border-green-200 bg-green-50 p-6 shadow-sm text-center">
+      <div className="mt-6 rounded-2xl border border-green-200 bg-green-50 p-6 text-center shadow-sm">
         <h2 className="text-xl font-bold text-green-800">
           Request Submitted Successfully
         </h2>
@@ -350,33 +341,14 @@ export function RequestPartnershipForm() {
           />
         </div>
 
-        <div className="space-y-2">
-          <label className="text-sm font-medium">
-            Phone <span className="text-red-700">*</span>
-          </label>
-
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-[180px_1fr]">
-            <select
-              value={countryCode}
-              onChange={(e) => setCountryCode(e.target.value)}
-              className="h-10 rounded-md border bg-white px-3 text-sm"
-              disabled={isPending}
-            >
-              {countryCodes.map((item) => (
-                <option key={item.code} value={item.code}>
-                  {item.label}
-                </option>
-              ))}
-            </select>
-
-            <Input
-              placeholder="Phone number"
-              value={phoneNumber}
-              onChange={(e) => setPhoneNumber(e.target.value)}
-              disabled={isPending}
-            />
-          </div>
-        </div>
+        <PhoneInput
+          label="Phone"
+          codeValue={countryCode}
+          numberValue={phoneNumber}
+          onCodeChange={setCountryCode}
+          onNumberChange={setPhoneNumber}
+          required
+        />
 
         <div className="space-y-2">
           <label className="text-sm font-medium">

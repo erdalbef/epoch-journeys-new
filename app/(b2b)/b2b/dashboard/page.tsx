@@ -11,6 +11,14 @@ function formatCurrency(value: number) {
   }).format(value);
 }
 
+function formatDate(value: string | Date) {
+  return new Date(value).toLocaleDateString("en-GB", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+  });
+}
+
 export default async function B2BDashboardPage() {
   const session = await getServerSession(authOptions);
 
@@ -38,12 +46,13 @@ export default async function B2BDashboardPage() {
     where: { userId: user.id },
     select: {
       id: true,
+      bookingReference: true,
+      bookingType: true,
       numberOfGuests: true,
       commissionAmount: true,
       status: true,
       departureDateSnapshot: true,
       tourTitleSnapshot: true,
-      bookingReference: true,
       createdAt: true,
     },
     orderBy: {
@@ -55,10 +64,13 @@ export default async function B2BDashboardPage() {
   const allBookings = await db.booking.findMany({
     where: { userId: user.id },
     select: {
+      id: true,
+      bookingType: true,
       numberOfGuests: true,
       commissionAmount: true,
       status: true,
       departureDateSnapshot: true,
+      paymentStatus: true,
     },
   });
 
@@ -70,27 +82,33 @@ export default async function B2BDashboardPage() {
 
   const totalBookings = allBookings.length;
 
-  const totalGuests = allBookings.reduce(
-    (sum, booking) => sum + booking.numberOfGuests,
-    0
-  );
+  const totalGuests = allBookings.reduce((sum, booking) => {
+    return sum + booking.numberOfGuests;
+  }, 0);
 
-  const totalCommission = allBookings.reduce(
-    (sum, booking) => sum + booking.commissionAmount,
-    0
-  );
+  const totalCommission = allBookings.reduce((sum, booking) => {
+    return sum + booking.commissionAmount;
+  }, 0);
 
-  const pendingBookings = allBookings.filter(
-    (b) => b.status === "PENDING"
-  ).length;
+  const pendingBookings = allBookings.filter((b) => b.status === "PENDING").length;
 
   const confirmedBookings = allBookings.filter(
     (b) => b.status === "CONFIRMED"
   ).length;
 
-  const upcomingDepartures = allBookings.filter(
-    (b) => new Date(b.departureDateSnapshot) > new Date()
+  const fitBookingsCount = allBookings.filter((b) => b.bookingType === "FIT").length;
+
+  const groupBookingsCount = allBookings.filter(
+    (b) => b.bookingType === "GROUP"
   ).length;
+
+  const unpaidBookingsCount = allBookings.filter(
+    (b) => b.paymentStatus === "UNPAID"
+  ).length;
+
+  const upcomingDepartures = allBookings.filter((b) => {
+    return new Date(b.departureDateSnapshot) > new Date();
+  }).length;
 
   return (
     <div className="space-y-8">
@@ -102,7 +120,7 @@ export default async function B2BDashboardPage() {
             </h1>
 
             <p className="mt-2 text-sm text-muted-foreground">
-              Manage your bookings, track commissions, and explore new tours.
+              Manage FIT and group bookings, track commissions, and monitor tour activity for Epoch Journeys OOD.
             </p>
 
             <div className="mt-4 flex flex-wrap gap-3">
@@ -134,17 +152,49 @@ export default async function B2BDashboardPage() {
             >
               View My Bookings
             </Link>
+
+            <Link
+              href="/b2b/bookings?type=FIT"
+              className="rounded-xl border px-5 py-3 text-center text-sm font-medium transition hover:border-[#8B0000] hover:text-[#8B0000]"
+            >
+              FIT Bookings
+            </Link>
+
+            <Link
+              href="/b2b/bookings?type=GROUP"
+              className="rounded-xl border px-5 py-3 text-center text-sm font-medium transition hover:border-[#8B0000] hover:text-[#8B0000]"
+            >
+              Group Bookings
+            </Link>
           </div>
         </div>
       </section>
 
-      <section className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
+      <section className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
         <div className="rounded-2xl border bg-white p-5 shadow-sm">
           <div className="text-xs uppercase text-muted-foreground">
-            Bookings
+            Total Bookings
           </div>
           <div className="mt-2 text-2xl font-bold text-[#001F3F]">
             {totalBookings}
+          </div>
+        </div>
+
+        <div className="rounded-2xl border bg-white p-5 shadow-sm">
+          <div className="text-xs uppercase text-muted-foreground">
+            FIT Bookings
+          </div>
+          <div className="mt-2 text-2xl font-bold text-[#001F3F]">
+            {fitBookingsCount}
+          </div>
+        </div>
+
+        <div className="rounded-2xl border bg-white p-5 shadow-sm">
+          <div className="text-xs uppercase text-muted-foreground">
+            Group Bookings
+          </div>
+          <div className="mt-2 text-2xl font-bold text-[#001F3F]">
+            {groupBookingsCount}
           </div>
         </div>
 
@@ -186,10 +236,28 @@ export default async function B2BDashboardPage() {
 
         <div className="rounded-2xl border bg-white p-5 shadow-sm">
           <div className="text-xs uppercase text-muted-foreground">
+            Unpaid
+          </div>
+          <div className="mt-2 text-2xl font-bold text-amber-600">
+            {unpaidBookingsCount}
+          </div>
+        </div>
+
+        <div className="rounded-2xl border bg-white p-5 shadow-sm">
+          <div className="text-xs uppercase text-muted-foreground">
             Upcoming Tours
           </div>
           <div className="mt-2 text-2xl font-bold text-[#001F3F]">
             {upcomingDepartures}
+          </div>
+        </div>
+
+        <div className="rounded-2xl border bg-white p-5 shadow-sm">
+          <div className="text-xs uppercase text-muted-foreground">
+            Published Tours
+          </div>
+          <div className="mt-2 text-2xl font-bold text-[#001F3F]">
+            {publishedToursCount}
           </div>
         </div>
       </section>
@@ -207,7 +275,7 @@ export default async function B2BDashboardPage() {
             >
               <h3 className="font-semibold text-[#001F3F]">Browse Tours</h3>
               <p className="mt-2 text-sm text-muted-foreground">
-                View available tours, itineraries, and departures.
+                View available tours, itineraries, departure options, and brochure materials.
               </p>
             </Link>
 
@@ -217,17 +285,37 @@ export default async function B2BDashboardPage() {
             >
               <h3 className="font-semibold text-[#001F3F]">My Bookings</h3>
               <p className="mt-2 text-sm text-muted-foreground">
-                Review your booking history and current requests.
+                Review your booking history, pending files, and confirmed reservations.
               </p>
             </Link>
 
             <Link
-              href="/b2b/commissions"
+              href="/b2b/bookings/new-fit"
               className="rounded-xl border p-4 transition hover:border-[#8B0000]"
             >
-              <h3 className="font-semibold text-[#001F3F]">Commissions</h3>
+              <h3 className="font-semibold text-[#001F3F]">New FIT Booking</h3>
               <p className="mt-2 text-sm text-muted-foreground">
-                Track your earnings and booking-related commission totals.
+                Create a private-basis booking for independent travelers.
+              </p>
+            </Link>
+
+            <Link
+              href="/b2b/bookings/new-group"
+              className="rounded-xl border p-4 transition hover:border-[#8B0000]"
+            >
+              <h3 className="font-semibold text-[#001F3F]">New Group Booking</h3>
+              <p className="mt-2 text-sm text-muted-foreground">
+                Manage group reservations with estimated or final passenger counts.
+              </p>
+            </Link>
+
+            <Link
+              href="/b2b/custom-requests"
+              className="rounded-xl border p-4 transition hover:border-[#8B0000]"
+            >
+              <h3 className="font-semibold text-[#001F3F]">Tailor-Made Tours</h3>
+              <p className="mt-2 text-sm text-muted-foreground">
+                Submit bespoke requests for special-interest groups or custom programs.
               </p>
             </Link>
 
@@ -239,7 +327,7 @@ export default async function B2BDashboardPage() {
                 Marketing Resources
               </h3>
               <p className="mt-2 text-sm text-muted-foreground">
-                Download brochures and sales materials for your clients.
+                Download brochures, tour materials, and sales support documents.
               </p>
             </Link>
           </div>
@@ -266,6 +354,20 @@ export default async function B2BDashboardPage() {
             </div>
 
             <div className="flex items-center justify-between gap-4 border-b pb-3">
+              <span className="text-muted-foreground">FIT Bookings</span>
+              <span className="font-medium text-[#001F3F]">
+                {fitBookingsCount}
+              </span>
+            </div>
+
+            <div className="flex items-center justify-between gap-4 border-b pb-3">
+              <span className="text-muted-foreground">Group Bookings</span>
+              <span className="font-medium text-[#001F3F]">
+                {groupBookingsCount}
+              </span>
+            </div>
+
+            <div className="flex items-center justify-between gap-4 border-b pb-3">
               <span className="text-muted-foreground">Published Tours</span>
               <span className="font-medium text-[#001F3F]">
                 {publishedToursCount}
@@ -282,9 +384,18 @@ export default async function B2BDashboardPage() {
 
       <section className="grid gap-6 xl:grid-cols-3">
         <div className="xl:col-span-2 rounded-2xl border bg-white p-6 shadow-sm">
-          <h2 className="text-xl font-semibold text-[#001F3F]">
-            Recent Bookings
-          </h2>
+          <div className="flex items-center justify-between gap-4">
+            <h2 className="text-xl font-semibold text-[#001F3F]">
+              Recent Bookings
+            </h2>
+
+            <Link
+              href="/b2b/bookings"
+              className="text-sm font-medium text-[#8B0000] hover:underline"
+            >
+              View all
+            </Link>
+          </div>
 
           {bookings.length === 0 ? (
             <div className="mt-4 rounded-xl border border-dashed p-6 text-sm text-muted-foreground">
@@ -292,10 +403,11 @@ export default async function B2BDashboardPage() {
             </div>
           ) : (
             <div className="mt-4 overflow-x-auto">
-              <table className="w-full min-w-[700px] text-sm">
+              <table className="w-full min-w-[760px] text-sm">
                 <thead>
                   <tr className="border-b text-left text-muted-foreground">
                     <th className="pb-3 pr-4 font-medium">Reference</th>
+                    <th className="pb-3 pr-4 font-medium">Type</th>
                     <th className="pb-3 pr-4 font-medium">Tour</th>
                     <th className="pb-3 pr-4 font-medium">Guests</th>
                     <th className="pb-3 pr-4 font-medium">Status</th>
@@ -306,12 +418,24 @@ export default async function B2BDashboardPage() {
                   {bookings.map((booking) => (
                     <tr key={booking.id} className="border-b last:border-b-0">
                       <td className="py-3 pr-4 font-medium text-[#001F3F]">
-                        {booking.bookingReference}
+                        <Link
+                          href={`/b2b/bookings/${booking.id}`}
+                          className="hover:text-[#8B0000]"
+                        >
+                          {booking.bookingReference}
+                        </Link>
                       </td>
+
+                      <td className="py-3 pr-4 text-muted-foreground">
+                        {booking.bookingType}
+                      </td>
+
                       <td className="py-3 pr-4 text-muted-foreground">
                         {booking.tourTitleSnapshot}
                       </td>
+
                       <td className="py-3 pr-4">{booking.numberOfGuests}</td>
+
                       <td className="py-3 pr-4">
                         <span
                           className={
@@ -325,15 +449,9 @@ export default async function B2BDashboardPage() {
                           {booking.status}
                         </span>
                       </td>
+
                       <td className="py-3 pr-4 text-muted-foreground">
-                        {new Date(booking.departureDateSnapshot).toLocaleDateString(
-                          "en-GB",
-                          {
-                            day: "2-digit",
-                            month: "short",
-                            year: "numeric",
-                          }
-                        )}
+                        {formatDate(booking.departureDateSnapshot)}
                       </td>
                     </tr>
                   ))}
@@ -350,15 +468,15 @@ export default async function B2BDashboardPage() {
 
           <div className="mt-4 space-y-3 text-sm">
             <div className="rounded-xl border bg-slate-50 p-4">
-              Review available departures and new tour options.
+              Review open departures and match them to your FIT and group clients.
             </div>
 
             <div className="rounded-xl border bg-slate-50 p-4">
-              Track pending bookings and follow up on confirmations.
+              Follow up on pending and unpaid bookings requiring confirmation.
             </div>
 
             <div className="rounded-xl border bg-slate-50 p-4">
-              Download brochures and resources for your clients.
+              Use tailor-made requests for programs that do not fit published departures.
             </div>
           </div>
         </div>

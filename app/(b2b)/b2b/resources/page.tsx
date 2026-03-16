@@ -72,7 +72,6 @@ export default async function B2BResourcesPage({
     select: {
       id: true,
       title: true,
-      slug: true,
       category: true,
       destinations: true,
       brochureUrl: true,
@@ -272,7 +271,7 @@ export default async function B2BResourcesPage({
                   </div>
 
                   <Link
-                    href={`/b2b/tours/${tour.slug}`}
+                    href={`/b2b/tours/${tour.id}`}
                     className="text-sm font-medium text-[#8B0000] hover:underline"
                   >
                     View Tour

@@ -1,8 +1,58 @@
-
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { sendEmail } from "@/lib/email/sendEmail";
 import { agentApprovalEmail } from "@/lib/email/templates/agentApprovalEmail";
+
+function normalizeAgentCode(value: string): string {
+  return value
+    .trim()
+    .toUpperCase()
+    .replace(/[^A-Z0-9]/g, "");
+}
+
+async function generateUniqueAgentCode(fullName?: string | null): Promise<string> {
+  const cleanedName = (fullName ?? "").trim();
+
+  let baseCode = "AGT";
+
+  if (cleanedName) {
+    const parts = cleanedName
+      .split(/\s+/)
+      .map((part) => part.trim())
+      .filter(Boolean);
+
+    if (parts.length === 1) {
+      baseCode = normalizeAgentCode(parts[0].slice(0, 3)) || "AGT";
+    } else {
+      baseCode =
+        normalizeAgentCode(parts.map((part) => part[0]).join("")) || "AGT";
+    }
+  }
+
+  baseCode = baseCode.slice(0, 6) || "AGT";
+
+  let counter = 0;
+
+  while (true) {
+    const candidate =
+      counter === 0 ? baseCode : `${baseCode}${String(counter)}`;
+
+    const existing = await prisma.user.findFirst({
+      where: {
+        agentCode: candidate,
+      },
+      select: {
+        id: true,
+      },
+    });
+
+    if (!existing) {
+      return candidate;
+    }
+
+    counter += 1;
+  }
+}
 
 export async function POST(
   req: Request,
@@ -11,10 +61,15 @@ export async function POST(
   try {
     const { agentId } = await context.params;
 
-    console.log("agentId:", agentId);
-
     const existingAgent = await prisma.user.findUnique({
       where: { id: agentId },
+      select: {
+        id: true,
+        email: true,
+        fullName: true,
+        approved: true,
+        agentCode: true,
+      },
     });
 
     if (!existingAgent) {
@@ -31,9 +86,24 @@ export async function POST(
       );
     }
 
+    let agentCode = existingAgent.agentCode;
+
+    if (!agentCode) {
+      agentCode = await generateUniqueAgentCode(existingAgent.fullName);
+    }
+
     const agent = await prisma.user.update({
       where: { id: agentId },
-      data: { approved: true },
+      data: {
+        approved: true,
+        agentCode,
+      },
+      select: {
+        id: true,
+        email: true,
+        fullName: true,
+        agentCode: true,
+      },
     });
 
     try {
@@ -49,6 +119,7 @@ export async function POST(
     return NextResponse.json({
       success: true,
       message: "Agent approved and email sent.",
+      agentCode: agent.agentCode,
     });
   } catch (error) {
     console.error("APPROVE_AGENT_ERROR", error);

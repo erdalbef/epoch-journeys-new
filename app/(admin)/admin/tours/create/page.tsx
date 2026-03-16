@@ -62,7 +62,6 @@ async function createTour(formData: FormData) {
   await db.tour.create({
     data: {
       title,
-      slug,
       category,
       subcategories,
       tags,

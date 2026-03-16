@@ -3,9 +3,9 @@ import { notFound } from "next/navigation";
 import Link from "next/link";
 
 type PageProps = {
-  params: {
+  params: Promise<{
     id: string;
-  };
+  }>;
 };
 
 function formatDate(date: Date) {
@@ -55,7 +55,7 @@ function getStatusLabel(status: string) {
 }
 
 export default async function B2BTourDetailPage({ params }: PageProps) {
-  const { id } = params;
+  const { id } = await params;
 
   const tour = await db.tour.findUnique({
     where: { id },

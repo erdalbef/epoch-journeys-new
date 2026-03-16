@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
+import { PhoneInput } from "@/components/shared/form/phoneInput";
 
 type DepartureItem = {
   id: string;
@@ -17,6 +18,20 @@ type BookingFormProps = {
   tourId: string;
   departures: DepartureItem[];
   selectedDepartureId?: string;
+};
+
+type BookingApiResponse = {
+  success: boolean;
+  booking: {
+    id: string;
+    bookingReference: string;
+    status: string;
+    paymentStatus: string;
+    numberOfGuests: number;
+    totalPrice: number;
+    tourTitleSnapshot: string;
+    departureDateSnapshot: string;
+  };
 };
 
 function formatCurrency(value: number) {
@@ -88,12 +103,14 @@ export function BookingForm({
 
   const [customerName, setCustomerName] = useState("");
   const [customerEmail, setCustomerEmail] = useState("");
-  const [customerPhone, setCustomerPhone] = useState("");
+  const [customerPhoneCode, setCustomerPhoneCode] = useState("+90");
+  const [customerPhoneNumber, setCustomerPhoneNumber] = useState("");
 
   const [leadFirstName, setLeadFirstName] = useState("");
   const [leadLastName, setLeadLastName] = useState("");
   const [leadEmail, setLeadEmail] = useState("");
-  const [leadPhone, setLeadPhone] = useState("");
+  const [leadPhoneCode, setLeadPhoneCode] = useState("+90");
+  const [leadPhoneNumber, setLeadPhoneNumber] = useState("");
 
   const [singleRooms, setSingleRooms] = useState(0);
   const [doubleRooms, setDoubleRooms] = useState(0);
@@ -170,10 +187,15 @@ export function BookingForm({
       return;
     }
 
-    if (!customerPhone.trim()) {
-      setError("Client Phone is required.");
+    if (!customerPhoneNumber.trim()) {
+      setError("Main Contact Phone is required.");
       return;
     }
+
+    const customerPhone = `${customerPhoneCode} ${customerPhoneNumber}`.trim();
+    const leadPhone = leadPhoneNumber.trim()
+      ? `${leadPhoneCode} ${leadPhoneNumber}`.trim()
+      : null;
 
     try {
       setIsSubmitting(true);
@@ -186,16 +208,17 @@ export function BookingForm({
         body: JSON.stringify({
           tourId,
           departureDateId,
+          bookingType: "FIT",
           adults,
           children,
           infants,
           customerName: customerName.trim(),
           customerEmail: customerEmail.trim(),
-          customerPhone: customerPhone.trim(),
+          customerPhone,
           leadFirstName: leadFirstName.trim() || null,
           leadLastName: leadLastName.trim() || null,
           leadEmail: leadEmail.trim() || null,
-          leadPhone: leadPhone.trim() || null,
+          leadPhone,
           notes: notes.trim() || null,
           specialRequests: specialRequests.trim() || null,
           landOnly,
@@ -206,18 +229,28 @@ export function BookingForm({
         }),
       });
 
-      const data = await res.json().catch(() => null);
+      const data = (await res.json().catch(() => null)) as
+        | BookingApiResponse
+        | { error?: string }
+        | null;
 
       if (!res.ok) {
-        setError(data?.error || "Booking failed.");
+        setError(
+          (data && "error" in data && data.error) || "Booking failed."
+        );
+        return;
+      }
+
+      if (!data || !("booking" in data) || !data.booking?.id) {
+        setError("Booking was created, but the response was incomplete.");
         return;
       }
 
       setSuccessMessage(
-        `Booking created successfully. Reference: ${data.bookingReference}`
+        `Booking created successfully. Reference: ${data.booking.bookingReference}`
       );
 
-      router.push("/b2b/bookings");
+      router.push(`/b2b/bookings/${data.booking.id}`);
       router.refresh();
     } catch (error) {
       console.error("BOOKING_FORM_ERROR", error);
@@ -402,21 +435,16 @@ export function BookingForm({
               required
             />
           </div>
-
-          <div>
-            <label htmlFor="customerPhone" className="text-sm font-medium">
-              Client Phone
-            </label>
-            <input
-              id="customerPhone"
-              value={customerPhone}
-              onChange={(e) => setCustomerPhone(e.target.value)}
-              className="mt-1 w-full rounded-md border p-2"
-              placeholder="+1 555 123 4567"
-              required
-            />
-          </div>
         </div>
+
+        <PhoneInput
+          label="Main Contact Phone"
+          codeValue={customerPhoneCode}
+          numberValue={customerPhoneNumber}
+          onCodeChange={setCustomerPhoneCode}
+          onNumberChange={setCustomerPhoneNumber}
+          required
+        />
       </section>
 
       <section className="space-y-4">
@@ -466,19 +494,15 @@ export function BookingForm({
               className="mt-1 w-full rounded-md border p-2"
             />
           </div>
-
-          <div>
-            <label htmlFor="leadPhone" className="text-sm font-medium">
-              Phone
-            </label>
-            <input
-              id="leadPhone"
-              value={leadPhone}
-              onChange={(e) => setLeadPhone(e.target.value)}
-              className="mt-1 w-full rounded-md border p-2"
-            />
-          </div>
         </div>
+
+        <PhoneInput
+          label="Lead Traveler Phone"
+          codeValue={leadPhoneCode}
+          numberValue={leadPhoneNumber}
+          onCodeChange={setLeadPhoneCode}
+          onNumberChange={setLeadPhoneNumber}
+        />
       </section>
 
       <section className="space-y-4">

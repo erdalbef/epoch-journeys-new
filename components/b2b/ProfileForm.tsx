@@ -17,6 +17,12 @@ type ApiResponse = {
   error?: string;
 };
 
+type LogoUploadResponse = {
+  success?: boolean;
+  error?: string;
+  logoUrl?: string;
+};
+
 export function ProfileForm({ initialData }: ProfileFormProps) {
   const [isPending, startTransition] = useTransition();
 
@@ -24,10 +30,17 @@ export function ProfileForm({ initialData }: ProfileFormProps) {
   const [email] = useState(initialData.email);
   const [phone, setPhone] = useState(initialData.phone);
   const [travelAgency, setTravelAgency] = useState(initialData.travelAgency);
-  const [agentLogoUrl] = useState(initialData.agentLogoUrl);
+  const [agentLogoUrl, setAgentLogoUrl] = useState(initialData.agentLogoUrl);
+
+  const [logoFile, setLogoFile] = useState<File | null>(null);
+  const [uploadingLogo, setUploadingLogo] = useState(false);
+  const [deletingLogo, setDeletingLogo] = useState(false);
 
   const [successMessage, setSuccessMessage] = useState("");
   const [errorMessage, setErrorMessage] = useState("");
+
+  const [logoSuccessMessage, setLogoSuccessMessage] = useState("");
+  const [logoErrorMessage, setLogoErrorMessage] = useState("");
 
   async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -49,7 +62,13 @@ export function ProfileForm({ initialData }: ProfileFormProps) {
           }),
         });
 
-        const data = (await response.json()) as ApiResponse;
+        let data: ApiResponse = {};
+
+        try {
+          data = (await response.json()) as ApiResponse;
+        } catch {
+          data = { error: "Server returned an unexpected response." };
+        }
 
         if (!response.ok) {
           setErrorMessage(data.error || "Failed to update profile.");
@@ -62,6 +81,83 @@ export function ProfileForm({ initialData }: ProfileFormProps) {
         setErrorMessage("Something went wrong while saving your profile.");
       }
     });
+  }
+
+  async function handleLogoUpload() {
+    if (!logoFile) {
+      setLogoErrorMessage("Please choose a logo file first.");
+      return;
+    }
+
+    setLogoSuccessMessage("");
+    setLogoErrorMessage("");
+    setUploadingLogo(true);
+
+    try {
+      const formData = new FormData();
+      formData.append("logo", logoFile);
+
+      const response = await fetch("/api/b2b/profile/logo", {
+        method: "POST",
+        body: formData,
+      });
+
+      const data = (await response.json()) as LogoUploadResponse;
+
+      if (!response.ok) {
+        setLogoErrorMessage(data.error || "Failed to upload logo.");
+        return;
+      }
+
+      setAgentLogoUrl(data.logoUrl || "");
+      setLogoFile(null);
+      setLogoSuccessMessage("Logo uploaded successfully.");
+    } catch (error) {
+      console.error("PROFILE_LOGO_UPLOAD_CLIENT_ERROR", error);
+      setLogoErrorMessage("Something went wrong while uploading your logo.");
+    } finally {
+      setUploadingLogo(false);
+    }
+  }
+
+  async function handleLogoDelete() {
+    const confirmed = window.confirm(
+      "Are you sure you want to remove your agency logo?"
+    );
+
+    if (!confirmed) return;
+
+    setLogoSuccessMessage("");
+    setLogoErrorMessage("");
+    setDeletingLogo(true);
+
+    try {
+      const response = await fetch("/api/b2b/profile/logo/delete", {
+        method: "DELETE",
+      });
+
+      let data: ApiResponse = {};
+
+      try {
+        data = (await response.json()) as ApiResponse;
+      } catch {
+        data = { error: "Server returned an unexpected response." };
+      }
+
+      if (!response.ok) {
+        setLogoErrorMessage(data.error || "Failed to remove logo.");
+        return;
+      }
+
+      setAgentLogoUrl("");
+      setLogoFile(null);
+      setLogoSuccessMessage("Logo removed successfully.");
+    } catch (error) {
+      console.error("PROFILE_LOGO_DELETE_CLIENT_ERROR", error);
+      setLogoErrorMessage("Something went wrong while removing your logo.");
+    } finally {
+      setDeletingLogo(false);
+    }
   }
 
   return (
@@ -142,8 +238,7 @@ export function ProfileForm({ initialData }: ProfileFormProps) {
         <div className="rounded-2xl border border-dashed border-gray-300 p-5">
           <h2 className="text-sm font-semibold text-[#001F3F]">Agency Logo</h2>
           <p className="mt-1 text-sm text-gray-600">
-            In the next step, we will add logo upload here. Once uploaded, your
-            logo will appear on client-facing vouchers.
+            Upload your agency logo to personalize client-facing vouchers.
           </p>
 
           {agentLogoUrl ? (
@@ -161,6 +256,63 @@ export function ProfileForm({ initialData }: ProfileFormProps) {
           ) : (
             <p className="mt-3 text-sm text-gray-500">No logo uploaded yet.</p>
           )}
+
+          <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-center">
+            <input
+              type="file"
+              accept="image/png,image/jpeg,image/jpg"
+              onChange={(e) => {
+                if (e.target.files && e.target.files[0]) {
+                  setLogoFile(e.target.files[0]);
+                  setLogoSuccessMessage("");
+                  setLogoErrorMessage("");
+                }
+              }}
+              className="block text-sm text-gray-700 file:mr-4 file:rounded-lg file:border-0 file:bg-[#001F3F] file:px-4 file:py-2 file:text-sm file:font-medium file:text-white hover:file:opacity-90"
+            />
+
+            <button
+              type="button"
+              onClick={handleLogoUpload}
+              disabled={!logoFile || uploadingLogo}
+              className="rounded-xl bg-[#001F3F] px-4 py-2 text-sm font-medium text-white transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {uploadingLogo ? "Uploading..." : "Upload Logo"}
+            </button>
+
+            {agentLogoUrl ? (
+              <button
+                type="button"
+                onClick={handleLogoDelete}
+                disabled={deletingLogo}
+                className="rounded-xl border border-red-300 px-4 py-2 text-sm font-medium text-red-700 transition hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {deletingLogo ? "Removing..." : "Remove Logo"}
+              </button>
+            ) : null}
+          </div>
+
+          {logoFile ? (
+            <p className="mt-2 text-xs text-gray-500">
+              Selected file: {logoFile.name}
+            </p>
+          ) : null}
+
+          <p className="mt-2 text-xs text-gray-500">
+            Recommended: PNG with transparent background, maximum 2 MB.
+          </p>
+
+          {logoErrorMessage ? (
+            <div className="mt-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+              {logoErrorMessage}
+            </div>
+          ) : null}
+
+          {logoSuccessMessage ? (
+            <div className="mt-4 rounded-xl border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-700">
+              {logoSuccessMessage}
+            </div>
+          ) : null}
         </div>
 
         {errorMessage ? (

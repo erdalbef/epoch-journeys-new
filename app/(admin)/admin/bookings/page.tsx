@@ -6,16 +6,17 @@ import { authOptions } from "@/lib/authOptions";
 import { db } from "@/lib/db";
 
 type SearchParams = {
-  type?: string;
+  q?: string;
   status?: string;
   payment?: string;
-  q?: string;
+  type?: string;
 };
 
-function formatCurrency(value: number) {
+function formatCurrency(value: number, currency = "EUR") {
   return new Intl.NumberFormat("en-US", {
     style: "currency",
-    currency: "EUR",
+    currency,
+    maximumFractionDigits: 0,
   }).format(value);
 }
 
@@ -28,20 +29,21 @@ function formatDate(value: Date | string) {
 }
 
 function buildUrl(params: {
-  type?: string;
+  q?: string;
   status?: string;
   payment?: string;
-  q?: string;
+  type?: string;
 }) {
   const search = new URLSearchParams();
 
-  if (params.type) search.set("type", params.type);
+  if (params.q) search.set("q", params.q);
   if (params.status) search.set("status", params.status);
   if (params.payment) search.set("payment", params.payment);
-  if (params.q) search.set("q", params.q);
+  if (params.type) search.set("type", params.type);
 
   const query = search.toString();
-  return query ? `/b2b/bookings?${query}` : "/b2b/bookings";
+
+  return query ? `/admin/bookings?${query}` : "/admin/bookings";
 }
 
 function FilterLink({
@@ -93,39 +95,20 @@ function getPaymentStatusClass(status: string) {
   }
 }
 
-export default async function B2BBookingsPage({
+export default async function AdminBookingsPage({
   searchParams,
 }: {
   searchParams?: Promise<SearchParams>;
 }) {
   const session = await getServerSession(authOptions);
 
-  if (!session?.user?.id) {
-    redirect("/agent-login");
-  }
-
-  const user = await db.user.findUnique({
-    where: { id: session.user.id },
-    select: {
-      id: true,
-      role: true,
-      approved: true,
-      status: true,
-      fullName: true,
-      travelAgency: true,
-    },
-  });
-
-  if (!user || user.role !== "AGENT" || !user.approved || user.status !== "ACTIVE") {
-    redirect("/agent-login");
+  if (!session?.user?.id || session.user.role !== "ADMIN") {
+    redirect("/admin-login");
   }
 
   const resolvedSearchParams = (await searchParams) ?? {};
 
-  const selectedType =
-    resolvedSearchParams.type === "FIT" || resolvedSearchParams.type === "GROUP"
-      ? resolvedSearchParams.type
-      : "";
+  const query = resolvedSearchParams.q?.trim() ?? "";
 
   const selectedStatus =
     resolvedSearchParams.status === "PENDING" ||
@@ -144,14 +127,16 @@ export default async function B2BBookingsPage({
       ? resolvedSearchParams.payment
       : "";
 
-  const query = resolvedSearchParams.q?.trim() ?? "";
+  const selectedType =
+    resolvedSearchParams.type === "FIT" || resolvedSearchParams.type === "GROUP"
+      ? resolvedSearchParams.type
+      : "";
 
   const bookings = await db.booking.findMany({
     where: {
-      userId: user.id,
-      ...(selectedType ? { bookingType: selectedType } : {}),
       ...(selectedStatus ? { status: selectedStatus } : {}),
       ...(selectedPayment ? { paymentStatus: selectedPayment } : {}),
+      ...(selectedType ? { bookingType: selectedType } : {}),
       ...(query
         ? {
             OR: [
@@ -174,31 +159,25 @@ export default async function B2BBookingsPage({
                 },
               },
               {
-                customerName: {
-                  contains: query,
-                  mode: "insensitive",
-                },
-              },
-              {
                 agencyNameSnapshot: {
                   contains: query,
                   mode: "insensitive",
                 },
               },
               {
-                leadFirstName: {
-                  contains: query,
-                  mode: "insensitive",
-                },
-              },
-              {
-                leadLastName: {
+                customerName: {
                   contains: query,
                   mode: "insensitive",
                 },
               },
               {
                 groupName: {
+                  contains: query,
+                  mode: "insensitive",
+                },
+              },
+              {
+                agentNameSnapshot: {
                   contains: query,
                   mode: "insensitive",
                 },
@@ -224,9 +203,9 @@ export default async function B2BBookingsPage({
       departureDateSnapshot: true,
       seasonSnapshot: true,
       tourTitleSnapshot: true,
+      agencyNameSnapshot: true,
+      agentNameSnapshot: true,
       customerName: true,
-      leadFirstName: true,
-      leadLastName: true,
       groupName: true,
       createdAt: true,
     },
@@ -243,28 +222,12 @@ export default async function B2BBookingsPage({
   return (
     <div className="space-y-8">
       <section className="rounded-2xl border bg-white p-6 shadow-sm">
-        <div className="flex flex-col gap-6 lg:flex-row lg:items-end lg:justify-between">
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
           <div>
-            <h1 className="text-3xl font-bold text-[#001F3F]">My Bookings</h1>
+            <h1 className="text-3xl font-bold text-[#001F3F]">All Bookings</h1>
             <p className="mt-2 text-sm text-muted-foreground">
-              Review FIT and group bookings, track status, payments, and departure details.
+              Monitor all FIT and group bookings across agents, tours, and departures.
             </p>
-          </div>
-
-          <div className="flex flex-wrap gap-3">
-            <Link
-              href="/b2b/bookings/new-fit"
-              className="rounded-xl bg-[#8B0000] px-4 py-2 text-sm font-medium text-white transition hover:bg-[#6f0000]"
-            >
-              New FIT Booking
-            </Link>
-
-            <Link
-              href="/b2b/bookings/new-group"
-              className="rounded-xl border px-4 py-2 text-sm font-medium transition hover:border-[#8B0000] hover:text-[#8B0000]"
-            >
-              New Group Booking
-            </Link>
           </div>
         </div>
       </section>
@@ -313,7 +276,7 @@ export default async function B2BBookingsPage({
                 id="q"
                 name="q"
                 defaultValue={query}
-                placeholder="Search by display reference, official reference, tour, customer, leader, or group name"
+                placeholder="Search by display reference, official reference, tour, agency, customer, group, or agent"
                 className="w-full rounded-xl border px-4 py-2 text-sm outline-none transition focus:border-[#8B0000]"
               />
             </div>
@@ -389,7 +352,7 @@ export default async function B2BBookingsPage({
               </button>
 
               <Link
-                href="/b2b/bookings"
+                href="/admin/bookings"
                 className="w-full rounded-xl border px-4 py-2 text-center text-sm font-medium transition hover:border-[#8B0000] hover:text-[#8B0000]"
               >
                 Reset
@@ -400,30 +363,30 @@ export default async function B2BBookingsPage({
           <div className="flex flex-wrap gap-2">
             <FilterLink
               href={buildUrl({
-                type: "",
+                q: query,
                 status: selectedStatus,
                 payment: selectedPayment,
-                q: query,
+                type: "",
               })}
               label="All Types"
               active={!selectedType}
             />
             <FilterLink
               href={buildUrl({
-                type: "FIT",
+                q: query,
                 status: selectedStatus,
                 payment: selectedPayment,
-                q: query,
+                type: "FIT",
               })}
               label="FIT"
               active={selectedType === "FIT"}
             />
             <FilterLink
               href={buildUrl({
-                type: "GROUP",
+                q: query,
                 status: selectedStatus,
                 payment: selectedPayment,
-                q: query,
+                type: "GROUP",
               })}
               label="GROUP"
               active={selectedType === "GROUP"}
@@ -446,13 +409,15 @@ export default async function B2BBookingsPage({
           </div>
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[1200px] text-sm">
+            <table className="w-full min-w-[1300px] text-sm">
               <thead>
                 <tr className="border-b text-left text-muted-foreground">
                   <th className="pb-3 pr-4 font-medium">Reference</th>
                   <th className="pb-3 pr-4 font-medium">Type</th>
                   <th className="pb-3 pr-4 font-medium">Tour</th>
-                  <th className="pb-3 pr-4 font-medium">Client / Group</th>
+                  <th className="pb-3 pr-4 font-medium">Agency</th>
+                  <th className="pb-3 pr-4 font-medium">Agent</th>
+                  <th className="pb-3 pr-4 font-medium">Customer / Group</th>
                   <th className="pb-3 pr-4 font-medium">Guests</th>
                   <th className="pb-3 pr-4 font-medium">Booking Status</th>
                   <th className="pb-3 pr-4 font-medium">Payment</th>
@@ -463,20 +428,17 @@ export default async function B2BBookingsPage({
               </thead>
               <tbody>
                 {bookings.map((booking) => {
-                  const clientLabel =
-                    booking.groupName ||
-                    booking.customerName ||
-                    `${booking.leadFirstName ?? ""} ${booking.leadLastName ?? ""}`.trim() ||
-                    "-";
-
                   const displayedReference =
                     booking.bookingDisplayCode || booking.bookingReference;
+
+                  const clientLabel =
+                    booking.groupName || booking.customerName || "-";
 
                   return (
                     <tr key={booking.id} className="border-b last:border-b-0">
                       <td className="py-3 pr-4">
                         <Link
-                          href={`/b2b/bookings/${booking.id}`}
+                          href={`/admin/bookings/${booking.id}`}
                           className="block hover:text-[#8B0000]"
                         >
                           <div className="font-medium text-[#001F3F]">
@@ -501,11 +463,21 @@ export default async function B2BBookingsPage({
                           {booking.tourTitleSnapshot}
                         </div>
                         <div className="text-xs text-slate-500">
-                          {booking.seasonSnapshot}
+                          {booking.createdAt ? `Created ${formatDate(booking.createdAt)}` : ""}
                         </div>
                       </td>
 
-                      <td className="py-3 pr-4 text-muted-foreground">{clientLabel}</td>
+                      <td className="py-3 pr-4 text-muted-foreground">
+                        {booking.agencyNameSnapshot || "-"}
+                      </td>
+
+                      <td className="py-3 pr-4 text-muted-foreground">
+                        {booking.agentNameSnapshot || "-"}
+                      </td>
+
+                      <td className="py-3 pr-4 text-muted-foreground">
+                        {clientLabel}
+                      </td>
 
                       <td className="py-3 pr-4">{booking.numberOfGuests}</td>
 
@@ -526,11 +498,11 @@ export default async function B2BBookingsPage({
                       </td>
 
                       <td className="py-3 pr-4 font-medium text-slate-800">
-                        {formatCurrency(booking.totalPrice)}
+                        {formatCurrency(booking.totalPrice, booking.currency)}
                       </td>
 
                       <td className="py-3 pr-4 font-medium text-green-700">
-                        {formatCurrency(booking.commissionAmount)}
+                        {formatCurrency(booking.commissionAmount, booking.currency)}
                       </td>
                     </tr>
                   );

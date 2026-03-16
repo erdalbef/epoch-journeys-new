@@ -6,12 +6,12 @@ import { redirect } from "next/navigation";
 import { BookingForm } from "./BookingForm";
 
 type PageProps = {
-  params: {
+  params: Promise<{
     id: string;
-  };
-  searchParams?: {
+  }>;
+  searchParams?: Promise<{
     departureId?: string;
-  };
+  }>;
 };
 
 function formatDate(date: Date) {
@@ -86,8 +86,9 @@ export default async function BookTourPage({
     redirect("/agent-login");
   }
 
-  const { id } = params;
-  const departureId = searchParams?.departureId;
+  const { id } = await params;
+  const resolvedSearchParams = (await searchParams) ?? {};
+  const departureId = resolvedSearchParams.departureId;
 
   const tour = await db.tour.findUnique({
     where: { id },
