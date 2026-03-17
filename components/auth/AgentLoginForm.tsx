@@ -1,20 +1,21 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useState, type FormEvent } from "react";
 import { signIn } from "next-auth/react";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+
+type Props = {
+  callbackUrl: string;
+};
 
 function isValidEmail(email: string) {
   return /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(email.trim().toLowerCase());
 }
 
-export function AgentLoginForm() {
+export function AgentLoginForm({ callbackUrl }: Props) {
   const router = useRouter();
-  const searchParams = useSearchParams();
-  const callbackUrl =
-    searchParams.get("callbackUrl") ?? "/b2b/dashboard";
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -22,20 +23,21 @@ export function AgentLoginForm() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const emailNormalized = useMemo(
-    () => email.trim().toLowerCase(),
-    [email]
-  );
+  const emailNormalized = useMemo(() => email.trim().toLowerCase(), [email]);
 
   const emailError = useMemo(() => {
     if (!emailNormalized) return "Email is required.";
-    if (!isValidEmail(emailNormalized))
+    if (!isValidEmail(emailNormalized)) {
       return "Please enter a valid email address.";
+    }
     return null;
   }, [emailNormalized]);
 
-  async function onSubmit(e: React.FormEvent<HTMLFormElement>) {
+  async function onSubmit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
+
+    if (loading) return;
+
     setError(null);
 
     if (emailError) {
@@ -59,22 +61,23 @@ export function AgentLoginForm() {
 
     setLoading(false);
 
-    if (!res || res.error) {
-      // ✅ Agent-specific messaging
-      setError(
-        "Invalid credentials or your account is still pending approval."
-      );
+    if (!res || res.error || res.ok === false) {
+      setError("Invalid credentials or your account is still pending approval.");
       return;
     }
 
-    router.push(callbackUrl);
+    router.push(res.url ?? callbackUrl);
+    router.refresh();
   }
 
   return (
     <form onSubmit={onSubmit} className="mt-6 space-y-4">
       <div className="space-y-2">
-        <label className="text-sm font-medium">Email</label>
+        <label htmlFor="agent-email" className="text-sm font-medium">
+          Email
+        </label>
         <Input
+          id="agent-email"
           type="email"
           value={email}
           onChange={(e) => setEmail(e.target.value)}
@@ -88,8 +91,11 @@ export function AgentLoginForm() {
       </div>
 
       <div className="space-y-2">
-        <label className="text-sm font-medium">Password</label>
+        <label htmlFor="agent-password" className="text-sm font-medium">
+          Password
+        </label>
         <Input
+          id="agent-password"
           type="password"
           value={password}
           onChange={(e) => setPassword(e.target.value)}

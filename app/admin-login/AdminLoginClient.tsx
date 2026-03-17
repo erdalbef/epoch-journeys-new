@@ -5,7 +5,13 @@ import { AdminLoginForm } from "./AdminLoginForm";
 
 export default function AdminLoginClient() {
   const searchParams = useSearchParams();
-  const callbackUrl = searchParams.get("callbackUrl") ?? "/admin/dashboard";
+
+  const rawCallback = searchParams.get("callbackUrl");
+
+  const callbackUrl =
+    rawCallback && rawCallback.startsWith("/")
+      ? rawCallback
+      : "/admin/dashboard";
 
   return <AdminLoginForm callbackUrl={callbackUrl} />;
 }

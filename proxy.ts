@@ -6,11 +6,12 @@ export default withAuth(
     const token = req.nextauth.token;
     const { pathname } = req.nextUrl;
 
-    console.log("MIDDLEWARE_PATH:", pathname);
-    console.log("MIDDLEWARE_ROLE:", token?.role);
-    console.log("MIDDLEWARE_APPROVED:", token?.approved);
+    // Public login pages should never be blocked
+    if (pathname === "/admin-login" || pathname === "/agent-login") {
+      return NextResponse.next();
+    }
 
-    // 🚫 Not logged in
+    // Not logged in
     if (!token) {
       if (pathname.startsWith("/admin")) {
         return NextResponse.redirect(new URL("/admin-login", req.url));
@@ -23,14 +24,14 @@ export default withAuth(
       return NextResponse.next();
     }
 
-    // 🔐 ADMIN routes
+    // Admin routes
     if (pathname.startsWith("/admin")) {
       if (token.role !== "ADMIN") {
         return NextResponse.redirect(new URL("/admin-login", req.url));
       }
     }
 
-    // 🔐 B2B routes (Agents only)
+    // B2B routes
     if (pathname.startsWith("/b2b")) {
       if (token.role !== "AGENT" || token.approved !== true) {
         return NextResponse.redirect(new URL("/agent-login", req.url));
@@ -41,7 +42,7 @@ export default withAuth(
   },
   {
     callbacks: {
-      authorized: () => true, // we handle logic above
+      authorized: () => true,
     },
   }
 );

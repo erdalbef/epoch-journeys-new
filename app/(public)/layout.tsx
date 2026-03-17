@@ -4,9 +4,11 @@ import { PublicFooter } from "@/components/public/PublicFooter";
 
 export default function PublicLayout({ children }: { children: ReactNode }) {
   return (
-    <div className="min-h-dvh bg-background text-foreground">
+    <div className="min-h-dvh flex flex-col bg-white text-black">
       <PublicHeader />
-      <main>{children}</main>
+
+      <main className="flex-1">{children}</main>
+
       <PublicFooter />
     </div>
   );
