@@ -32,37 +32,28 @@ export function PublicFooter() {
             <h3 className="text-lg font-semibold">Quick Links</h3>
             <ul className="mt-4 space-y-3 text-sm text-white/75">
               <li>
-                <Link href="/pages/about" className="transition hover:text-white">
+                <Link href="/pages/about" className="hover:text-white">
                   About
                 </Link>
               </li>
               <li>
-                <Link
-                  href="/request-partnership"
-                  className="transition hover:text-white"
-                >
+                <Link href="/themes" className="hover:text-white">
+                  Themes
+                </Link>
+              </li>
+              <li>
+                <Link href="/destinations" className="hover:text-white">
+                  Destinations
+                </Link>
+              </li>
+              <li>
+                <Link href="/why-partner" className="hover:text-white">
+                  Why Partner
+                </Link>
+              </li>
+              <li>
+                <Link href="/request-partnership" className="hover:text-white">
                   Request Partnership
-                </Link>
-              </li>
-              <li>
-                <Link
-                  href="/pages/contact"
-                  className="transition hover:text-white"
-                >
-                  Contact
-                </Link>
-              </li>
-              <li>
-                <Link
-                  href="/legal/privacy"
-                  className="transition hover:text-white"
-                >
-                  Privacy Policy
-                </Link>
-              </li>
-              <li>
-                <Link href="/legal/terms" className="transition hover:text-white">
-                  Terms & Conditions
                 </Link>
               </li>
             </ul>
@@ -74,14 +65,13 @@ export function PublicFooter() {
 
             <div className="mt-4 space-y-2 text-sm text-white/75">
               <p>Epoch Journeys OOD</p>
-
               <p>107 Tsar Boris III Blvd, Floor 7</p>
               <p>Sofia 1612, Bulgaria</p>
 
               <p className="pt-2">
                 <a
                   href="mailto:info@epochjourneys.com"
-                  className="transition hover:text-white"
+                  className="hover:text-white"
                 >
                   info@epochjourneys.com
                 </a>
@@ -91,7 +81,7 @@ export function PublicFooter() {
                 <a
                   href="https://www.epochjourneys.com"
                   target="_blank"
-                  className="transition hover:text-white"
+                  className="hover:text-white"
                 >
                   www.epochjourneys.com
                 </a>
@@ -102,7 +92,7 @@ export function PublicFooter() {
         </div>
 
         <div className="mt-10">
-          <Separator className="bg-white/15" />
+          <Separator className="bg-white/20" />
         </div>
 
         <div className="mt-6 flex flex-col gap-3 text-sm text-white/60 sm:flex-row sm:items-center sm:justify-between">

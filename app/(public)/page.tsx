@@ -6,12 +6,14 @@ export default function HomePage() {
       {/* Hero */}
       <section className="relative isolate min-h-[84vh] overflow-hidden">
         <div
-          className="absolute inset-0 bg-cover bg-center"
+          className="absolute inset-0 bg-cover bg-center brightness-90"
           style={{
             backgroundImage: "url('/images/home-hero.jpg')",
           }}
         />
-        <div className="absolute inset-0 bg-[#001F3F]/25" />
+
+        <div className="absolute inset-0 bg-[#001F3F]/40" />
+        <div className="pointer-events-none absolute inset-x-0 bottom-0 h-48 bg-gradient-to-b from-transparent to-white" />
 
         <div className="relative flex min-h-[84vh] items-center">
           <div className="mx-auto w-full max-w-7xl px-6 py-24 sm:px-10 lg:px-16 lg:py-28">
@@ -20,7 +22,7 @@ export default function HomePage() {
                 Epoch Journeys
               </p>
 
-              <h1 className="text-4xl font-semibold leading-tight sm:text-5xl lg:text-6xl">
+              <h1 className="max-w-2xl text-4xl font-semibold leading-tight sm:text-5xl lg:text-6xl">
                 Curated cultural, historical, and pilgrimage travel experiences
                 across Europe.
               </h1>
@@ -32,7 +34,7 @@ export default function HomePage() {
               <div className="mt-8 flex flex-wrap gap-4">
                 <Link
                   href="/request-partnership"
-                  className="rounded-full bg-[#8B0000] px-6 py-3 text-sm font-medium text-white transition hover:bg-[#6f0000]"
+                  className="rounded-full bg-[#8B0000] px-6 py-3 text-sm font-medium text-white shadow-lg transition hover:bg-[#6f0000]"
                 >
                   Request Partnership
                 </Link>
@@ -73,7 +75,7 @@ export default function HomePage() {
           <div className="mt-8">
             <Link
               href="/request-partnership"
-              className="inline-flex rounded-full bg-[#8B0000] px-6 py-3 text-sm font-medium text-white transition hover:bg-[#6f0000]"
+              className="inline-flex rounded-full bg-[#8B0000] px-6 py-3 text-sm font-medium text-white shadow-lg transition hover:bg-[#6f0000]"
             >
               Join Early Access
             </Link>
