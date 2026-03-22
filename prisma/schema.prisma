@@ -307,3 +307,10 @@ enum PricingType {
   FIT_FIXED
   FIT_TIERED
 }
+
+enum Season {
+  LOW
+  SHOULDER
+  HIGH
+  PEAK
+}
