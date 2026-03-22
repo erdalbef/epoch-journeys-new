@@ -1,15 +1,16 @@
+import "server-only";
 import { PrismaClient } from "@prisma/client";
 
 const globalForPrisma = globalThis as unknown as {
-  prisma: PrismaClient | undefined;
+  db: PrismaClient | undefined;
 };
 
 export const db =
-  globalForPrisma.prisma ??
+  globalForPrisma.db ??
   new PrismaClient({
     log: ["error", "warn"],
   });
 
 if (process.env.NODE_ENV !== "production") {
-  globalForPrisma.prisma = db;
+  globalForPrisma.db = db;
 }

@@ -3,8 +3,9 @@ generator client {
 }
 
 datasource db {
-  provider = "postgresql"
-  url      = env("DATABASE_URL")
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
 }
 
 model User {
@@ -51,6 +52,11 @@ model Tour {
   tourIntroduction  String?
   tourSignificance  String?
   destinationBriefs String?
+
+  pricingType       PricingType @default(FIXED_GROUP)
+  basePrice         Float?
+  pricingTiers      PricingTier[]
+
   highlights        String[]
   inclusions        String[]
   exclusions        String[]
@@ -226,6 +232,15 @@ model Passenger {
   @@index([bookingId])
 }
 
+model PricingTier {
+  id      String @id @default(cuid())
+  tourId  String
+  minPax  Int
+  maxPax  Int
+  price   Float
+
+  tour    Tour @relation(fields: [tourId], references: [id], onDelete: Cascade)
+}
 
 enum DepartureStatus {
   EARLY_BOOKING
@@ -283,4 +298,12 @@ enum CustomRequestStatus {
 enum CustomRequestType {
   TAILOR_MADE
   BESPOKE_GROUP
+}
+
+enum PricingType {
+  FIXED_GROUP
+  GROUP_BASED
+  FIT_DYNAMIC
+  FIT_FIXED
+  FIT_TIERED
 }

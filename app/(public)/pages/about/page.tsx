@@ -1,127 +1,179 @@
+import Link from "next/link";
+import Image from "next/image";
+
+const principles = [
+  {
+    title: "Travel with Meaning",
+    text: "We design journeys that connect travelers with the deeper cultural and historical context of each destination.",
+  },
+  {
+    title: "Designed with Purpose",
+    text: "Our itineraries are structured around clear themes and real audience needs, not generic touring.",
+  },
+  {
+    title: "Built for Professionals",
+    text: "We work exclusively with travel professionals, focusing on clarity, reliability, and long-term collaboration.",
+  },
+];
+
 export default function AboutPage() {
   return (
-    <main className="bg-white text-black">
-      {/* Hero */}
-      <section className="mx-auto max-w-5xl px-6 pt-16 text-center sm:px-10 lg:px-16">
-        <p className="text-sm font-medium uppercase tracking-[0.22em] text-[#8B0000]">
-          About Us
+    <main className="bg-[#f8f9fb] text-black">
+      
+      {/* HERO */}
+      <section className="mx-auto max-w-5xl px-6 pt-24 pb-16 text-center">
+        <p className="text-xs font-semibold uppercase tracking-[0.3em] text-[#8B0000]">
+          About
         </p>
 
         <h1 className="mt-4 text-4xl font-semibold text-[#001F3F] sm:text-5xl">
-          Travel with context, meaning, and purpose
+          Travel designed with context, purpose, and professional care
         </h1>
 
-        <p className="mx-auto mt-6 max-w-3xl text-base leading-7 text-gray-600 sm:text-lg">
-          Epoch Journeys designs cultural, historical, and pilgrimage travel
-          experiences across Europe, built for travel advisors, tour operators,
-          and group leaders.
+        <p className="mx-auto mt-6 max-w-3xl text-lg leading-8 text-gray-600">
+          Epoch Journeys is a B2B travel company focused on cultural,
+          historical, and pilgrimage programs across Europe and the
+          Mediterranean, developed exclusively for travel professionals.
         </p>
       </section>
 
-      {/* Philosophy */}
-      <section className="mx-auto max-w-4xl px-6 py-20 text-center sm:px-10 lg:px-16">
-        <div className="space-y-6">
-          <p className="text-lg leading-8 text-gray-700 sm:text-xl">
-            Travel is not only about moving from place to place.
-          </p>
+      {/* PRINCIPLES */}
+      <section className="mx-auto max-w-7xl px-6 pb-24">
+        <div className="grid gap-8 md:grid-cols-3">
+          {principles.map((item) => (
+            <div
+              key={item.title}
+              className="rounded-2xl border border-gray-200/70 bg-white p-7 shadow-[0_8px_24px_rgba(0,0,0,0.04)]"
+            >
+              <h2 className="text-xl font-semibold text-[#001F3F]">
+                {item.title}
+              </h2>
 
-          <p className="text-lg leading-8 text-gray-700 sm:text-xl">
-            It is about understanding the civilizations, traditions, and beliefs
-            that shaped the world.
-          </p>
+              <p className="mt-4 text-sm leading-7 text-gray-600">
+                {item.text}
+              </p>
+            </div>
+          ))}
+        </div>
+      </section>
 
-          <p className="text-lg leading-8 text-gray-700 sm:text-xl">
-            Our journeys are designed to provide depth, context, and a meaningful
-            connection with each destination.
+      {/* SHORT PERSPECTIVE (SIMPLIFIED) */}
+      <section className="bg-white py-24">
+        <div className="mx-auto max-w-4xl px-6 text-center">
+          <h2 className="text-3xl font-semibold text-[#001F3F]">
+            Our Perspective
+          </h2>
+
+          <p className="mt-6 text-lg leading-8 text-gray-600">
+            We believe that travel should offer more than movement between
+            destinations. It should create understanding, connection, and
+            meaning. This is especially important in cultural and pilgrimage
+            travel, where the quality of a journey depends on how well it is
+            designed, structured, and delivered.
           </p>
         </div>
       </section>
 
-      {/* What We Do */}
-      <section className="mx-auto max-w-6xl px-6 py-16 sm:px-10 lg:px-16">
-        <div className="mx-auto max-w-2xl text-center">
-          <p className="text-sm font-medium uppercase tracking-[0.22em] text-[#8B0000]">
-            What We Do
+      {/* TEAM / LEADERSHIP */}
+      <section className="mx-auto max-w-6xl px-6 py-24">
+        <div className="text-center">
+          <p className="text-xs font-semibold uppercase tracking-[0.28em] text-[#8B0000]">
+            Leadership
           </p>
 
-          <h2 className="mt-3 text-3xl font-semibold text-[#001F3F] sm:text-4xl">
-            Specialized travel programs
+          <h2 className="mt-4 text-3xl font-semibold text-[#001F3F]">
+            The people behind Epoch Journeys
           </h2>
         </div>
 
-        <div className="mt-12 grid gap-6 md:grid-cols-3">
-          <div className="rounded-2xl border p-6">
-            <h3 className="text-lg font-semibold text-[#001F3F]">
-              Cultural Journeys
+        <div className="mt-12 grid gap-10 md:grid-cols-2 lg:grid-cols-3">
+          
+          {/* ERDAL */}
+          <div className="text-center">
+            <Image
+              src="/team/erdal.jpg"
+              alt="Erdal Vardarli"
+              width={160}
+              height={160}
+              className="mx-auto h-32 w-32 rounded-full object-cover"
+            />
+
+            <h3 className="mt-4 text-lg font-semibold text-[#001F3F]">
+              Erdal Vardarli
             </h3>
-            <p className="mt-3 text-sm text-gray-600 leading-7">
-              Exploring art, architecture, traditions, and local life across
-              Europe.
+
+            <p className="text-sm text-[#8B0000]">Managing Director</p>
+
+            <p className="mt-3 text-sm leading-7 text-gray-600">
+              Background in pilgrimage and cultural travel, specializing in
+              program design, operations, and international B2B partnerships.
             </p>
           </div>
 
-          <div className="rounded-2xl border p-6">
-            <h3 className="text-lg font-semibold text-[#001F3F]">
-              Historical Programs
+          {/* OKAN */}
+          <div className="text-center">
+            <Image
+              src="/team/okan.jpg"
+              alt="Okan Cuhan"
+              width={160}
+              height={160}
+              className="mx-auto h-32 w-32 rounded-full object-cover"
+            />
+
+            <h3 className="mt-4 text-lg font-semibold text-[#001F3F]">
+              Okan Cuhan
             </h3>
-            <p className="mt-3 text-sm text-gray-600 leading-7">
-              Travel shaped around civilizations, empires, and key historical
-              periods.
+
+            <p className="text-sm text-[#8B0000]">Operations & Guiding</p>
+
+            <p className="mt-3 text-sm leading-7 text-gray-600">
+              Active professional tour guide with strong expertise in cultural
+              and historical programs across Turkey and surrounding regions.
             </p>
           </div>
 
-          <div className="rounded-2xl border p-6">
-            <h3 className="text-lg font-semibold text-[#001F3F]">
-              Pilgrimage Tours
+          {/* MERT */}
+          <div className="text-center">
+            <Image
+              src="/team/mert.jpg"
+              alt="Mert"
+              width={160}
+              height={160}
+              className="mx-auto h-32 w-32 rounded-full object-cover"
+            />
+
+            <h3 className="mt-4 text-lg font-semibold text-[#001F3F]">
+              Mert
             </h3>
-            <p className="mt-3 text-sm text-gray-600 leading-7">
-              Carefully designed journeys to Christian heritage and sacred
-              destinations.
+
+            <p className="text-sm text-[#8B0000]">European Operations</p>
+
+            <p className="mt-3 text-sm leading-7 text-gray-600">
+              Responsible for coordination and supplier management across Europe,
+              supporting cost control and operational planning.
             </p>
           </div>
-        </div>
-      </section>
-
-      {/* Approach */}
-      <section className="mx-auto max-w-5xl px-6 py-20 sm:px-10 lg:px-16">
-        <div className="space-y-6 text-center">
-          <p className="text-sm font-medium uppercase tracking-[0.22em] text-[#8B0000]">
-            Our Approach
-          </p>
-
-          <h2 className="text-3xl font-semibold text-[#001F3F] sm:text-4xl">
-            Built for travel professionals
-          </h2>
-
-          <p className="mx-auto max-w-3xl text-base leading-7 text-gray-600">
-            We work exclusively with travel advisors, agencies, and group
-            leaders, providing structured, reliable, and well-managed travel
-            programs. Our focus is on operational excellence, strong local
-            partnerships, and long-term collaboration.
-          </p>
         </div>
       </section>
 
       {/* CTA */}
-      <section className="bg-[#001F3F]">
-        <div className="mx-auto max-w-5xl px-6 py-20 text-center text-white sm:px-10 lg:px-16">
-          <h2 className="text-3xl font-semibold sm:text-4xl">
-            Work with Epoch Journeys
-          </h2>
+      <section className="mx-auto max-w-4xl px-6 pb-24 text-center">
+        <h2 className="text-3xl font-semibold text-[#001F3F]">
+          Let’s build meaningful travel programs together
+        </h2>
 
-          <p className="mx-auto mt-5 max-w-2xl text-base text-white/80">
-            We collaborate with travel professionals to deliver meaningful and
-            well-structured travel experiences across Europe.
-          </p>
+        <p className="mt-6 text-lg text-gray-600">
+          We work with travel professionals to deliver structured, reliable,
+          and thoughtfully designed travel experiences.
+        </p>
 
-          <div className="mt-8">
-            <a
-              href="/request-partnership"
-              className="inline-flex rounded-full bg-[#8B0000] px-6 py-3 text-sm font-medium text-white hover:bg-[#6f0000]"
-            >
-              Request Partnership
-            </a>
-          </div>
+        <div className="mt-8">
+          <Link
+            href="/request-partnership"
+            className="rounded-full bg-[#8B0000] px-8 py-3.5 text-sm font-semibold text-white shadow-md hover:bg-[#6f0000]"
+          >
+            Request Partnership
+          </Link>
         </div>
       </section>
     </main>

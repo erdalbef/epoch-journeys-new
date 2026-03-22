@@ -3,29 +3,26 @@ import { Resend } from "resend";
 
 const resend = new Resend(process.env.RESEND_API_KEY);
 
-type RequestPartnershipBody = {
-  fullName?: string;
-  email?: string;
-  agency?: string;
-  country?: string;
-  message?: string;
-};
-
 function isValidEmail(email: string) {
   return /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(email.trim().toLowerCase());
 }
 
 export async function POST(request: Request) {
   try {
-    const body = (await request.json()) as RequestPartnershipBody;
+    const formData = await request.formData();
 
-    const fullName = body.fullName?.trim() ?? "";
-    const email = body.email?.trim().toLowerCase() ?? "";
-    const agency = body.agency?.trim() ?? "";
-    const country = body.country?.trim() ?? "";
-    const message = body.message?.trim() ?? "";
+    const name = formData.get("name")?.toString().trim() ?? "";
+    const email = formData.get("email")?.toString().trim().toLowerCase() ?? "";
+    const countryCode = formData.get("countryCode")?.toString().trim() ?? "";
+    const phone = formData.get("phone")?.toString().trim() ?? "";
+    const agency = formData.get("agency")?.toString().trim() ?? "";
+    const country = formData.get("country")?.toString().trim() ?? "";
+    const website = formData.get("website")?.toString().trim() ?? "";
+    const partnerType = formData.get("partnerType")?.toString().trim() ?? "";
+    const membership = formData.get("membership")?.toString().trim() ?? "";
+    const message = formData.get("message")?.toString().trim() ?? "";
 
-    if (!fullName) {
+    if (!name) {
       return NextResponse.json(
         { success: false, message: "Full name is required." },
         { status: 400 }
@@ -39,19 +36,49 @@ export async function POST(request: Request) {
       );
     }
 
+    if (!agency) {
+      return NextResponse.json(
+        { success: false, message: "Travel Agency Name is required." },
+        { status: 400 }
+      );
+    }
+
+    if (!country) {
+      return NextResponse.json(
+        { success: false, message: "Country is required." },
+        { status: 400 }
+      );
+    }
+
+    if (!partnerType) {
+      return NextResponse.json(
+        { success: false, message: "Partner type is required." },
+        { status: 400 }
+      );
+    }
+
+    const fullPhone =
+      countryCode || phone
+        ? `${countryCode}${phone ? ` ${phone}` : ""}`.trim()
+        : "-";
+
     const internalEmailResult = await resend.emails.send({
       from: "Epoch Journeys <info@epochjourneys.com>",
       to: "info@epochjourneys.com",
       replyTo: email,
-      subject: `New Partnership Request - ${fullName}`,
+      subject: `New Partnership Request - ${name}`,
       html: `
         <div style="font-family: Arial, sans-serif; line-height: 1.6; color: #111827;">
-          <h2 style="margin-bottom: 16px;">New Request Partnership Submission</h2>
+          <h2 style="margin-bottom: 16px;">New Partnership Request Submission</h2>
 
-          <p><strong>Full Name:</strong> ${fullName}</p>
+          <p><strong>Full Name:</strong> ${name}</p>
           <p><strong>Email:</strong> ${email}</p>
-          <p><strong>Travel Agency / Company:</strong> ${agency || "-"}</p>
-          <p><strong>Country:</strong> ${country || "-"}</p>
+          <p><strong>Phone:</strong> ${fullPhone}</p>
+          <p><strong>Travel Agency / Company:</strong> ${agency}</p>
+          <p><strong>Country:</strong> ${country}</p>
+          <p><strong>Website:</strong> ${website || "-"}</p>
+          <p><strong>Partner Type:</strong> ${partnerType}</p>
+          <p><strong>Membership:</strong> ${membership || "-"}</p>
           <p><strong>Message:</strong><br/>${
             message ? message.replace(/\n/g, "<br/>") : "-"
           }</p>
@@ -79,7 +106,7 @@ export async function POST(request: Request) {
         <div style="font-family: Arial, sans-serif; line-height: 1.6; color: #111827;">
           <h2 style="margin-bottom: 16px;">Thank you for your interest in Epoch Journeys</h2>
 
-          <p>Dear ${fullName},</p>
+          <p>Dear ${name},</p>
 
           <p>
             We have received your partnership request and appreciate your interest
@@ -87,15 +114,12 @@ export async function POST(request: Request) {
           </p>
 
           <p>
-            Our B2B platform is currently in its final preparation phase. We will
-            review your details and contact you as soon as partner access becomes
-            available.
+            Our team will review your details and get back to you as soon as possible.
           </p>
 
           <p>
-            In the meantime, please feel free to reply to this email if you would
-            like to share additional information about your business or areas of
-            interest.
+            If you would like to share additional information about your business,
+            please feel free to reply to this email.
           </p>
 
           <p style="margin-top: 24px;">

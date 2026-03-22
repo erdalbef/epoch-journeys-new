@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { Prisma } from "@prisma/client";
-import { prisma } from "@/lib/prisma";
+import { db} from "@/lib/db";
 import { generateTourCode } from "@/lib/codes/generateTourCode";
 
 export async function POST(req: Request) {
@@ -24,7 +24,7 @@ export async function POST(req: Request) {
 
     const tourCode = await generateTourCode(title);
 
-    const tour = await prisma.tour.create({
+    const tour = await db.tour.create({
       data: {
         title,
         tourCode,

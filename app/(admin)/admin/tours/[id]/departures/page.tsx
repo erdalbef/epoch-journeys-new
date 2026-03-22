@@ -5,9 +5,9 @@ import { DepartureStatus } from "@prisma/client";
 import { db } from "@/lib/db";
 
 type PageProps = {
-  params: {
+  params: Promise<{
     id: string;
-  };
+  }>;
 };
 
 function formatCurrency(value: number) {
@@ -140,7 +140,7 @@ async function createDeparture(tourId: string, formData: FormData) {
 }
 
 export default async function TourDeparturesPage({ params }: PageProps) {
-  const { id } = params;
+  const { id } = await params;
 
   const tour = await db.tour.findUnique({
     where: { id },
@@ -161,7 +161,7 @@ export default async function TourDeparturesPage({ params }: PageProps) {
     <div className="space-y-6">
       <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
         <div>
-          <h1 className="text-2xl font-semibold">Departures — {tour.title}</h1>
+          <h1 className="text-2xl font-semibold">Departures - {tour.title}</h1>
           <p className="text-sm text-muted-foreground">
             Manage departure dates, pricing, and capacity.
           </p>
@@ -356,7 +356,7 @@ export default async function TourDeparturesPage({ params }: PageProps) {
                 <tr key={departure.id} className="border-b">
                   <td className="p-3">{formatDate(departure.date)}</td>
                   <td className="p-3">{departure.season}</td>
-                  <td className="p-3">{formatCurrency(departure.price)}</td>
+                  <td className="p-3">{formatCurrency(Number(departure.price))}</td>
                   <td className="p-3">{departure.capacity}</td>
                   <td className="p-3">{departure.bookedSeats}</td>
                   <td className="p-3">

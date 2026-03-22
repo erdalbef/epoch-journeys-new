@@ -3,7 +3,7 @@ import { notFound, redirect } from "next/navigation";
 import { getServerSession } from "next-auth";
 
 import { authOptions } from "@/lib/authOptions";
-import { prisma } from "@/lib/prisma";
+import { db } from "@/lib/db";
 
 type Props = {
   params: Promise<{
@@ -44,7 +44,7 @@ export default async function Page({ params }: Props) {
 
   const { id } = await params;
 
-  const request = await prisma.customTourRequest.findUnique({
+  const request = await db.customTourRequest.findUnique({
     where: {
       id,
     },

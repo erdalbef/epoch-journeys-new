@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState, type FormEvent } from "react";
+import { useMemo, useState } from "react";
 import { signIn } from "next-auth/react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
@@ -10,11 +10,7 @@ function isValidEmail(email: string) {
   return /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(email.trim().toLowerCase());
 }
 
-type Props = {
-  callbackUrl: string;
-};
-
-export function AdminLoginForm({ callbackUrl }: Props) {
+export function AdminLoginForm() {
   const router = useRouter();
 
   const [email, setEmail] = useState("erdal@epochjourneys.com");
@@ -32,7 +28,7 @@ export function AdminLoginForm({ callbackUrl }: Props) {
     return null;
   }, [emailNormalized]);
 
-  async function onSubmit(e: FormEvent<HTMLFormElement>) {
+  async function onSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
 
     if (loading) return;
@@ -55,7 +51,7 @@ export function AdminLoginForm({ callbackUrl }: Props) {
       email: emailNormalized,
       password,
       redirect: false,
-      callbackUrl,
+      callbackUrl: "/admin/dashboard",
     });
 
     setLoading(false);
@@ -65,7 +61,7 @@ export function AdminLoginForm({ callbackUrl }: Props) {
       return;
     }
 
-    router.push(res.url ?? callbackUrl);
+    router.push("/admin/dashboard");
     router.refresh();
   }
 

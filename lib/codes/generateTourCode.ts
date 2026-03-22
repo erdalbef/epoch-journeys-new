@@ -1,4 +1,4 @@
-import { prisma } from "@/lib/prisma";
+import {db} from "@/lib/db";
 
 function normalize(value: string) {
   return value
@@ -27,7 +27,7 @@ export async function generateTourCode(title: string): Promise<string> {
   while (true) {
     const candidate = `${base}${counter}`;
 
-    const exists = await prisma.tour.findFirst({
+    const exists = await db.tour.findFirst({
       where: { tourCode: candidate },
       select: { id: true }
     });

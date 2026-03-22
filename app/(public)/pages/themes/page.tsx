@@ -1,124 +1,197 @@
+import Link from "next/link";
+
+const themeItems = [
+  {
+    title: "Pilgrimage Tours",
+    description:
+      "Faith-based journeys designed with spiritual purpose, cultural context, and careful operational planning for churches, ministries, and religious groups.",
+    points: [
+      "Catholic and Christian pilgrimage programs",
+      "Sacred sites, shrines, churches, and spiritual heritage",
+      "Group-friendly planning with liturgical sensitivity",
+    ],
+  },
+  {
+    title: "Cultural Journeys",
+    description:
+      "Programs that connect travelers with the history, identity, and traditions of each destination through thoughtfully structured itineraries.",
+    points: [
+      "Historical cities and heritage-focused routes",
+      "Art, architecture, traditions, and local context",
+      "Designed for travelers seeking more than sightseeing",
+    ],
+  },
+  {
+    title: "Historical Programs",
+    description:
+      "Itineraries built around civilizations, empires, and major historical narratives, offering real depth for groups with educational or thematic interests.",
+    points: [
+      "Ancient, classical, Byzantine, and medieval themes",
+      "Narrative-led itineraries with meaningful site selection",
+      "Suitable for educational and affinity groups",
+    ],
+  },
+  {
+    title: "Custom Group Travel",
+    description:
+      "Tailor-made programs for agencies, institutions, organizations, and private groups with specific goals, interests, and travel profiles.",
+    points: [
+      "Customized pacing, inclusions, and route planning",
+      "Adaptable for group size, budget, and audience",
+      "Built in close collaboration with the partner",
+    ],
+  },
+  {
+    title: "Faith & Heritage Programs",
+    description:
+      "Journeys that combine spiritual significance with the wider cultural and historical setting of a destination for a more complete experience.",
+    points: [
+      "Balanced spiritual and cultural content",
+      "Ideal for travelers seeking both reflection and discovery",
+      "Well suited for mixed-interest religious groups",
+    ],
+  },
+  {
+    title: "Special Interest Series",
+    description:
+      "Programs built around a distinct theme, subject, or travel purpose for partners who want a more differentiated product offering.",
+    points: [
+      "Thematic concepts shaped around audience interest",
+      "Suitable for niche groups and specialist travel sellers",
+      "Designed to stand apart from standard touring",
+    ],
+  },
+];
+
 export default function ThemesPage() {
   return (
-    <main className="bg-white text-black">
-      {/* Hero */}
-      <section className="mx-auto max-w-5xl px-6 pt-16 text-center sm:px-10 lg:px-16">
-        <p className="text-sm font-medium uppercase tracking-[0.22em] text-[#8B0000]">
-          Travel Themes
+    <main className="bg-[#f8f9fb] text-black">
+      <section className="mx-auto max-w-5xl px-6 pt-24 pb-16 text-center sm:px-10 lg:px-16">
+        <p className="text-xs font-semibold uppercase tracking-[0.3em] text-[#8B0000]">
+          Themes
         </p>
 
-        <h1 className="mt-4 text-4xl font-semibold text-[#001F3F] sm:text-5xl">
-          Journeys designed around meaning and context
+        <h1 className="mt-4 text-4xl font-semibold tracking-tight text-[#001F3F] sm:text-5xl">
+          Thoughtfully designed travel themes for professional partners
         </h1>
 
-        <p className="mx-auto mt-6 max-w-3xl text-base leading-7 text-gray-600 sm:text-lg">
-          Epoch Journeys develops travel programs shaped by culture, history,
-          and spiritual heritage, offering depth beyond traditional tourism.
+        <p className="mx-auto mt-6 max-w-3xl text-lg leading-8 text-gray-600">
+          Epoch Journeys develops travel programs around meaningful themes that
+          help travel advisors, agencies, and group leaders offer more
+          distinctive and more purposeful experiences.
         </p>
       </section>
 
-      {/* Themes */}
-      <section className="mx-auto max-w-6xl px-6 py-16 sm:px-10 lg:px-16">
-        <div className="grid gap-8 md:grid-cols-3">
-          {/* Cultural */}
-          <div className="rounded-3xl border p-8 shadow-sm transition hover:shadow-md">
-            <h2 className="text-xl font-semibold text-[#001F3F]">
-              Cultural Journeys
-            </h2>
+      <section className="mx-auto max-w-7xl px-6 pb-24 sm:px-10 lg:px-16">
+        <div className="grid gap-8 md:grid-cols-2 xl:grid-cols-3">
+          {themeItems.map((item) => (
+            <article
+              key={item.title}
+              className="rounded-2xl border border-gray-200/70 bg-white p-7 shadow-[0_8px_24px_rgba(0,0,0,0.04)] transition hover:shadow-[0_12px_30px_rgba(0,0,0,0.06)]"
+            >
+              <h2 className="text-xl font-semibold tracking-tight text-[#001F3F]">
+                {item.title}
+              </h2>
 
-            <p className="mt-4 text-sm leading-7 text-gray-600">
-              Explore Europe through its art, architecture, traditions, and
-              living cultures. These programs focus on understanding local life
-              and regional identity.
-            </p>
+              <p className="mt-4 text-sm leading-7 text-gray-600">
+                {item.description}
+              </p>
 
-            <ul className="mt-6 space-y-2 text-sm text-gray-500">
-              <li>• Art & architecture</li>
-              <li>• Culinary experiences</li>
-              <li>• Local traditions</li>
-              <li>• City & regional discovery</li>
-            </ul>
-          </div>
+              <ul className="mt-5 space-y-3">
+                {item.points.map((point) => (
+                  <li key={point} className="flex gap-3">
+                    <span className="mt-2.5 h-2 w-2 rounded-full bg-[#8B0000]" />
+                    <span className="text-sm leading-7 text-gray-700">
+                      {point}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            </article>
+          ))}
+        </div>
+      </section>
 
-          {/* Historical */}
-          <div className="rounded-3xl border p-8 shadow-sm transition hover:shadow-md">
-            <h2 className="text-xl font-semibold text-[#001F3F]">
-              Historical Expeditions
-            </h2>
+      <section className="bg-white py-24">
+        <div className="mx-auto max-w-6xl px-6 sm:px-10 lg:px-16">
+          <div className="grid gap-12 lg:grid-cols-[1fr_1fr] lg:items-start">
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-[0.28em] text-[#8B0000]">
+                How We Build Themes
+              </p>
 
-            <p className="mt-4 text-sm leading-7 text-gray-600">
-              Travel through the civilizations, empires, and key historical
-              events that shaped Europe and the Mediterranean world.
-            </p>
+              <h2 className="mt-4 text-3xl font-semibold tracking-tight text-[#001F3F]">
+                Structured around audience, purpose, and destination depth
+              </h2>
 
-            <ul className="mt-6 space-y-2 text-sm text-gray-500">
-              <li>• Ancient civilizations</li>
-              <li>• Roman & Byzantine heritage</li>
-              <li>• Medieval Europe</li>
-              <li>• Historical routes</li>
-            </ul>
-          </div>
+              <p className="mt-6 text-base leading-8 text-gray-600">
+                Our themes are not built as generic labels. Each program is
+                shaped by the profile of the traveler, the purpose of the
+                journey, and the cultural or spiritual identity of the
+                destination itself.
+              </p>
+            </div>
 
-          {/* Pilgrimage */}
-          <div className="rounded-3xl border p-8 shadow-sm transition hover:shadow-md">
-            <h2 className="text-xl font-semibold text-[#001F3F]">
-              Pilgrimage Programs
-            </h2>
+            <div className="grid gap-6">
+              <div className="rounded-2xl border border-gray-200/70 bg-[#f8f9fb] p-6">
+                <h3 className="text-lg font-semibold text-[#001F3F]">
+                  Audience-Focused
+                </h3>
+                <p className="mt-3 text-sm leading-7 text-gray-600">
+                  We shape the theme around who the program is for, whether that
+                  means pilgrimage groups, culturally curious travelers, private
+                  groups, or specialist audiences.
+                </p>
+              </div>
 
-            <p className="mt-4 text-sm leading-7 text-gray-600">
-              Carefully designed journeys to sacred destinations and Christian
-              heritage sites, combining faith, history, and meaningful
-              experiences.
-            </p>
+              <div className="rounded-2xl border border-gray-200/70 bg-[#f8f9fb] p-6">
+                <h3 className="text-lg font-semibold text-[#001F3F]">
+                  Destination-Led
+                </h3>
+                <p className="mt-3 text-sm leading-7 text-gray-600">
+                  We build around what the destination can genuinely offer,
+                  rather than forcing a concept that does not fit the local
+                  context or travel rhythm.
+                </p>
+              </div>
 
-            <ul className="mt-6 space-y-2 text-sm text-gray-500">
-              <li>• Biblical journeys</li>
-              <li>• Early Christianity</li>
-              <li>• Saints & pilgrimage sites</li>
-              <li>• Religious heritage routes</li>
-            </ul>
+              <div className="rounded-2xl border border-gray-200/70 bg-[#f8f9fb] p-6">
+                <h3 className="text-lg font-semibold text-[#001F3F]">
+                  Operationally Practical
+                </h3>
+                <p className="mt-3 text-sm leading-7 text-gray-600">
+                  Every theme is translated into a workable program with
+                  attention to routing, pacing, logistics, and the expectations
+                  of travel professionals.
+                </p>
+              </div>
+            </div>
           </div>
         </div>
       </section>
 
-      {/* Positioning Section */}
-      <section className="mx-auto max-w-5xl px-6 py-20 text-center sm:px-10 lg:px-16">
-        <p className="text-sm font-medium uppercase tracking-[0.22em] text-[#8B0000]">
-          Our Approach
+      <section className="mx-auto max-w-4xl px-6 py-24 text-center sm:px-10 lg:px-16">
+        <p className="text-xs font-semibold uppercase tracking-[0.28em] text-[#8B0000]">
+          Work With Us
         </p>
 
-        <h2 className="mt-3 text-3xl font-semibold text-[#001F3F] sm:text-4xl">
-          Beyond standard travel programs
+        <h2 className="mt-4 text-3xl font-semibold tracking-tight text-[#001F3F]">
+          Let’s shape the right thematic programs for your clients
         </h2>
 
-        <p className="mx-auto mt-5 max-w-3xl text-base leading-7 text-gray-600">
-          Each journey is designed with a clear thematic focus, combining
-          destination expertise, structured itineraries, and strong operational
-          planning. Our goal is to create travel experiences that are both
-          meaningful and professionally executed.
+        <p className="mt-6 text-lg leading-8 text-gray-600">
+          Whether you are looking for pilgrimage journeys, cultural itineraries,
+          historical routes, or custom group concepts, we are ready to help you
+          build programs with clarity and purpose.
         </p>
-      </section>
 
-      {/* CTA */}
-      <section className="bg-[#001F3F]">
-        <div className="mx-auto max-w-5xl px-6 py-20 text-center text-white sm:px-10 lg:px-16">
-          <h2 className="text-3xl font-semibold sm:text-4xl">
-            Explore our travel programs
-          </h2>
-
-          <p className="mx-auto mt-5 max-w-2xl text-base text-white/80">
-            Discover structured travel experiences built around culture,
-            history, and spiritual heritage.
-          </p>
-
-          <div className="mt-8">
-            <a
-              href="/request-partnership"
-              className="inline-flex rounded-full bg-[#8B0000] px-6 py-3 text-sm font-medium text-white hover:bg-[#6f0000]"
-            >
-              Request Partnership
-            </a>
-          </div>
+        <div className="mt-8 flex justify-center">
+          <Link
+            href="/request-partnership"
+            className="rounded-full bg-[#8B0000] px-8 py-3.5 text-sm font-semibold text-white shadow-md transition hover:bg-[#6f0000]"
+          >
+            Request Partnership
+          </Link>
         </div>
       </section>
     </main>

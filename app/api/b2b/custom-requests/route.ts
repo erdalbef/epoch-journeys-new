@@ -1,4 +1,4 @@
-import { prisma } from "@/lib/prisma";
+import { db } from "@/lib/db";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/authOptions";
 import { NextResponse } from "next/server";
@@ -16,7 +16,7 @@ export async function POST(req: Request) {
   const reference =
     "CR-" + Date.now().toString().slice(-6);
 
-  const request = await prisma.customTourRequest.create({
+  const request = await db.customTourRequest.create({
     data: {
       userId: session.user.id,
       requestReference: reference,

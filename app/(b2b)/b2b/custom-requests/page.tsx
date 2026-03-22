@@ -1,4 +1,4 @@
-import { prisma } from "@/lib/prisma";
+import { db } from "@/lib/db";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/authOptions";
 import Link from "next/link";
@@ -10,7 +10,7 @@ export default async function CustomRequestsPage() {
     return <div>Unauthorized</div>;
   }
 
-  const requests = await prisma.customTourRequest.findMany({
+  const requests = await db.customTourRequest.findMany({
     where: {
       userId: session.user.id,
     },

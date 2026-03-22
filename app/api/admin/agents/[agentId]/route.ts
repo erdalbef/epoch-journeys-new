@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { prisma } from "@/lib/prisma";
+import { db } from "@/lib/db";
 
 export async function DELETE(
   req: Request,
@@ -8,7 +8,7 @@ export async function DELETE(
   try {
     const { agentId } = await context.params;
 
-    const existingAgent = await prisma.user.findUnique({
+    const existingAgent = await db.user.findUnique({
       where: { id: agentId },
     });
 
@@ -19,7 +19,7 @@ export async function DELETE(
       );
     }
 
-    await prisma.user.delete({
+    await db.user.delete({
       where: { id: agentId },
     });
 

@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { prisma } from "@/lib/prisma";
+import { db} from "@/lib/db";
 import { sendEmail } from "@/lib/email/sendEmail";
 import { agentApprovalEmail } from "@/lib/email/templates/agentApprovalEmail";
 
@@ -37,7 +37,7 @@ async function generateUniqueAgentCode(fullName?: string | null): Promise<string
     const candidate =
       counter === 0 ? baseCode : `${baseCode}${String(counter)}`;
 
-    const existing = await prisma.user.findFirst({
+    const existing = await db.user.findFirst({
       where: {
         agentCode: candidate,
       },
@@ -61,7 +61,7 @@ export async function POST(
   try {
     const { agentId } = await context.params;
 
-    const existingAgent = await prisma.user.findUnique({
+    const existingAgent = await db.user.findUnique({
       where: { id: agentId },
       select: {
         id: true,
@@ -92,7 +92,7 @@ export async function POST(
       agentCode = await generateUniqueAgentCode(existingAgent.fullName);
     }
 
-    const agent = await prisma.user.update({
+    const agent = await db.user.update({
       where: { id: agentId },
       data: {
         approved: true,

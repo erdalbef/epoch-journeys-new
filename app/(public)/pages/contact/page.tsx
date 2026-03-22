@@ -1,263 +1,177 @@
 "use client";
 
-import { FormEvent, useState } from "react";
-
-type ContactFormState = {
-  fullName: string;
-  email: string;
-  company: string;
-  subject: string;
-  message: string;
-};
-
-const initialState: ContactFormState = {
-  fullName: "",
-  email: "",
-  company: "",
-  subject: "",
-  message: "",
-};
+import { useState } from "react";
+import Link from "next/link";
 
 export default function ContactPage() {
-  const [form, setForm] = useState<ContactFormState>(initialState);
-  const [isSubmitting, setIsSubmitting] = useState(false);
-  const [successMessage, setSuccessMessage] = useState("");
-  const [errorMessage, setErrorMessage] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [success, setSuccess] = useState(false);
 
-  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    setIsSubmitting(true);
-    setSuccessMessage("");
-    setErrorMessage("");
+  async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    setLoading(true);
 
-    try {
-      const response = await fetch("/api/contact", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify(form),
-      });
+    const formData = new FormData(e.currentTarget);
 
-      const data: { success?: boolean; message?: string } =
-        await response.json();
+    const res = await fetch("/api/contact", {
+      method: "POST",
+      body: formData,
+    });
 
-      if (!response.ok || !data.success) {
-        setErrorMessage(
-          data.message || "Something went wrong. Please try again."
-        );
-        return;
-      }
+    setLoading(false);
 
-      setSuccessMessage(
-        "Thank you for contacting Epoch Journeys. We will respond as soon as possible."
-      );
-      setForm(initialState);
-    } catch {
-      setErrorMessage("Something went wrong. Please try again.");
-    } finally {
-      setIsSubmitting(false);
+    if (res.ok) {
+      setSuccess(true);
+      e.currentTarget.reset();
     }
   }
 
   return (
-    <main className="bg-white text-black">
-      <section className="mx-auto max-w-5xl px-6 py-16 sm:px-10 lg:px-16 lg:py-20">
-        <div className="text-center">
-          <p className="text-sm font-medium uppercase tracking-[0.22em] text-[#8B0000]">
-            Contact
-          </p>
+    <main className="bg-[#f8f9fb] text-black">
+      
+      {/* HERO */}
+      <section className="mx-auto max-w-5xl px-6 pt-24 pb-16 text-center">
+        <p className="text-xs font-semibold uppercase tracking-[0.3em] text-[#8B0000]">
+          Contact
+        </p>
 
-          <h1 className="mt-3 text-4xl font-semibold tracking-tight text-[#001F3F] sm:text-5xl">
-            Contact Us
-          </h1>
+        <h1 className="mt-4 text-4xl font-semibold text-[#001F3F] sm:text-5xl">
+          Get in touch with our team
+        </h1>
 
-          <p className="mx-auto mt-6 max-w-3xl text-base leading-8 text-gray-600 sm:text-lg">
-            We welcome inquiries from travel advisors, tour operators, and group
-            leaders interested in working with Epoch Journeys.
-          </p>
-        </div>
+        <p className="mx-auto mt-6 max-w-3xl text-lg leading-8 text-gray-600">
+          For partnership inquiries, program development, or general questions,
+          our team will be happy to assist you.
+        </p>
       </section>
 
-      <section className="mx-auto max-w-6xl px-6 pb-24 sm:px-10 lg:px-16">
-        <div className="grid gap-8 lg:grid-cols-[0.95fr_1.05fr]">
-          <div className="rounded-3xl border border-gray-200 bg-[#faf7f4] p-8 shadow-sm sm:p-10">
-            <h2 className="text-2xl font-semibold text-[#001F3F]">
-              Head Office
-            </h2>
+      {/* CONTENT */}
+      <section className="mx-auto max-w-7xl px-6 pb-24">
+        <div className="grid gap-12 lg:grid-cols-2">
 
-            <div className="mt-6 space-y-3 text-sm leading-7 text-gray-600">
-              <p>Epoch Journeys OOD</p>
-              <p>107 Tsar Boris III Blvd, Floor 7</p>
-              <p>Sofia 1612, Bulgaria</p>
-              <p>
-                <a
-                  href="mailto:info@epochjourneys.com"
-                  className="hover:text-[#001F3F]"
-                >
-                  info@epochjourneys.com
-                </a>
-              </p>
-              <p>
-                <a
-                  href="https://www.epochjourneys.com"
-                  target="_blank"
-                  rel="noreferrer"
-                  className="hover:text-[#001F3F]"
-                >
-                  www.epochjourneys.com
-                </a>
-              </p>
+          {/* CONTACT INFO */}
+          <div className="space-y-8">
+            <div>
+              <h2 className="text-2xl font-semibold text-[#001F3F]">
+                Contact Details
+              </h2>
+
+              <div className="mt-6 space-y-4 text-gray-700">
+                <p>
+                  <strong>Company:</strong> Epoch Journeys OOD
+                </p>
+
+                <p>
+                  <strong>Address:</strong><br />
+                  107 Tsar Boris III Blvd, Floor 7<br />
+                  Sofia 1612, Bulgaria
+                </p>
+
+                <p>
+                  <strong>Email:</strong>{" "}
+                  <a
+                    href="mailto:info@epochjourneys.com"
+                    className="text-[#8B0000] hover:underline"
+                  >
+                    info@epochjourneys.com
+                  </a>
+                </p>
+
+                <p>
+                  <strong>Website:</strong>{" "}
+                  <a
+                    href="https://www.epochjourneys.com"
+                    target="_blank"
+                    className="text-[#8B0000] hover:underline"
+                  >
+                    www.epochjourneys.com
+                  </a>
+                </p>
+              </div>
             </div>
 
-            <div className="mt-10 rounded-2xl border border-[#8B0000]/15 bg-white p-6">
+            <div className="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm">
               <h3 className="text-lg font-semibold text-[#001F3F]">
-                Our Presence
+                Business Hours
               </h3>
 
-              <ul className="mt-4 space-y-3 text-sm leading-7 text-gray-600">
-                <li>• Spain Office</li>
-                <li>• Greece Office</li>
-                <li>• Turkey Office</li>
-              </ul>
-            </div>
+              <p className="mt-3 text-sm text-gray-600">
+                Monday – Friday: 09:00 – 18:00 (EET)
+              </p>
 
-            <p className="mt-8 text-sm leading-7 text-gray-600">
-              We aim to respond to business and partnership inquiries as
-              promptly as possible.
-            </p>
+              <p className="mt-2 text-sm text-gray-600">
+                We aim to respond to all inquiries within one business day.
+              </p>
+            </div>
           </div>
 
-          <div className="rounded-3xl border border-gray-200 bg-white p-8 shadow-sm sm:p-10">
+          {/* FORM */}
+          <div className="rounded-2xl border border-gray-200 bg-white p-8 shadow-[0_8px_24px_rgba(0,0,0,0.04)]">
             <h2 className="text-2xl font-semibold text-[#001F3F]">
               Send a Message
             </h2>
 
-            <p className="mt-3 text-sm leading-7 text-gray-600">
-              Use the form below to contact us directly.
-            </p>
+            {success && (
+              <p className="mt-4 text-sm text-green-600">
+                Your message has been sent successfully.
+              </p>
+            )}
 
-            <form onSubmit={handleSubmit} className="mt-8 space-y-5">
-              <div>
-                <label
-                  htmlFor="fullName"
-                  className="text-sm font-medium text-[#001F3F]"
-                >
-                  Full Name
-                </label>
-                <input
-                  id="fullName"
-                  type="text"
-                  value={form.fullName}
-                  onChange={(e) =>
-                    setForm((prev) => ({ ...prev, fullName: e.target.value }))
-                  }
-                  className="mt-2 w-full rounded-xl border border-gray-300 px-4 py-3 outline-none transition focus:border-[#8B0000]"
-                  placeholder="Your full name"
-                  required
-                />
-              </div>
+            <form onSubmit={handleSubmit} className="mt-6 space-y-5">
+              
+              <input
+                name="name"
+                required
+                placeholder="Full Name"
+                className="w-full rounded-lg border px-4 py-3 text-sm outline-none focus:border-[#8B0000]"
+              />
 
-              <div>
-                <label
-                  htmlFor="email"
-                  className="text-sm font-medium text-[#001F3F]"
-                >
-                  Email Address
-                </label>
-                <input
-                  id="email"
-                  type="email"
-                  value={form.email}
-                  onChange={(e) =>
-                    setForm((prev) => ({ ...prev, email: e.target.value }))
-                  }
-                  className="mt-2 w-full rounded-xl border border-gray-300 px-4 py-3 outline-none transition focus:border-[#8B0000]"
-                  placeholder="you@example.com"
-                  required
-                />
-              </div>
+              <input
+                name="email"
+                type="email"
+                required
+                placeholder="Email Address"
+                className="w-full rounded-lg border px-4 py-3 text-sm outline-none focus:border-[#8B0000]"
+              />
 
-              <div>
-                <label
-                  htmlFor="company"
-                  className="text-sm font-medium text-[#001F3F]"
-                >
-                  Company / Agency
-                </label>
-                <input
-                  id="company"
-                  type="text"
-                  value={form.company}
-                  onChange={(e) =>
-                    setForm((prev) => ({ ...prev, company: e.target.value }))
-                  }
-                  className="mt-2 w-full rounded-xl border border-gray-300 px-4 py-3 outline-none transition focus:border-[#8B0000]"
-                  placeholder="Company or agency name"
-                />
-              </div>
-
-              <div>
-                <label
-                  htmlFor="subject"
-                  className="text-sm font-medium text-[#001F3F]"
-                >
-                  Subject
-                </label>
-                <input
-                  id="subject"
-                  type="text"
-                  value={form.subject}
-                  onChange={(e) =>
-                    setForm((prev) => ({ ...prev, subject: e.target.value }))
-                  }
-                  className="mt-2 w-full rounded-xl border border-gray-300 px-4 py-3 outline-none transition focus:border-[#8B0000]"
-                  placeholder="Subject"
-                  required
-                />
-              </div>
-
-              <div>
-                <label
-                  htmlFor="message"
-                  className="text-sm font-medium text-[#001F3F]"
-                >
-                  Message
-                </label>
-                <textarea
-                  id="message"
-                  rows={6}
-                  value={form.message}
-                  onChange={(e) =>
-                    setForm((prev) => ({ ...prev, message: e.target.value }))
-                  }
-                  className="mt-2 w-full rounded-xl border border-gray-300 px-4 py-3 outline-none transition focus:border-[#8B0000]"
-                  placeholder="Write your message here"
-                  required
-                />
-              </div>
-
-              {errorMessage ? (
-                <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
-                  {errorMessage}
-                </div>
-              ) : null}
-
-              {successMessage ? (
-                <div className="rounded-xl border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-700">
-                  {successMessage}
-                </div>
-              ) : null}
+              <textarea
+                name="message"
+                required
+                placeholder="Your message"
+                rows={5}
+                className="w-full rounded-lg border px-4 py-3 text-sm outline-none focus:border-[#8B0000]"
+              />
 
               <button
                 type="submit"
-                disabled={isSubmitting}
-                className="inline-flex w-full items-center justify-center rounded-full bg-[#8B0000] px-6 py-3 text-sm font-medium text-white transition hover:bg-[#6f0000] disabled:cursor-not-allowed disabled:opacity-70"
+                disabled={loading}
+                className="w-full rounded-full bg-[#8B0000] px-6 py-3 text-sm font-semibold text-white transition hover:bg-[#6f0000]"
               >
-                {isSubmitting ? "Sending..." : "Send Message"}
+                {loading ? "Sending..." : "Send Message"}
               </button>
             </form>
           </div>
+        </div>
+      </section>
+
+      {/* CTA */}
+      <section className="mx-auto max-w-4xl px-6 pb-24 text-center">
+        <h2 className="text-3xl font-semibold text-[#001F3F]">
+          Looking to work with us?
+        </h2>
+
+        <p className="mt-6 text-lg text-gray-600">
+          If you are a travel professional interested in partnership, you can
+          request access to our B2B platform.
+        </p>
+
+        <div className="mt-8">
+          <Link
+            href="/request-partnership"
+            className="rounded-full bg-[#8B0000] px-8 py-3.5 text-sm font-semibold text-white shadow-md hover:bg-[#6f0000]"
+          >
+            Request Partnership
+          </Link>
         </div>
       </section>
     </main>
