@@ -3,123 +3,102 @@ import { getServerSession } from "next-auth";
 
 import { authOptions } from "@/lib/authOptions";
 import { db } from "@/lib/db";
+import { BookingStatus, PaymentStatus } from "@prisma/client";
+import { sendEmail } from "@/lib/email/sendEmail";
+import { bookingStatusUpdateTemplate } from "@/lib/email/templates/bookingStatusUpdate";
 
-export async function GET(req: Request) {
+export async function PATCH(
+  request: Request,
+  { params }: { params: Promise<{ id: string }> }
+) {
   try {
     const session = await getServerSession(authOptions);
 
     if (!session?.user || session.user.role !== "ADMIN") {
       return NextResponse.json(
-        { success: false, message: "Unauthorized" },
+        { error: "Unauthorized" },
         { status: 401 }
       );
     }
 
-    const { searchParams } = new URL(req.url);
+    const { id } = await params;
+    const body = await request.json();
 
-    const q = searchParams.get("q")?.trim() ?? "";
-    const status = searchParams.get("status")?.trim() ?? "";
-    const paymentStatus = searchParams.get("payment")?.trim() ?? "";
-    const bookingType = searchParams.get("type")?.trim() ?? "";
+    const status = body.status as BookingStatus | undefined;
+    const paymentStatus = body.paymentStatus as PaymentStatus | undefined;
 
-    const bookings = await db.booking.findMany({
-      where: {
-        ...(status ? { status: status as never } : {}),
-        ...(paymentStatus ? { paymentStatus: paymentStatus as never } : {}),
-        ...(bookingType ? { bookingType: bookingType as never } : {}),
-        ...(q
-          ? {
-              OR: [
-                {
-                  bookingReference: {
-                    contains: q,
-                    mode: "insensitive",
-                  },
-                },
-                {
-                  bookingDisplayCode: {
-                    contains: q,
-                    mode: "insensitive",
-                  },
-                },
-                {
-                  tourTitleSnapshot: {
-                    contains: q,
-                    mode: "insensitive",
-                  },
-                },
-                {
-                  agencyNameSnapshot: {
-                    contains: q,
-                    mode: "insensitive",
-                  },
-                },
-                {
-                  customerName: {
-                    contains: q,
-                    mode: "insensitive",
-                  },
-                },
-                {
-                  groupName: {
-                    contains: q,
-                    mode: "insensitive",
-                  },
-                },
-                {
-                  agentNameSnapshot: {
-                    contains: q,
-                    mode: "insensitive",
-                  },
-                },
-              ],
-            }
-          : {}),
-      },
-      orderBy: {
-        createdAt: "desc",
-      },
+    if (!status && !paymentStatus) {
+      return NextResponse.json(
+        { error: "Nothing to update" },
+        { status: 400 }
+      );
+    }
+
+    const existingBooking = await db.booking.findUnique({
+      where: { id },
       select: {
         id: true,
-        bookingNumber: true,
-        bookingReference: true,
-        bookingDisplayCode: true,
-        bookingType: true,
         status: true,
         paymentStatus: true,
-        numberOfGuests: true,
-        totalPrice: true,
-        commissionAmount: true,
-        netAmount: true,
-        currency: true,
+        bookingReference: true,
+        bookingDisplayCode: true,
         tourTitleSnapshot: true,
-        agencyNameSnapshot: true,
-        agentNameSnapshot: true,
-        customerName: true,
-        groupName: true,
         departureDateSnapshot: true,
-        createdAt: true,
-        user: {
-          select: {
-            id: true,
-            fullName: true,
-            email: true,
-            travelAgency: true,
-            agentCode: true,
-          },
-        },
+        agentNameSnapshot: true,
+        agentEmailSnapshot: true,
       },
     });
+
+    if (!existingBooking) {
+      return NextResponse.json(
+        { error: "Booking not found" },
+        { status: 404 }
+      );
+    }
+
+    const updatedBooking = await db.booking.update({
+      where: { id },
+      data: {
+        ...(status ? { status } : {}),
+        ...(paymentStatus ? { paymentStatus } : {}),
+      },
+    });
+
+    const statusChanged = status && status !== existingBooking.status;
+    const paymentChanged =
+      paymentStatus && paymentStatus !== existingBooking.paymentStatus;
+
+    if (
+      existingBooking.agentEmailSnapshot &&
+      (statusChanged || paymentChanged)
+    ) {
+      const emailContent = bookingStatusUpdateTemplate({
+        agentName: existingBooking.agentNameSnapshot,
+        bookingReference:
+          existingBooking.bookingDisplayCode ||
+          existingBooking.bookingReference,
+        bookingStatus: updatedBooking.status,
+        paymentStatus: updatedBooking.paymentStatus,
+        tourTitle: existingBooking.tourTitleSnapshot,
+        departureDate: existingBooking.departureDateSnapshot,
+      });
+
+      await sendEmail({
+        to: existingBooking.agentEmailSnapshot,
+        subject: emailContent.subject,
+        html: emailContent.html,
+      });
+    }
 
     return NextResponse.json({
       success: true,
-      bookings,
+      booking: updatedBooking,
     });
   } catch (error) {
-    console.error("ADMIN_BOOKINGS_GET_ERROR", error);
+    console.error("UPDATE_BOOKING_STATUS_ERROR", error);
 
     return NextResponse.json(
-      { success: false, message: "Failed to fetch bookings." },
+      { error: "Failed to update booking" },
       { status: 500 }
     );
   }

@@ -1,7 +1,7 @@
 import { db } from "@/lib/db";
 import { notFound, redirect } from "next/navigation";
 import TourForm from "@/components/admin/TourForm";
-import { PricingType } from "@prisma/client";
+import { PricingType, Season } from "@prisma/client";
 
 function parseCommaSeparated(value: FormDataEntryValue | null): string[] {
   if (!value || typeof value !== "string") return [];
@@ -42,6 +42,7 @@ function isPricingType(value: string): value is PricingType {
 type TierInput = {
   minPax: number;
   maxPax: number;
+  roomType: "SINGLE" | "DOUBLE_TWIN" | "TRIPLE";
   price: number;
 };
 
@@ -60,6 +61,7 @@ function parsePricingTiers(value: FormDataEntryValue | null): TierInput[] {
           item === null ||
           !("minPax" in item) ||
           !("maxPax" in item) ||
+          !("roomType" in item) ||
           !("price" in item)
         ) {
           return null;
@@ -68,6 +70,7 @@ function parsePricingTiers(value: FormDataEntryValue | null): TierInput[] {
         const minPax = Number((item as { minPax: unknown }).minPax);
         const maxPax = Number((item as { maxPax: unknown }).maxPax);
         const price = Number((item as { price: unknown }).price);
+        const roomType = (item as { roomType: unknown }).roomType;
 
         if (
           Number.isNaN(minPax) ||
@@ -75,12 +78,20 @@ function parsePricingTiers(value: FormDataEntryValue | null): TierInput[] {
           Number.isNaN(price) ||
           minPax < 1 ||
           maxPax < minPax ||
-          price < 0
+          price < 0 ||
+          (roomType !== "SINGLE" &&
+            roomType !== "DOUBLE_TWIN" &&
+            roomType !== "TRIPLE")
         ) {
           return null;
         }
 
-        return { minPax, maxPax, price };
+        return {
+          minPax,
+          maxPax,
+          roomType,
+          price,
+        };
       })
       .filter((item): item is TierInput => item !== null);
   } catch {
@@ -161,16 +172,65 @@ async function updateTour(id: string, formData: FormData) {
     where: { tourId: id },
   });
 
-  if (pricingType === "FIT_TIERED" && pricingTiers.length > 0) {
+  if (
+    (pricingType === "FIT_TIERED" || pricingType === "GROUP_BASED") &&
+    pricingTiers.length > 0
+  ) {
     await db.pricingTier.createMany({
       data: pricingTiers.map((tier) => ({
         tourId: id,
         minPax: tier.minPax,
         maxPax: tier.maxPax,
+        roomType: tier.roomType,
         price: tier.price,
       })),
     });
   }
+
+  const seasons: Season[] = ["LOW", "SHOULDER", "HIGH", "PEAK"];
+
+  await db.$transaction(async (tx) => {
+    for (const season of seasons) {
+      const value = formData.get(`seasonPrice_${season}`);
+      const price =
+        typeof value === "string" && value.trim() !== ""
+          ? Number(value)
+          : null;
+
+      const existing = await tx.tourSeasonPrice.findUnique({
+        where: {
+          tourId_season: {
+            tourId: id,
+            season,
+          },
+        },
+      });
+
+      if (price === null || Number.isNaN(price) || price < 0) {
+        if (existing) {
+          await tx.tourSeasonPrice.delete({
+            where: { id: existing.id },
+          });
+        }
+        continue;
+      }
+
+      if (existing) {
+        await tx.tourSeasonPrice.update({
+          where: { id: existing.id },
+          data: { price },
+        });
+      } else {
+        await tx.tourSeasonPrice.create({
+          data: {
+            tourId: id,
+            season,
+            price,
+          },
+        });
+      }
+    }
+  });
 
   redirect("/admin/tours");
 }
@@ -186,15 +246,25 @@ export default async function EditTourPage({
     where: { id },
     include: {
       pricingTiers: {
-        orderBy: {
-          minPax: "asc",
-        },
+        orderBy: [{ minPax: "asc" }, { maxPax: "asc" }],
       },
+      seasonalPrices: true,
     },
   });
 
   if (!tour) {
     notFound();
+  }
+
+  const seasonalMap: Record<Season, number | null> = {
+    LOW: null,
+    SHOULDER: null,
+    HIGH: null,
+    PEAK: null,
+  };
+
+  for (const sp of tour.seasonalPrices) {
+    seasonalMap[sp.season] = sp.price;
   }
 
   return (
@@ -234,9 +304,11 @@ export default async function EditTourPage({
           pricingTiers: tour.pricingTiers.map((t) => ({
             minPax: Number(t.minPax),
             maxPax: Number(t.maxPax),
+            roomType: t.roomType,
             price: Number(t.price),
           })),
         }}
+        seasonalPrices={seasonalMap}
       />
     </div>
   );

@@ -42,6 +42,7 @@ function isPricingType(value: string): value is PricingType {
 type TierInput = {
   minPax: number;
   maxPax: number;
+  roomType: "SINGLE" | "DOUBLE_TWIN" | "TRIPLE";
   price: number;
 };
 
@@ -60,6 +61,7 @@ function parsePricingTiers(value: FormDataEntryValue | null): TierInput[] {
           item === null ||
           !("minPax" in item) ||
           !("maxPax" in item) ||
+          !("roomType" in item) ||
           !("price" in item)
         ) {
           return null;
@@ -68,6 +70,7 @@ function parsePricingTiers(value: FormDataEntryValue | null): TierInput[] {
         const minPax = Number((item as { minPax: unknown }).minPax);
         const maxPax = Number((item as { maxPax: unknown }).maxPax);
         const price = Number((item as { price: unknown }).price);
+        const roomType = (item as { roomType: unknown }).roomType;
 
         if (
           Number.isNaN(minPax) ||
@@ -75,12 +78,20 @@ function parsePricingTiers(value: FormDataEntryValue | null): TierInput[] {
           Number.isNaN(price) ||
           minPax < 1 ||
           maxPax < minPax ||
-          price < 0
+          price < 0 ||
+          (roomType !== "SINGLE" &&
+            roomType !== "DOUBLE_TWIN" &&
+            roomType !== "TRIPLE")
         ) {
           return null;
         }
 
-        return { minPax, maxPax, price };
+        return {
+          minPax,
+          maxPax,
+          roomType,
+          price,
+        };
       })
       .filter((item): item is TierInput => item !== null);
   } catch {
@@ -131,6 +142,19 @@ async function createTour(formData: FormData) {
   const basePrice = parseOptionalNumber(formData.get("basePrice"));
   const pricingTiers = parsePricingTiers(formData.get("pricingTiers"));
 
+  const seasonalLow = parseOptionalNumber(formData.get("seasonPrice_LOW"));
+  const seasonalShoulder = parseOptionalNumber(
+    formData.get("seasonPrice_SHOULDER")
+  );
+  const seasonalHigh = parseOptionalNumber(formData.get("seasonPrice_HIGH"));
+  const seasonalPeak = parseOptionalNumber(formData.get("seasonPrice_PEAK"));
+
+  const usesBasePrice =
+    pricingType === "FIXED_GROUP" || pricingType === "FIT_FIXED";
+
+  const usesPricingTiers =
+    pricingType === "GROUP_BASED" || pricingType === "FIT_TIERED";
+
   await db.tour.create({
     data: {
       title,
@@ -139,41 +163,67 @@ async function createTour(formData: FormData) {
       tags,
       destinations,
       duration,
+
       shortDescription: parseOptionalString(formData.get("shortDescription")),
       overview: parseOptionalString(formData.get("overview")),
       tourIntroduction: parseOptionalString(formData.get("tourIntroduction")),
       tourSignificance: parseOptionalString(formData.get("tourSignificance")),
       destinationBriefs: parseOptionalString(formData.get("destinationBriefs")),
+
       pricingType,
-      basePrice:
-        pricingType === "FIXED_GROUP" || pricingType === "FIT_FIXED"
-          ? basePrice
-          : null,
+      basePrice: usesBasePrice ? basePrice : null,
+
+      pricingTiers:
+        usesPricingTiers && pricingTiers.length > 0
+          ? {
+              create: pricingTiers.map((tier) => ({
+                minPax: tier.minPax,
+                maxPax: tier.maxPax,
+                roomType: tier.roomType,
+                price: tier.price,
+              })),
+            }
+          : undefined,
+
       highlights,
       inclusions,
       exclusions,
       accommodations,
+
       overviewItinerary: parseOptionalString(formData.get("overviewItinerary")),
       itinerary: parseOptionalString(formData.get("itinerary")),
+
       mainImageUrl: null,
       mapImageUrl: null,
       brochureUrl: null,
+
       featured: formData.get("featured") === "on",
       isPublished: formData.get("isPublished") === "on",
       requiresQuote:
         pricingType === "GROUP_BASED" || pricingType === "FIT_DYNAMIC"
           ? true
           : formData.get("requiresQuote") === "on",
-      pricingTiers:
-        pricingType === "FIT_TIERED" && pricingTiers.length > 0
-          ? {
-              create: pricingTiers.map((tier) => ({
-                minPax: tier.minPax,
-                maxPax: tier.maxPax,
-                price: tier.price,
-              })),
-            }
-          : undefined,
+
+      seasonalPrices: {
+        create: [
+          {
+            season: "LOW",
+            price: seasonalLow ?? 0,
+          },
+          {
+            season: "SHOULDER",
+            price: seasonalShoulder ?? 0,
+          },
+          {
+            season: "HIGH",
+            price: seasonalHigh ?? 0,
+          },
+          {
+            season: "PEAK",
+            price: seasonalPeak ?? 0,
+          },
+        ],
+      },
     },
   });
 

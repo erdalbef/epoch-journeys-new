@@ -25,7 +25,7 @@ const styles = StyleSheet.create({
     alignItems: "flex-start",
   },
   companyBlock: {
-    maxWidth: "65%",
+    width: "65%",
   },
   companyName: {
     fontSize: 22,
@@ -37,6 +37,10 @@ const styles = StyleSheet.create({
     fontSize: 10,
     color: "#6b7280",
     marginBottom: 2,
+  },
+  voucherHeaderRight: {
+    width: "35%",
+    alignItems: "flex-end",
   },
   voucherTitle: {
     fontSize: 18,
@@ -52,13 +56,12 @@ const styles = StyleSheet.create({
     textAlign: "right",
   },
   logoBox: {
+    marginBottom: 8,
     alignItems: "flex-end",
-    marginBottom: 6,
   },
   agencyLogo: {
     width: 90,
     height: 50,
-    objectFit: "contain",
   },
   section: {
     marginBottom: 16,
@@ -76,10 +79,10 @@ const styles = StyleSheet.create({
   grid: {
     flexDirection: "row",
     flexWrap: "wrap",
-    gap: 8,
   },
   item: {
     width: "48%",
+    marginRight: "2%",
     marginBottom: 8,
   },
   fullItem: {
@@ -104,6 +107,11 @@ const styles = StyleSheet.create({
     padding: 10,
     minHeight: 40,
   },
+  noteText: {
+    fontSize: 10,
+    lineHeight: 1.5,
+    color: "#111827",
+  },
   footer: {
     marginTop: 18,
     paddingTop: 12,
@@ -116,30 +124,6 @@ const styles = StyleSheet.create({
     marginBottom: 3,
   },
 });
-
-async function streamToBuffer(
-  stream: NodeJS.ReadableStream
-): Promise<Buffer> {
-  const chunks: Uint8Array[] = [];
-
-  return new Promise((resolve, reject) => {
-    stream.on("data", (chunk: Buffer | Uint8Array | string) => {
-      if (typeof chunk === "string") {
-        chunks.push(Buffer.from(chunk));
-      } else {
-        chunks.push(Buffer.from(chunk));
-      }
-    });
-
-    stream.on("end", () => {
-      resolve(Buffer.concat(chunks));
-    });
-
-    stream.on("error", (error) => {
-      reject(error);
-    });
-  });
-}
 
 function formatDate(value: Date | string | null | undefined) {
   if (!value) return "-";
@@ -214,13 +198,11 @@ export async function generateVoucherPDF(booking: VoucherBooking) {
             </Text>
           </View>
 
-          <View>
+          <View style={styles.voucherHeaderRight}>
             {booking.user?.agentLogoUrl ? (
-              <View style={styles.logoBox}>
-                <Image
-                  src={booking.user.agentLogoUrl}
-                  style={styles.agencyLogo}
-                />
+            <View style={styles.logoBox}>
+              {/* eslint-disable-next-line jsx-a11y/alt-text */}
+              <Image src={booking.user.agentLogoUrl} style={styles.agencyLogo} />
               </View>
             ) : null}
 
@@ -280,16 +262,12 @@ export async function generateVoucherPDF(booking: VoucherBooking) {
           <View style={styles.grid}>
             <View style={styles.item}>
               <Text style={styles.label}>Agency</Text>
-              <Text style={styles.value}>
-                {booking.agencyNameSnapshot || "-"}
-              </Text>
+              <Text style={styles.value}>{booking.agencyNameSnapshot || "-"}</Text>
             </View>
 
             <View style={styles.item}>
               <Text style={styles.label}>Agent</Text>
-              <Text style={styles.value}>
-                {booking.agentNameSnapshot || "-"}
-              </Text>
+              <Text style={styles.value}>{booking.agentNameSnapshot || "-"}</Text>
             </View>
 
             <View style={styles.item}>
@@ -361,9 +339,7 @@ export async function generateVoucherPDF(booking: VoucherBooking) {
 
             <View style={styles.item}>
               <Text style={styles.label}>Needs Flights</Text>
-              <Text style={styles.value}>
-                {booking.needsFlights ? "Yes" : "No"}
-              </Text>
+              <Text style={styles.value}>{booking.needsFlights ? "Yes" : "No"}</Text>
             </View>
           </View>
         </View>
@@ -371,14 +347,14 @@ export async function generateVoucherPDF(booking: VoucherBooking) {
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Booking Notes</Text>
           <View style={styles.noteBox}>
-            <Text>{booking.notes || "-"}</Text>
+            <Text style={styles.noteText}>{booking.notes || "-"}</Text>
           </View>
 
           <Text style={[styles.sectionTitle, { marginTop: 12, marginBottom: 8 }]}>
             Special Requests
           </Text>
           <View style={styles.noteBox}>
-            <Text>{booking.specialRequests || "-"}</Text>
+            <Text style={styles.noteText}>{booking.specialRequests || "-"}</Text>
           </View>
         </View>
 
@@ -395,6 +371,5 @@ export async function generateVoucherPDF(booking: VoucherBooking) {
     </Document>
   );
 
-  const stream = await pdf(Voucher).toBuffer();
-  return streamToBuffer(stream);
+  return pdf(Voucher).toBuffer();
 }

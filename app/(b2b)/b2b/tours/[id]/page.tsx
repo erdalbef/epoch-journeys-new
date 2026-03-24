@@ -1,19 +1,14 @@
+// app/b2b/tours/[id]/page.tsx
+
 import Link from "next/link";
-import { DepartureStatus } from "@prisma/client";
-import { getServerSession } from "next-auth";
 import { notFound } from "next/navigation";
+import { getServerSession } from "next-auth";
 
 import { authOptions } from "@/lib/authOptions";
 import { db } from "@/lib/db";
 
-type PageProps = {
-  params: {
-    id: string;
-  };
-};
-
-function formatDate(date: Date | string) {
-  return new Date(date).toLocaleDateString("en-GB", {
+function formatDate(value: Date) {
+  return new Date(value).toLocaleDateString("en-GB", {
     day: "2-digit",
     month: "short",
     year: "numeric",
@@ -28,34 +23,22 @@ function formatCurrency(value: number) {
   }).format(value);
 }
 
-function formatCommission(rate?: number | null) {
-  if (typeof rate !== "number" || Number.isNaN(rate)) {
-    return null;
-  }
-
-  if (rate <= 1) {
-    return `${(rate * 100).toFixed(0)}%`;
-  }
-
-  return `${rate.toFixed(0)}%`;
-}
-
-function getStatusBadgeClass(status: DepartureStatus) {
-  switch (status) {
-    case "EARLY_BOOKING":
-      return "bg-blue-100 text-blue-700";
-    case "AVAILABLE":
-      return "bg-green-100 text-green-700";
-    case "SOLD_OUT":
-      return "bg-red-100 text-red-700";
-    case "CLOSED":
-      return "bg-slate-200 text-slate-700";
+function getSeasonLabel(season: string) {
+  switch (season) {
+    case "LOW":
+      return "Low Season";
+    case "SHOULDER":
+      return "Shoulder Season";
+    case "HIGH":
+      return "High Season";
+    case "PEAK":
+      return "Peak Season";
     default:
-      return "bg-slate-100 text-slate-700";
+      return season;
   }
 }
 
-function getStatusLabel(status: DepartureStatus) {
+function getStatusLabel(status: string) {
   switch (status) {
     case "EARLY_BOOKING":
       return "Early Booking";
@@ -70,113 +53,140 @@ function getStatusLabel(status: DepartureStatus) {
   }
 }
 
-export default async function B2BTourDetailPage({ params }: PageProps) {
-  const { id } = params;
+function getStatusBadgeClass(status: string) {
+  switch (status) {
+    case "EARLY_BOOKING":
+      return "bg-blue-100 text-blue-700";
+    case "AVAILABLE":
+      return "bg-green-100 text-green-700";
+    case "SOLD_OUT":
+      return "bg-red-100 text-red-700";
+    case "CLOSED":
+      return "bg-slate-200 text-slate-700";
+    default:
+      return "bg-slate-100 text-slate-700";
+  }
+}
+
+function calculateNetPrice(price: number, commissionRate: number | null) {
+  if (!commissionRate || commissionRate <= 0) {
+    return price;
+  }
+
+  return price - price * commissionRate;
+}
+
+export default async function B2BTourDetailPage({
+  params,
+}: {
+  params: Promise<{ id: string }>;
+}) {
+  const { id } = await params;
 
   const session = await getServerSession(authOptions);
 
+  if (!session?.user?.id) {
+    notFound();
+  }
+
+  const agent = await db.user.findUnique({
+    where: { id: session.user.id },
+    select: {
+      id: true,
+      commissionRate: true,
+      fullName: true,
+      travelAgency: true,
+    },
+  });
+
+  if (!agent) {
+    notFound();
+  }
+
   const tour = await db.tour.findUnique({
     where: { id },
-    include: {
+    select: {
+      id: true,
+      title: true,
+      category: true,
+      duration: true,
+      destinations: true,
+      shortDescription: true,
+      overview: true,
+      mainImageUrl: true,
+      brochureUrl: true,
+      requiresQuote: true,
       departureDates: {
         orderBy: {
           date: "asc",
+        },
+        select: {
+          id: true,
+          date: true,
+          season: true,
+          price: true,
+          status: true,
+          capacity: true,
+          bookedSeats: true,
+          earlyDiscountPercent: true,
+          earlyDiscountDeadline: true,
         },
       },
     },
   });
 
-  if (!tour || !tour.isPublished) {
+  if (!tour) {
     notFound();
   }
 
-  const visibleDepartures = tour.departureDates.filter(
-    (departure) => departure.status !== "CLOSED"
-  );
-
-  const firstBookableDeparture = visibleDepartures.find((departure) => {
-    const seatsLeft = departure.capacity - departure.bookedSeats;
-
-    return departure.status !== "SOLD_OUT" && seatsLeft > 0;
-  });
-
-  const agentName = session?.user?.name ?? "Travel Partner";
-  const agentCommissionRate =
-    typeof session?.user?.commissionRate === "number"
-      ? session.user.commissionRate
-      : null;
-
-  const commissionLabel = formatCommission(agentCommissionRate);
-
-  const lowestAvailablePrice =
-    visibleDepartures.length > 0
-      ? Math.min(...visibleDepartures.map((departure) => departure.price))
-      : null;
-
-  const nextDeparture = visibleDepartures[0] ?? null;
+  const commissionRate = agent.commissionRate ?? null;
 
   return (
     <div className="space-y-8">
-      <div className="flex flex-wrap gap-3">
-        <Link
-          href="/b2b/tours"
-          className="rounded-lg border px-4 py-2 text-sm font-medium text-gray-700 transition hover:border-red-700 hover:text-red-700"
-        >
-          Back to Tours
-        </Link>
-
-        <Link
-          href="/b2b/dashboard"
-          className="rounded-lg border px-4 py-2 text-sm font-medium text-gray-700 transition hover:border-red-700 hover:text-red-700"
-        >
-          Back to Dashboard
-        </Link>
-      </div>
-
-      <section className="overflow-hidden rounded-2xl border bg-white shadow-sm">
-        <div className="grid gap-0 lg:grid-cols-2">
-          <div className="h-72 bg-gray-100 lg:h-full">
-            {tour.mainImageUrl ? (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img
-                src={tour.mainImageUrl}
-                alt={tour.title}
-                className="h-full w-full object-cover"
-              />
-            ) : (
-              <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
-                No image available
-              </div>
-            )}
+      <section className="rounded-2xl border bg-white p-6 shadow-sm">
+        <div className="flex flex-col gap-6 lg:flex-row">
+          <div className="w-full lg:w-1/3">
+            <div className="overflow-hidden rounded-2xl border bg-gray-100">
+              {tour.mainImageUrl ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  src={tour.mainImageUrl}
+                  alt={tour.title}
+                  className="h-full w-full object-cover"
+                />
+              ) : (
+                <div className="flex h-64 items-center justify-center text-sm text-muted-foreground">
+                  No image available
+                </div>
+              )}
+            </div>
           </div>
 
-          <div className="space-y-5 p-6 lg:p-8">
+          <div className="flex-1 space-y-4">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="rounded-full bg-red-50 px-3 py-1 text-xs font-medium text-red-700">
+                {tour.category}
+              </span>
+
+              <span className="rounded-full bg-gray-100 px-3 py-1 text-xs font-medium text-gray-700">
+                {tour.duration} days
+              </span>
+
+              {tour.requiresQuote ? (
+                <span className="rounded-full bg-amber-50 px-3 py-1 text-xs font-medium text-amber-700">
+                  Quote Required
+                </span>
+              ) : null}
+            </div>
+
             <div>
-              <div className="flex flex-wrap items-center gap-2">
-                <span className="rounded-full bg-red-50 px-3 py-1 text-xs font-medium text-red-700">
-                  {tour.category}
-                </span>
+              <h1 className="text-3xl font-bold text-[#001F3F]">{tour.title}</h1>
 
-                <span className="rounded-full bg-gray-100 px-3 py-1 text-xs font-medium text-gray-700">
-                  {tour.duration} days
-                </span>
-
-                {tour.requiresQuote ? (
-                  <span className="rounded-full bg-amber-50 px-3 py-1 text-xs font-medium text-amber-700">
-                    Quote Required
-                  </span>
-                ) : null}
-              </div>
-
-              <h1 className="mt-3 text-3xl font-bold text-[#001F3F]">
-                {tour.title}
-              </h1>
-
-              <p className="mt-2 text-sm text-muted-foreground">
-                {tour.destinations.length > 0
-                  ? tour.destinations.join(" • ")
-                  : "Destination details coming soon"}
-              </p>
+              {tour.destinations.length > 0 ? (
+                <p className="mt-2 text-sm text-muted-foreground">
+                  {tour.destinations.join(" • ")}
+                </p>
+              ) : null}
             </div>
 
             {tour.shortDescription ? (
@@ -185,20 +195,36 @@ export default async function B2BTourDetailPage({ params }: PageProps) {
               </p>
             ) : null}
 
-            {tour.subcategories.length > 0 ? (
-              <div className="flex flex-wrap gap-2">
-                {tour.subcategories.map((item) => (
-                  <span
-                    key={item}
-                    className="rounded-full bg-gray-100 px-3 py-1 text-xs font-medium text-gray-700"
-                  >
-                    {item}
-                  </span>
-                ))}
+            {tour.overview ? (
+              <div>
+                <h2 className="text-lg font-semibold text-[#001F3F]">Overview</h2>
+                <p className="mt-2 text-sm leading-6 text-gray-700">
+                  {tour.overview}
+                </p>
               </div>
             ) : null}
 
+            <div className="rounded-xl bg-gray-50 p-4 text-sm">
+              <div className="font-medium text-[#001F3F]">Agent Pricing</div>
+              <div className="mt-2 text-gray-700">
+                Commission Rate:{" "}
+                <span className="font-medium">
+                  {commissionRate !== null ? `${commissionRate * 100}%` : "0%"}
+                </span>
+              </div>
+              <p className="mt-1 text-xs text-muted-foreground">
+                Net price is shown after your commission is deducted.
+              </p>
+            </div>
+
             <div className="flex flex-wrap gap-3">
+              <Link
+                href="/b2b/tours"
+                className="rounded-lg border px-4 py-2 text-sm font-medium text-gray-700 transition hover:border-red-700 hover:text-red-700"
+              >
+                Back to Tours
+              </Link>
+
               {tour.brochureUrl ? (
                 <a
                   href={tour.brochureUrl}
@@ -206,268 +232,66 @@ export default async function B2BTourDetailPage({ params }: PageProps) {
                   rel="noreferrer"
                   className="rounded-lg border px-4 py-2 text-sm font-medium text-gray-700 transition hover:border-red-700 hover:text-red-700"
                 >
-                  Download Brochure
+                  Brochure
                 </a>
               ) : null}
-
-              {tour.mapImageUrl ? (
-                <a
-                  href={tour.mapImageUrl}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="rounded-lg border px-4 py-2 text-sm font-medium text-gray-700 transition hover:border-red-700 hover:text-red-700"
-                >
-                  View Map
-                </a>
-              ) : null}
-
-              {tour.requiresQuote ? (
-                <Link
-                  href={`/b2b/tours/${tour.id}/quote`}
-                  className="rounded-lg border border-amber-300 bg-amber-50 px-4 py-2 text-sm font-medium text-amber-700 transition hover:bg-amber-100"
-                >
-                  Request Quote
-                </Link>
-              ) : firstBookableDeparture ? (
-                <Link
-                  href={`/b2b/tours/${tour.id}/book?departureId=${firstBookableDeparture.id}`}
-                  className="rounded-lg bg-red-700 px-4 py-2 text-sm font-medium text-white transition hover:bg-red-800"
-                >
-                  Book This Tour
-                </Link>
-              ) : (
-                <span className="inline-flex rounded-lg bg-gray-200 px-4 py-2 text-sm font-medium text-gray-500">
-                  Booking Not Available
-                </span>
-              )}
             </div>
           </div>
         </div>
       </section>
 
-      <div className="grid gap-6 lg:grid-cols-3">
-        <section className="rounded-2xl border bg-white p-6 shadow-sm lg:col-span-2">
-          <h2 className="text-xl font-semibold text-[#001F3F]">Tour Facts</h2>
-
-          <div className="mt-4 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-            <div className="rounded-xl border bg-gray-50 p-4">
-              <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                Duration
-              </p>
-              <p className="mt-2 text-lg font-semibold text-[#001F3F]">
-                {tour.duration} days
-              </p>
-            </div>
-
-            <div className="rounded-xl border bg-gray-50 p-4">
-              <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                Category
-              </p>
-              <p className="mt-2 text-lg font-semibold text-[#001F3F]">
-                {tour.category}
-              </p>
-            </div>
-
-            <div className="rounded-xl border bg-gray-50 p-4">
-              <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                Next Departure
-              </p>
-              <p className="mt-2 text-lg font-semibold text-[#001F3F]">
-                {nextDeparture ? formatDate(nextDeparture.date) : "TBC"}
-              </p>
-            </div>
-
-            <div className="rounded-xl border bg-gray-50 p-4">
-              <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                From Price
-              </p>
-              <p className="mt-2 text-lg font-semibold text-[#001F3F]">
-                {lowestAvailablePrice != null
-                  ? formatCurrency(lowestAvailablePrice)
-                  : "On Request"}
-              </p>
-            </div>
-          </div>
-        </section>
-
-        <section className="rounded-2xl border bg-white p-6 shadow-sm">
-          <h2 className="text-xl font-semibold text-[#001F3F]">Agent Info</h2>
-
-          <div className="mt-4 space-y-4">
-            <div className="rounded-xl border bg-gray-50 p-4">
-              <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                Logged-in Partner
-              </p>
-              <p className="mt-2 text-base font-semibold text-[#001F3F]">
-                {agentName}
-              </p>
-            </div>
-
-            <div className="rounded-xl border bg-gray-50 p-4">
-              <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                Commission
-              </p>
-              <p className="mt-2 text-base font-semibold text-[#001F3F]">
-                {commissionLabel ?? "Set by admin"}
-              </p>
-            </div>
-
-            <div className="rounded-xl border bg-gray-50 p-4">
-              <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                Booking Type
-              </p>
-              <p className="mt-2 text-base font-semibold text-[#001F3F]">
-                {tour.requiresQuote ? "Quote / Request Basis" : "Direct Booking"}
-              </p>
-            </div>
-
-            <p className="text-sm leading-6 text-gray-600">
-              Agent-specific commercial terms, payout logic, and final pricing
-              can be expanded later in this card.
-            </p>
-          </div>
-        </section>
-      </div>
-
-      {tour.overview ? (
-        <section className="rounded-2xl border bg-white p-6 shadow-sm">
-          <h2 className="text-xl font-semibold text-[#001F3F]">Overview</h2>
-          <p className="mt-3 whitespace-pre-line text-sm leading-6 text-gray-700">
-            {tour.overview}
-          </p>
-        </section>
-      ) : null}
-
-      <div className="grid gap-6 lg:grid-cols-2">
-        <section className="rounded-2xl border bg-white p-6 shadow-sm">
-          <h2 className="text-xl font-semibold text-[#001F3F]">Highlights</h2>
-
-          {tour.highlights.length === 0 ? (
-            <p className="mt-3 text-sm text-muted-foreground">
-              No highlights added yet.
-            </p>
-          ) : (
-            <ul className="mt-4 space-y-2 text-sm text-gray-700">
-              {tour.highlights.map((item, index) => (
-                <li key={`${item}-${index}`} className="flex gap-2">
-                  <span className="mt-1 text-red-700">•</span>
-                  <span>{item}</span>
-                </li>
-              ))}
-            </ul>
-          )}
-        </section>
-
-        <section className="rounded-2xl border bg-white p-6 shadow-sm">
-          <h2 className="text-xl font-semibold text-[#001F3F]">Inclusions</h2>
-
-          {tour.inclusions.length === 0 ? (
-            <p className="mt-3 text-sm text-muted-foreground">
-              No inclusions added yet.
-            </p>
-          ) : (
-            <ul className="mt-4 space-y-2 text-sm text-gray-700">
-              {tour.inclusions.map((item, index) => (
-                <li key={`${item}-${index}`} className="flex gap-2">
-                  <span className="mt-1 text-red-700">•</span>
-                  <span>{item}</span>
-                </li>
-              ))}
-            </ul>
-          )}
-        </section>
-      </div>
-
-      <div className="grid gap-6 lg:grid-cols-2">
-        <section className="rounded-2xl border bg-white p-6 shadow-sm">
-          <h2 className="text-xl font-semibold text-[#001F3F]">Exclusions</h2>
-
-          {tour.exclusions.length === 0 ? (
-            <p className="mt-3 text-sm text-muted-foreground">
-              No exclusions added yet.
-            </p>
-          ) : (
-            <ul className="mt-4 space-y-2 text-sm text-gray-700">
-              {tour.exclusions.map((item, index) => (
-                <li key={`${item}-${index}`} className="flex gap-2">
-                  <span className="mt-1 text-red-700">•</span>
-                  <span>{item}</span>
-                </li>
-              ))}
-            </ul>
-          )}
-        </section>
-
-        <section className="rounded-2xl border bg-white p-6 shadow-sm">
-          <h2 className="text-xl font-semibold text-[#001F3F]">
-            Accommodations
-          </h2>
-
-          {tour.accommodations.length === 0 ? (
-            <p className="mt-3 text-sm text-muted-foreground">
-              No accommodations added yet.
-            </p>
-          ) : (
-            <ul className="mt-4 space-y-2 text-sm text-gray-700">
-              {tour.accommodations.map((item, index) => (
-                <li key={`${item}-${index}`} className="flex gap-2">
-                  <span className="mt-1 text-red-700">•</span>
-                  <span>{item}</span>
-                </li>
-              ))}
-            </ul>
-          )}
-        </section>
-      </div>
-
       <section className="rounded-2xl border bg-white p-6 shadow-sm">
         <div className="mb-4">
           <h2 className="text-xl font-semibold text-[#001F3F]">
-            Departure Dates
+            Departure Dates & Pricing
           </h2>
           <p className="mt-1 text-sm text-muted-foreground">
-            Select a departure and proceed to booking.
+            Review all departures, gross selling price, and your net price.
           </p>
         </div>
 
-        {visibleDepartures.length === 0 ? (
-          <div className="rounded-xl border bg-gray-50 p-6 text-sm text-muted-foreground">
-            No departures available yet.
+        {tour.departureDates.length === 0 ? (
+          <div className="rounded-xl bg-gray-50 p-4 text-sm text-muted-foreground">
+            No departure dates available yet.
           </div>
         ) : (
-          <div className="overflow-x-auto rounded-xl border">
-            <table className="w-full min-w-[980px] text-sm">
-              <thead className="bg-gray-50 text-left">
-                <tr>
-                  <th className="p-3">Date</th>
-                  <th className="p-3">Season</th>
-                  <th className="p-3">Price</th>
-                  <th className="p-3">Status</th>
-                  <th className="p-3">Capacity</th>
-                  <th className="p-3">Booked</th>
-                  <th className="p-3">Seats Left</th>
-                  <th className="p-3">Early Booking</th>
-                  <th className="p-3">Action</th>
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-225 text-sm">
+              <thead>
+                <tr className="border-b text-left">
+                  <th className="p-3 font-medium text-[#001F3F]">Date</th>
+                  <th className="p-3 font-medium text-[#001F3F]">Season</th>
+                  <th className="p-3 font-medium text-[#001F3F]">Status</th>
+                  <th className="p-3 font-medium text-[#001F3F]">Gross Price</th>
+                  <th className="p-3 font-medium text-[#001F3F]">Your Net</th>
+                  <th className="p-3 font-medium text-[#001F3F]">Seats</th>
+                  <th className="p-3 font-medium text-[#001F3F]">Action</th>
                 </tr>
               </thead>
+
               <tbody>
-                {visibleDepartures.map((departure) => {
+                {tour.departureDates.map((departure) => {
                   const seatsLeft = Math.max(
                     departure.capacity - departure.bookedSeats,
                     0
                   );
 
-                  const isBookable =
+                  const netPrice = calculateNetPrice(
+                    Number(departure.price),
+                    commissionRate
+                  );
+
+                  const canBook =
+                    !tour.requiresQuote &&
                     departure.status !== "SOLD_OUT" &&
                     departure.status !== "CLOSED" &&
-                    seatsLeft > 0 &&
-                    !tour.requiresQuote;
+                    seatsLeft > 0;
 
                   return (
-                    <tr key={departure.id} className="border-t align-middle">
+                    <tr key={departure.id} className="border-b align-top">
                       <td className="p-3">{formatDate(departure.date)}</td>
-                      <td className="p-3">{departure.season}</td>
-                      <td className="p-3">{formatCurrency(departure.price)}</td>
+
+                      <td className="p-3">{getSeasonLabel(departure.season)}</td>
 
                       <td className="p-3">
                         <span
@@ -477,52 +301,54 @@ export default async function B2BTourDetailPage({ params }: PageProps) {
                         >
                           {getStatusLabel(departure.status)}
                         </span>
-                      </td>
 
-                      <td className="p-3">{departure.capacity}</td>
-                      <td className="p-3">{departure.bookedSeats}</td>
-                      <td className="p-3">{seatsLeft}</td>
-
-                      <td className="p-3">
                         {departure.status === "EARLY_BOOKING" &&
                         departure.earlyDiscountPercent ? (
-                          <div className="space-y-1">
-                            <div className="font-medium text-blue-700">
-                              {departure.earlyDiscountPercent}% discount
-                            </div>
-                            {departure.earlyDiscountDeadline ? (
-                              <div className="text-xs text-muted-foreground">
-                                Until {formatDate(departure.earlyDiscountDeadline)}
-                              </div>
-                            ) : null}
+                          <div className="mt-2 text-xs text-blue-700">
+                            {departure.earlyDiscountPercent}% early booking
+                            {departure.earlyDiscountDeadline
+                              ? ` until ${formatDate(
+                                  departure.earlyDiscountDeadline
+                                )}`
+                              : ""}
                           </div>
-                        ) : (
-                          <span className="text-xs text-muted-foreground">—</span>
-                        )}
+                        ) : null}
+                      </td>
+
+                      <td className="p-3 font-medium">
+                        {formatCurrency(Number(departure.price))}
+                      </td>
+
+                      <td className="p-3 font-semibold text-green-700">
+                        {formatCurrency(netPrice)}
                       </td>
 
                       <td className="p-3">
-                        {tour.requiresQuote ? (
-                          <Link
-                            href={`/b2b/tours/${tour.id}/quote?departureId=${departure.id}`}
-                            className="inline-flex rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-xs font-medium text-amber-700 transition hover:bg-amber-100"
-                          >
-                            Request Quote
-                          </Link>
-                        ) : isBookable ? (
+                        <div>
+                          {departure.bookedSeats} / {departure.capacity} booked
+                        </div>
+                        <div className="text-xs text-muted-foreground">
+                          {seatsLeft} left
+                        </div>
+                      </td>
+
+                      <td className="p-3">
+                        {canBook ? (
                           <Link
                             href={`/b2b/tours/${tour.id}/book?departureId=${departure.id}`}
-                            className="inline-flex rounded-lg bg-red-700 px-3 py-2 text-xs font-medium text-white transition hover:bg-red-800"
+                            className="inline-flex rounded-lg bg-red-700 px-4 py-2 text-sm font-medium text-white transition hover:bg-red-800"
                           >
                             Book Now
                           </Link>
                         ) : (
-                          <span className="text-xs text-muted-foreground">
-                            {departure.status === "SOLD_OUT"
-                              ? "Sold Out"
-                              : departure.status === "CLOSED"
-                              ? "Closed"
-                              : "Not Available"}
+                          <span className="inline-flex rounded-lg bg-gray-200 px-4 py-2 text-sm font-medium text-gray-500">
+                            {tour.requiresQuote
+                              ? "Request Quote"
+                              : departure.status === "SOLD_OUT"
+                                ? "Sold Out"
+                                : departure.status === "CLOSED"
+                                  ? "Closed"
+                                  : "Not Available"}
                           </span>
                         )}
                       </td>

@@ -67,6 +67,53 @@ function FilterLink({
   );
 }
 
+function getSeasonLabel(season: string) {
+  switch (season) {
+    case "LOW":
+      return "Low Season";
+    case "SHOULDER":
+      return "Shoulder Season";
+    case "HIGH":
+      return "High Season";
+    case "PEAK":
+      return "Peak Season";
+    default:
+      return season;
+  }
+}
+
+function getBookingStatusLabel(status: string) {
+  switch (status) {
+    case "PENDING":
+      return "Pending";
+    case "CONFIRMED":
+      return "Confirmed";
+    case "ON_REQUEST":
+      return "On Request";
+    case "WAITLIST":
+      return "Waitlist";
+    case "CANCELLED":
+      return "Cancelled";
+    default:
+      return status;
+  }
+}
+
+function getPaymentStatusLabel(status: string) {
+  switch (status) {
+    case "UNPAID":
+      return "Unpaid";
+    case "PARTIALLY_PAID":
+      return "Partially Paid";
+    case "PAID":
+      return "Paid";
+    case "REFUNDED":
+      return "Refunded";
+    default:
+      return status;
+  }
+}
+
 function getBookingStatusClass(status: string) {
   switch (status) {
     case "CONFIRMED":
@@ -240,6 +287,11 @@ export default async function B2BBookingsPage({
     0
   );
 
+  const attentionCount = bookings.filter(
+    (booking) =>
+      booking.status === "PENDING" || booking.paymentStatus === "UNPAID"
+  ).length;
+
   return (
     <div className="space-y-8">
       <section className="rounded-2xl border bg-white p-6 shadow-sm">
@@ -294,6 +346,12 @@ export default async function B2BBookingsPage({
           </div>
         </div>
       </section>
+
+      {attentionCount > 0 ? (
+        <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">
+          You have {attentionCount} booking{attentionCount === 1 ? "" : "s"} requiring attention.
+        </div>
+      ) : null}
 
       <section className="rounded-2xl border bg-white p-6 shadow-sm">
         <div className="space-y-5">
@@ -446,7 +504,7 @@ export default async function B2BBookingsPage({
           </div>
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[1200px] text-sm">
+            <table className="w-full min-w-275 text-sm">
               <thead>
                 <tr className="border-b text-left text-muted-foreground">
                   <th className="pb-3 pr-4 font-medium">Reference</th>
@@ -459,6 +517,7 @@ export default async function B2BBookingsPage({
                   <th className="pb-3 pr-4 font-medium">Departure</th>
                   <th className="pb-3 pr-4 font-medium">Total</th>
                   <th className="pb-3 pr-4 font-medium">Commission</th>
+                  <th className="pb-3 pr-4 font-medium">Action</th>
                 </tr>
               </thead>
               <tbody>
@@ -501,7 +560,7 @@ export default async function B2BBookingsPage({
                           {booking.tourTitleSnapshot}
                         </div>
                         <div className="text-xs text-slate-500">
-                          {booking.seasonSnapshot}
+                          {getSeasonLabel(booking.seasonSnapshot)}
                         </div>
                       </td>
 
@@ -511,13 +570,13 @@ export default async function B2BBookingsPage({
 
                       <td className="py-3 pr-4">
                         <span className={getBookingStatusClass(booking.status)}>
-                          {booking.status}
+                          {getBookingStatusLabel(booking.status)}
                         </span>
                       </td>
 
                       <td className="py-3 pr-4">
                         <span className={getPaymentStatusClass(booking.paymentStatus)}>
-                          {booking.paymentStatus}
+                          {getPaymentStatusLabel(booking.paymentStatus)}
                         </span>
                       </td>
 
@@ -531,6 +590,15 @@ export default async function B2BBookingsPage({
 
                       <td className="py-3 pr-4 font-medium text-green-700">
                         {formatCurrency(booking.commissionAmount)}
+                      </td>
+
+                      <td className="py-3 pr-4">
+                        <Link
+                          href={`/b2b/bookings/${booking.id}`}
+                          className="rounded-lg border px-3 py-2 text-xs font-medium transition hover:border-[#8B0000] hover:text-[#8B0000]"
+                        >
+                          View
+                        </Link>
                       </td>
                     </tr>
                   );

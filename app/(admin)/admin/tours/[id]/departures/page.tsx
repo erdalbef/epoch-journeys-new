@@ -1,38 +1,40 @@
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
-import { DepartureStatus } from "@prisma/client";
+import { DepartureStatus, Season } from "@prisma/client";
 
 import { db } from "@/lib/db";
+import { AddDepartureForm } from "@/components/admin/AddDepartureForm";
+import { EditDepartureFields } from "@/components/admin/EditDepartureFields";
 
 type PageProps = {
   params: Promise<{
     id: string;
+  }>;
+  searchParams: Promise<{
+    success?: string;
+    error?: string;
   }>;
 };
 
 function formatCurrency(value: number) {
   return new Intl.NumberFormat("en-US", {
     style: "currency",
-    currency: "USD",
+    currency: "EUR",
     maximumFractionDigits: 0,
   }).format(value);
 }
 
-function formatDate(value: Date | string) {
-  return new Date(value).toLocaleDateString("en-US", {
+function formatDate(value: Date) {
+  return new Date(value).toLocaleDateString("en-GB", {
     day: "2-digit",
     month: "short",
     year: "numeric",
   });
 }
 
-function formatDateInput(value: Date | string | null) {
+function formatDateInput(value: Date | null) {
   if (!value) return "";
-  const date = new Date(value);
-  const year = date.getFullYear();
-  const month = `${date.getMonth() + 1}`.padStart(2, "0");
-  const day = `${date.getDate()}`.padStart(2, "0");
-  return `${year}-${month}-${day}`;
+  return new Date(value).toISOString().split("T")[0];
 }
 
 function getStatusLabel(status: DepartureStatus) {
@@ -78,6 +80,29 @@ function parseStatus(value: string): DepartureStatus {
     : "AVAILABLE";
 }
 
+function getSeasonLabel(season: Season) {
+  switch (season) {
+    case "LOW":
+      return "Low Season";
+    case "SHOULDER":
+      return "Shoulder Season";
+    case "HIGH":
+      return "High Season";
+    case "PEAK":
+      return "Peak Season";
+    default:
+      return season;
+  }
+}
+
+function parseSeason(value: string): Season {
+  const allowedSeasons: Season[] = ["LOW", "SHOULDER", "HIGH", "PEAK"];
+
+  return allowedSeasons.includes(value as Season)
+    ? (value as Season)
+    : "SHOULDER";
+}
+
 async function createDeparture(tourId: string, formData: FormData) {
   "use server";
 
@@ -85,7 +110,6 @@ async function createDeparture(tourId: string, formData: FormData) {
   const seasonValue = formData.get("season");
   const priceValue = formData.get("price");
   const capacityValue = formData.get("capacity");
-  const bookedSeatsValue = formData.get("bookedSeats");
   const statusValue = formData.get("status");
   const earlyDiscountPercentValue = formData.get("earlyDiscountPercent");
   const earlyDiscountDeadlineValue = formData.get("earlyDiscountDeadline");
@@ -95,28 +119,22 @@ async function createDeparture(tourId: string, formData: FormData) {
     typeof seasonValue !== "string" ||
     typeof priceValue !== "string" ||
     typeof capacityValue !== "string" ||
-    typeof bookedSeatsValue !== "string" ||
     typeof statusValue !== "string"
   ) {
     return;
   }
 
   const date = new Date(dateValue);
-  const season = seasonValue.trim();
+  const season = parseSeason(seasonValue);
   const price = Number(priceValue);
   const capacity = Number(capacityValue);
-  const bookedSeats = Number(bookedSeatsValue);
 
   if (
     Number.isNaN(date.getTime()) ||
-    !season ||
     Number.isNaN(price) ||
     price < 0 ||
     Number.isNaN(capacity) ||
-    capacity < 0 ||
-    Number.isNaN(bookedSeats) ||
-    bookedSeats < 0 ||
-    bookedSeats > capacity
+    capacity < 0
   ) {
     return;
   }
@@ -155,7 +173,7 @@ async function createDeparture(tourId: string, formData: FormData) {
       season,
       price,
       capacity,
-      bookedSeats,
+      bookedSeats: 0,
       status,
       earlyDiscountPercent: validEarlyDiscountPercent,
       earlyDiscountDeadline: validEarlyDiscountDeadline,
@@ -165,14 +183,17 @@ async function createDeparture(tourId: string, formData: FormData) {
   redirect(`/admin/tours/${tourId}/departures`);
 }
 
-async function updateDeparture(tourId: string, departureId: string, formData: FormData) {
+async function updateDeparture(
+  tourId: string,
+  departureId: string,
+  formData: FormData
+) {
   "use server";
 
   const dateValue = formData.get("date");
   const seasonValue = formData.get("season");
   const priceValue = formData.get("price");
   const capacityValue = formData.get("capacity");
-  const bookedSeatsValue = formData.get("bookedSeats");
   const statusValue = formData.get("status");
   const earlyDiscountPercentValue = formData.get("earlyDiscountPercent");
   const earlyDiscountDeadlineValue = formData.get("earlyDiscountDeadline");
@@ -182,37 +203,57 @@ async function updateDeparture(tourId: string, departureId: string, formData: Fo
     typeof seasonValue !== "string" ||
     typeof priceValue !== "string" ||
     typeof capacityValue !== "string" ||
-    typeof bookedSeatsValue !== "string" ||
     typeof statusValue !== "string"
   ) {
     return;
   }
 
+  const existingDeparture = await db.departureDate.findUnique({
+    where: { id: departureId },
+    select: {
+      id: true,
+      tourId: true,
+      bookedSeats: true,
+      price: true,
+      _count: {
+        select: {
+          bookings: true,
+        },
+      },
+    },
+  });
+
+  if (!existingDeparture || existingDeparture.tourId !== tourId) {
+    return;
+  }
+
   const date = new Date(dateValue);
-  const season = seasonValue.trim();
+  const season = parseSeason(seasonValue);
   const price = Number(priceValue);
   const capacity = Number(capacityValue);
-  const bookedSeats = Number(bookedSeatsValue);
 
   if (
     Number.isNaN(date.getTime()) ||
-    !season ||
     Number.isNaN(price) ||
     price < 0 ||
     Number.isNaN(capacity) ||
-    capacity < 0 ||
-    Number.isNaN(bookedSeats) ||
-    bookedSeats < 0 ||
-    bookedSeats > capacity
+    capacity < 0
   ) {
     return;
   }
 
-  let status = parseStatus(statusValue);
-
-  if (bookedSeats >= capacity && capacity > 0) {
-    status = "SOLD_OUT";
+  if (capacity < existingDeparture.bookedSeats) {
+    redirect(`/admin/tours/${tourId}/departures?error=capacity-below-booked`);
   }
+
+  if (
+    existingDeparture._count.bookings > 0 &&
+    price !== Number(existingDeparture.price)
+  ) {
+    redirect(`/admin/tours/${tourId}/departures?error=price-locked`);
+  }
+
+  const status = parseStatus(statusValue);
 
   const earlyDiscountPercent =
     typeof earlyDiscountPercentValue === "string" &&
@@ -240,13 +281,15 @@ async function updateDeparture(tourId: string, departureId: string, formData: Fo
       : null;
 
   await db.departureDate.update({
-    where: { id: departureId },
+    where: {
+      id: departureId,
+      tourId,
+    },
     data: {
       date,
       season,
       price,
       capacity,
-      bookedSeats,
       status,
       earlyDiscountPercent: validEarlyDiscountPercent,
       earlyDiscountDeadline: validEarlyDiscountDeadline,
@@ -256,15 +299,60 @@ async function updateDeparture(tourId: string, departureId: string, formData: Fo
   redirect(`/admin/tours/${tourId}/departures`);
 }
 
-export default async function TourDeparturesPage({ params }: PageProps) {
+async function deleteDeparture(tourId: string, departureId: string) {
+  "use server";
+
+  const existingDeparture = await db.departureDate.findUnique({
+    where: { id: departureId },
+    select: {
+      id: true,
+      tourId: true,
+      _count: {
+        select: {
+          bookings: true,
+        },
+      },
+    },
+  });
+
+  if (!existingDeparture || existingDeparture.tourId !== tourId) {
+    return;
+  }
+
+  if (existingDeparture._count.bookings > 0) {
+    redirect(`/admin/tours/${tourId}/departures?error=departure-has-bookings`);
+  }
+
+  await db.departureDate.delete({
+    where: {
+      id: departureId,
+    },
+  });
+
+  redirect(`/admin/tours/${tourId}/departures?success=departure-deleted`);
+}
+
+export default async function AdminTourDeparturesPage({
+  params,
+  searchParams,
+}: PageProps) {
   const { id } = await params;
+  const { success, error } = await searchParams;
 
   const tour = await db.tour.findUnique({
     where: { id },
     include: {
+      seasonalPrices: true,
       departureDates: {
         orderBy: {
           date: "asc",
+        },
+        include: {
+          _count: {
+            select: {
+              bookings: true,
+            },
+          },
         },
       },
     },
@@ -274,17 +362,35 @@ export default async function TourDeparturesPage({ params }: PageProps) {
     notFound();
   }
 
+  const seasonalPriceMap: Record<Season, number | null> = {
+    LOW: null,
+    SHOULDER: null,
+    HIGH: null,
+    PEAK: null,
+  };
+
+  for (const seasonalPrice of tour.seasonalPrices) {
+    seasonalPriceMap[seasonalPrice.season] = seasonalPrice.price;
+  }
+
   return (
-    <div className="space-y-6">
-      <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+    <div className="space-y-6 p-6">
+      <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
         <div>
-          <h1 className="text-2xl font-semibold">Departures - {tour.title}</h1>
+          <h1 className="text-2xl font-bold">Manage Departures</h1>
           <p className="text-sm text-muted-foreground">
-            Manage departure dates, pricing, and capacity.
+            {tour.title} — add, edit, and manage departure dates and pricing.
           </p>
         </div>
 
         <div className="flex gap-3">
+          <Link
+            href={`/admin/tours/${tour.id}/seasonal-prices`}
+            className="text-sm underline underline-offset-4"
+          >
+            Seasonal Prices
+          </Link>
+
           <Link
             href={`/admin/tours/${tour.id}/edit`}
             className="text-sm underline underline-offset-4"
@@ -301,6 +407,30 @@ export default async function TourDeparturesPage({ params }: PageProps) {
         </div>
       </div>
 
+      {success === "departure-deleted" && (
+        <div className="rounded-md border border-green-200 bg-green-50 p-4 text-sm text-green-800">
+          Departure deleted successfully.
+        </div>
+      )}
+
+      {error === "departure-has-bookings" && (
+        <div className="rounded-md border border-red-200 bg-red-50 p-4 text-sm text-red-800">
+          Cannot delete this departure because it has existing bookings.
+        </div>
+      )}
+
+      {error === "capacity-below-booked" && (
+        <div className="rounded-md border border-red-200 bg-red-50 p-4 text-sm text-red-800">
+          Capacity cannot be lower than the number of already booked seats.
+        </div>
+      )}
+
+      {error === "price-locked" && (
+        <div className="rounded-md border border-red-200 bg-red-50 p-4 text-sm text-red-800">
+          Price cannot be changed because this departure already has bookings.
+        </div>
+      )}
+
       <section className="rounded-lg border bg-white p-6">
         <div className="mb-4">
           <h2 className="text-lg font-semibold">Add Departure</h2>
@@ -313,127 +443,7 @@ export default async function TourDeparturesPage({ params }: PageProps) {
           action={createDeparture.bind(null, tour.id)}
           className="grid gap-4 md:grid-cols-2 xl:grid-cols-4"
         >
-          <div>
-            <label htmlFor="date" className="text-sm font-medium">
-              Date
-            </label>
-            <input
-              id="date"
-              name="date"
-              type="date"
-              required
-              className="mt-1 w-full rounded border p-2"
-            />
-          </div>
-
-          <div>
-            <label htmlFor="season" className="text-sm font-medium">
-              Season
-            </label>
-            <input
-              id="season"
-              name="season"
-              required
-              placeholder="Shoulder"
-              className="mt-1 w-full rounded border p-2"
-            />
-          </div>
-
-          <div>
-            <label htmlFor="price" className="text-sm font-medium">
-              Price
-            </label>
-            <input
-              id="price"
-              name="price"
-              type="number"
-              min="0"
-              step="0.01"
-              required
-              placeholder="2390"
-              className="mt-1 w-full rounded border p-2"
-            />
-          </div>
-
-          <div>
-            <label htmlFor="status" className="text-sm font-medium">
-              Status
-            </label>
-            <select
-              id="status"
-              name="status"
-              defaultValue="AVAILABLE"
-              className="mt-1 w-full rounded border p-2"
-            >
-              <option value="EARLY_BOOKING">Early Booking</option>
-              <option value="AVAILABLE">Available</option>
-              <option value="SOLD_OUT">Sold Out</option>
-              <option value="CLOSED">Closed</option>
-            </select>
-          </div>
-
-          <div>
-            <label htmlFor="capacity" className="text-sm font-medium">
-              Capacity
-            </label>
-            <input
-              id="capacity"
-              name="capacity"
-              type="number"
-              min="0"
-              required
-              defaultValue="0"
-              className="mt-1 w-full rounded border p-2"
-            />
-          </div>
-
-          <div>
-            <label htmlFor="bookedSeats" className="text-sm font-medium">
-              Booked Seats
-            </label>
-            <input
-              id="bookedSeats"
-              name="bookedSeats"
-              type="number"
-              min="0"
-              required
-              defaultValue="0"
-              className="mt-1 w-full rounded border p-2"
-            />
-          </div>
-
-          <div>
-            <label
-              htmlFor="earlyDiscountPercent"
-              className="text-sm font-medium"
-            >
-              Early Discount %
-            </label>
-            <input
-              id="earlyDiscountPercent"
-              name="earlyDiscountPercent"
-              type="number"
-              min="0"
-              step="0.01"
-              placeholder="10"
-              className="mt-1 w-full rounded border p-2"
-            />
-          </div>
-
-          <div>
-            <label
-              htmlFor="earlyDiscountDeadline"
-              className="text-sm font-medium"
-            >
-              Early Discount Deadline
-            </label>
-            <input
-              id="earlyDiscountDeadline"
-              name="earlyDiscountDeadline"
-              type="date"
-              className="mt-1 w-full rounded border p-2"
-            />
-          </div>
+          <AddDepartureForm seasonalPrices={seasonalPriceMap} />
 
           <div className="md:col-span-2 xl:col-span-4">
             <button
@@ -458,6 +468,8 @@ export default async function TourDeparturesPage({ params }: PageProps) {
               departure.capacity - departure.bookedSeats
             );
 
+            const hasBookings = departure._count.bookings > 0;
+
             return (
               <div key={departure.id} className="rounded-lg border bg-white p-6">
                 <div className="mb-4 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
@@ -466,7 +478,8 @@ export default async function TourDeparturesPage({ params }: PageProps) {
                       {formatDate(departure.date)}
                     </h3>
                     <p className="text-sm text-muted-foreground">
-                      {departure.season} · {formatCurrency(Number(departure.price))}
+                      {getSeasonLabel(departure.season)} ·{" "}
+                      {formatCurrency(Number(departure.price))}
                     </p>
                   </div>
 
@@ -481,6 +494,14 @@ export default async function TourDeparturesPage({ params }: PageProps) {
 
                     <span className="rounded-full bg-blue-100 px-3 py-1 text-xs font-medium text-blue-800">
                       Remaining Seats: {remainingSeats}
+                    </span>
+
+                    <span className="rounded-full bg-indigo-100 px-3 py-1 text-xs font-medium text-indigo-800">
+                      Booked: {departure.bookedSeats} / {departure.capacity}
+                    </span>
+
+                    <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-medium text-slate-800">
+                      Bookings: {departure._count.bookings}
                     </span>
                   </div>
                 </div>
@@ -506,40 +527,13 @@ export default async function TourDeparturesPage({ params }: PageProps) {
                     />
                   </div>
 
-                  <div>
-                    <label
-                      htmlFor={`season-${departure.id}`}
-                      className="text-sm font-medium"
-                    >
-                      Season
-                    </label>
-                    <input
-                      id={`season-${departure.id}`}
-                      name="season"
-                      required
-                      defaultValue={departure.season}
-                      className="mt-1 w-full rounded border p-2"
-                    />
-                  </div>
-
-                  <div>
-                    <label
-                      htmlFor={`price-${departure.id}`}
-                      className="text-sm font-medium"
-                    >
-                      Price
-                    </label>
-                    <input
-                      id={`price-${departure.id}`}
-                      name="price"
-                      type="number"
-                      min="0"
-                      step="0.01"
-                      required
-                      defaultValue={departure.price}
-                      className="mt-1 w-full rounded border p-2"
-                    />
-                  </div>
+                  <EditDepartureFields
+                    departureId={departure.id}
+                    initialSeason={departure.season}
+                    initialPrice={Number(departure.price)}
+                    seasonalPrices={seasonalPriceMap}
+                    priceLocked={hasBookings}
+                  />
 
                   <div>
                     <label
@@ -581,20 +575,17 @@ export default async function TourDeparturesPage({ params }: PageProps) {
 
                   <div>
                     <label
-                      htmlFor={`bookedSeats-${departure.id}`}
+                      htmlFor={`booked-info-${departure.id}`}
                       className="text-sm font-medium"
                     >
                       Booked Seats
                     </label>
-                    <input
-                      id={`bookedSeats-${departure.id}`}
-                      name="bookedSeats"
-                      type="number"
-                      min="0"
-                      required
-                      defaultValue={departure.bookedSeats}
-                      className="mt-1 w-full rounded border p-2"
-                    />
+                    <div
+                      id={`booked-info-${departure.id}`}
+                      className="mt-1 rounded border bg-gray-50 p-2 text-sm text-gray-700"
+                    >
+                      {departure.bookedSeats} booked / {departure.capacity} capacity
+                    </div>
                   </div>
 
                   <div>
@@ -633,15 +624,33 @@ export default async function TourDeparturesPage({ params }: PageProps) {
                     />
                   </div>
 
-                  <div className="md:col-span-2 xl:col-span-4">
+                  <div className="md:col-span-2 xl:col-span-4 flex flex-wrap gap-3">
                     <button
                       type="submit"
-                      className="rounded bg-navy-700 bg-[#001F3F] px-4 py-2 text-white hover:bg-[#001733]"
+                      className="rounded bg-[#001F3F] px-4 py-2 text-white hover:bg-[#001733]"
                     >
                       Update Departure
                     </button>
                   </div>
                 </form>
+
+                <div className="mt-4 border-t pt-4">
+                  <form action={deleteDeparture.bind(null, tour.id, departure.id)}>
+                    <button
+                      type="submit"
+                      disabled={hasBookings}
+                      className={`rounded px-4 py-2 text-white ${
+                        hasBookings
+                          ? "cursor-not-allowed bg-gray-400"
+                          : "bg-red-700 hover:bg-red-800"
+                      }`}
+                    >
+                      {hasBookings
+                        ? "Cannot Delete — Has Bookings"
+                        : "Delete Departure"}
+                    </button>
+                  </form>
+                </div>
               </div>
             );
           })

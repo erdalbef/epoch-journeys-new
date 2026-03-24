@@ -3,7 +3,6 @@ import { getServerSession } from "next-auth";
 import {
   BookingStatus,
   BookingType,
-  CustomRequestStatus,
   PaymentStatus,
   Role,
 } from "@prisma/client";
@@ -173,7 +172,7 @@ export async function POST(req: Request) {
     await db.customTourRequest.update({
       where: { id: customRequest.id },
       data: {
-        status: CustomRequestStatus.CONFIRMED,
+        status: "CONFIRMED",
         adminReply: `Converted to booking ${booking.bookingReference}.`,
       },
     });

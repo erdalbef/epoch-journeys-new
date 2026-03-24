@@ -29,6 +29,85 @@ function getDisplayReference(
   return bookingDisplayCode || bookingReference;
 }
 
+function getSeasonLabel(season: string) {
+  switch (season) {
+    case "LOW":
+      return "Low Season";
+    case "SHOULDER":
+      return "Shoulder Season";
+    case "HIGH":
+      return "High Season";
+    case "PEAK":
+      return "Peak Season";
+    default:
+      return season;
+  }
+}
+
+function getBookingStatusLabel(status: string) {
+  switch (status) {
+    case "PENDING":
+      return "Pending";
+    case "CONFIRMED":
+      return "Confirmed";
+    case "ON_REQUEST":
+      return "On Request";
+    case "WAITLIST":
+      return "Waitlist";
+    case "CANCELLED":
+      return "Cancelled";
+    default:
+      return status;
+  }
+}
+
+function getPaymentStatusLabel(status: string) {
+  switch (status) {
+    case "UNPAID":
+      return "Unpaid";
+    case "PARTIALLY_PAID":
+      return "Partially Paid";
+    case "PAID":
+      return "Paid";
+    case "REFUNDED":
+      return "Refunded";
+    default:
+      return status;
+  }
+}
+
+function getBookingStatusBadgeClass(status: string) {
+  switch (status) {
+    case "CONFIRMED":
+      return "bg-green-100 text-green-700";
+    case "PENDING":
+      return "bg-amber-100 text-amber-700";
+    case "ON_REQUEST":
+      return "bg-blue-100 text-blue-700";
+    case "WAITLIST":
+      return "bg-purple-100 text-purple-700";
+    case "CANCELLED":
+      return "bg-red-100 text-red-700";
+    default:
+      return "bg-slate-100 text-slate-700";
+  }
+}
+
+function getPaymentStatusBadgeClass(status: string) {
+  switch (status) {
+    case "PAID":
+      return "bg-green-100 text-green-700";
+    case "PARTIALLY_PAID":
+      return "bg-amber-100 text-amber-700";
+    case "UNPAID":
+      return "bg-red-100 text-red-700";
+    case "REFUNDED":
+      return "bg-slate-100 text-slate-700";
+    default:
+      return "bg-slate-100 text-slate-700";
+  }
+}
+
 export default async function BookingDetailPage({
   params,
 }: {
@@ -82,6 +161,9 @@ export default async function BookingDetailPage({
     `${booking.leadFirstName ?? ""} ${booking.leadLastName ?? ""}`.trim() ||
     "-";
 
+  const needsAttention =
+    booking.status === "PENDING" || booking.paymentStatus === "UNPAID";
+
   return (
     <div className="space-y-8">
       <section className="rounded-2xl border bg-white p-6 shadow-sm">
@@ -104,7 +186,7 @@ export default async function BookingDetailPage({
               href={`/api/b2b/bookings/${booking.id}/voucher`}
               className="rounded-xl bg-[#8B0000] px-4 py-2 text-sm font-medium text-white transition hover:bg-[#6f0000]"
             >
-              Download Voucher
+              Download Voucher (PDF)
             </Link>
 
             <Link
@@ -116,6 +198,13 @@ export default async function BookingDetailPage({
           </div>
         </div>
       </section>
+
+      {needsAttention && (
+        <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">
+          This booking requires attention. Please complete payment or confirm
+          details.
+        </div>
+      )}
 
       <section className="rounded-2xl border bg-white p-6 shadow-sm">
         <h2 className="mb-4 text-lg font-semibold text-[#001F3F]">
@@ -137,7 +226,9 @@ export default async function BookingDetailPage({
 
           <div>
             <div className="text-muted-foreground">Season</div>
-            <div className="font-medium">{booking.seasonSnapshot}</div>
+            <div className="font-medium">
+              {getSeasonLabel(booking.seasonSnapshot)}
+            </div>
           </div>
 
           <div>
@@ -175,7 +266,9 @@ export default async function BookingDetailPage({
 
           <div>
             <div className="text-muted-foreground">Agency</div>
-            <div className="font-medium">{booking.agencyNameSnapshot || "-"}</div>
+            <div className="font-medium">
+              {booking.agencyNameSnapshot || "-"}
+            </div>
           </div>
 
           <div>
@@ -221,6 +314,12 @@ export default async function BookingDetailPage({
             <div className="font-medium">{booking.twinRooms}</div>
           </div>
         </div>
+
+        <div className="mt-4 rounded-xl bg-gray-50 p-4 text-sm">
+          <div className="font-medium text-[#001F3F]">
+            Total Guests: {booking.numberOfGuests}
+          </div>
+        </div>
       </section>
 
       <section className="rounded-2xl border bg-white p-6 shadow-sm">
@@ -234,7 +333,7 @@ export default async function BookingDetailPage({
           </div>
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[1200px] text-sm">
+            <table className="w-full min-w-300 text-sm">
               <thead>
                 <tr className="border-b text-left text-muted-foreground">
                   <th className="pb-3 pr-4 font-medium">Passenger</th>
@@ -322,7 +421,9 @@ export default async function BookingDetailPage({
 
           <div>
             <div className="text-muted-foreground">Net Amount</div>
-            <div className="font-semibold">{formatCurrency(booking.netAmount)}</div>
+            <div className="font-semibold">
+              {formatCurrency(booking.netAmount)}
+            </div>
           </div>
         </div>
       </section>
@@ -335,12 +436,28 @@ export default async function BookingDetailPage({
         <div className="grid gap-4 text-sm md:grid-cols-2">
           <div>
             <div className="text-muted-foreground">Booking Status</div>
-            <div className="font-medium">{booking.status}</div>
+            <div className="font-medium">
+              <span
+                className={`rounded-full px-3 py-1 text-xs ${getBookingStatusBadgeClass(
+                  booking.status
+                )}`}
+              >
+                {getBookingStatusLabel(booking.status)}
+              </span>
+            </div>
           </div>
 
           <div>
             <div className="text-muted-foreground">Payment Status</div>
-            <div className="font-medium">{booking.paymentStatus}</div>
+            <div className="font-medium">
+              <span
+                className={`rounded-full px-3 py-1 text-xs ${getPaymentStatusBadgeClass(
+                  booking.paymentStatus
+                )}`}
+              >
+                {getPaymentStatusLabel(booking.paymentStatus)}
+              </span>
+            </div>
           </div>
         </div>
       </section>

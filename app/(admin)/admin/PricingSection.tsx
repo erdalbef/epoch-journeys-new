@@ -68,7 +68,7 @@ const pricingTypeOptions: Array<{
   {
     value: "GROUP_BASED",
     label: "Group Based",
-    help: "Price depends on group size. Usually quote-based.",
+    help: "Price depends on group size.",
   },
   {
     value: "FIT_DYNAMIC",
@@ -83,7 +83,7 @@ const pricingTypeOptions: Array<{
   {
     value: "FIT_TIERED",
     label: "FIT Tiered",
-    help: "Private tour with instant pricing based on traveler count tiers.",
+    help: "Private tour with pricing based on traveler count tiers.",
   },
 ];
 
@@ -219,7 +219,7 @@ export default function TourForm({
       <section className="space-y-4">
         <div>
           <h2 className="text-lg font-semibold">Basic Information</h2>
-          <p className="text-sm text-muted-foreground">
+          <p className="text-sm text-gray-500">
             Core identity and quick summary of the tour.
           </p>
         </div>
@@ -301,9 +301,7 @@ export default function TourForm({
               className="mt-1 w-full rounded border p-2"
               placeholder="Greece, Turkey, Italy"
             />
-            <p className="mt-1 text-xs text-muted-foreground">
-              Comma-separated.
-            </p>
+            <p className="mt-1 text-xs text-gray-500">Comma-separated.</p>
           </div>
 
           <div>
@@ -317,9 +315,7 @@ export default function TourForm({
               className="mt-1 w-full rounded border p-2"
               placeholder="Faith-Based, Heritage, UNESCO"
             />
-            <p className="mt-1 text-xs text-muted-foreground">
-              Comma-separated.
-            </p>
+            <p className="mt-1 text-xs text-gray-500">Comma-separated.</p>
           </div>
 
           <div>
@@ -333,9 +329,7 @@ export default function TourForm({
               className="mt-1 w-full rounded border p-2"
               placeholder="Catholic, Biblical, Small Group"
             />
-            <p className="mt-1 text-xs text-muted-foreground">
-              Comma-separated.
-            </p>
+            <p className="mt-1 text-xs text-gray-500">Comma-separated.</p>
           </div>
 
           <div className="md:col-span-2">
@@ -395,7 +389,7 @@ export default function TourForm({
       <section className="space-y-4">
         <div>
           <h2 className="text-lg font-semibold">Pricing</h2>
-          <p className="text-sm text-muted-foreground">
+          <p className="text-sm text-gray-500">
             Set the commercial model for this tour.
           </p>
         </div>
@@ -419,7 +413,7 @@ export default function TourForm({
               ))}
             </select>
 
-            <p className="mt-2 text-xs text-muted-foreground">
+            <p className="mt-2 text-xs text-gray-500">
               {
                 pricingTypeOptions.find((option) => option.value === pricingType)
                   ?.help
@@ -442,7 +436,7 @@ export default function TourForm({
                 className="mt-1 w-full rounded border p-2"
                 placeholder="2450"
               />
-              <p className="mt-1 text-xs text-muted-foreground">
+              <p className="mt-1 text-xs text-gray-500">
                 Use this for fixed-price tours that can be booked instantly.
               </p>
             </div>
@@ -466,9 +460,8 @@ export default function TourForm({
             <div className="space-y-4 rounded-md border p-4 md:col-span-2">
               <div>
                 <h3 className="font-medium">Pricing Tiers</h3>
-                <p className="text-xs text-muted-foreground">
-                  Add one row per traveler range and room type. Example: 2-2
-                  pax, 3-4 pax, 5-6 pax.
+                <p className="text-xs text-gray-500">
+                  Add one row per traveler range and room type.
                 </p>
               </div>
 
@@ -500,7 +493,7 @@ export default function TourForm({
                 </button>
               </div>
 
-              <div className="rounded-md bg-muted/40 p-3 text-xs text-muted-foreground">
+              <div className="rounded-md bg-gray-50 p-3 text-xs text-gray-600">
                 Pricing should use <strong>Double / Twin</strong> as one room
                 type. Operational separation between double and twin remains in
                 booking and rooming list workflows.
@@ -582,14 +575,16 @@ export default function TourForm({
         <input
           type="hidden"
           name="requiresQuote"
-          value={forceQuote ? "true" : String(initialValues?.requiresQuote ?? false)}
+          value={
+            forceQuote ? "true" : String(initialValues?.requiresQuote ?? false)
+          }
         />
       </section>
 
       <section className="space-y-4">
         <div>
           <h2 className="text-lg font-semibold">Seasonal Pricing</h2>
-          <p className="text-sm text-muted-foreground">
+          <p className="text-sm text-gray-500">
             These prices are used to auto-fill departure prices by season.
           </p>
         </div>
@@ -667,7 +662,7 @@ export default function TourForm({
       <section className="space-y-4">
         <div>
           <h2 className="text-lg font-semibold">Tour Content</h2>
-          <p className="text-sm text-muted-foreground">
+          <p className="text-sm text-gray-500">
             Rich descriptive sections shown in the tour detail page.
           </p>
         </div>
