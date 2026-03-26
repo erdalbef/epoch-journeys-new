@@ -29,7 +29,7 @@ export default async function AdminLayout({
             Epoch Journeys | Admin
           </Link>
 
-          <nav className="flex items-center gap-4 text-sm">
+          <nav className="flex items-center gap-5 text-sm">
             <Link className="hover:underline" href="/admin/dashboard">
               Dashboard
             </Link>
@@ -42,12 +42,20 @@ export default async function AdminLayout({
               Tours
             </Link>
 
-            {/* ✅ ADD THIS */}
             <Link className="hover:underline" href="/admin/bookings">
               Bookings
             </Link>
+
+            {/* ✅ NEW */}
+            <Link
+              className="font-medium text-[#8B0000] hover:underline"
+              href="/admin/finance"
+            >
+              Finance
+            </Link>
           </nav>
         </div>
+
         <Separator />
       </header>
 

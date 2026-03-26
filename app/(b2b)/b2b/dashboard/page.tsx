@@ -19,6 +19,10 @@ function formatDate(value: string | Date) {
   });
 }
 
+function daysDiff(a: Date, b: Date) {
+  return Math.floor((b.getTime() - a.getTime()) / (1000 * 60 * 60 * 24));
+}
+
 export default async function B2BDashboardPage() {
   const session = await getServerSession(authOptions);
 
@@ -61,6 +65,8 @@ export default async function B2BDashboardPage() {
       tourTitleSnapshot: true,
       createdAt: true,
       paymentStatus: true,
+      amountDue: true,
+      paymentDueDate: true,
     },
     orderBy: {
       createdAt: "desc",
@@ -119,6 +125,32 @@ export default async function B2BDashboardPage() {
   const urgentBookings = allBookings.filter(
     (b) => b.status === "PENDING" || b.paymentStatus === "UNPAID"
   ).length;
+
+  const today = new Date();
+
+  const overduePayments = allBookings.filter((b) => {
+    if (!b.paymentDueDate) return false;
+    if (b.paymentStatus === "PAID" || b.paymentStatus === "REFUNDED") {
+      return false;
+    }
+
+    return b.amountDue > 0 && daysDiff(today, new Date(b.paymentDueDate)) < 0;
+  });
+
+  const dueSoonPayments = allBookings.filter((b) => {
+    if (!b.paymentDueDate) return false;
+    if (b.paymentStatus === "PAID" || b.paymentStatus === "REFUNDED") {
+      return false;
+    }
+
+    const diff = daysDiff(today, new Date(b.paymentDueDate));
+    return diff >= 0 && diff <= 7 && b.amountDue > 0;
+  });
+
+  const upcomingDeparturesList = allBookings.filter((b) => {
+    const diff = daysDiff(today, new Date(b.departureDateSnapshot));
+    return diff >= 0 && diff <= 7;
+  });
 
   return (
     <div className="space-y-8">
@@ -181,11 +213,32 @@ export default async function B2BDashboardPage() {
         </div>
       </section>
 
-      {urgentBookings > 0 && (
-        <div className="rounded-md border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">
-          You have {urgentBookings} bookings requiring attention.
-        </div>
-      )}
+      <div className="space-y-3">
+        {overduePayments.length > 0 && (
+          <div className="rounded-md border border-red-200 bg-red-50 p-4 text-sm text-red-800">
+            🔴 {overduePayments.length} overdue payment(s)
+          </div>
+        )}
+
+        {dueSoonPayments.length > 0 && (
+          <div className="rounded-md border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">
+            🟡 {dueSoonPayments.length} payment(s) due within 7 days
+          </div>
+        )}
+
+        {upcomingDeparturesList.length > 0 && (
+          <div className="rounded-md border border-blue-200 bg-blue-50 p-4 text-sm text-blue-800">
+            ⚠️ {upcomingDeparturesList.length} upcoming departure(s) in next 7
+            days
+          </div>
+        )}
+
+        {urgentBookings > 0 && (
+          <div className="rounded-md border border-slate-200 bg-slate-50 p-4 text-sm text-slate-800">
+            You have {urgentBookings} bookings requiring attention.
+          </div>
+        )}
+      </div>
 
       <section className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
         <div className="rounded-2xl border bg-white p-5 shadow-sm">

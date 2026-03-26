@@ -99,21 +99,6 @@ function getBookingStatusLabel(status: string) {
   }
 }
 
-function getPaymentStatusLabel(status: string) {
-  switch (status) {
-    case "UNPAID":
-      return "Unpaid";
-    case "PARTIALLY_PAID":
-      return "Partially Paid";
-    case "PAID":
-      return "Paid";
-    case "REFUNDED":
-      return "Refunded";
-    default:
-      return status;
-  }
-}
-
 function getBookingStatusClass(status: string) {
   switch (status) {
     case "CONFIRMED":
@@ -127,17 +112,78 @@ function getBookingStatusClass(status: string) {
   }
 }
 
-function getPaymentStatusClass(status: string) {
-  switch (status) {
-    case "PAID":
-      return "font-medium text-green-700";
-    case "PARTIALLY_PAID":
-      return "font-medium text-amber-600";
-    case "REFUNDED":
-      return "font-medium text-slate-500";
-    default:
-      return "font-medium text-red-700";
+function daysDiff(a: Date, b: Date) {
+  return Math.floor((b.getTime() - a.getTime()) / (1000 * 60 * 60 * 24));
+}
+
+function getSmartPaymentLabel(
+  paymentStatus: string,
+  amountDue: number,
+  paymentDueDate: Date | null
+) {
+  if (paymentStatus === "PAID") {
+    return "PAID";
   }
+
+  if (paymentStatus === "REFUNDED") {
+    return "REFUNDED";
+  }
+
+  if (!paymentDueDate) {
+    return paymentStatus === "PARTIALLY_PAID" ? "PARTIAL" : "PENDING";
+  }
+
+  const today = new Date();
+  const diff = daysDiff(today, new Date(paymentDueDate));
+
+  if (amountDue > 0 && diff < 0) {
+    return "OVERDUE";
+  }
+
+  if (amountDue > 0 && diff <= 7) {
+    return "DUE SOON";
+  }
+
+  if (paymentStatus === "PARTIALLY_PAID") {
+    return "PARTIAL";
+  }
+
+  return "UNPAID";
+}
+
+function getSmartPaymentClass(
+  paymentStatus: string,
+  amountDue: number,
+  paymentDueDate: Date | null
+) {
+  if (paymentStatus === "PAID") {
+    return "inline-flex rounded-full bg-green-100 px-2.5 py-1 text-xs font-semibold text-green-700";
+  }
+
+  if (paymentStatus === "REFUNDED") {
+    return "inline-flex rounded-full bg-slate-100 px-2.5 py-1 text-xs font-semibold text-slate-600";
+  }
+
+  if (!paymentDueDate) {
+    return "inline-flex rounded-full bg-gray-100 px-2.5 py-1 text-xs font-semibold text-gray-700";
+  }
+
+  const today = new Date();
+  const diff = daysDiff(today, new Date(paymentDueDate));
+
+  if (amountDue > 0 && diff < 0) {
+    return "inline-flex rounded-full bg-red-100 px-2.5 py-1 text-xs font-semibold text-red-700";
+  }
+
+  if (amountDue > 0 && diff <= 7) {
+    return "inline-flex rounded-full bg-amber-100 px-2.5 py-1 text-xs font-semibold text-amber-700";
+  }
+
+  if (paymentStatus === "PARTIALLY_PAID") {
+    return "inline-flex rounded-full bg-blue-100 px-2.5 py-1 text-xs font-semibold text-blue-700";
+  }
+
+  return "inline-flex rounded-full bg-gray-100 px-2.5 py-1 text-xs font-semibold text-gray-700";
 }
 
 export default async function B2BBookingsPage({
@@ -276,6 +322,8 @@ export default async function B2BBookingsPage({
       leadLastName: true,
       groupName: true,
       createdAt: true,
+      amountDue: true,
+      paymentDueDate: true,
     },
   });
 
@@ -287,10 +335,15 @@ export default async function B2BBookingsPage({
     0
   );
 
-  const attentionCount = bookings.filter(
-    (booking) =>
-      booking.status === "PENDING" || booking.paymentStatus === "UNPAID"
-  ).length;
+  const attentionCount = bookings.filter((booking) => {
+    const label = getSmartPaymentLabel(
+      booking.paymentStatus,
+      booking.amountDue,
+      booking.paymentDueDate
+    );
+
+    return booking.status === "PENDING" || label === "OVERDUE" || label === "DUE SOON";
+  }).length;
 
   return (
     <div className="space-y-8">
@@ -504,7 +557,7 @@ export default async function B2BBookingsPage({
           </div>
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full min-w-275 text-sm">
+            <table className="w-full min-w-350 text-sm">
               <thead>
                 <tr className="border-b text-left text-muted-foreground">
                   <th className="pb-3 pr-4 font-medium">Reference</th>
@@ -575,8 +628,18 @@ export default async function B2BBookingsPage({
                       </td>
 
                       <td className="py-3 pr-4">
-                        <span className={getPaymentStatusClass(booking.paymentStatus)}>
-                          {getPaymentStatusLabel(booking.paymentStatus)}
+                        <span
+                          className={getSmartPaymentClass(
+                            booking.paymentStatus,
+                            booking.amountDue,
+                            booking.paymentDueDate
+                          )}
+                        >
+                          {getSmartPaymentLabel(
+                            booking.paymentStatus,
+                            booking.amountDue,
+                            booking.paymentDueDate
+                          )}
                         </span>
                       </td>
 

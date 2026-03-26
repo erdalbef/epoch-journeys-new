@@ -6,7 +6,7 @@ const navItems = [
   { href: "/b2b/dashboard", label: "Dashboard" },
   { href: "/b2b/tours", label: "Tours" },
   { href: "/b2b/bookings", label: "Bookings" },
-  { href: "/b2b/commissions", label: "Commissions" }, // NEW
+  { href: "/b2b/payments", label: "Payments" },
   { href: "/b2b/resources", label: "Resources" },
   { href: "/b2b/support", label: "Support" },
   { href: "/b2b/profile", label: "Profile" },
@@ -18,7 +18,12 @@ export default async function B2BLayout({
   children: React.ReactNode;
 }) {
   const session = await getServerSession(authOptions);
-  const userName = session?.user?.name || session?.user?.email || "Agent";
+
+  const userName =
+    session?.user?.fullName ||
+    session?.user?.name ||
+    session?.user?.email ||
+    "Agent";
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -77,7 +82,6 @@ export default async function B2BLayout({
               </div>
             </div>
 
-            {/* Mobile Navigation */}
             <div className="mt-4 flex gap-3 overflow-x-auto lg:hidden">
               {navItems.map((item) => (
                 <Link

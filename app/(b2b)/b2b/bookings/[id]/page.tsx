@@ -22,89 +22,43 @@ function formatDate(value: Date | string | null | undefined) {
   });
 }
 
-function getDisplayReference(
-  bookingDisplayCode: string | null,
-  bookingReference: string
+function daysDiff(a: Date, b: Date) {
+  return Math.floor((b.getTime() - a.getTime()) / (1000 * 60 * 60 * 24));
+}
+
+function getSmartPaymentLabel(
+  paymentStatus: string,
+  amountDue: number,
+  paymentDueDate: Date | null
 ) {
-  return bookingDisplayCode || bookingReference;
-}
+  if (paymentStatus === "PAID") return "PAID";
+  if (paymentStatus === "REFUNDED") return "REFUNDED";
 
-function getSeasonLabel(season: string) {
-  switch (season) {
-    case "LOW":
-      return "Low Season";
-    case "SHOULDER":
-      return "Shoulder Season";
-    case "HIGH":
-      return "High Season";
-    case "PEAK":
-      return "Peak Season";
-    default:
-      return season;
+  if (!paymentDueDate) {
+    return paymentStatus === "PARTIALLY_PAID" ? "PARTIAL" : "PENDING";
   }
+
+  const diff = daysDiff(new Date(), new Date(paymentDueDate));
+
+  if (amountDue > 0 && diff < 0) return "OVERDUE";
+  if (amountDue > 0 && diff <= 7) return "DUE SOON";
+  if (paymentStatus === "PARTIALLY_PAID") return "PARTIAL";
+
+  return "UNPAID";
 }
 
-function getBookingStatusLabel(status: string) {
-  switch (status) {
-    case "PENDING":
-      return "Pending";
-    case "CONFIRMED":
-      return "Confirmed";
-    case "ON_REQUEST":
-      return "On Request";
-    case "WAITLIST":
-      return "Waitlist";
-    case "CANCELLED":
-      return "Cancelled";
-    default:
-      return status;
-  }
-}
-
-function getPaymentStatusLabel(status: string) {
-  switch (status) {
-    case "UNPAID":
-      return "Unpaid";
-    case "PARTIALLY_PAID":
-      return "Partially Paid";
+function getSmartPaymentClass(label: string) {
+  switch (label) {
     case "PAID":
-      return "Paid";
-    case "REFUNDED":
-      return "Refunded";
-    default:
-      return status;
-  }
-}
-
-function getBookingStatusBadgeClass(status: string) {
-  switch (status) {
-    case "CONFIRMED":
       return "bg-green-100 text-green-700";
-    case "PENDING":
+    case "OVERDUE":
+      return "bg-red-100 text-red-700";
+    case "DUE SOON":
       return "bg-amber-100 text-amber-700";
-    case "ON_REQUEST":
+    case "PARTIAL":
       return "bg-blue-100 text-blue-700";
-    case "WAITLIST":
-      return "bg-purple-100 text-purple-700";
-    case "CANCELLED":
-      return "bg-red-100 text-red-700";
     default:
-      return "bg-slate-100 text-slate-700";
-  }
-}
-
-function getPaymentStatusBadgeClass(status: string) {
-  switch (status) {
-    case "PAID":
-      return "bg-green-100 text-green-700";
-    case "PARTIALLY_PAID":
-      return "bg-amber-100 text-amber-700";
-    case "UNPAID":
-      return "bg-red-100 text-red-700";
-    case "REFUNDED":
-      return "bg-slate-100 text-slate-700";
-    default:
-      return "bg-slate-100 text-slate-700";
+      return "bg-gray-100 text-gray-700";
   }
 }
 
@@ -124,26 +78,8 @@ export default async function BookingDetailPage({
   const booking = await db.booking.findUnique({
     where: { id },
     include: {
-      user: {
-        select: {
-          fullName: true,
-          travelAgency: true,
-          email: true,
-        },
-      },
-      departureDate: {
-        select: {
-          date: true,
-          season: true,
-        },
-      },
-      passengers: {
-        orderBy: [
-          { isLeadPassenger: "desc" },
-          { lastName: "asc" },
-          { firstName: "asc" },
-        ],
-      },
+      user: true,
+      passengers: true,
     },
   });
 
@@ -151,334 +87,124 @@ export default async function BookingDetailPage({
     redirect("/b2b/bookings");
   }
 
-  const displayReference = getDisplayReference(
-    booking.bookingDisplayCode,
-    booking.bookingReference
+  const paymentLabel = getSmartPaymentLabel(
+    booking.paymentStatus,
+    booking.amountDue,
+    booking.paymentDueDate
   );
-
-  const clientName =
-    booking.customerName ||
-    `${booking.leadFirstName ?? ""} ${booking.leadLastName ?? ""}`.trim() ||
-    "-";
-
-  const needsAttention =
-    booking.status === "PENDING" || booking.paymentStatus === "UNPAID";
 
   return (
     <div className="space-y-8">
+      {/* HEADER */}
       <section className="rounded-2xl border bg-white p-6 shadow-sm">
-        <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-          <div>
-            <h1 className="text-2xl font-bold text-[#001F3F]">
-              Booking {displayReference}
-            </h1>
+        <h1 className="text-2xl font-bold text-[#001F3F]">
+          Booking {booking.bookingReference}
+        </h1>
 
-            <div className="mt-2 space-y-1 text-sm text-muted-foreground">
-              <p>Created {formatDate(booking.createdAt)}</p>
-              {booking.bookingDisplayCode ? (
-                <p>Official Ref: {booking.bookingReference}</p>
-              ) : null}
+        <div className="mt-2 flex flex-wrap gap-2">
+          <span className="text-sm text-muted-foreground">
+            Created: {formatDate(booking.createdAt)}
+          </span>
+
+          <span
+            className={`rounded-full px-3 py-1 text-xs font-medium ${getSmartPaymentClass(
+              paymentLabel
+            )}`}
+          >
+            {paymentLabel}
+          </span>
+        </div>
+
+        <div className="mt-4 flex gap-3">
+          <Link
+            href={`/api/b2b/bookings/${booking.id}/voucher`}
+            className="rounded-xl bg-[#8B0000] px-4 py-2 text-white"
+          >
+            Download Voucher
+          </Link>
+
+          <Link
+            href="/b2b/bookings"
+            className="rounded-xl border px-4 py-2"
+          >
+            Back
+          </Link>
+        </div>
+      </section>
+
+      {/* PAYMENT SUMMARY */}
+      <section className="rounded-2xl border bg-white p-6 shadow-sm">
+        <h2 className="mb-4 text-lg font-semibold text-[#001F3F]">
+          Payment Summary
+        </h2>
+
+        <div className="grid gap-4 md:grid-cols-4 text-sm">
+          <div>
+            <div className="text-muted-foreground">Total</div>
+            <div className="font-semibold">
+              {formatCurrency(booking.totalPrice)}
             </div>
           </div>
 
-          <div className="flex flex-wrap gap-3">
-            <Link
-              href={`/api/b2b/bookings/${booking.id}/voucher`}
-              className="rounded-xl bg-[#8B0000] px-4 py-2 text-sm font-medium text-white transition hover:bg-[#6f0000]"
-            >
-              Download Voucher (PDF)
-            </Link>
+          <div>
+            <div className="text-muted-foreground">Paid</div>
+            <div className="font-semibold text-green-700">
+              {formatCurrency(booking.amountPaid)}
+            </div>
+          </div>
 
-            <Link
-              href="/b2b/bookings"
-              className="rounded-xl border px-4 py-2 text-sm font-medium transition hover:border-[#8B0000] hover:text-[#8B0000]"
-            >
-              Back to Bookings
-            </Link>
+          <div>
+            <div className="text-muted-foreground">Due</div>
+            <div className="font-semibold text-red-700">
+              {formatCurrency(booking.amountDue)}
+            </div>
+          </div>
+
+          <div>
+            <div className="text-muted-foreground">Due Date</div>
+            <div className="font-semibold">
+              {formatDate(booking.paymentDueDate)}
+            </div>
           </div>
         </div>
       </section>
 
-      {needsAttention && (
-        <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">
-          This booking requires attention. Please complete payment or confirm
-          details.
-        </div>
-      )}
-
+      {/* TOUR */}
       <section className="rounded-2xl border bg-white p-6 shadow-sm">
-        <h2 className="mb-4 text-lg font-semibold text-[#001F3F]">
-          Tour Information
-        </h2>
+        <h2 className="mb-4 text-lg font-semibold">Tour</h2>
 
-        <div className="grid gap-4 text-sm md:grid-cols-2">
+        <div className="grid md:grid-cols-2 gap-4 text-sm">
           <div>
             <div className="text-muted-foreground">Tour</div>
             <div className="font-medium">{booking.tourTitleSnapshot}</div>
           </div>
 
           <div>
-            <div className="text-muted-foreground">Departure Date</div>
+            <div className="text-muted-foreground">Departure</div>
             <div className="font-medium">
               {formatDate(booking.departureDateSnapshot)}
             </div>
           </div>
-
-          <div>
-            <div className="text-muted-foreground">Season</div>
-            <div className="font-medium">
-              {getSeasonLabel(booking.seasonSnapshot)}
-            </div>
-          </div>
-
-          <div>
-            <div className="text-muted-foreground">Booking Type</div>
-            <div className="font-medium">{booking.bookingType}</div>
-          </div>
         </div>
       </section>
 
+      {/* GUESTS */}
       <section className="rounded-2xl border bg-white p-6 shadow-sm">
-        <h2 className="mb-4 text-lg font-semibold text-[#001F3F]">
-          Client / Group
-        </h2>
+        <h2 className="mb-4 text-lg font-semibold">Guests</h2>
 
-        <div className="grid gap-4 text-sm md:grid-cols-2">
-          <div>
-            <div className="text-muted-foreground">Customer / Lead</div>
-            <div className="font-medium">{clientName}</div>
-          </div>
-
-          <div>
-            <div className="text-muted-foreground">Group Name</div>
-            <div className="font-medium">{booking.groupName || "-"}</div>
-          </div>
-
-          <div>
-            <div className="text-muted-foreground">Customer Email</div>
-            <div className="font-medium">{booking.customerEmail || "-"}</div>
-          </div>
-
-          <div>
-            <div className="text-muted-foreground">Customer Phone</div>
-            <div className="font-medium">{booking.customerPhone || "-"}</div>
-          </div>
-
-          <div>
-            <div className="text-muted-foreground">Agency</div>
-            <div className="font-medium">
-              {booking.agencyNameSnapshot || "-"}
-            </div>
-          </div>
-
-          <div>
-            <div className="text-muted-foreground">Agent</div>
-            <div className="font-medium">
-              {booking.agentNameSnapshot || booking.user.fullName || "-"}
-            </div>
-          </div>
+        <div className="grid md:grid-cols-3 gap-4 text-sm">
+          <div>Adults: {booking.adults}</div>
+          <div>Children: {booking.children}</div>
+          <div>Infants: {booking.infants}</div>
         </div>
       </section>
 
-      <section className="rounded-2xl border bg-white p-6 shadow-sm">
-        <h2 className="mb-4 text-lg font-semibold text-[#001F3F]">Guests</h2>
-
-        <div className="grid gap-4 text-sm md:grid-cols-3">
-          <div>
-            <div className="text-muted-foreground">Adults</div>
-            <div className="font-medium">{booking.adults}</div>
-          </div>
-
-          <div>
-            <div className="text-muted-foreground">Children</div>
-            <div className="font-medium">{booking.children}</div>
-          </div>
-
-          <div>
-            <div className="text-muted-foreground">Infants</div>
-            <div className="font-medium">{booking.infants}</div>
-          </div>
-
-          <div>
-            <div className="text-muted-foreground">Single Rooms</div>
-            <div className="font-medium">{booking.singleRooms}</div>
-          </div>
-
-          <div>
-            <div className="text-muted-foreground">Double Rooms</div>
-            <div className="font-medium">{booking.doubleRooms}</div>
-          </div>
-
-          <div>
-            <div className="text-muted-foreground">Twin Rooms</div>
-            <div className="font-medium">{booking.twinRooms}</div>
-          </div>
-        </div>
-
-        <div className="mt-4 rounded-xl bg-gray-50 p-4 text-sm">
-          <div className="font-medium text-[#001F3F]">
-            Total Guests: {booking.numberOfGuests}
-          </div>
-        </div>
-      </section>
-
-      <section className="rounded-2xl border bg-white p-6 shadow-sm">
-        <h2 className="mb-4 text-lg font-semibold text-[#001F3F]">
-          Passenger List
-        </h2>
-
-        {booking.passengers.length === 0 ? (
-          <div className="rounded-xl border border-dashed p-6 text-sm text-muted-foreground">
-            No passenger records have been added yet.
-          </div>
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-300 text-sm">
-              <thead>
-                <tr className="border-b text-left text-muted-foreground">
-                  <th className="pb-3 pr-4 font-medium">Passenger</th>
-                  <th className="pb-3 pr-4 font-medium">Lead</th>
-                  <th className="pb-3 pr-4 font-medium">Gender</th>
-                  <th className="pb-3 pr-4 font-medium">Date of Birth</th>
-                  <th className="pb-3 pr-4 font-medium">Nationality</th>
-                  <th className="pb-3 pr-4 font-medium">Passport No.</th>
-                  <th className="pb-3 pr-4 font-medium">Passport Expiry</th>
-                  <th className="pb-3 pr-4 font-medium">Room Type</th>
-                  <th className="pb-3 pr-4 font-medium">Special Requests</th>
-                </tr>
-              </thead>
-              <tbody>
-                {booking.passengers.map((passenger) => (
-                  <tr key={passenger.id} className="border-b last:border-b-0">
-                    <td className="py-3 pr-4">
-                      <div className="font-medium text-slate-800">
-                        {passenger.firstName} {passenger.lastName}
-                      </div>
-                    </td>
-
-                    <td className="py-3 pr-4">
-                      {passenger.isLeadPassenger ? (
-                        <span className="rounded-full bg-[#001F3F]/10 px-2 py-1 text-xs font-medium text-[#001F3F]">
-                          Lead
-                        </span>
-                      ) : (
-                        "-"
-                      )}
-                    </td>
-
-                    <td className="py-3 pr-4 text-muted-foreground">
-                      {passenger.gender || "-"}
-                    </td>
-
-                    <td className="py-3 pr-4 text-muted-foreground">
-                      {formatDate(passenger.dateOfBirth)}
-                    </td>
-
-                    <td className="py-3 pr-4 text-muted-foreground">
-                      {passenger.nationality || "-"}
-                    </td>
-
-                    <td className="py-3 pr-4 text-muted-foreground">
-                      {passenger.passportNumber || "-"}
-                    </td>
-
-                    <td className="py-3 pr-4 text-muted-foreground">
-                      {formatDate(passenger.passportExpiry)}
-                    </td>
-
-                    <td className="py-3 pr-4 text-muted-foreground">
-                      {passenger.roomType || "-"}
-                    </td>
-
-                    <td className="py-3 pr-4 text-muted-foreground">
-                      {passenger.specialRequests || "-"}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </section>
-
-      <section className="rounded-2xl border bg-white p-6 shadow-sm">
-        <h2 className="mb-4 text-lg font-semibold text-[#001F3F]">Pricing</h2>
-
-        <div className="grid gap-4 text-sm md:grid-cols-3">
-          <div>
-            <div className="text-muted-foreground">Total Price</div>
-            <div className="font-semibold text-[#001F3F]">
-              {formatCurrency(booking.totalPrice)}
-            </div>
-          </div>
-
-          <div>
-            <div className="text-muted-foreground">Commission</div>
-            <div className="font-semibold text-green-700">
-              {formatCurrency(booking.commissionAmount)}
-            </div>
-          </div>
-
-          <div>
-            <div className="text-muted-foreground">Net Amount</div>
-            <div className="font-semibold">
-              {formatCurrency(booking.netAmount)}
-            </div>
-          </div>
-        </div>
-      </section>
-
-      <section className="rounded-2xl border bg-white p-6 shadow-sm">
-        <h2 className="mb-4 text-lg font-semibold text-[#001F3F]">
-          Booking Status
-        </h2>
-
-        <div className="grid gap-4 text-sm md:grid-cols-2">
-          <div>
-            <div className="text-muted-foreground">Booking Status</div>
-            <div className="font-medium">
-              <span
-                className={`rounded-full px-3 py-1 text-xs ${getBookingStatusBadgeClass(
-                  booking.status
-                )}`}
-              >
-                {getBookingStatusLabel(booking.status)}
-              </span>
-            </div>
-          </div>
-
-          <div>
-            <div className="text-muted-foreground">Payment Status</div>
-            <div className="font-medium">
-              <span
-                className={`rounded-full px-3 py-1 text-xs ${getPaymentStatusBadgeClass(
-                  booking.paymentStatus
-                )}`}
-              >
-                {getPaymentStatusLabel(booking.paymentStatus)}
-              </span>
-            </div>
-          </div>
-        </div>
-      </section>
-
+      {/* NOTES */}
       {(booking.notes || booking.specialRequests) && (
         <section className="rounded-2xl border bg-white p-6 shadow-sm">
-          <h2 className="mb-4 text-lg font-semibold text-[#001F3F]">
-            Notes & Requests
-          </h2>
-
-          <div className="space-y-4 text-sm">
-            <div>
-              <div className="text-muted-foreground">Notes</div>
-              <div className="font-medium">{booking.notes || "-"}</div>
-            </div>
-
-            <div>
-              <div className="text-muted-foreground">Special Requests</div>
-              <div className="font-medium">{booking.specialRequests || "-"}</div>
-            </div>
-          </div>
+          <h2 className="mb-4 text-lg font-semibold">Notes</h2>
+          <p>{booking.notes}</p>
+          <p>{booking.specialRequests}</p>
         </section>
       )}
     </div>

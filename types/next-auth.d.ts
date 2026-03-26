@@ -7,6 +7,7 @@ declare module "next-auth" {
       role: "ADMIN" | "AGENT";
       approved: boolean;
       commissionRate?: number | null;
+      fullName?: string | null;
     } & DefaultSession["user"];
   }
 
@@ -15,6 +16,7 @@ declare module "next-auth" {
     role: "ADMIN" | "AGENT";
     approved: boolean;
     commissionRate?: number | null;
+    fullName?: string | null;
   }
 }
 
@@ -24,5 +26,6 @@ declare module "next-auth/jwt" {
     role: "ADMIN" | "AGENT";
     approved: boolean;
     commissionRate?: number | null;
+    fullName?: string | null;
   }
 }

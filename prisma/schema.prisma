@@ -34,6 +34,9 @@ model User {
   agentLogoUrl       String?
   bookings           Booking[]
   customTourRequests CustomTourRequest[]
+
+  paymentSubmissions         PaymentSubmission[] @relation("PaymentSubmissionUser")
+  reviewedPaymentSubmissions PaymentSubmission[] @relation("PaymentSubmissionReviewer")
 }
 
 model Tour {
@@ -119,9 +122,9 @@ model Booking {
   currency               String @default("EUR")
 
   // Payment tracking
-  amountPaid            Float    @default(0)
-  amountDue             Float    @default(0) // ✅ FIX
-  paymentDueDate        DateTime?
+  amountPaid     Float    @default(0)
+  amountDue      Float    @default(0)
+  paymentDueDate DateTime?
 
   // Agent snapshot
   agentNameSnapshot   String?
@@ -146,8 +149,8 @@ model Booking {
 
   // Departure snapshot
   departureDateSnapshot         DateTime
-  seasonSnapshot                Season    @map("seasonSnapshotEnum")
-  seasonSnapshotOld             String?   @map("seasonSnapshot")
+  seasonSnapshot                Season  @map("seasonSnapshotEnum")
+  seasonSnapshotOld             String? @map("seasonSnapshot")
   pricePerPersonSnapshot        Float
   earlyDiscountPercentSnapshot  Float?
   earlyDiscountDeadlineSnapshot DateTime?
@@ -194,11 +197,12 @@ model Booking {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  departureDate DepartureDate @relation(fields: [departureDateId], references: [id])
-  tour          Tour          @relation(fields: [tourId], references: [id])
-  user          User          @relation(fields: [userId], references: [id], onDelete: Cascade)
-  passengers    Passenger[]
-  payments      Payment[]
+  departureDate      DepartureDate       @relation(fields: [departureDateId], references: [id])
+  tour               Tour                @relation(fields: [tourId], references: [id])
+  user               User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+  passengers         Passenger[]
+  payments           Payment[]
+  paymentSubmissions PaymentSubmission[]
 
   @@index([userId])
   @@index([tourId])
@@ -291,6 +295,31 @@ model Payment {
   @@index([status])
 }
 
+model PaymentSubmission {
+  id           String                  @id @default(cuid())
+  bookingId    String
+  userId       String
+  amount       Float
+  currency     String                  @default("EUR")
+  method       String
+  note         String?
+  proofUrl     String?
+  status       PaymentSubmissionStatus @default(PENDING)
+  reviewedById String?
+  reviewedAt   DateTime?
+  reviewNote   String?
+  createdAt    DateTime                @default(now())
+  updatedAt    DateTime                @updatedAt
+
+  booking    Booking @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  user       User    @relation("PaymentSubmissionUser", fields: [userId], references: [id], onDelete: Cascade)
+  reviewedBy User?   @relation("PaymentSubmissionReviewer", fields: [reviewedById], references: [id])
+
+  @@index([bookingId])
+  @@index([userId])
+  @@index([status])
+}
+
 model PricingTier {
   id String @id @default(cuid())
 
@@ -379,6 +408,12 @@ enum PaymentRecordStatus {
   RECEIVED
   FAILED
   REFUNDED
+}
+
+enum PaymentSubmissionStatus {
+  PENDING
+  APPROVED
+  REJECTED
 }
 
 enum CustomRequestStatus {

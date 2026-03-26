@@ -1,9 +1,10 @@
 import { Resend } from "resend";
 
-const resend = new Resend(process.env.RESEND_API_KEY);
+const RESEND_API_KEY = process.env.RESEND_API_KEY;
+const FROM_EMAIL = "Epoch Journeys <no-reply@epochjourneys.com>";
 
 type SendEmailInput = {
-  to: string;
+  to: string | string[];
   subject: string;
   html: string;
 };
@@ -13,10 +14,24 @@ export async function sendEmail({
   subject,
   html,
 }: SendEmailInput) {
-  await resend.emails.send({
-    from: "Epoch Journeys <no-reply@epochjourneys.com>",
-    to,
-    subject,
-    html,
-  });
+  if (!RESEND_API_KEY) {
+    console.error("Missing RESEND_API_KEY");
+    return null;
+  }
+
+  try {
+    const resend = new Resend(RESEND_API_KEY);
+
+    const response = await resend.emails.send({
+      from: FROM_EMAIL,
+      to,
+      subject,
+      html,
+    });
+
+    return response;
+  } catch (err) {
+    console.error("Email send error:", err);
+    return null;
+  }
 }

@@ -26,7 +26,6 @@ export const authOptions: NextAuthOptions = {
 
         if (!user) return null;
 
-        // Block unapproved agents
         if (user.role === "AGENT" && !user.approved) {
           return null;
         }
@@ -40,6 +39,7 @@ export const authOptions: NextAuthOptions = {
           role: user.role,
           approved: user.approved,
           commissionRate: user.commissionRate ?? null,
+          fullName: user.fullName ?? null,
         };
       },
     }),
@@ -47,29 +47,28 @@ export const authOptions: NextAuthOptions = {
 
   callbacks: {
     async jwt({ token, user }) {
-
       if (user) {
         token.id = user.id;
         token.role = user.role;
         token.approved = user.approved;
         token.commissionRate = user.commissionRate ?? null;
+        token.fullName = user.fullName ?? null;
       }
 
       return token;
     },
 
     async session({ session, token }) {
-
       if (session.user) {
         session.user.id = String(token.id ?? "");
         session.user.role = (token.role ?? "AGENT") as "ADMIN" | "AGENT";
         session.user.approved = Boolean(token.approved);
-
-        // ✅ Add commissionRate to session
         session.user.commissionRate =
           typeof token.commissionRate === "number"
             ? token.commissionRate
             : null;
+        session.user.fullName =
+          typeof token.fullName === "string" ? token.fullName : null;
       }
 
       return session;
