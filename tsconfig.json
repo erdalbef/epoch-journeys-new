@@ -1,42 +1,34 @@
 {
   "compilerOptions": {
-  "target": "ES2022",
-  "lib": ["dom", "dom.iterable", "esnext"],
-  "allowJs": true,
-  "skipLibCheck": true,
-  "strict": true,
-  "noEmit": true,
-  "esModuleInterop": true,
+    "target": "ES2022",
+    "lib": ["dom", "dom.iterable", "esnext"],
+    "allowJs": true,
+    "skipLibCheck": true,
+    "strict": true,
+    "noEmit": true,
+    "esModuleInterop": true,
 
-  "module": "ESNext",
-  "moduleResolution": "Bundler",
-  "resolveJsonModule": true,
-  "isolatedModules": true,
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "resolveJsonModule": true,
+    "isolatedModules": true,
 
-  "jsx": "react-jsx",
-  "incremental": true,
+    "jsx": "react-jsx",
+    "incremental": true,
 
-  "types": ["node"],
+    "types": ["node", "vitest/globals"],
 
-  "baseUrl": ".",
-  "paths": {
-    "@/*": ["./*"]
+    "paths": {
+      "@/*": ["./src/*"]
+    },
+
+    "plugins": [{ "name": "next" }]
   },
-
-  "plugins": [
-    { "name": "next" }
-  ]
-},
   "include": [
     "next-env.d.ts",
-    "**/*.ts",
-    "**/*.tsx",
-    "**/*.mts",
+    "src/**/*",
     ".next/types/**/*.ts",
     ".next/dev/types/**/*.ts"
-, "prisma.config.ts.bak"  ],
-  "exclude": [
-    "node_modules",
-    ".next"
-  ]
+  ],
+  "exclude": ["node_modules", ".next"]
 }
