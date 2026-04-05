@@ -46,6 +46,7 @@ model User {
   quoteActivities QuoteActivity[]
   quotesFinalized Quote[]         @relation("QuoteFinalizedBy")
   quotesSent      Quote[]         @relation("QuoteSentBy")
+  quoteTemplates  QuoteTemplate[]
 
   @@index([role])
   @@index([approved])
@@ -320,6 +321,7 @@ model Quote {
   requestId       String?
   tourId          String?
   departureDateId String?
+  templateId      String?
 
   quoteNumber    Int     @unique @default(autoincrement())
   quoteReference String? @unique
@@ -344,6 +346,10 @@ model Quote {
   taxTotal      Float @default(0)
   totalAmount   Float @default(0)
 
+  quoteBuilderPayload Json?
+  quoteBuilderSummary Json?
+  calculationVersion  String?
+
   pdfUrl         String?
   pdfGeneratedAt DateTime?
 
@@ -363,6 +369,7 @@ model Quote {
   selectedFor   CustomTourRequest[] @relation("SelectedQuote")
   tour          Tour?               @relation(fields: [tourId], references: [id], onDelete: SetNull)
   departureDate DepartureDate?      @relation(fields: [departureDateId], references: [id], onDelete: SetNull)
+  template      QuoteTemplate?      @relation(fields: [templateId], references: [id], onDelete: SetNull)
   finalizedBy   User?               @relation("QuoteFinalizedBy", fields: [finalizedById], references: [id], onDelete: SetNull)
   sentBy        User?               @relation("QuoteSentBy", fields: [sentById], references: [id], onDelete: SetNull)
 
@@ -373,11 +380,36 @@ model Quote {
   @@index([requestId])
   @@index([tourId])
   @@index([departureDateId])
+  @@index([templateId])
   @@index([status])
   @@index([purpose])
   @@index([createdAt])
   @@index([expiresAt])
   @@index([recipientEmail])
+  @@index([calculationVersion])
+}
+
+model QuoteTemplate {
+  id                 String        @id @default(cuid())
+  name               String
+  description        String?
+  isDefault          Boolean       @default(false)
+  currency           String        @default("EUR")
+  purpose            QuotePurpose?
+  payload            Json
+  summary            Json?
+  calculationVersion String?
+  createdById        String?
+  createdAt          DateTime      @default(now())
+  updatedAt          DateTime      @updatedAt
+
+  createdBy User?   @relation(fields: [createdById], references: [id], onDelete: SetNull)
+  quotes    Quote[]
+
+  @@index([name])
+  @@index([isDefault])
+  @@index([createdById])
+  @@index([calculationVersion])
 }
 
 model QuoteItem {
