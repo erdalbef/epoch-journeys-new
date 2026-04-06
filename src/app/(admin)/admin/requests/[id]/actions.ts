@@ -291,7 +291,6 @@ export async function convertRequestToBooking(formData: FormData) {
       internalNotes: [
         `Converted from custom request ${request.requestReference}.`,
         request.internalNotes?.trim() || "",
-        request.adminReply?.trim() || "",
       ]
         .filter(Boolean)
         .join("\n\n"),
@@ -306,7 +305,7 @@ export async function convertRequestToBooking(formData: FormData) {
     where: { id: request.id },
     data: {
       status: CustomRequestStatus.CONFIRMED,
-      adminReply: request.adminReply ?? "Converted to booking by admin.",
+      adminReply: "Converted to booking by admin.",
     },
   });
 

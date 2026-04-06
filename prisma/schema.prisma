@@ -88,6 +88,7 @@ model Tour {
 
   bookings             Booking[]
   departureDates       DepartureDate[]
+  seasonalPrices       TourSeasonalPrice[] // <-- ADDED
   pricingTiers         PricingTier[]
   agentTourCommissions AgentTourCommission[]
   quotes               Quote[]
@@ -98,6 +99,21 @@ model Tour {
   @@index([featured])
   @@index([isPublished])
   @@index([pricingType])
+}
+
+model TourSeasonalPrice {
+  id        String   @id @default(cuid())
+  tourId    String
+  season    Season
+  price     Float
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  tour Tour @relation(fields: [tourId], references: [id], onDelete: Cascade)
+
+  @@unique([tourId, season], name: "tourId_season")
+  @@index([tourId])
+  @@index([season])
 }
 
 model DepartureDate {
@@ -296,6 +312,8 @@ model CustomTourRequest {
   notes           String?
   internalNotes   String?
 
+  adminReply String?
+
   selectedQuoteId String?
 
   createdAt DateTime @default(now())
@@ -358,6 +376,10 @@ model Quote {
 
   sentAt   DateTime?
   sentById String?
+
+  viewedAt   DateTime?
+  approvedAt DateTime?
+  rejectedAt DateTime?
 
   convertedAt DateTime?
   expiresAt   DateTime?

@@ -27,7 +27,9 @@ type ReviewBody = {
   action?: ReviewAction;
 };
 
-function normalizePaymentMethod(method: string | null | undefined): PaymentMethod {
+function normalizePaymentMethod(
+  method: string | null | undefined
+): PaymentMethod {
   if (!method) return PaymentMethod.OTHER;
 
   const normalized = method.trim().toUpperCase().replaceAll(" ", "_");
@@ -174,7 +176,7 @@ export async function POST(request: Request) {
         },
       });
 
-      await tx.payment.create({
+      const payment = await tx.payment.create({
         data: {
           bookingId,
           amount: safeAmount,
@@ -192,10 +194,7 @@ export async function POST(request: Request) {
 
       const schedules = await tx.bookingPaymentSchedule.findMany({
         where: { bookingId },
-        orderBy: [
-          { dueDate: "asc" },
-          { createdAt: "asc" },
-        ],
+        orderBy: [{ dueDate: "asc" }, { createdAt: "asc" }],
       });
 
       for (const schedule of schedules) {
@@ -218,6 +217,14 @@ export async function POST(request: Request) {
           newScheduleAmountPaid,
           schedule.dueDate
         );
+
+        await tx.paymentAllocation.create({
+          data: {
+            paymentId: payment.id,
+            paymentScheduleId: schedule.id,
+            amount: allocation,
+          },
+        });
 
         await tx.bookingPaymentSchedule.update({
           where: { id: schedule.id },

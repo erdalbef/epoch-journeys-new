@@ -5,7 +5,7 @@ import { useState, useTransition } from "react";
 import { toast } from "sonner";
 
 type AdminPaymentReviewActionsProps = {
-  PricingSection.tsx: string;
+  submissionId: string;
   bookingId: string;
   bookingAmountPaid: number;
   bookingAmountDue: number;
@@ -14,7 +14,7 @@ type AdminPaymentReviewActionsProps = {
 };
 
 export default function AdminPaymentReviewActions({
-  PricingSection.tsx,
+  submissionId,
   bookingId,
   bookingAmountPaid,
   bookingAmountDue,
@@ -48,7 +48,7 @@ export default function AdminPaymentReviewActions({
             "Content-Type": "application/json",
           },
           body: JSON.stringify({
-            PricingSection.tsx,
+            submissionId,
             bookingId,
             bookingAmountPaid,
             bookingAmountDue,

@@ -12,7 +12,7 @@ export const runtime = "nodejs";
 
 type RouteContext = {
   params: Promise<{
-    PricingSection.tsx: string;
+    submissionId: string;
   }>;
 };
 
@@ -34,9 +34,9 @@ export async function GET(_request: Request, context: RouteContext) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const { PricingSection.tsx } = await context.params;
+    const { submissionId } = await context.params;
 
-    if (!PricingSection.tsx) {
+    if (!submissionId) {
       return NextResponse.json(
         { error: "Missing submission id." },
         { status: 400 }
@@ -45,7 +45,7 @@ export async function GET(_request: Request, context: RouteContext) {
 
     const submission = await db.paymentSubmission.findFirst({
       where: {
-        id: PricingSection.tsx,
+        id: submissionId,
         userId: session.user.id,
       },
       include: {

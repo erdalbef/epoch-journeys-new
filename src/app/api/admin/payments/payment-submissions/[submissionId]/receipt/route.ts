@@ -11,9 +11,9 @@ import PaymentReceiptPdf from "@/components/admin/payments/PaymentReceiptPdf";
 export const runtime = "nodejs";
 
 type RouteContext = {
-  params: Promise<{
+  params: {
     submissionId: string;
-  }>;
+  };
 };
 
 function formatDate(value: Date | string | null | undefined) {
@@ -34,8 +34,7 @@ export async function GET(_request: Request, context: RouteContext) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    // ✅ IMPORTANT: params must be awaited
-    const { submissionId } = await context.params;
+    const { submissionId } = context.params;
 
     if (!submissionId) {
       return NextResponse.json(

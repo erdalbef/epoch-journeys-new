@@ -5,18 +5,20 @@ import BookingDetailView from "@/components/b2b/BookingDetailView";
 import { authOptions } from "@/lib/authOptions";
 import { db } from "@/lib/db";
 
-export default async function GroupDetailPage({
-  params,
-}: {
-  params: Promise<{ id: string }>;
-}) {
+type PageProps = {
+  params: {
+    id: string;
+  };
+};
+
+export default async function GroupDetailPage({ params }: PageProps) {
   const session = await getServerSession(authOptions);
 
   if (!session?.user?.id) {
     redirect("/agent-login");
   }
 
-  const { id } = await params;
+  const { id } = params;
 
   const currentUser = await db.user.findUnique({
     where: { id: session.user.id },
@@ -43,6 +45,26 @@ export default async function GroupDetailPage({
           { lastName: "asc" },
           { firstName: "asc" },
         ],
+      },
+      payments: {
+        include: {
+          allocations: true,
+        },
+      },
+      paymentSubmissions: {
+        include: {
+          user: {
+            select: {
+              id: true,
+              fullName: true,
+              email: true,
+              travelAgency: true,
+            },
+          },
+        },
+        orderBy: {
+          createdAt: "desc",
+        },
       },
     },
   });

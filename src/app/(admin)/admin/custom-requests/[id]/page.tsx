@@ -101,7 +101,7 @@ export default async function AdminCustomRequestDetailPage({ params }: Props) {
       <UpdateRequestForm
         id={request.id}
         currentStatus={request.status}
-        currentReply={request.adminReply || ""}
+        currentReply=""
       />
     </div>
   );

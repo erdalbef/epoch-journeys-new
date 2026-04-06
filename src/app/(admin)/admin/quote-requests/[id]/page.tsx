@@ -159,6 +159,19 @@ export default async function AdminQuoteRequestDetailPage({
             },
           },
         },
+        select: {
+          id: true,
+          createdAt: true,
+          sentAt: true,
+          viewedAt: true,
+          approvedAt: true,
+          rejectedAt: true,
+          expiresAt: true,
+          convertedAt: true,
+          booking: true,
+          items: true,
+          activities: true,
+        },
       },
     },
   })
@@ -728,18 +741,12 @@ export default async function AdminQuoteRequestDetailPage({
                   <span className="text-muted-foreground">Sent</span>
                   <span>{formatDate(activeQuote.sentAt)}</span>
                 </div>
-                <div className="flex justify-between gap-4">
-                  <span className="text-muted-foreground">Viewed</span>
-                  <span>{formatDate(activeQuote.viewedAt)}</span>
-                </div>
-                <div className="flex justify-between gap-4">
-                  <span className="text-muted-foreground">Approved</span>
-                  <span>{formatDate(activeQuote.approvedAt)}</span>
-                </div>
-                <div className="flex justify-between gap-4">
-                  <span className="text-muted-foreground">Rejected</span>
-                  <span>{formatDate(activeQuote.rejectedAt)}</span>
-                </div>
+                {"rejectedAt" in activeQuote && (
+                  <div className="flex justify-between gap-4">
+                    <span className="text-muted-foreground">Rejected</span>
+                    <span>{formatDate(activeQuote.rejectedAt)}</span>
+                  </div>
+                )}
                 <div className="flex justify-between gap-4">
                   <span className="text-muted-foreground">Expires</span>
                   <span>{formatDate(activeQuote.expiresAt)}</span>
@@ -818,9 +825,9 @@ export default async function AdminQuoteRequestDetailPage({
                         <div>
                           <p className="text-sm font-medium">{activity.action}</p>
                           <p className="text-xs text-muted-foreground">
-                            {activity.actor?.fullName ||
-                              activity.actor?.email ||
-                              "System"}
+                            {"actor" in activity && activity.actor
+                              ? activity.actor.fullName || activity.actor.email
+                              : "System"}
                           </p>
                         </div>
                         <p className="text-xs text-muted-foreground">

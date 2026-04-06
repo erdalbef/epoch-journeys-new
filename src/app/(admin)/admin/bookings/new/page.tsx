@@ -311,9 +311,6 @@ export default async function AdminNewBookingPage({ searchParams }: Props) {
                     sourceRequest.notes
                       ? `Request Notes:\n${sourceRequest.notes}`
                       : "",
-                    sourceRequest.adminReply
-                      ? `Admin Reply:\n${sourceRequest.adminReply}`
-                      : "",
                   ]
                     .filter(Boolean)
                     .join("\n\n")

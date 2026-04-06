@@ -61,45 +61,35 @@ async function saveSeasonalPrices(tourId: string, formData: FormData) {
     { season: "PEAK", price: peakPrice },
   ];
 
-  await db.$transaction(async (tx) => {
-    for (const entry of entries) {
-      const existing = await tx.tourSeasonPrice.findUnique({
+  await db.$transaction(
+    entries.map((entry) => {
+      if (entry.price === null) {
+        return db.tourSeasonalPrice.deleteMany({
+          where: {
+            tourId,
+            season: entry.season,
+          },
+        });
+      }
+
+      return db.tourSeasonalPrice.upsert({
         where: {
           tourId_season: {
             tourId,
             season: entry.season,
           },
         },
-        select: {
-          id: true,
+        update: {
+          price: entry.price,
+        },
+        create: {
+          tourId,
+          season: entry.season,
+          price: entry.price,
         },
       });
-
-      if (entry.price === null) {
-        if (existing) {
-          await tx.tourSeasonPrice.delete({
-            where: { id: existing.id },
-          });
-        }
-        continue;
-      }
-
-      if (existing) {
-        await tx.tourSeasonPrice.update({
-          where: { id: existing.id },
-          data: { price: entry.price },
-        });
-      } else {
-        await tx.tourSeasonPrice.create({
-          data: {
-            tourId,
-            season: entry.season,
-            price: entry.price,
-          },
-        });
-      }
-    }
-  });
+    }),
+  );
 
   redirect(`/admin/tours/${tourId}/seasonal-prices?success=saved`);
 }

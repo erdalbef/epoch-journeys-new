@@ -86,6 +86,10 @@ export async function POST(req: Request) {
       });
     }
 
+    if (!departureDate.season) {
+      return new NextResponse("Departure season is missing", { status: 400 });
+    }
+
     const grossAmount = departureDate.price * numberOfGuests;
     const commissionRateSnapshot = customRequest.user?.commissionRate ?? null;
     const payoutPerPaxSnapshot = customRequest.user?.payoutPerPax ?? null;
@@ -94,8 +98,8 @@ export async function POST(req: Request) {
       commissionRateSnapshot !== null
         ? (grossAmount * commissionRateSnapshot) / 100
         : payoutPerPaxSnapshot !== null
-        ? payoutPerPaxSnapshot * numberOfGuests
-        : 0;
+          ? payoutPerPaxSnapshot * numberOfGuests
+          : 0;
 
     const netAmount = grossAmount - commissionAmount;
 
@@ -143,7 +147,6 @@ export async function POST(req: Request) {
 
         departureDateSnapshot: departureDate.date,
         seasonSnapshot: departureDate.season,
-        seasonSnapshotOld: String(departureDate.season),
         pricePerPersonSnapshot: departureDate.price,
         earlyDiscountPercentSnapshot: departureDate.earlyDiscountPercent,
         earlyDiscountDeadlineSnapshot: departureDate.earlyDiscountDeadline,

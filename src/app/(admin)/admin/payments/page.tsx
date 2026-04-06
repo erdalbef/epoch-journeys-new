@@ -1,304 +1,151 @@
-import { NextResponse } from "next/server";
+import { redirect } from "next/navigation";
 import { getServerSession } from "next-auth";
-import {
-  Role,
-  PaymentStatus,
-  PaymentMethod,
-  PaymentRecordStatus,
-  BookingInstallmentStatus,
-} from "@prisma/client";
+import { Role } from "@prisma/client";
 
 import { authOptions } from "@/lib/authOptions";
 import { db } from "@/lib/db";
-import { sendEmail } from "@/lib/email/sendEmail";
-import {
-  agentPaymentApprovedTemplate,
-  agentPaymentRejectedTemplate,
-} from "@/lib/email/templates/paymentEmails";
+import AdminPaymentReviewActions from "@/components/admin/payments/AdminPaymentReviewActions";
 
-type ReviewAction = "approve" | "reject";
+export default async function AdminPaymentsPage() {
+  const session = await getServerSession(authOptions);
 
-type ReviewBody = {
-  submissionId?: string;
-  bookingId?: string;
-  bookingAmountPaid?: number;
-  bookingAmountDue?: number;
-  submissionAmount?: number;
-  action?: ReviewAction;
-};
-
-function normalizePaymentMethod(
-  method: string | null | undefined
-): PaymentMethod {
-  if (!method) return PaymentMethod.OTHER;
-
-  const normalized = method.trim().toUpperCase().replaceAll(" ", "_");
-
-  switch (normalized) {
-    case "BANK_TRANSFER":
-      return PaymentMethod.BANK_TRANSFER;
-    case "STRIPE":
-      return PaymentMethod.STRIPE;
-    case "PAYPAL":
-      return PaymentMethod.PAYPAL;
-    case "CASH":
-      return PaymentMethod.CASH;
-    default:
-      return PaymentMethod.OTHER;
-  }
-}
-
-function getInstallmentStatus(
-  amount: number,
-  amountPaid: number,
-  dueDate: Date
-): BookingInstallmentStatus {
-  const now = new Date();
-
-  if (amountPaid <= 0) {
-    return dueDate < now
-      ? BookingInstallmentStatus.OVERDUE
-      : BookingInstallmentStatus.PENDING;
+  if (!session?.user || session.user.role !== Role.ADMIN) {
+    redirect("/admin-login");
   }
 
-  if (amountPaid < amount) {
-    return dueDate < now
-      ? BookingInstallmentStatus.OVERDUE
-      : BookingInstallmentStatus.PARTIALLY_PAID;
-  }
-
-  return BookingInstallmentStatus.PAID;
-}
-
-export async function POST(request: Request) {
-  try {
-    const session = await getServerSession(authOptions);
-
-    if (!session?.user || session.user.role !== Role.ADMIN) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
-
-    const body = (await request.json()) as ReviewBody;
-
-    const { submissionId, bookingId, submissionAmount, action } = body;
-
-    if (!submissionId || !bookingId || !submissionAmount || !action) {
-      return NextResponse.json(
-        { error: "Missing required fields." },
-        { status: 400 }
-      );
-    }
-
-    if (submissionAmount <= 0) {
-      return NextResponse.json(
-        { error: "Invalid submission amount." },
-        { status: 400 }
-      );
-    }
-
-    const submission = await db.paymentSubmission.findUnique({
-      where: { id: submissionId },
-      include: {
-        booking: {
-          select: {
-            id: true,
-            bookingReference: true,
-            bookingDisplayCode: true,
-            amountPaid: true,
-            amountDue: true,
-            totalPrice: true,
-            currency: true,
-            paymentStatus: true,
-          },
-        },
-        user: {
-          select: {
-            email: true,
-            fullName: true,
-          },
+  const submissions = await db.paymentSubmission.findMany({
+    include: {
+      booking: {
+        select: {
+          id: true,
+          bookingReference: true,
+          bookingDisplayCode: true,
+          amountPaid: true,
+          amountDue: true,
+          totalPrice: true,
+          currency: true,
         },
       },
-    });
-
-    if (!submission || submission.booking.id !== bookingId) {
-      return NextResponse.json(
-        { error: "Payment submission not found." },
-        { status: 404 }
-      );
-    }
-
-    if (submission.status !== "PENDING") {
-      return NextResponse.json(
-        { error: "This payment submission has already been reviewed." },
-        { status: 400 }
-      );
-    }
-
-    const bookingReference =
-      submission.booking.bookingDisplayCode ||
-      submission.booking.bookingReference;
-
-    if (action === "reject") {
-      await db.paymentSubmission.update({
-        where: { id: submissionId },
-        data: {
-          status: "REJECTED",
-          reviewedById: session.user.id,
-          reviewedAt: new Date(),
+      user: {
+        select: {
+          id: true,
+          fullName: true,
+          email: true,
         },
-      });
+      },
+    },
+    orderBy: {
+      createdAt: "desc",
+    },
+  });
 
-      if (submission.user.email) {
-        await sendEmail({
-          to: submission.user.email,
-          subject: `Payment Rejected - ${bookingReference}`,
-          html: agentPaymentRejectedTemplate({
-            bookingReference,
-            amount: submissionAmount,
-            currency: submission.currency,
-          }),
-        });
-      }
+  return (
+    <div className="p-6 space-y-6">
+      {/* Header */}
+      <div>
+        <h1 className="text-2xl font-semibold tracking-tight">
+          Payment Review
+        </h1>
+        <p className="text-sm text-muted-foreground">
+          Review and approve incoming payment submissions.
+        </p>
+      </div>
 
-      return NextResponse.json({ success: true });
-    }
+      {/* Table */}
+      <div className="rounded-xl border bg-white overflow-hidden">
+        <table className="w-full text-sm">
+          <thead className="bg-slate-50 border-b">
+            <tr>
+              <th className="px-4 py-3 text-left">Booking</th>
+              <th className="px-4 py-3 text-left">Agent</th>
+              <th className="px-4 py-3 text-left">Amount</th>
+              <th className="px-4 py-3 text-left">Balance</th>
+              <th className="px-4 py-3 text-left">Status</th>
+              <th className="px-4 py-3 text-left">Submitted</th>
+              <th className="px-4 py-3 text-right">Actions</th>
+            </tr>
+          </thead>
 
-    const safeAmount = Math.min(submissionAmount, submission.booking.amountDue);
-    const paymentMethod = normalizePaymentMethod(submission.method);
+          <tbody>
+            {submissions.length === 0 ? (
+              <tr>
+                <td
+                  colSpan={7}
+                  className="px-4 py-6 text-center text-slate-500"
+                >
+                  No payment submissions found.
+                </td>
+              </tr>
+            ) : (
+              submissions.map((submission) => {
+                const bookingRef =
+                  submission.booking.bookingDisplayCode ||
+                  submission.booking.bookingReference;
 
-    await db.$transaction(async (tx) => {
-      await tx.paymentSubmission.update({
-        where: { id: submissionId },
-        data: {
-          status: "APPROVED",
-          reviewedById: session.user.id,
-          reviewedAt: new Date(),
-        },
-      });
+                return (
+                  <tr key={submission.id} className="border-b last:border-0">
+                    {/* Booking */}
+                    <td className="px-4 py-3">
+                      <div className="font-medium">{bookingRef}</div>
+                    </td>
 
-      const payment = await tx.payment.create({
-        data: {
-          bookingId,
-          amount: safeAmount,
-          currency: submission.currency,
-          method: paymentMethod,
-          status: PaymentRecordStatus.RECEIVED,
-          reference: submission.proofUrl || undefined,
-          notes: submission.note || undefined,
-          paidAt: new Date(),
-          receivedBy: session.user.id,
-        },
-      });
+                    {/* Agent */}
+                    <td className="px-4 py-3">
+                      <div className="flex flex-col">
+                        <span>{submission.user?.fullName || "-"}</span>
+                        <span className="text-xs text-slate-500">
+                          {submission.user?.email || "-"}
+                        </span>
+                      </div>
+                    </td>
 
-      let remainingAmount = safeAmount;
+                    {/* Amount */}
+                    <td className="px-4 py-3">
+                      {submission.amount} {submission.currency}
+                    </td>
 
-      const schedules = await tx.bookingPaymentSchedule.findMany({
-        where: { bookingId },
-        orderBy: [{ dueDate: "asc" }, { createdAt: "asc" }],
-      });
+                    {/* Balance */}
+                    <td className="px-4 py-3">
+                      <div className="text-xs">
+                        <div>
+                          Paid: {submission.booking.amountPaid}
+                        </div>
+                        <div>
+                          Due: {submission.booking.amountDue}
+                        </div>
+                      </div>
+                    </td>
 
-      for (const schedule of schedules) {
-        if (remainingAmount <= 0) break;
-        if (schedule.status === BookingInstallmentStatus.CANCELLED) continue;
+                    {/* Status */}
+                    <td className="px-4 py-3">
+                      <span className="text-xs font-semibold">
+                        {submission.status}
+                      </span>
+                    </td>
 
-        const outstanding = Math.max(0, schedule.amount - schedule.amountPaid);
-        if (outstanding <= 0) continue;
+                    {/* Date */}
+                    <td className="px-4 py-3 text-xs text-slate-500">
+                      {submission.createdAt.toLocaleDateString()}
+                    </td>
 
-        const allocationAmount = Math.min(remainingAmount, outstanding);
-        const newScheduleAmountPaid = schedule.amountPaid + allocationAmount;
-        const newScheduleStatus = getInstallmentStatus(
-          schedule.amount,
-          newScheduleAmountPaid,
-          schedule.dueDate
-        );
-
-        await tx.paymentAllocation.create({
-          data: {
-            paymentId: payment.id,
-            paymentScheduleId: schedule.id,
-            amount: allocationAmount,
-          },
-        });
-
-        await tx.bookingPaymentSchedule.update({
-          where: { id: schedule.id },
-          data: {
-            amountPaid: newScheduleAmountPaid,
-            status: newScheduleStatus,
-            paidAt:
-              newScheduleStatus === BookingInstallmentStatus.PAID
-                ? new Date()
-                : schedule.paidAt,
-          },
-        });
-
-        remainingAmount -= allocationAmount;
-      }
-
-      const updatedSchedules = await tx.bookingPaymentSchedule.findMany({
-        where: {
-          bookingId,
-          status: {
-            not: BookingInstallmentStatus.CANCELLED,
-          },
-        },
-      });
-
-      const totalScheduledAmount = updatedSchedules.reduce(
-        (sum, schedule) => sum + schedule.amount,
-        0
-      );
-
-      const totalPaidFromSchedules = updatedSchedules.reduce(
-        (sum, schedule) => sum + schedule.amountPaid,
-        0
-      );
-
-      const effectiveTotal =
-        totalScheduledAmount > 0
-          ? totalScheduledAmount
-          : submission.booking.totalPrice;
-
-      const newAmountPaid = totalPaidFromSchedules;
-      const newAmountDue = Math.max(effectiveTotal - totalPaidFromSchedules, 0);
-
-      let newPaymentStatus: PaymentStatus = PaymentStatus.PARTIALLY_PAID;
-
-      if (newAmountPaid <= 0) {
-        newPaymentStatus = PaymentStatus.UNPAID;
-      } else if (newAmountDue === 0) {
-        newPaymentStatus = PaymentStatus.PAID;
-      }
-
-      await tx.booking.update({
-        where: { id: bookingId },
-        data: {
-          amountPaid: newAmountPaid,
-          amountDue: newAmountDue,
-          paymentStatus: newPaymentStatus,
-        },
-      });
-    });
-
-    if (submission.user.email) {
-      await sendEmail({
-        to: submission.user.email,
-        subject: `Payment Approved - ${bookingReference}`,
-        html: agentPaymentApprovedTemplate({
-          bookingReference,
-          amount: safeAmount,
-          currency: submission.currency,
-        }),
-      });
-    }
-
-    return NextResponse.json({ success: true });
-  } catch (error) {
-    console.error("Admin payment review error:", error);
-
-    return NextResponse.json(
-      { error: "Failed to review payment submission." },
-      { status: 500 }
-    );
-  }
+                    {/* Actions */}
+                    <td className="px-4 py-3 text-right">
+                      <AdminPaymentReviewActions
+                        submissionId={submission.id}
+                        bookingId={submission.booking.id}
+                        bookingAmountPaid={submission.booking.amountPaid}
+                        bookingAmountDue={submission.booking.amountDue}
+                        submissionAmount={submission.amount}
+                        currentStatus={submission.status}
+                      />
+                    </td>
+                  </tr>
+                );
+              })
+            )}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
 }
