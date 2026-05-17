@@ -1,6 +1,9 @@
 import { NextRequest, NextResponse } from "next/server"
 import { QuoteActivityAction, QuoteStatus } from "@prisma/client"
+import { getServerSession } from "next-auth"
+
 import { db } from "@/lib/db"
+import { authOptions } from "@/lib/authOptions"
 import { generateQuotePdfUrl } from "@/lib/pdf"
 
 type RouteContext = {
@@ -90,18 +93,19 @@ async function getQuoteOrNull(id: string) {
   })
 }
 
-export async function POST(req: NextRequest, context: RouteContext) {
+export async function POST(_: NextRequest, context: RouteContext) {
   try {
-    const { id } = await context.params
-    const body = await req.json().catch(() => ({}))
-    const actorId = body?.actorId ?? null
+    const session = await getServerSession(authOptions)
 
-    if (!actorId) {
+    if (!session?.user?.id) {
       return NextResponse.json(
-        { message: "actorId is required." },
-        { status: 400 }
+        { message: "Unauthorized." },
+        { status: 401 }
       )
     }
+
+    const actorId = session.user.id
+    const { id } = await context.params
 
     const existingQuote = await db.quote.findUnique({
       where: { id },
@@ -126,7 +130,7 @@ export async function POST(req: NextRequest, context: RouteContext) {
       )
     }
 
-    if (!existingQuote.recipientEmail) {
+    if (!existingQuote.recipientEmail?.trim()) {
       return NextResponse.json(
         { message: "Recipient email is required before finalizing." },
         { status: 400 }
@@ -175,6 +179,13 @@ export async function POST(req: NextRequest, context: RouteContext) {
 
     const updated = await getQuoteOrNull(id)
 
+    if (!updated) {
+      return NextResponse.json(
+        { message: "Quote finalized but could not be reloaded." },
+        { status: 500 }
+      )
+    }
+
     return NextResponse.json(updated)
   } catch (error) {
     console.error("POST /api/quotes/[id]/finalize error", error)
@@ -182,9 +193,6 @@ export async function POST(req: NextRequest, context: RouteContext) {
     const message =
       error instanceof Error ? error.message : "Failed to finalize quote."
 
-    return NextResponse.json(
-      { message },
-      { status: 500 }
-    )
+    return NextResponse.json({ message }, { status: 500 })
   }
 }

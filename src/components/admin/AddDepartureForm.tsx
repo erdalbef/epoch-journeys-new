@@ -2,10 +2,10 @@
 
 export function AddDepartureForm() {
   return (
-    <>
+    <div className="grid gap-4 md:grid-cols-2">
       <div>
         <label htmlFor="date" className="text-sm font-medium">
-          Departure Date
+          Departure Date *
         </label>
         <input
           id="date"
@@ -33,20 +33,56 @@ export function AddDepartureForm() {
         </select>
       </div>
 
-      <div>
-        <label htmlFor="price" className="text-sm font-medium">
-          Price per Person in Double Room
-        </label>
-        <input
-          id="price"
-          name="price"
-          type="number"
-          min="0"
-          step="0.01"
-          required
-          className="mt-1 w-full rounded border p-2"
-          placeholder="e.g. 1490"
-        />
+      <div className="md:col-span-2 rounded border p-3 space-y-3">
+        <h3 className="text-sm font-semibold">Pricing (Per Person)</h3>
+
+        <div className="grid gap-3 md:grid-cols-3">
+          <div>
+            <label htmlFor="priceDouble" className="text-xs">
+              Double / Twin Price *
+            </label>
+            <input
+              id="priceDouble"
+              name="priceDouble"
+              type="number"
+              min="0"
+              step="0.01"
+              required
+              className="mt-1 w-full rounded border p-2"
+              placeholder="1490"
+            />
+          </div>
+
+          <div>
+            <label htmlFor="singleSupplement" className="text-xs">
+              Single Supplement
+            </label>
+            <input
+              id="singleSupplement"
+              name="singleSupplement"
+              type="number"
+              min="0"
+              step="0.01"
+              className="mt-1 w-full rounded border p-2"
+              placeholder="e.g. 400"
+            />
+          </div>
+
+          <div>
+            <label htmlFor="tripleReduction" className="text-xs">
+              Triple Reduction
+            </label>
+            <input
+              id="tripleReduction"
+              name="tripleReduction"
+              type="number"
+              min="0"
+              step="0.01"
+              className="mt-1 w-full rounded border p-2"
+              placeholder="e.g. 150"
+            />
+          </div>
+        </div>
       </div>
 
       <div>
@@ -68,7 +104,7 @@ export function AddDepartureForm() {
 
       <div>
         <label htmlFor="capacity" className="text-sm font-medium">
-          Capacity
+          Capacity *
         </label>
         <input
           id="capacity"
@@ -76,16 +112,27 @@ export function AddDepartureForm() {
           type="number"
           min="0"
           required
+          defaultValue={30}
+          className="mt-1 w-full rounded border p-2"
+        />
+      </div>
+
+      <div>
+        <label htmlFor="bookedSeats" className="text-sm font-medium">
+          Booked Seats
+        </label>
+        <input
+          id="bookedSeats"
+          name="bookedSeats"
+          type="number"
+          min="0"
           defaultValue={0}
           className="mt-1 w-full rounded border p-2"
         />
       </div>
 
       <div>
-        <label
-          htmlFor="earlyDiscountPercent"
-          className="text-sm font-medium"
-        >
+        <label htmlFor="earlyDiscountPercent" className="text-sm font-medium">
           Early Discount %
         </label>
         <input
@@ -100,10 +147,7 @@ export function AddDepartureForm() {
       </div>
 
       <div>
-        <label
-          htmlFor="earlyDiscountDeadline"
-          className="text-sm font-medium"
-        >
+        <label htmlFor="earlyDiscountDeadline" className="text-sm font-medium">
           Early Discount Deadline
         </label>
         <input
@@ -113,6 +157,6 @@ export function AddDepartureForm() {
           className="mt-1 w-full rounded border p-2"
         />
       </div>
-    </>
+    </div>
   );
 }

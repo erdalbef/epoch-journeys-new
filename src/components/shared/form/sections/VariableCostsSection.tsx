@@ -5,13 +5,9 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Button } from '@/components/ui/button'
 
-export type VariableCostItem = {
-  id: string
-  label: string
-  amount: number
-}
+import type { VariableCostItem, QuoteLineType } from '@/features/quotes/types'
 
-type VariableCostsSectionProps = {
+type Props = {
   value: VariableCostItem[]
   onChange: (next: VariableCostItem[]) => void
 }
@@ -21,43 +17,56 @@ function n(value: string): number {
   return Number.isFinite(parsed) ? parsed : 0
 }
 
-function uid() {
-  return `vc-${crypto.randomUUID()}`
+function createId() {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    return `vc-${crypto.randomUUID()}`
+  }
+  return `vc-${Date.now()}-${Math.floor(Math.random() * 100000)}`
 }
 
-export function VariableCostsSection({
-  value,
-  onChange,
-}: VariableCostsSectionProps) {
-  const updateItem = (
-    id: string,
-    patch: Partial<VariableCostItem>
-  ) => {
+const typeOptions: QuoteLineType[] = [
+  'HOTEL',
+  'ENTRANCE',
+  'LUNCH',
+  'DINNER',
+  'WHISPER_SET',
+  'CITY_TAX',
+  'ACCOMMODATION_TAX',
+  'GUIDE',
+  'TRANSPORT',
+  'FLIGHT',
+  'CUSTOM',
+]
+
+export function VariableCostsSection({ value, onChange }: Props) {
+  const items = Array.isArray(value) ? value : []
+
+  const updateItem = (id: string, patch: Partial<VariableCostItem>) => {
     onChange(
-      value.map((item) =>
-        item.id === id ? { ...item, ...patch } : item
-      )
+      items.map((item) => (item.id === id ? { ...item, ...patch } : item))
     )
   }
 
   const removeItem = (id: string) => {
-    onChange(value.filter((item) => item.id !== id))
+    onChange(items.filter((item) => item.id !== id))
   }
 
   const addItem = () => {
     onChange([
-      ...value,
+      ...items,
       {
-        id: uid(),
-        label: 'New Cost',
-        amount: 0,
+        id: createId(),
+        type: 'CUSTOM',
+        description: '',
+        costPerPerson: 0,
+        appliesTo: 'ALL',
       },
     ])
   }
 
   return (
     <Card className="rounded-3xl border-slate-200 shadow-sm">
-      <CardHeader className="pb-3 flex flex-row items-center justify-between space-y-0">
+      <CardHeader className="flex flex-row items-center justify-between pb-3">
         <CardTitle className="text-lg">Variable Costs</CardTitle>
         <Button type="button" onClick={addItem}>
           Add Row
@@ -66,35 +75,76 @@ export function VariableCostsSection({
 
       <CardContent>
         <div className="space-y-4">
-          {value.map((item) => (
+          {items.map((item) => (
             <div
               key={item.id}
-              className="grid gap-4 md:grid-cols-[minmax(0,1fr)_180px_100px]"
+              className="grid gap-4 md:grid-cols-[140px_minmax(0,1fr)_160px_140px_100px]"
             >
+              {/* TYPE */}
               <div className="space-y-2">
-                <Label htmlFor={`${item.id}-label`}>Label</Label>
-                <Input
-                  id={`${item.id}-label`}
-                  value={item.label}
+                <Label>Type</Label>
+                <select
+                  value={item.type}
                   onChange={(e) =>
-                    updateItem(item.id, { label: e.target.value })
+                    updateItem(item.id, {
+                      type: e.target.value as QuoteLineType,
+                    })
                   }
+                  className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm"
+                >
+                  {typeOptions.map((type) => (
+                    <option key={type} value={type}>
+                      {type}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {/* DESCRIPTION */}
+              <div className="space-y-2">
+                <Label>Description</Label>
+                <Input
+                  value={item.description ?? ''}
+                  onChange={(e) =>
+                    updateItem(item.id, { description: e.target.value })
+                  }
+                  placeholder="e.g. Lunch / Guide / Tickets"
                 />
               </div>
 
+              {/* COST */}
               <div className="space-y-2">
-                <Label htmlFor={`${item.id}-amount`}>Amount</Label>
+                <Label>Cost / Person</Label>
                 <Input
-                  id={`${item.id}-amount`}
                   type="number"
                   step={0.01}
-                  value={item.amount}
+                  value={item.costPerPerson}
                   onChange={(e) =>
-                    updateItem(item.id, { amount: n(e.target.value) })
+                    updateItem(item.id, {
+                      costPerPerson: n(e.target.value),
+                    })
                   }
                 />
               </div>
 
+              {/* APPLIES TO */}
+              <div className="space-y-2">
+                <Label>Applies To</Label>
+                <select
+                  value={item.appliesTo}
+                  onChange={(e) =>
+                    updateItem(item.id, {
+                      appliesTo: e.target.value as VariableCostItem['appliesTo'],
+                    })
+                  }
+                  className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm"
+                >
+                  <option value="ALL">All Pax</option>
+                  <option value="PAYING_ONLY">Paying Only</option>
+                </select>
+              </div>
+
+              {/* REMOVE */}
               <div className="flex items-end">
                 <Button
                   type="button"
@@ -108,7 +158,7 @@ export function VariableCostsSection({
             </div>
           ))}
 
-          {value.length === 0 && (
+          {items.length === 0 && (
             <p className="text-sm text-slate-500">
               No variable cost rows yet.
             </p>

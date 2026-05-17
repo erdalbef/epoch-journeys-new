@@ -1,302 +1,332 @@
-import { NextRequest, NextResponse } from "next/server"
-import { Prisma, QuoteStatus, QuoteItemType, QuoteActivityAction } from "@prisma/client"
-import { db } from "@/lib/db"
+import { NextRequest, NextResponse } from "next/server";
+import { getServerSession } from "next-auth";
+import { Prisma, QuotePurpose } from "@prisma/client";
+
+import { authOptions } from "@/lib/authOptions";
+import { db } from "@/lib/db";
 
 type RouteContext = {
-  params: Promise<{
-    id: string
-  }>
-}
+  params: Promise<{ id: string }>;
+};
+
+type GeneratedQuoteItemType =
+  | "SERVICE"
+  | "ACCOMMODATION"
+  | "TRANSPORT"
+  | "GUIDE"
+  | "ACTIVITY"
+  | "FLIGHT"
+  | "FEE"
+  | "DISCOUNT"
+  | "CUSTOM";
 
 type QuoteItemInput = {
-  id?: string | null
-  itemType: QuoteItemType
-  title: string
-  description?: string | null
-  quantity: number
-  unitPrice: number
-  discountAmount?: number
-  taxRate?: number | null
-  taxAmount?: number
-  total?: number
-  currency: string
-  optional?: boolean
-  sortOrder: number
-}
+  title: string;
+  description?: string | null;
+  itemType: GeneratedQuoteItemType;
+  optional: boolean;
+  quantity: number;
+  unitPrice: number;
+  discountAmount: number;
+  taxAmount: number;
+  total: number;
+  sortOrder: number;
+};
 
-type QuoteUpdateBody = {
-  status?: QuoteStatus
-  currency?: string
-  title?: string | null
-  clientMessage?: string | null
-  internalNotes?: string | null
-  termsAndNotes?: string | null
-  validityNotes?: string | null
-  expiresAt?: string | null
-  items?: QuoteItemInput[]
-}
+type QuotePayload = {
+  templateId?: string | null;
+  purpose?: string;
+  tourId?: string | null;
+  departureDateId?: string | null;
+  title?: string;
+  recipientName?: string;
+  recipientEmail?: string;
+  internalNotes?: string;
+  termsAndNotes?: string;
+  currency?: string;
 
-function parseNumber(value: unknown, fallback = 0) {
-  const n = Number(value)
-  return Number.isFinite(n) ? n : fallback
-}
+  startDate?: string | null;
+  endDate?: string | null;
+  totalPassengers?: number;
+  freePassengers?: number;
+  payingPassengers?: number;
+  agentCommissionPercent?: number;
+  epochMarkupPercent?: number;
+  pricingMode?: string;
 
-function recalculateItems(items: QuoteItemInput[], currency: string) {
-  let subtotal = 0
-  let discountTotal = 0
-  let taxTotal = 0
+  paxPricingRows?: Prisma.JsonArray;
+  hotels?: Prisma.JsonArray;
+  entranceRows?: Prisma.JsonArray;
+  tipRows?: Prisma.JsonArray;
+  otherFixedRows?: Prisma.JsonArray;
+  variableCostRows?: Prisma.JsonArray;
+  tourManagerRows?: Prisma.JsonArray;
+  guideRows?: Prisma.JsonArray;
+  driverRows?: Prisma.JsonArray;
 
-  const normalizedItems = items.map((item, index) => {
-    const quantity = parseNumber(item.quantity, 0)
-    const unitPrice = parseNumber(item.unitPrice, 0)
-    const discountAmount = parseNumber(item.discountAmount, 0)
+  clientDocumentTitle?: string;
+  clientSinglePrice?: number;
+  clientDoubleTwinPrice?: number;
+  clientTriplePrice?: number;
+  clientIncludes?: string;
+  clientExcludes?: string;
+  paymentPolicy?: string;
+  cancellationPolicy?: string;
+  clientOfferNotes?: string;
+  validUntil?: string | null;
 
-    const parsedTaxRate =
-      item.taxRate === null || item.taxRate === undefined
-        ? null
-        : parseNumber(item.taxRate, 0)
+  items?: QuoteItemInput[];
+};
 
-    const baseAmount = quantity * unitPrice
-    const taxableAmount = Math.max(baseAmount - discountAmount, 0)
-    const taxAmount =
-      parsedTaxRate !== null ? (taxableAmount * parsedTaxRate) / 100 : 0
-    const total = taxableAmount + taxAmount
+function toNumber(value: unknown): number {
+  if (typeof value === "number" && Number.isFinite(value)) return value;
 
-    subtotal += baseAmount
-    discountTotal += discountAmount
-    taxTotal += taxAmount
-
-    return {
-      id: item.id ?? null,
-      itemType: item.itemType,
-      title: item.title.trim(),
-      description: item.description?.trim() || null,
-      quantity,
-      unitPrice,
-      discountAmount,
-      taxRate: parsedTaxRate,
-      taxAmount,
-      total,
-      currency,
-      optional: Boolean(item.optional),
-      sortOrder: typeof item.sortOrder === "number" ? item.sortOrder : index,
-    }
-  })
-
-  return {
-    items: normalizedItems,
-    subtotal,
-    discountTotal,
-    taxTotal,
-    totalAmount: subtotal - discountTotal + taxTotal,
+  if (typeof value === "string") {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : 0;
   }
+
+  return 0;
 }
 
-async function getQuoteOrNull(id: string) {
-  return db.quote.findUnique({
-    where: { id },
-    include: {
-      items: {
-        orderBy: {
-          sortOrder: "asc",
-        },
-      },
-      activities: {
-        include: {
-          actor: {
-            select: {
-              id: true,
-              fullName: true,
-              email: true,
-            },
-          },
-        },
-        orderBy: {
-          createdAt: "desc",
-        },
-        take: 20,
-      },
-      booking: {
-        select: {
-          id: true,
-          bookingReference: true,
-          bookingDisplayCode: true,
-          status: true,
-          paymentStatus: true,
-        },
-      },
-      request: {
-        include: {
-          user: {
-            select: {
-              id: true,
-              email: true,
-              fullName: true,
-              travelAgency: true,
-              phone: true,
-              agentCode: true,
-            },
-          },
-        },
-      },
-    },
-  })
+function buildQuoteBuilderSummary(body: QuotePayload): Prisma.JsonObject {
+  return {
+    startDate: body.startDate ?? null,
+    endDate: body.endDate ?? null,
+
+    totalPassengers: toNumber(body.totalPassengers),
+    freePassengers: toNumber(body.freePassengers),
+    payingPassengers: toNumber(body.payingPassengers),
+
+    agentCommissionPercent: toNumber(body.agentCommissionPercent),
+    epochMarkupPercent: toNumber(body.epochMarkupPercent),
+    pricingMode: body.pricingMode || "CALCULATED",
+
+    paxPricingRows: (body.paxPricingRows ?? []) as Prisma.JsonArray,
+    hotels: (body.hotels ?? []) as Prisma.JsonArray,
+    entranceRows: (body.entranceRows ?? []) as Prisma.JsonArray,
+    tipRows: (body.tipRows ?? []) as Prisma.JsonArray,
+    otherFixedRows: (body.otherFixedRows ?? []) as Prisma.JsonArray,
+    variableCostRows: (body.variableCostRows ?? []) as Prisma.JsonArray,
+    tourManagerRows: (body.tourManagerRows ?? []) as Prisma.JsonArray,
+    guideRows: (body.guideRows ?? []) as Prisma.JsonArray,
+    driverRows: (body.driverRows ?? []) as Prisma.JsonArray,
+  };
 }
 
-export async function GET(_: NextRequest, context: RouteContext) {
+async function requireAdmin() {
+  const session = await getServerSession(authOptions);
+
+  if (!session?.user || session.user.role !== "ADMIN") {
+    return false;
+  }
+
+  return true;
+}
+
+export async function GET(_req: NextRequest, context: RouteContext) {
   try {
-    const { id } = await context.params
+    const isAdmin = await requireAdmin();
 
-    const quote = await getQuoteOrNull(id)
+    if (!isAdmin) {
+      return NextResponse.json(
+        { ok: false, error: "Unauthorized." },
+        { status: 401 }
+      );
+    }
+
+    const { id } = await context.params;
+
+    const quote = await db.quote.findUnique({
+      where: { id },
+      include: {
+        items: {
+          orderBy: { sortOrder: "asc" },
+        },
+      },
+    });
 
     if (!quote) {
       return NextResponse.json(
-        { message: "Quote not found." },
+        { ok: false, error: "Quote not found." },
         { status: 404 }
-      )
+      );
     }
 
-    return NextResponse.json(quote)
+    return NextResponse.json({
+      ok: true,
+      quote,
+    });
   } catch (error) {
-    console.error("GET /api/quotes/[id] error", error)
+    console.error("GET_QUOTE_ERROR", error);
+
     return NextResponse.json(
-      { message: "Failed to load quote." },
+      { ok: false, error: "Failed to load quote." },
       { status: 500 }
-    )
+    );
   }
 }
 
 export async function PATCH(req: NextRequest, context: RouteContext) {
   try {
-    const { id } = await context.params
-    const body = (await req.json()) as QuoteUpdateBody
+    const isAdmin = await requireAdmin();
 
-    const existingQuote = await db.quote.findUnique({
-      where: { id },
-      select: {
-        id: true,
-        status: true,
-        currency: true,
-      },
-    })
-
-    if (!existingQuote) {
+    if (!isAdmin) {
       return NextResponse.json(
-        { message: "Quote not found." },
+        { ok: false, error: "Unauthorized." },
+        { status: 401 }
+      );
+    }
+
+    const { id } = await context.params;
+    const body = (await req.json()) as QuotePayload;
+
+    const existing = await db.quote.findUnique({
+      where: { id },
+      select: { id: true, status: true },
+    });
+
+    if (!existing) {
+      return NextResponse.json(
+        { ok: false, error: "Quote not found." },
         { status: 404 }
-      )
+      );
     }
 
-    const nextCurrency = (body.currency || existingQuote.currency || "EUR")
-      .trim()
-      .toUpperCase()
-
-    const inputItems = Array.isArray(body.items) ? body.items : []
-    const hasItems = Array.isArray(body.items)
-
-    if (hasItems) {
-      const emptyTitle = inputItems.find((item) => !item.title?.trim())
-      if (emptyTitle) {
-        return NextResponse.json(
-          { message: "Every quote item must have a title." },
-          { status: 400 }
-        )
-      }
+    if (existing.status !== "DRAFT") {
+      return NextResponse.json(
+        { ok: false, error: "Only draft quotes can be edited." },
+        { status: 400 }
+      );
     }
 
-    const totals = hasItems
-      ? recalculateItems(inputItems, nextCurrency)
-      : null
+    const currency = body.currency || "EUR";
+    const items = Array.isArray(body.items) ? body.items : [];
 
-    const updated = await db.$transaction(async (tx) => {
-      const quote = await tx.quote.update({
-        where: { id },
-        data: {
-          status: body.status ?? undefined,
-          currency: nextCurrency,
-          title: body.title?.trim() || null,
-          clientMessage: body.clientMessage?.trim() || null,
-          internalNotes: body.internalNotes?.trim() || null,
-          termsAndNotes: body.termsAndNotes?.trim() || null,
-          validityNotes: body.validityNotes?.trim() || null,
-          expiresAt: body.expiresAt ? new Date(body.expiresAt) : null,
-          subtotal: totals?.subtotal,
-          discountTotal: totals?.discountTotal,
-          taxTotal: totals?.taxTotal,
-          totalAmount: totals?.totalAmount,
-          sentAt:
-            body.status === QuoteStatus.SENT && existingQuote.status !== QuoteStatus.SENT
-              ? new Date()
-              : undefined,
-          convertedAt:
-            body.status === QuoteStatus.CONVERTED && existingQuote.status !== QuoteStatus.CONVERTED
-              ? new Date()
-              : body.status && body.status !== QuoteStatus.CONVERTED
-                ? null
-                : undefined,
+    const totalAmount = items.reduce(
+      (sum, item) => sum + toNumber(item.total),
+      0
+    );
+
+    const quoteBuilderSummary = buildQuoteBuilderSummary(body);
+
+    const quote = await db.quote.update({
+      where: { id },
+      data: {
+        templateId: body.templateId ?? null,
+
+        purpose:
+          body.purpose === "TOUR_SETUP"
+            ? QuotePurpose.TOUR_SETUP
+            : QuotePurpose.CUSTOM_REQUEST,
+
+        tourId: body.tourId || null,
+        departureDateId: body.departureDateId || null,
+
+        title: body.title || "Untitled Quote",
+        recipientName: body.recipientName || null,
+        recipientEmail: body.recipientEmail || null,
+
+        internalNotes: body.internalNotes || null,
+        termsAndNotes: body.termsAndNotes || null,
+
+        currency,
+        totalAmount,
+        quoteBuilderSummary,
+
+        clientDocumentTitle: body.clientDocumentTitle || null,
+        clientSinglePrice: toNumber(body.clientSinglePrice),
+        clientDoubleTwinPrice: toNumber(body.clientDoubleTwinPrice),
+        clientTriplePrice: toNumber(body.clientTriplePrice),
+
+        clientIncludes: body.clientIncludes || null,
+        clientExcludes: body.clientExcludes || null,
+        paymentPolicy: body.paymentPolicy || null,
+        cancellationPolicy: body.cancellationPolicy || null,
+        clientOfferNotes: body.clientOfferNotes || null,
+        validUntil: body.validUntil ? new Date(body.validUntil) : null,
+
+        items: {
+          deleteMany: {},
+          create: items.map((item, index) => ({
+            title: item.title,
+            description: item.description || null,
+            itemType: item.itemType,
+            optional: item.optional,
+            quantity: toNumber(item.quantity),
+            unitPrice: toNumber(item.unitPrice),
+            discountAmount: toNumber(item.discountAmount),
+            taxAmount: toNumber(item.taxAmount),
+            total: toNumber(item.total),
+            currency,
+            sortOrder: item.sortOrder ?? index,
+          })),
         },
-      })
+      },
+      select: { id: true },
+    });
 
-      if (totals) {
-        await tx.quoteItem.deleteMany({
-          where: { quoteId: id },
-        })
-
-        if (totals.items.length > 0) {
-          await tx.quoteItem.createMany({
-            data: totals.items.map((item) => ({
-              quoteId: id,
-              itemType: item.itemType,
-              title: item.title,
-              description: item.description,
-              quantity: item.quantity,
-              unitPrice: item.unitPrice,
-              discountAmount: item.discountAmount,
-              taxRate: item.taxRate,
-              taxAmount: item.taxAmount,
-              total: item.total,
-              currency: item.currency,
-              optional: item.optional,
-              sortOrder: item.sortOrder,
-            })),
-          })
-        }
-      }
-
-      await tx.quoteActivity.create({
-        data: {
-          quoteId: id,
-          action: QuoteActivityAction.UPDATED,
-          fromStatus:
-            body.status && body.status !== existingQuote.status
-              ? existingQuote.status
-              : null,
-          toStatus:
-            body.status && body.status !== existingQuote.status
-              ? body.status
-              : null,
-          message: "Quote updated from admin editor.",
-          meta: {
-            updatedFields: {
-              status: body.status ?? null,
-              currency: body.currency ?? null,
-              title: body.title ?? null,
-              expiresAt: body.expiresAt ?? null,
-              itemsReplaced: hasItems,
-            },
-          } satisfies Prisma.InputJsonValue,
-        },
-      })
-
-      return getQuoteOrNull(quote.id)
-    })
-
-    return NextResponse.json(updated)
+    return NextResponse.json({
+      ok: true,
+      quote,
+    });
   } catch (error) {
-    console.error("PATCH /api/quotes/[id] error", error)
+    console.error("UPDATE_QUOTE_ERROR", error);
+
     return NextResponse.json(
-      { message: "Failed to update quote." },
+      {
+        ok: false,
+        error:
+          error instanceof Error ? error.message : "Failed to update quote.",
+      },
       { status: 500 }
-    )
+    );
+  }
+}
+
+export async function DELETE(_req: NextRequest, context: RouteContext) {
+  try {
+    const isAdmin = await requireAdmin();
+
+    if (!isAdmin) {
+      return NextResponse.json(
+        { ok: false, error: "Unauthorized." },
+        { status: 401 }
+      );
+    }
+
+    const { id } = await context.params;
+
+    const existing = await db.quote.findUnique({
+      where: { id },
+      select: { id: true, status: true },
+    });
+
+    if (!existing) {
+      return NextResponse.json(
+        { ok: false, error: "Quote not found." },
+        { status: 404 }
+      );
+    }
+
+    if (existing.status !== "DRAFT") {
+      return NextResponse.json(
+        { ok: false, error: "Only draft quotes can be deleted." },
+        { status: 400 }
+      );
+    }
+
+    await db.quote.delete({
+      where: { id },
+    });
+
+    return NextResponse.json({ ok: true });
+  } catch (error) {
+    console.error("DELETE_QUOTE_ERROR", error);
+
+    return NextResponse.json(
+      { ok: false, error: "Delete failed." },
+      { status: 500 }
+    );
   }
 }

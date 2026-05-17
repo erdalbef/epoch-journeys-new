@@ -1,15 +1,41 @@
 import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
+import {
+  BookingStatus,
+  PaymentStatus,
+} from "@prisma/client";
 
 import { authOptions } from "@/lib/authOptions";
 import { db } from "@/lib/db";
-import { BookingStatus, PaymentStatus } from "@prisma/client";
 import { sendEmail } from "@/lib/email/sendEmail";
 import { bookingStatusUpdateTemplate } from "@/lib/email/templates/bookingStatusUpdate";
 
+type RouteContext = {
+  params: Promise<{ id: string }>;
+};
+
+type UpdateBookingBody = {
+  status?: BookingStatus;
+  paymentStatus?: PaymentStatus;
+  amountPaid?: number;
+};
+
+function toNumber(value: unknown): number {
+  if (typeof value === "number") {
+    return Number.isFinite(value) ? value : 0;
+  }
+
+  if (typeof value === "string") {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : 0;
+  }
+
+  return 0;
+}
+
 export async function PATCH(
   request: Request,
-  { params }: { params: Promise<{ id: string }> }
+  { params }: RouteContext
 ) {
   try {
     const session = await getServerSession(authOptions);
@@ -22,12 +48,18 @@ export async function PATCH(
     }
 
     const { id } = await params;
-    const body = await request.json();
+    const body = (await request.json()) as UpdateBookingBody;
 
-    const status = body.status as BookingStatus | undefined;
-    const paymentStatus = body.paymentStatus as PaymentStatus | undefined;
+    const status = body.status;
+    const paymentStatus = body.paymentStatus;
+    const amountPaidInput =
+      body.amountPaid === undefined ? undefined : toNumber(body.amountPaid);
 
-    if (!status && !paymentStatus) {
+    if (
+      status === undefined &&
+      paymentStatus === undefined &&
+      amountPaidInput === undefined
+    ) {
       return NextResponse.json(
         { error: "Nothing to update" },
         { status: 400 }
@@ -40,6 +72,9 @@ export async function PATCH(
         id: true,
         status: true,
         paymentStatus: true,
+        totalPrice: true,
+        amountPaid: true,
+        amountDue: true,
         bookingReference: true,
         bookingDisplayCode: true,
         tourTitleSnapshot: true,
@@ -56,21 +91,63 @@ export async function PATCH(
       );
     }
 
+    const totalPrice = existingBooking.totalPrice ?? 0;
+    const nextAmountPaid =
+      amountPaidInput === undefined
+        ? existingBooking.amountPaid
+        : Math.max(0, amountPaidInput);
+
+    const nextAmountDue = Math.max(0, totalPrice - nextAmountPaid);
+
+    let derivedPaymentStatus = existingBooking.paymentStatus;
+
+    if (paymentStatus !== undefined) {
+      derivedPaymentStatus = paymentStatus;
+    } else if (nextAmountPaid <= 0) {
+      derivedPaymentStatus = PaymentStatus.UNPAID;
+    } else if (nextAmountPaid >= totalPrice && totalPrice > 0) {
+      derivedPaymentStatus = PaymentStatus.PAID;
+    } else if (nextAmountPaid > 0 && nextAmountPaid < totalPrice) {
+      derivedPaymentStatus = PaymentStatus.PARTIALLY_PAID;
+    }
+
     const updatedBooking = await db.booking.update({
       where: { id },
       data: {
-        ...(status ? { status } : {}),
-        ...(paymentStatus ? { paymentStatus } : {}),
+        ...(status !== undefined ? { status } : {}),
+        paymentStatus: derivedPaymentStatus,
+        ...(amountPaidInput !== undefined
+          ? {
+              amountPaid: nextAmountPaid,
+              amountDue: nextAmountDue,
+            }
+          : {}),
+      },
+      select: {
+        id: true,
+        status: true,
+        paymentStatus: true,
+        amountPaid: true,
+        amountDue: true,
+        totalPrice: true,
+        bookingReference: true,
+        bookingDisplayCode: true,
       },
     });
 
-    const statusChanged = status && status !== existingBooking.status;
+    const statusChanged =
+      status !== undefined && status !== existingBooking.status;
+
     const paymentChanged =
-      paymentStatus && paymentStatus !== existingBooking.paymentStatus;
+      derivedPaymentStatus !== existingBooking.paymentStatus;
+
+    const amountPaidChanged =
+      amountPaidInput !== undefined &&
+      nextAmountPaid !== existingBooking.amountPaid;
 
     if (
       existingBooking.agentEmailSnapshot &&
-      (statusChanged || paymentChanged)
+      (statusChanged || paymentChanged || amountPaidChanged)
     ) {
       const emailContent = bookingStatusUpdateTemplate({
         agentName: existingBooking.agentNameSnapshot,

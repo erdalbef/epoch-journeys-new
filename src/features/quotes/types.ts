@@ -1,45 +1,183 @@
-import type { FreeMethod } from '@/components/shared/form/sections/FreePolicySection'
-import type { GroupFormValues } from '@/components/shared/form/sections/GroupSetupSection'
-import type { VariableCostItem } from '@/components/shared/form/sections/VariableCostsSection'
+// ================================
+// CORE ENUM-LIKE TYPES
+// ================================
 
-export type { GroupFormValues, VariableCostItem, FreeMethod }
+export type PricingMode = 'LAND_ONLY' | 'LAND_AND_AIR' | 'BOTH'
 
-export type FixedCostsValues = {
-  entranceFees: number
-  lunchUnitCost: number
-  lunchQty: number
-  dinnerUnitCost: number
-  dinnerQty: number
-  whisperUnitCost: number
-  whisperDays: number
-  cityTaxUnitCost: number
-  hotelDoubleTwinPerPerson: number
-  hotelSinglePerPerson: number
-  hotelTriplePerPerson: number
-  accommodationTaxPerRoomNight: number
-  climateTaxPerRoomNight: number
+export type FreeCalculationMethod =
+  | 'SPREAD_ACROSS_PAYING_PASSENGERS'
+  | 'ABSORBED_INTERNALLY'
+
+export type QuoteCostSection =
+  | 'FIXED'
+  | 'VARIABLE'
+  | 'FLIGHT'
+  | 'CUSTOM'
+
+export type QuoteLineType =
+  | 'HOTEL'
+  | 'ENTRANCE'
+  | 'LUNCH'
+  | 'DINNER'
+  | 'WHISPER_SET'
+  | 'CITY_TAX'
+  | 'ACCOMMODATION_TAX'
+  | 'GUIDE'
+  | 'TRANSPORT'
+  | 'FLIGHT'
+  | 'CUSTOM'
+
+// ================================
+// GROUP SETUP
+// ================================
+
+export type GroupSetup = {
+  groupSize: number
+  payingPax: number
+  singleCount: number
+  doubleCount: number
+  tripleCount: number
+  pricingMode: PricingMode
 }
 
-export type FlightCostsValues = {
-  passengerFlightPerPerson: number
-  guideFlightTotal: number
-  tourManagerFlightTotal: number
-  staffFlightTotal: number
+// ================================
+// FIXED COSTS
+// ================================
+
+export type FixedCostItem = {
+  id: string
+  type: QuoteLineType
+  description?: string
+  totalCost: number
+  perPersonByOccupancy?: {
+    single?: number | null
+    doubleTwin?: number | null
+    triple?: number | null
+  }
 }
 
-export type PricingValues = {
-  agencyCommissionPercent: number
-  epochMarkupPercent: number
+// ================================
+// VARIABLE COSTS
+// ================================
+
+export type VariableCostItem = {
+  id: string
+  type: QuoteLineType
+  description?: string
+  costPerPerson: number
+  appliesTo: 'ALL' | 'PAYING_ONLY'
 }
+
+// ================================
+// FLIGHT COSTS
+// ================================
+
+export type FlightCostItem = {
+  id: string
+  description?: string
+  costPerPerson: number
+}
+
+// ================================
+// FREE POLICY
+// ================================
+
+export type FreePolicy = {
+  enabled: boolean
+  freePer: number
+  method: FreeCalculationMethod
+}
+
+// ================================
+// PRICING
+// ================================
+
+export type PricingSettings = {
+  markupPercent: number
+  commissionPercent: number
+  rounding: 'NONE' | 'NEAREST_1' | 'NEAREST_5' | 'NEAREST_10'
+}
+
+// ================================
+// QUOTE DETAILS
+// ================================
+
+export type QuoteDetails = {
+  quoteTitle: string
+  agentName: string
+  clientName: string
+  destination: string
+  travelDates: string
+  validUntil: string
+  notes: string
+}
+
+// ================================
+// MAIN FORM STATE
+// ================================
 
 export type FormState = {
-  group: GroupFormValues
-  fixedCosts: FixedCostsValues
+  group: GroupSetup
+
+  fixedCosts: FixedCostItem[]
   variableCosts: VariableCostItem[]
-  flightCosts: FlightCostsValues
-  freePolicy: {
-    enabled: boolean
-    method: FreeMethod
+  flightCosts: FlightCostItem[]
+
+  freePolicy: FreePolicy
+  pricing: PricingSettings
+  details: QuoteDetails
+}
+
+// ================================
+// NORMALIZED INPUT FOR CALCULATION
+// ================================
+
+export type QuoteInput = {
+  group: GroupSetup
+
+  fixedCosts: FixedCostItem[]
+  variableCosts: VariableCostItem[]
+  flightCosts: FlightCostItem[]
+
+  freePolicy: FreePolicy
+  pricing: PricingSettings
+}
+
+// ================================
+// CALCULATION OUTPUT
+// ================================
+
+export type QuoteSummary = {
+  totals: {
+    totalFixedCost: number
+    totalVariableCost: number
+    totalFlightCost: number
+    totalTourCost: number
   }
-  pricing: PricingValues
+
+  baseCosts: {
+    single: number
+    doubleTwin: number
+    triple: number
+  }
+
+  freeAdjusted: {
+    single: number
+    doubleTwin: number
+    triple: number
+  }
+
+  pricing: {
+    landOnly?: {
+      single: { sellingPrice: number }
+      doubleTwin: { sellingPrice: number }
+      triple: { sellingPrice: number }
+    }
+
+    landAndAir?: {
+      single: { sellingPrice: number }
+      doubleTwin: { sellingPrice: number }
+      triple: { sellingPrice: number }
+    }
+  }
 }

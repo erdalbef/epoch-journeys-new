@@ -2,6 +2,8 @@ import { Prisma, PricingType, RoomType } from "@prisma/client";
 import { db } from "@/lib/db";
 import { redirect } from "next/navigation";
 import TourForm from "@/components/admin/TourForm";
+import { mkdir, writeFile } from "fs/promises";
+import path from "path";
 
 function parseCommaSeparated(value: FormDataEntryValue | null): string[] {
   if (!value || typeof value !== "string") return [];
@@ -142,6 +144,30 @@ function parsePricingTiers(value: FormDataEntryValue | null): ParsedPricingTier[
   }
 }
 
+function sanitizeFileName(fileName: string): string {
+  return fileName
+    .replace(/\s+/g, "-")
+    .replace(/[^a-zA-Z0-9._-]/g, "");
+}
+
+async function saveFile(file: File | null, folder: string): Promise<string | null> {
+  if (!file || file.size === 0) return null;
+
+  const bytes = await file.arrayBuffer();
+  const buffer = Buffer.from(bytes);
+
+  const safeName = sanitizeFileName(file.name);
+  const fileName = `${Date.now()}-${safeName}`;
+
+  const directoryPath = path.join(process.cwd(), "public", folder);
+  await mkdir(directoryPath, { recursive: true });
+
+  const filePath = path.join(directoryPath, fileName);
+  await writeFile(filePath, buffer);
+
+  return `/${folder}/${fileName}`;
+}
+
 async function createTour(formData: FormData) {
   "use server";
 
@@ -174,6 +200,20 @@ async function createTour(formData: FormData) {
   const hasPrivatePricing = Object.keys(privatePricing).length > 0;
 
   const pricingTiers = parsePricingTiers(formData.get("pricingTiers"));
+
+  const mainImage = formData.get("mainImage") as File | null;
+  const image2 = formData.get("image2") as File | null;
+  const image3 = formData.get("image3") as File | null;
+  const image4 = formData.get("image4") as File | null;
+  const mapImage = formData.get("mapImage") as File | null;
+  const brochure = formData.get("brochure") as File | null;
+
+  const mainImageUrl = await saveFile(mainImage, "uploads/tours");
+  const imageUrl2 = await saveFile(image2, "uploads/tours");
+  const imageUrl3 = await saveFile(image3, "uploads/tours");
+  const imageUrl4 = await saveFile(image4, "uploads/tours");
+  const mapImageUrl = await saveFile(mapImage, "uploads/maps");
+  const brochureUrl = await saveFile(brochure, "uploads/brochures");
 
   const tour = await db.tour.create({
     data: {
@@ -210,9 +250,12 @@ async function createTour(formData: FormData) {
       ),
       itinerary: parseOptionalString(formData.get("itinerary")),
 
-      mainImageUrl: null,
-      mapImageUrl: null,
-      brochureUrl: null,
+      mainImageUrl,
+      imageUrl2,
+      imageUrl3,
+      imageUrl4,
+      mapImageUrl,
+      brochureUrl,
 
       featured: formData.get("featured") === "on",
       isPublished: formData.get("isPublished") === "on",

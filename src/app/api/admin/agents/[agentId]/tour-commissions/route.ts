@@ -9,7 +9,7 @@ type RouteContext = {
 };
 
 type Body = {
-  tourId?: string;
+  tourId?: string | null;
   commissionRate?: number | null;
   payoutPerPax?: number | null;
 };
@@ -19,11 +19,20 @@ function normalizeOptionalNumber(value: unknown) {
     return null;
   }
 
-  if (typeof value !== "number" || Number.isNaN(value)) {
-    return NaN;
+  if (typeof value === "number") {
+    return Number.isNaN(value) ? NaN : value;
   }
 
-  return value;
+  if (typeof value === "string") {
+    const parsed = Number(value);
+    return Number.isNaN(parsed) ? NaN : parsed;
+  }
+
+  return NaN;
+}
+
+function isAgentRole(role: string | null | undefined) {
+  return role === "AGENT" || role === "agent";
 }
 
 export async function POST(req: Request, context: RouteContext) {
@@ -31,16 +40,16 @@ export async function POST(req: Request, context: RouteContext) {
     const session = await getServerSession(authOptions);
 
     if (!session?.user || session.user.role !== "ADMIN") {
-      return NextResponse.json(
-        { error: "Unauthorized." },
-        { status: 401 }
-      );
+      return NextResponse.json({ error: "Unauthorized." }, { status: 401 });
     }
 
     const { agentId } = await context.params;
     const body = (await req.json()) as Body;
 
-    const tourId = typeof body.tourId === "string" ? body.tourId : "";
+    const tourId =
+      typeof body.tourId === "string" && body.tourId.trim() !== ""
+        ? body.tourId.trim()
+        : null;
 
     if (!agentId) {
       return NextResponse.json(
@@ -49,40 +58,19 @@ export async function POST(req: Request, context: RouteContext) {
       );
     }
 
-    if (!tourId) {
-      return NextResponse.json(
-        { error: "Tour ID is required." },
-        { status: 400 }
-      );
-    }
-
     const agent = await db.user.findUnique({
       where: { id: agentId },
       select: {
         id: true,
+        fullName: true,
+        email: true,
         role: true,
+        commissionRate: true,
       },
     });
 
-    if (!agent || agent.role !== "AGENT") {
-      return NextResponse.json(
-        { error: "Agent not found." },
-        { status: 404 }
-      );
-    }
-
-    const tour = await db.tour.findUnique({
-      where: { id: tourId },
-      select: {
-        id: true,
-      },
-    });
-
-    if (!tour) {
-      return NextResponse.json(
-        { error: "Tour not found." },
-        { status: 404 }
-      );
+    if (!agent || !isAgentRole(agent.role)) {
+      return NextResponse.json({ error: "Agent not found." }, { status: 404 });
     }
 
     const commissionRate = normalizeOptionalNumber(body.commissionRate);
@@ -118,9 +106,50 @@ export async function POST(req: Request, context: RouteContext) {
 
     if (commissionRate === null && payoutPerPax === null) {
       return NextResponse.json(
-        { error: "At least one override value is required." },
+        { error: "At least one commission value is required." },
         { status: 400 }
       );
+    }
+
+    // GENERAL AGENT COMMISSION
+    if (!tourId) {
+      if (commissionRate === null) {
+        return NextResponse.json(
+          { error: "Default commission rate is required." },
+          { status: 400 }
+        );
+      }
+
+      const updatedAgent = await db.user.update({
+        where: { id: agentId },
+        data: {
+          commissionRate,
+        },
+        select: {
+          id: true,
+          fullName: true,
+          email: true,
+          commissionRate: true,
+        },
+      });
+
+      return NextResponse.json({
+        success: true,
+        type: "GENERAL_COMMISSION",
+        agent: updatedAgent,
+      });
+    }
+
+    // TOUR-SPECIFIC COMMISSION OVERRIDE
+    const tour = await db.tour.findUnique({
+      where: { id: tourId },
+      select: {
+        id: true,
+      },
+    });
+
+    if (!tour) {
+      return NextResponse.json({ error: "Tour not found." }, { status: 404 });
     }
 
     const override = await db.agentTourCommission.upsert({
@@ -144,13 +173,19 @@ export async function POST(req: Request, context: RouteContext) {
 
     return NextResponse.json({
       success: true,
+      type: "TOUR_COMMISSION_OVERRIDE",
       override,
     });
   } catch (error) {
     console.error("AGENT_TOUR_COMMISSION_POST_ERROR", error);
 
     return NextResponse.json(
-      { error: "Failed to save tour commission override." },
+      {
+        error:
+          error instanceof Error
+            ? error.message
+            : "Failed to save commission.",
+      },
       { status: 500 }
     );
   }

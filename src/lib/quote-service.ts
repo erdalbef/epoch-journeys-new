@@ -5,7 +5,7 @@ import {
   QuotePurpose,
   QuoteStatus,
 } from "@prisma/client";
-import { prisma } from "@/lib/prisma";
+import { db } from "@/lib/db";
 import { calculateQuoteTotals, generateQuoteReference } from "@/lib/quote-utils";
 
 type CreateQuoteItemInput = {
@@ -27,19 +27,38 @@ type CreateQuoteInput = {
   requestId?: string | null;
   tourId?: string | null;
   departureDateId?: string | null;
+
   purpose: QuotePurpose;
+
   title?: string;
   clientMessage?: string;
   internalNotes?: string;
   termsAndNotes?: string;
   validityNotes?: string;
+
   recipientName?: string;
   recipientEmail?: string;
   recipientType?: PartnerType | null;
+
   currency?: string;
   expiresAt?: Date | null;
+
   items: CreateQuoteItemInput[];
   actorId?: string | null;
+
+  agentName?: string;
+  clientName?: string;
+  destination?: string;
+  travelDates?: string;
+  validUntil?: Date | null;
+  groupSize?: number | null;
+
+  subtotal?: number;
+  totalAmount?: number;
+
+  quoteBuilderPayload?: Record<string, unknown>;
+  quoteBuilderSummary?: Record<string, unknown>;
+  calculationVersion?: string;
 };
 
 export async function createQuote(input: CreateQuoteInput) {
@@ -52,27 +71,44 @@ export async function createQuote(input: CreateQuoteInput) {
     }))
   );
 
-  const created = await prisma.quote.create({
+  const created = await db.quote.create({
     data: {
       requestId: input.requestId ?? null,
       tourId: input.tourId ?? null,
       departureDateId: input.departureDateId ?? null,
       purpose: input.purpose,
       status: QuoteStatus.DRAFT,
+
       title: input.title,
       clientMessage: input.clientMessage,
       internalNotes: input.internalNotes,
       termsAndNotes: input.termsAndNotes,
       validityNotes: input.validityNotes,
+
       recipientName: input.recipientName,
       recipientEmail: input.recipientEmail,
       recipientType: input.recipientType ?? null,
+
       currency: input.currency || "EUR",
-      subtotal: totals.subtotal,
+
+      agentName: input.agentName,
+      clientName: input.clientName,
+      destination: input.destination,
+      travelDates: input.travelDates,
+      validUntil: input.validUntil ?? null,
+      groupSize: input.groupSize ?? null,
+
+      subtotal: input.subtotal ?? totals.subtotal,
       discountTotal: totals.discountTotal,
       taxTotal: totals.taxTotal,
-      totalAmount: totals.totalAmount,
+      totalAmount: input.totalAmount ?? totals.totalAmount,
+
       expiresAt: input.expiresAt ?? null,
+
+      quoteBuilderPayload: input.quoteBuilderPayload ? JSON.parse(JSON.stringify(input.quoteBuilderPayload)) : null,
+      quoteBuilderSummary: input.quoteBuilderSummary ? JSON.parse(JSON.stringify(input.quoteBuilderSummary)) : null,
+      calculationVersion: input.calculationVersion,
+
       items: {
         create: input.items.map((item) => ({
           itemType: item.itemType ?? QuoteItemType.SERVICE,
@@ -89,6 +125,7 @@ export async function createQuote(input: CreateQuoteInput) {
           sortOrder: item.sortOrder || 0,
         })),
       },
+
       activities: {
         create: {
           actorId: input.actorId ?? null,
@@ -106,7 +143,7 @@ export async function createQuote(input: CreateQuoteInput) {
   if (!created.quoteReference) {
     const quoteReference = generateQuoteReference(created.quoteNumber);
 
-    return prisma.quote.update({
+    return db.quote.update({
       where: { id: created.id },
       data: { quoteReference },
       include: {
@@ -118,7 +155,7 @@ export async function createQuote(input: CreateQuoteInput) {
     });
   }
 
-  return prisma.quote.findUniqueOrThrow({
+  return db.quote.findUniqueOrThrow({
     where: { id: created.id },
     include: {
       items: true,
@@ -134,7 +171,7 @@ export async function finalizeQuote(
   actorId: string,
   pdfUrl: string
 ) {
-  const quote = await prisma.quote.findUnique({
+  const quote = await db.quote.findUnique({
     where: { id: quoteId },
     include: { items: true },
   });
@@ -147,7 +184,7 @@ export async function finalizeQuote(
     throw new Error("Only draft quotes can be finalized.");
   }
 
-  return prisma.quote.update({
+  return db.quote.update({
     where: { id: quoteId },
     data: {
       status: QuoteStatus.FINALIZED,
@@ -185,7 +222,7 @@ export async function finalizeQuote(
 }
 
 export async function sendQuote(quoteId: string, actorId: string) {
-  const quote = await prisma.quote.findUnique({
+  const quote = await db.quote.findUnique({
     where: { id: quoteId },
     include: { items: true },
   });
@@ -202,7 +239,7 @@ export async function sendQuote(quoteId: string, actorId: string) {
     throw new Error("Recipient email is required before sending.");
   }
 
-  return prisma.quote.update({
+  return db.quote.update({
     where: { id: quoteId },
     data: {
       status: QuoteStatus.SENT,

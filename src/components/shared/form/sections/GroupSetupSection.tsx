@@ -1,31 +1,28 @@
-'use client'
+"use client";
 
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
+import type { ChangeEvent } from "react";
 
-export type PricingMode = 'LAND_ONLY' | 'LAND_AND_AIR' | 'BOTH'
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 
-export type GroupFormValues = {
-  totalPassengers: number
-  payingPassengers: number
-  freePassengers: number
-  doubleTwinPassengers: number
-  singlePassengers: number
-  triplePassengers: number
-  nights: number
-  durationDays: number
-  pricingMode: PricingMode
-}
+import type { GroupSetup } from "@/features/quotes/types";
 
 type Props = {
-  value: GroupFormValues
-  onChange: (next: GroupFormValues) => void
-}
+  value: GroupSetup;
+  onChange: (next: GroupSetup) => void;
+};
+
+type NumberFieldProps = {
+  id: string;
+  label: string;
+  value: number;
+  onChange: (value: number) => void;
+};
 
 function n(value: string): number {
-  const parsed = Number(value)
-  return Number.isFinite(parsed) ? parsed : 0
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : 0;
 }
 
 function NumberField({
@@ -33,12 +30,11 @@ function NumberField({
   label,
   value,
   onChange,
-}: {
-  id: string
-  label: string
-  value: number
-  onChange: (v: number) => void
-}) {
+}: NumberFieldProps) {
+  const handleChange = (e: ChangeEvent<HTMLInputElement>) => {
+    onChange(n(e.target.value));
+  };
+
   return (
     <div className="space-y-2">
       <Label htmlFor={id}>{label}</Label>
@@ -46,25 +42,25 @@ function NumberField({
         id={id}
         type="number"
         value={value}
-        onChange={(e) => onChange(n(e.target.value))}
+        onChange={handleChange}
       />
     </div>
-  )
+  );
 }
 
 export function GroupSetupSection({ value, onChange }: Props) {
-  const update = <K extends keyof GroupFormValues>(key: K, v: GroupFormValues[K]) => {
+  const update = <K extends keyof GroupSetup>(
+    key: K,
+    nextValue: GroupSetup[K]
+  ) => {
     onChange({
       ...value,
-      [key]: v,
-    })
-  }
+      [key]: nextValue,
+    });
+  };
 
   const occupancyMismatch =
-    value.doubleTwinPassengers +
-      value.singlePassengers +
-      value.triplePassengers !==
-    value.totalPassengers
+    value.doubleCount + value.singleCount + value.tripleCount !== value.groupSize;
 
   return (
     <Card className="rounded-3xl border-slate-200 shadow-sm">
@@ -75,61 +71,43 @@ export function GroupSetupSection({ value, onChange }: Props) {
       <CardContent>
         <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
           <NumberField
-            id="totalPassengers"
+            id="groupSize"
             label="Total Passengers"
-            value={value.totalPassengers}
-            onChange={(v) => update('totalPassengers', v)}
+            value={value.groupSize}
+            onChange={(nextValue) => update("groupSize", nextValue)}
           />
           <NumberField
-            id="payingPassengers"
+            id="payingPax"
             label="Paying Passengers"
-            value={value.payingPassengers}
-            onChange={(v) => update('payingPassengers', v)}
+            value={value.payingPax}
+            onChange={(nextValue) => update("payingPax", nextValue)}
           />
           <NumberField
-            id="freePassengers"
-            label="Free Passengers"
-            value={value.freePassengers}
-            onChange={(v) => update('freePassengers', v)}
-          />
-          <NumberField
-            id="nights"
-            label="Nights"
-            value={value.nights}
-            onChange={(v) => update('nights', v)}
-          />
-          <NumberField
-            id="durationDays"
-            label="Duration Days"
-            value={value.durationDays}
-            onChange={(v) => update('durationDays', v)}
-          />
-          <NumberField
-            id="doubleTwinPassengers"
+            id="doubleCount"
             label="Double/Twin Pax"
-            value={value.doubleTwinPassengers}
-            onChange={(v) => update('doubleTwinPassengers', v)}
+            value={value.doubleCount}
+            onChange={(nextValue) => update("doubleCount", nextValue)}
           />
           <NumberField
-            id="singlePassengers"
+            id="singleCount"
             label="Single Pax"
-            value={value.singlePassengers}
-            onChange={(v) => update('singlePassengers', v)}
+            value={value.singleCount}
+            onChange={(nextValue) => update("singleCount", nextValue)}
           />
           <NumberField
-            id="triplePassengers"
+            id="tripleCount"
             label="Triple Pax"
-            value={value.triplePassengers}
-            onChange={(v) => update('triplePassengers', v)}
+            value={value.tripleCount}
+            onChange={(nextValue) => update("tripleCount", nextValue)}
           />
         </div>
 
-        {occupancyMismatch && (
+        {occupancyMismatch ? (
           <p className="mt-4 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
             Occupancy total does not match total passengers.
           </p>
-        )}
+        ) : null}
       </CardContent>
     </Card>
-  )
+  );
 }

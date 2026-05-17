@@ -1,16 +1,27 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { ExpenseCategory, ExpensePaymentStatus, Prisma, Role } from "@prisma/client";
+import {
+  ExpenseCategory,
+  ExpensePaymentStatus,
+  FinanceDirection,
+  FinanceSourceType,
+  Prisma,
+  Role,
+} from "@prisma/client";
 import { getServerSession } from "next-auth";
 
 import { authOptions } from "@/lib/authOptions";
 import { db } from "@/lib/db";
 import { formatCurrency } from "@/lib/payments/formatCurrency";
+import DeleteExpenseButton from "@/components/admin/finance/DeleteExpenseButton";
 
 type SearchParams = {
+  q?: string;
   category?: string;
   status?: string;
-  q?: string;
+  direction?: string;
+  sourceType?: string;
+  currency?: string;
   from?: string;
   to?: string;
 };
@@ -23,6 +34,15 @@ function formatDate(value: Date | string | null | undefined) {
     month: "short",
     year: "numeric",
   });
+}
+
+function formatEnumLabel(value: string | null | undefined) {
+  if (!value) return "-";
+
+  return value
+    .replaceAll("_", " ")
+    .toLowerCase()
+    .replace(/\b\w/g, (letter) => letter.toUpperCase());
 }
 
 function getStatusClass(status: ExpensePaymentStatus) {
@@ -38,7 +58,18 @@ function getStatusClass(status: ExpensePaymentStatus) {
   }
 }
 
-export default async function AdminExpensesPage({
+function getDirectionClass(direction: FinanceDirection) {
+  switch (direction) {
+    case "INCOME":
+      return "bg-green-100 text-green-700";
+    case "EXPENSE":
+      return "bg-red-100 text-red-700";
+    default:
+      return "bg-slate-100 text-slate-700";
+  }
+}
+
+export default async function AdminFinanceEntriesPage({
   searchParams,
 }: {
   searchParams?: Promise<SearchParams>;
@@ -54,28 +85,97 @@ export default async function AdminExpensesPage({
   const q = params.q?.trim() ?? "";
   const category = params.category?.trim() ?? "";
   const status = params.status?.trim() ?? "";
+  const direction = params.direction?.trim() ?? "";
+  const sourceType = params.sourceType?.trim() ?? "";
+  const currency = params.currency?.trim().toUpperCase() ?? "";
   const from = params.from?.trim() ?? "";
   const to = params.to?.trim() ?? "";
 
+  const searchConditions: Prisma.ExpenseWhereInput[] = q
+    ? [
+        { title: { contains: q, mode: Prisma.QueryMode.insensitive } },
+        { vendorName: { contains: q, mode: Prisma.QueryMode.insensitive } },
+        { description: { contains: q, mode: Prisma.QueryMode.insensitive } },
+        { notes: { contains: q, mode: Prisma.QueryMode.insensitive } },
+        {
+          agentNameSnapshot: {
+            contains: q,
+            mode: Prisma.QueryMode.insensitive,
+          },
+        },
+        {
+          partnerCompanyName: {
+            contains: q,
+            mode: Prisma.QueryMode.insensitive,
+          },
+        },
+        {
+          tourLeaderName: {
+            contains: q,
+            mode: Prisma.QueryMode.insensitive,
+          },
+        },
+        {
+          customPackageName: {
+            contains: q,
+            mode: Prisma.QueryMode.insensitive,
+          },
+        },
+        { groupName: { contains: q, mode: Prisma.QueryMode.insensitive } },
+        {
+          tour: {
+            title: {
+              contains: q,
+              mode: Prisma.QueryMode.insensitive,
+            },
+          },
+        },
+        {
+          tour: {
+            tourCode: {
+              contains: q,
+              mode: Prisma.QueryMode.insensitive,
+            },
+          },
+        },
+      ]
+    : [];
+
   const where: Prisma.ExpenseWhereInput = {
-    ...(q
-      ? {
-          OR: [
-            { title: { contains: q, mode: "insensitive" } },
-            { vendorName: { contains: q, mode: "insensitive" } },
-            { description: { contains: q, mode: "insensitive" } },
-            { notes: { contains: q, mode: "insensitive" } },
-          ],
-        }
-      : {}),
+    ...(searchConditions.length > 0 ? { OR: searchConditions } : {}),
+
     ...(category &&
     Object.values(ExpenseCategory).includes(category as ExpenseCategory)
       ? { category: category as ExpenseCategory }
       : {}),
+
     ...(status &&
-    Object.values(ExpensePaymentStatus).includes(status as ExpensePaymentStatus)
+    Object.values(ExpensePaymentStatus).includes(
+      status as ExpensePaymentStatus
+    )
       ? { paymentStatus: status as ExpensePaymentStatus }
       : {}),
+
+    ...(direction &&
+    Object.values(FinanceDirection).includes(direction as FinanceDirection)
+      ? { direction: direction as FinanceDirection }
+      : {}),
+
+    ...(sourceType &&
+    Object.values(FinanceSourceType).includes(sourceType as FinanceSourceType)
+      ? { sourceType: sourceType as FinanceSourceType }
+      : {}),
+
+    ...(currency
+      ? {
+          OR: [
+            { currency },
+            { originalCurrency: currency },
+            { baseCurrency: currency },
+          ],
+        }
+      : {}),
+
     ...(from || to
       ? {
           expenseDate: {
@@ -101,6 +201,7 @@ export default async function AdminExpensesPage({
         select: {
           id: true,
           title: true,
+          tourCode: true,
         },
       },
       departureDate: {
@@ -118,21 +219,57 @@ export default async function AdminExpensesPage({
     },
   });
 
-  const totalExpenses = expenses.reduce((sum, item) => sum + item.amount, 0);
+  function reportingAmount(entry: (typeof expenses)[number]) {
+    return entry.baseAmount && entry.baseAmount > 0
+      ? entry.baseAmount
+      : entry.amount;
+  }
+
+  const totalIncome = expenses
+    .filter((item) => item.direction === "INCOME")
+    .reduce((sum, item) => sum + reportingAmount(item), 0);
+
+  const totalExpenses = expenses
+    .filter((item) => item.direction === "EXPENSE")
+    .reduce((sum, item) => sum + reportingAmount(item), 0);
+
+  const paidIncome = expenses
+    .filter(
+      (item) => item.direction === "INCOME" && item.paymentStatus === "PAID"
+    )
+    .reduce((sum, item) => sum + reportingAmount(item), 0);
+
+  const pendingIncome = expenses
+    .filter(
+      (item) => item.direction === "INCOME" && item.paymentStatus === "PENDING"
+    )
+    .reduce((sum, item) => sum + reportingAmount(item), 0);
+
   const paidExpenses = expenses
-    .filter((item) => item.paymentStatus === "PAID")
-    .reduce((sum, item) => sum + item.amount, 0);
+    .filter(
+      (item) => item.direction === "EXPENSE" && item.paymentStatus === "PAID"
+    )
+    .reduce((sum, item) => sum + reportingAmount(item), 0);
+
   const pendingExpenses = expenses
-    .filter((item) => item.paymentStatus === "PENDING")
-    .reduce((sum, item) => sum + item.amount, 0);
+    .filter(
+      (item) => item.direction === "EXPENSE" && item.paymentStatus === "PENDING"
+    )
+    .reduce((sum, item) => sum + reportingAmount(item), 0);
+
+  const totalTax = expenses.reduce((sum, item) => sum + (item.taxAmount || 0), 0);
+  const netProfit = totalIncome - totalExpenses;
 
   return (
     <div className="space-y-6 p-6">
       <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
         <div>
-          <h1 className="text-3xl font-bold text-[#001F3F]">Expenses</h1>
+          <h1 className="text-3xl font-bold text-[#001F3F]">
+            Finance Entries
+          </h1>
           <p className="mt-1 text-sm text-muted-foreground">
-            Track supplier, operational, and internal business expenses.
+            Full operational ledger for income, expenses, tax, agencies, tours,
+            groups, and multi-currency reporting.
           </p>
         </div>
 
@@ -141,30 +278,128 @@ export default async function AdminExpensesPage({
             href="/admin/finance"
             className="rounded-xl border px-4 py-2 text-sm font-medium transition hover:border-[#8B0000] hover:text-[#8B0000]"
           >
-            Back to Finance
+            Finance Dashboard
           </Link>
 
           <Link
             href="/admin/finance/expenses/create"
             className="rounded-xl bg-[#8B0000] px-4 py-2 text-sm font-medium text-white transition hover:bg-[#6f0000]"
           >
-            Add Expense
+            Add Finance Entry
           </Link>
         </div>
       </div>
 
-      <form className="rounded-2xl border bg-white p-6 shadow-sm">
-        <div className="grid gap-4 md:grid-cols-5">
-          <div>
+      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+        <div className="rounded-2xl border bg-green-50 p-5 shadow-sm">
+          <p className="text-sm font-medium text-green-700">Total Income</p>
+          <p className="mt-2 text-3xl font-bold text-green-800">
+            {formatCurrency(totalIncome, "EUR")}
+          </p>
+        </div>
+
+        <div className="rounded-2xl border bg-red-50 p-5 shadow-sm">
+          <p className="text-sm font-medium text-red-700">Total Expenses</p>
+          <p className="mt-2 text-3xl font-bold text-red-800">
+            {formatCurrency(totalExpenses, "EUR")}
+          </p>
+        </div>
+
+        <div className="rounded-2xl border bg-blue-50 p-5 shadow-sm">
+          <p className="text-sm font-medium text-blue-700">Net Profit</p>
+          <p
+            className={`mt-2 text-3xl font-bold ${
+              netProfit >= 0 ? "text-blue-800" : "text-red-700"
+            }`}
+          >
+            {formatCurrency(netProfit, "EUR")}
+          </p>
+        </div>
+
+        <div className="rounded-2xl border bg-amber-50 p-5 shadow-sm">
+          <p className="text-sm font-medium text-amber-700">VAT / Tax</p>
+          <p className="mt-2 text-3xl font-bold text-amber-800">
+            {formatCurrency(totalTax, "EUR")}
+          </p>
+        </div>
+
+        <div className="rounded-2xl border bg-white p-5 shadow-sm">
+          <p className="text-sm text-slate-500">Paid Income</p>
+          <p className="mt-2 text-2xl font-bold text-green-700">
+            {formatCurrency(paidIncome, "EUR")}
+          </p>
+        </div>
+
+        <div className="rounded-2xl border bg-white p-5 shadow-sm">
+          <p className="text-sm text-slate-500">Pending Income</p>
+          <p className="mt-2 text-2xl font-bold text-amber-700">
+            {formatCurrency(pendingIncome, "EUR")}
+          </p>
+        </div>
+
+        <div className="rounded-2xl border bg-white p-5 shadow-sm">
+          <p className="text-sm text-slate-500">Paid Expenses</p>
+          <p className="mt-2 text-2xl font-bold text-red-700">
+            {formatCurrency(paidExpenses, "EUR")}
+          </p>
+        </div>
+
+        <div className="rounded-2xl border bg-white p-5 shadow-sm">
+          <p className="text-sm text-slate-500">Pending Expenses</p>
+          <p className="mt-2 text-2xl font-bold text-amber-700">
+            {formatCurrency(pendingExpenses, "EUR")}
+          </p>
+        </div>
+      </div>
+
+      <form className="rounded-2xl border bg-white p-5 shadow-sm">
+        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-8">
+          <div className="xl:col-span-2">
             <label className="mb-2 block text-sm font-medium text-slate-700">
               Search
             </label>
             <input
               name="q"
               defaultValue={q}
-              placeholder="Title, vendor, notes..."
+              placeholder="Agency, tour, code, group, vendor, title..."
               className="w-full rounded-xl border px-4 py-2.5 text-sm outline-none transition focus:border-[#8B0000]"
             />
+          </div>
+
+          <div>
+            <label className="mb-2 block text-sm font-medium text-slate-700">
+              Direction
+            </label>
+            <select
+              name="direction"
+              defaultValue={direction}
+              className="w-full rounded-xl border px-4 py-2.5 text-sm outline-none transition focus:border-[#8B0000]"
+            >
+              <option value="">All</option>
+              {Object.values(FinanceDirection).map((item) => (
+                <option key={item} value={item}>
+                  {formatEnumLabel(item)}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div>
+            <label className="mb-2 block text-sm font-medium text-slate-700">
+              Source
+            </label>
+            <select
+              name="sourceType"
+              defaultValue={sourceType}
+              className="w-full rounded-xl border px-4 py-2.5 text-sm outline-none transition focus:border-[#8B0000]"
+            >
+              <option value="">All</option>
+              {Object.values(FinanceSourceType).map((item) => (
+                <option key={item} value={item}>
+                  {formatEnumLabel(item)}
+                </option>
+              ))}
+            </select>
           </div>
 
           <div>
@@ -179,7 +414,7 @@ export default async function AdminExpensesPage({
               <option value="">All</option>
               {Object.values(ExpenseCategory).map((item) => (
                 <option key={item} value={item}>
-                  {item.replaceAll("_", " ")}
+                  {formatEnumLabel(item)}
                 </option>
               ))}
             </select>
@@ -197,7 +432,7 @@ export default async function AdminExpensesPage({
               <option value="">All</option>
               {Object.values(ExpensePaymentStatus).map((item) => (
                 <option key={item} value={item}>
-                  {item.replaceAll("_", " ")}
+                  {formatEnumLabel(item)}
                 </option>
               ))}
             </select>
@@ -205,11 +440,35 @@ export default async function AdminExpensesPage({
 
           <div>
             <label className="mb-2 block text-sm font-medium text-slate-700">
+              Currency
+            </label>
+            <input
+              name="currency"
+              defaultValue={currency}
+              placeholder="EUR / USD / GBP"
+              maxLength={3}
+              className="w-full rounded-xl border px-4 py-2.5 text-sm uppercase outline-none transition focus:border-[#8B0000]"
+            />
+          </div>
+
+          <div className="flex items-end gap-2">
+            <button
+              type="submit"
+              className="w-full rounded-xl bg-black px-4 py-2.5 text-sm font-medium text-white transition hover:bg-slate-800"
+            >
+              Apply
+            </button>
+          </div>
+        </div>
+
+        <div className="mt-4 grid gap-4 md:grid-cols-3">
+          <div>
+            <label className="mb-2 block text-sm font-medium text-slate-700">
               From
             </label>
             <input
-              name="from"
               type="date"
+              name="from"
               defaultValue={from}
               className="w-full rounded-xl border px-4 py-2.5 text-sm outline-none transition focus:border-[#8B0000]"
             />
@@ -220,157 +479,232 @@ export default async function AdminExpensesPage({
               To
             </label>
             <input
-              name="to"
               type="date"
+              name="to"
               defaultValue={to}
               className="w-full rounded-xl border px-4 py-2.5 text-sm outline-none transition focus:border-[#8B0000]"
             />
           </div>
-        </div>
 
-        <div className="mt-4 flex flex-wrap gap-3">
-          <button
-            type="submit"
-            className="rounded-xl bg-[#001F3F] px-4 py-2 text-sm font-medium text-white transition hover:opacity-90"
-          >
-            Apply Filters
-          </button>
-
-          <Link
-            href="/admin/finance/expenses"
-            className="rounded-xl border px-4 py-2 text-sm font-medium transition hover:border-[#8B0000] hover:text-[#8B0000]"
-          >
-            Reset
-          </Link>
+          <div className="flex items-end">
+            <Link
+              href="/admin/finance/expenses"
+              className="w-full rounded-xl border px-4 py-2.5 text-center text-sm font-medium transition hover:border-[#8B0000] hover:text-[#8B0000]"
+            >
+              Reset Filters
+            </Link>
+          </div>
         </div>
       </form>
 
-      <div className="grid gap-4 md:grid-cols-3">
-        <div className="rounded-2xl border bg-white p-5 shadow-sm">
-          <div className="text-sm text-muted-foreground">Total Expenses</div>
-          <div className="mt-2 text-2xl font-bold text-[#001F3F]">
-            {formatCurrency(totalExpenses)}
-          </div>
-        </div>
-
-        <div className="rounded-2xl border bg-white p-5 shadow-sm">
-          <div className="text-sm text-muted-foreground">Paid</div>
-          <div className="mt-2 text-2xl font-bold text-green-700">
-            {formatCurrency(paidExpenses)}
-          </div>
-        </div>
-
-        <div className="rounded-2xl border bg-white p-5 shadow-sm">
-          <div className="text-sm text-muted-foreground">Pending</div>
-          <div className="mt-2 text-2xl font-bold text-amber-700">
-            {formatCurrency(pendingExpenses)}
-          </div>
-        </div>
-      </div>
-
-      <div className="overflow-x-auto rounded-2xl border bg-white shadow-sm">
-        <table className="w-full min-w-300 text-sm">
-          <thead className="bg-slate-100">
-            <tr className="text-slate-700">
-              <th className="p-3 text-left font-semibold">Date</th>
-              <th className="p-3 text-left font-semibold">Title</th>
-              <th className="p-3 text-left font-semibold">Vendor</th>
-              <th className="p-3 text-left font-semibold">Category</th>
-              <th className="p-3 text-left font-semibold">Status</th>
-              <th className="p-3 text-right font-semibold">Amount</th>
-              <th className="p-3 text-left font-semibold">Tour</th>
-              <th className="p-3 text-left font-semibold">Booking</th>
-              <th className="p-3 text-left font-semibold">Departure</th>
-              <th className="p-3 text-left font-semibold">Receipt</th>
-            </tr>
-          </thead>
-
-          <tbody>
-            {expenses.length === 0 ? (
+      <div className="overflow-hidden rounded-2xl border bg-white shadow-sm">
+        <div className="overflow-x-auto">
+          <table className="w-full min-w-[2100px] text-sm">
+            <thead className="bg-slate-50 text-left text-slate-600">
               <tr>
-                <td colSpan={10} className="p-8 text-center text-muted-foreground">
-                  No expenses found.
-                </td>
+                <th className="px-4 py-3 font-medium">Date</th>
+                <th className="px-4 py-3 font-medium">Title</th>
+                <th className="px-4 py-3 font-medium">Direction</th>
+                <th className="px-4 py-3 font-medium">Source</th>
+                <th className="px-4 py-3 font-medium">Category</th>
+                <th className="px-4 py-3 font-medium">Agency / Partner</th>
+                <th className="px-4 py-3 font-medium">Group / Package</th>
+                <th className="px-4 py-3 font-medium">Vendor / Payer</th>
+                <th className="px-4 py-3 font-medium">Booking</th>
+                <th className="px-4 py-3 font-medium">Tour</th>
+                <th className="px-4 py-3 font-medium">Departure</th>
+                <th className="px-4 py-3 font-medium">Original</th>
+                <th className="px-4 py-3 font-medium">Base EUR</th>
+                <th className="px-4 py-3 font-medium">Rate</th>
+                <th className="px-4 py-3 font-medium">Tax</th>
+                <th className="px-4 py-3 font-medium">Status</th>
+                <th className="px-4 py-3 text-right font-medium">Actions</th>
               </tr>
-            ) : (
-              expenses.map((expense) => (
-                <tr key={expense.id} className="border-t hover:bg-slate-50">
-                  <td className="p-3">{formatDate(expense.expenseDate)}</td>
+            </thead>
 
-                  <td className="p-3">
-                    <div className="font-medium text-slate-900">{expense.title}</div>
-                    {expense.description ? (
-                      <div className="mt-1 text-xs text-muted-foreground">
+            <tbody>
+              {expenses.map((expense) => (
+                <tr
+                  key={expense.id}
+                  className="border-t transition hover:bg-slate-50"
+                >
+                  <td className="whitespace-nowrap px-4 py-3">
+                    {formatDate(expense.expenseDate)}
+                  </td>
+
+                  <td className="px-4 py-3">
+                    <div className="font-medium text-[#001F3F]">
+                      {expense.title}
+                    </div>
+                    {expense.description && (
+                      <div className="mt-1 line-clamp-2 text-xs text-slate-500">
                         {expense.description}
                       </div>
-                    ) : null}
+                    )}
                   </td>
 
-                  <td className="p-3">{expense.vendorName || "-"}</td>
-
-                  <td className="p-3">
-                    {expense.category.replaceAll("_", " ")}
-                  </td>
-
-                  <td className="p-3">
+                  <td className="whitespace-nowrap px-4 py-3">
                     <span
-                      className={`inline-flex rounded-full px-2.5 py-1 text-xs font-semibold ${getStatusClass(
-                        expense.paymentStatus
+                      className={`rounded-full px-2.5 py-1 text-xs font-medium ${getDirectionClass(
+                        expense.direction
                       )}`}
                     >
-                      {expense.paymentStatus.replaceAll("_", " ")}
+                      {formatEnumLabel(expense.direction)}
                     </span>
                   </td>
 
-                  <td className="p-3 text-right font-medium">
-                    {formatCurrency(expense.amount, expense.currency)}
+                  <td className="whitespace-nowrap px-4 py-3">
+                    {formatEnumLabel(expense.sourceType)}
                   </td>
 
-                  <td className="p-3">{expense.tour?.title || "-"}</td>
-
-                  <td className="p-3">
-                    {expense.booking
-                      ? expense.booking.bookingDisplayCode || expense.booking.bookingReference
-                      : "-"}
+                  <td className="whitespace-nowrap px-4 py-3">
+                    {formatEnumLabel(expense.category)}
                   </td>
 
-                  <td className="p-3">
+                  <td className="px-4 py-3">
+                    <div className="space-y-1">
+                      <div className="font-medium">
+                        {expense.partnerCompanyName ||
+                          expense.agentNameSnapshot ||
+                          "-"}
+                      </div>
+                      {expense.agentNameSnapshot &&
+                        expense.partnerCompanyName && (
+                          <div className="text-xs text-slate-500">
+                            Agent: {expense.agentNameSnapshot}
+                          </div>
+                        )}
+                    </div>
+                  </td>
+
+                  <td className="px-4 py-3">
+                    <div className="space-y-1">
+                      <div className="font-medium">
+                        {expense.groupName || expense.customPackageName || "-"}
+                      </div>
+                      {expense.tourLeaderName && (
+                        <div className="text-xs text-slate-500">
+                          Leader: {expense.tourLeaderName}
+                        </div>
+                      )}
+                    </div>
+                  </td>
+
+                  <td className="whitespace-nowrap px-4 py-3">
+                    {expense.vendorName || "-"}
+                  </td>
+
+                  <td className="whitespace-nowrap px-4 py-3">
+                    {expense.booking ? (
+                      <Link
+                        href={`/admin/bookings/${expense.booking.id}`}
+                        className="text-blue-600 hover:underline"
+                      >
+                        {expense.booking.bookingDisplayCode ||
+                          expense.booking.bookingReference}
+                      </Link>
+                    ) : (
+                      "-"
+                    )}
+                  </td>
+
+                  <td className="whitespace-nowrap px-4 py-3">
+                    {expense.tour ? (
+                      <Link
+                        href={`/admin/tours/${expense.tour.id}`}
+                        className="text-blue-600 hover:underline"
+                      >
+                        {expense.tour.tourCode
+                          ? `${expense.tour.tourCode} — ${expense.tour.title}`
+                          : expense.tour.title}
+                      </Link>
+                    ) : (
+                      "-"
+                    )}
+                  </td>
+
+                  <td className="whitespace-nowrap px-4 py-3">
                     {expense.departureDate
                       ? formatDate(expense.departureDate.date)
                       : "-"}
                   </td>
 
-                  <td className="p-3">
-                    {expense.receiptUrl ? (
-                      <a
-                        href={expense.receiptUrl}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="font-medium text-[#001F3F] hover:text-[#8B0000]"
-                      >
-                        View
-                      </a>
-                    ) : (
-                      "-"
+                  <td
+                    className={`whitespace-nowrap px-4 py-3 font-semibold ${
+                      expense.direction === "INCOME"
+                        ? "text-green-700"
+                        : "text-red-700"
+                    }`}
+                  >
+                    {expense.direction === "INCOME" ? "+" : "-"}
+                    {formatCurrency(
+                      expense.originalAmount || expense.amount,
+                      expense.originalCurrency || expense.currency
                     )}
                   </td>
-                </tr>
-              ))
-            )}
-          </tbody>
 
-          {expenses.length > 0 ? (
-            <tfoot className="bg-slate-50 font-semibold">
-              <tr className="border-t">
-                <td className="p-3" colSpan={5}>
-                  Totals
-                </td>
-                <td className="p-3 text-right">{formatCurrency(totalExpenses)}</td>
-                <td className="p-3" colSpan={4} />
-              </tr>
-            </tfoot>
-          ) : null}
-        </table>
+                  <td
+                    className={`whitespace-nowrap px-4 py-3 font-semibold ${
+                      expense.direction === "INCOME"
+                        ? "text-green-700"
+                        : "text-red-700"
+                    }`}
+                  >
+                    {expense.direction === "INCOME" ? "+" : "-"}
+                    {formatCurrency(reportingAmount(expense), "EUR")}
+                  </td>
+
+                  <td className="whitespace-nowrap px-4 py-3">
+                    {expense.exchangeRateToBase || 1}
+                  </td>
+
+                  <td className="whitespace-nowrap px-4 py-3">
+                    <div>{formatEnumLabel(expense.taxType)}</div>
+                    {(expense.taxAmount || 0) > 0 && (
+                      <div className="text-xs text-slate-500">
+                        {formatCurrency(expense.taxAmount || 0, "EUR")}
+                      </div>
+                    )}
+                  </td>
+
+                  <td className="whitespace-nowrap px-4 py-3">
+                    <span
+                      className={`rounded-full px-2.5 py-1 text-xs font-medium ${getStatusClass(
+                        expense.paymentStatus
+                      )}`}
+                    >
+                      {formatEnumLabel(expense.paymentStatus)}
+                    </span>
+                  </td>
+
+                  <td className="px-4 py-3">
+                    <div className="flex justify-end gap-3 whitespace-nowrap">
+                      <Link
+                        href={`/admin/finance/expenses/${expense.id}/edit`}
+                        className="text-blue-600 hover:underline"
+                      >
+                        Edit
+                      </Link>
+
+                      <DeleteExpenseButton expenseId={expense.id} />
+                    </div>
+                  </td>
+                </tr>
+              ))}
+
+              {expenses.length === 0 && (
+                <tr>
+                  <td
+                    colSpan={17}
+                    className="px-4 py-10 text-center text-sm text-slate-500"
+                  >
+                    No finance entries found.
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
       </div>
     </div>
   );

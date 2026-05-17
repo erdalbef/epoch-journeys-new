@@ -1,7 +1,9 @@
-import { PricingType } from "@prisma/client";
+import { Prisma, PricingType, RoomType } from "@prisma/client";
 import { db } from "@/lib/db";
 import { notFound, redirect } from "next/navigation";
 import TourForm from "@/components/admin/TourForm";
+import { mkdir, writeFile } from "fs/promises";
+import path from "path";
 
 function parseCommaSeparated(value: FormDataEntryValue | null): string[] {
   if (!value || typeof value !== "string") return [];
@@ -29,210 +31,155 @@ function isPricingType(value: string): value is PricingType {
   );
 }
 
-type TierInput = {
+function isRoomType(value: string): value is RoomType {
+  return (
+    value === "SINGLE" ||
+    value === "DOUBLE_TWIN" ||
+    value === "TRIPLE"
+  );
+}
+
+type PrivatePricing = Record<string, number>;
+
+function parsePrivatePricing(value: FormDataEntryValue | null): PrivatePricing {
+  if (!value || typeof value !== "string") return {};
+
+  try {
+    const parsed = JSON.parse(value) as Record<string, string>;
+    const result: PrivatePricing = {};
+
+    for (const key of Object.keys(parsed)) {
+      const num = Number(parsed[key]);
+      if (!Number.isNaN(num) && num > 0) {
+        result[key] = num;
+      }
+    }
+
+    return result;
+  } catch {
+    return {};
+  }
+}
+
+type ParsedPricingTier = {
   label: string | null;
   minPax: number | null;
   maxPax: number | null;
-  roomType: "SINGLE" | "DOUBLE_TWIN" | "TRIPLE" | null;
+  roomType: RoomType | null;
   pricePerPerson: number;
   currency: string;
   isActive: boolean;
 };
 
-function parsePricingTiers(value: FormDataEntryValue | null): TierInput[] {
+function parsePricingTiers(value: FormDataEntryValue | null): ParsedPricingTier[] {
   if (!value || typeof value !== "string") return [];
 
   try {
-    const parsed = JSON.parse(value) as unknown;
+    const parsed = JSON.parse(value) as Array<{
+      label?: string;
+      minPax?: number | string;
+      maxPax?: number | string;
+      roomType?: string;
+      pricePerPerson?: number | string;
+      currency?: string;
+      isActive?: boolean;
+    }>;
 
     if (!Array.isArray(parsed)) return [];
 
-    return parsed
-      .map((item) => {
-        if (typeof item !== "object" || item === null) {
-          return null;
-        }
+    const result: ParsedPricingTier[] = [];
 
-        const tier = item as {
-          label?: unknown;
-          minPax?: unknown;
-          maxPax?: unknown;
-          roomType?: unknown;
-          pricePerPerson?: unknown;
-          currency?: unknown;
-          isActive?: unknown;
-        };
+    for (const tier of parsed) {
+      const label =
+        typeof tier.label === "string" && tier.label.trim()
+          ? tier.label.trim()
+          : null;
 
-        const pricePerPerson = Number(tier.pricePerPerson);
+      const minPaxRaw =
+        tier.minPax === "" || tier.minPax === undefined || tier.minPax === null
+          ? null
+          : Number(tier.minPax);
 
-        if (Number.isNaN(pricePerPerson) || pricePerPerson <= 0) {
-          return null;
-        }
+      const maxPaxRaw =
+        tier.maxPax === "" || tier.maxPax === undefined || tier.maxPax === null
+          ? null
+          : Number(tier.maxPax);
 
-        const minPax =
-          tier.minPax === "" || tier.minPax == null
-            ? null
-            : Number(tier.minPax);
+      const priceRaw = Number(tier.pricePerPerson);
 
-        const maxPax =
-          tier.maxPax === "" || tier.maxPax == null
-            ? null
-            : Number(tier.maxPax);
+      if (Number.isNaN(priceRaw) || priceRaw <= 0) {
+        continue;
+      }
 
-        if (minPax !== null && Number.isNaN(minPax)) {
-          return null;
-        }
+      const minPax =
+        minPaxRaw === null || Number.isNaN(minPaxRaw) ? null : minPaxRaw;
 
-        if (maxPax !== null && Number.isNaN(maxPax)) {
-          return null;
-        }
+      const maxPax =
+        maxPaxRaw === null || Number.isNaN(maxPaxRaw) ? null : maxPaxRaw;
 
-        if (
-          minPax !== null &&
-          maxPax !== null &&
-          minPax >= 1 &&
-          maxPax < minPax
-        ) {
-          return null;
-        }
+      const roomType =
+        typeof tier.roomType === "string" && isRoomType(tier.roomType)
+          ? tier.roomType
+          : null;
 
-        const roomType =
-          tier.roomType === "SINGLE" ||
-          tier.roomType === "DOUBLE_TWIN" ||
-          tier.roomType === "TRIPLE"
-            ? tier.roomType
-            : null;
+      const currency =
+        typeof tier.currency === "string" && tier.currency.trim()
+          ? tier.currency.trim().toUpperCase()
+          : "EUR";
 
-        return {
-          label:
-            typeof tier.label === "string" && tier.label.trim()
-              ? tier.label.trim()
-              : null,
-          minPax,
-          maxPax,
-          roomType,
-          pricePerPerson,
-          currency:
-            typeof tier.currency === "string" && tier.currency.trim()
-              ? tier.currency.trim().toUpperCase()
-              : "EUR",
-          isActive:
-            typeof tier.isActive === "boolean" ? tier.isActive : true,
-        };
-      })
-      .filter((item): item is TierInput => item !== null);
+      result.push({
+        label,
+        minPax,
+        maxPax,
+        roomType,
+        pricePerPerson: priceRaw,
+        currency,
+        isActive: tier.isActive ?? true,
+      });
+    }
+
+    return result;
   } catch {
     return [];
   }
 }
 
-async function updateTour(id: string, formData: FormData) {
-  "use server";
-
-  const titleValue = formData.get("title");
-  const categoryValue = formData.get("category");
-  const durationValue = formData.get("duration");
-  const pricingTypeValue = formData.get("pricingType");
-
-  if (
-    typeof titleValue !== "string" ||
-    typeof categoryValue !== "string" ||
-    typeof durationValue !== "string" ||
-    typeof pricingTypeValue !== "string"
-  ) {
-    return;
-  }
-
-  const title = titleValue.trim();
-  const category = categoryValue.trim();
-  const duration = Number(durationValue);
-  const pricingType = pricingTypeValue.trim();
-
-  if (
-    !title ||
-    !category ||
-    Number.isNaN(duration) ||
-    duration < 1 ||
-    !isPricingType(pricingType)
-  ) {
-    return;
-  }
-
-  const pricingTiers = parsePricingTiers(formData.get("pricingTiers"));
-
-  await db.tour.update({
-    where: { id },
-    data: {
-      title,
-      category,
-      duration,
-      pricingType,
-      destinations: parseCommaSeparated(formData.get("destinations")),
-      subcategories: parseCommaSeparated(formData.get("subcategories")),
-      tags: parseCommaSeparated(formData.get("tags")),
-      highlights: parseCommaSeparated(formData.get("highlights")),
-      inclusions: parseCommaSeparated(formData.get("inclusions")),
-      exclusions: parseCommaSeparated(formData.get("exclusions")),
-      accommodations: parseCommaSeparated(formData.get("accommodations")),
-      shortDescription: parseOptionalString(formData.get("shortDescription")),
-      overview: parseOptionalString(formData.get("overview")),
-      whyWeOfferThisTour: parseOptionalString(
-        formData.get("whyWeOfferThisTour")
-      ),
-      tourIntroduction: parseOptionalString(formData.get("tourIntroduction")),
-      tourSignificance: parseOptionalString(formData.get("tourSignificance")),
-      destinationBriefs: parseOptionalString(formData.get("destinationBriefs")),
-      overviewItinerary: parseOptionalString(formData.get("overviewItinerary")),
-      itinerary: parseOptionalString(formData.get("itinerary")),
-      isPublished: formData.get("isPublished") === "on",
-      featured: formData.get("featured") === "on",
-      requiresQuote:
-        pricingType === "GROUP_BASED" || pricingType === "FIT_DYNAMIC"
-          ? true
-          : formData.get("requiresQuote") === "on",
-    },
-  });
-
-  await db.pricingTier.deleteMany({
-    where: { tourId: id },
-  });
-
-  if (
-    (pricingType === "FIT_TIERED" || pricingType === "GROUP_BASED") &&
-    pricingTiers.length > 0
-  ) {
-    await db.pricingTier.createMany({
-      data: pricingTiers.map((tier) => ({
-        tourId: id,
-        label: tier.label,
-        minPax: tier.minPax,
-        maxPax: tier.maxPax,
-        roomType: tier.roomType,
-        pricePerPerson: tier.pricePerPerson,
-        currency: tier.currency,
-        isActive: tier.isActive,
-      })),
-    });
-  }
-
-  redirect("/admin/tours");
+function sanitizeFileName(fileName: string): string {
+  return fileName
+    .replace(/\s+/g, "-")
+    .replace(/[^a-zA-Z0-9._-]/g, "");
 }
 
-export default async function EditTourPage({
-  params,
-}: {
+async function saveFile(file: File | null, folder: string): Promise<string | null> {
+  if (!file || file.size === 0) return null;
+
+  const bytes = await file.arrayBuffer();
+  const buffer = Buffer.from(bytes);
+
+  const safeName = sanitizeFileName(file.name);
+  const fileName = `${Date.now()}-${safeName}`;
+
+  const directoryPath = path.join(process.cwd(), "public", folder);
+  await mkdir(directoryPath, { recursive: true });
+
+  const filePath = path.join(directoryPath, fileName);
+  await writeFile(filePath, buffer);
+
+  return `/${folder}/${fileName}`;
+}
+
+type PageProps = {
   params: Promise<{ id: string }>;
-}) {
+};
+
+export default async function EditTourPage({ params }: PageProps) {
   const { id } = await params;
 
   const tour = await db.tour.findUnique({
     where: { id },
     include: {
       pricingTiers: {
-        orderBy: [{ minPax: "asc" }, { maxPax: "asc" }],
-      },
-      departureDates: {
-        orderBy: { date: "asc" },
+        orderBy: [{ minPax: "asc" }, { maxPax: "asc" }, { roomType: "asc" }],
       },
     },
   });
@@ -241,49 +188,203 @@ export default async function EditTourPage({
     notFound();
   }
 
+  const safeTour = tour;
+
+  async function updateTour(formData: FormData) {
+    "use server";
+
+    const title = formData.get("title")?.toString().trim();
+    const category = formData.get("category")?.toString().trim();
+    const duration = Number(formData.get("duration"));
+    const pricingTypeRaw = formData.get("pricingType")?.toString().trim();
+
+    if (
+      !title ||
+      !category ||
+      Number.isNaN(duration) ||
+      duration < 1 ||
+      !isPricingType(pricingTypeRaw || "")
+    ) {
+      return;
+    }
+
+    const pricingType = pricingTypeRaw as PricingType;
+
+    const destinations = parseCommaSeparated(formData.get("destinations"));
+    const subcategories = parseCommaSeparated(formData.get("subcategories"));
+    const tags = parseCommaSeparated(formData.get("tags"));
+    const highlights = parseCommaSeparated(formData.get("highlights"));
+    const inclusions = parseCommaSeparated(formData.get("inclusions"));
+    const exclusions = parseCommaSeparated(formData.get("exclusions"));
+    const accommodations = parseCommaSeparated(formData.get("accommodations"));
+
+    const privatePricing = parsePrivatePricing(formData.get("privatePricing"));
+    const hasPrivatePricing = Object.keys(privatePricing).length > 0;
+
+    const pricingTiers = parsePricingTiers(formData.get("pricingTiers"));
+
+    const mainImage = formData.get("mainImage") as File | null;
+    const image2 = formData.get("image2") as File | null;
+    const image3 = formData.get("image3") as File | null;
+    const image4 = formData.get("image4") as File | null;
+    const mapImage = formData.get("mapImage") as File | null;
+    const brochure = formData.get("brochure") as File | null;
+
+    const deleteMainImage = formData.get("deleteMainImage") === "true";
+    const deleteImage2 = formData.get("deleteImage2") === "true";
+    const deleteImage3 = formData.get("deleteImage3") === "true";
+    const deleteImage4 = formData.get("deleteImage4") === "true";
+    const deleteMapImage = formData.get("deleteMapImage") === "true";
+    const deleteBrochure = formData.get("deleteBrochure") === "true";
+
+    const newMainImageUrl = await saveFile(mainImage, "uploads/tours");
+    const newImageUrl2 = await saveFile(image2, "uploads/tours");
+    const newImageUrl3 = await saveFile(image3, "uploads/tours");
+    const newImageUrl4 = await saveFile(image4, "uploads/tours");
+    const newMapImageUrl = await saveFile(mapImage, "uploads/maps");
+    const newBrochureUrl = await saveFile(brochure, "uploads/brochures");
+
+    await db.tour.update({
+      where: { id: safeTour.id },
+      data: {
+        title,
+        category,
+        subcategories,
+        tags,
+        destinations,
+        duration,
+
+        shortDescription: parseOptionalString(formData.get("shortDescription")),
+        overview: parseOptionalString(formData.get("overview")),
+        whyWeOfferThisTour: parseOptionalString(
+          formData.get("whyWeOfferThisTour")
+        ),
+        tourIntroduction: parseOptionalString(formData.get("tourIntroduction")),
+        tourSignificance: parseOptionalString(formData.get("tourSignificance")),
+        destinationBriefs: parseOptionalString(
+          formData.get("destinationBriefs")
+        ),
+
+        pricingType,
+        privatePricing: hasPrivatePricing
+          ? (privatePricing as Prisma.InputJsonValue)
+          : Prisma.JsonNull,
+
+        highlights,
+        inclusions,
+        exclusions,
+        accommodations,
+
+        overviewItinerary: parseOptionalString(
+          formData.get("overviewItinerary")
+        ),
+        itinerary: parseOptionalString(formData.get("itinerary")),
+
+        mainImageUrl: deleteMainImage
+          ? null
+          : newMainImageUrl ?? safeTour.mainImageUrl,
+        imageUrl2: deleteImage2 ? null : newImageUrl2 ?? safeTour.imageUrl2,
+        imageUrl3: deleteImage3 ? null : newImageUrl3 ?? safeTour.imageUrl3,
+        imageUrl4: deleteImage4 ? null : newImageUrl4 ?? safeTour.imageUrl4,
+        mapImageUrl: deleteMapImage
+          ? null
+          : newMapImageUrl ?? safeTour.mapImageUrl,
+        brochureUrl: deleteBrochure
+          ? null
+          : newBrochureUrl ?? safeTour.brochureUrl,
+
+        featured: formData.get("featured") === "on",
+        isPublished: formData.get("isPublished") === "on",
+
+        requiresQuote:
+          pricingType === "GROUP_BASED" || pricingType === "FIT_DYNAMIC"
+            ? true
+            : formData.get("requiresQuote") === "on",
+      },
+    });
+
+    await db.pricingTier.deleteMany({
+      where: { tourId: safeTour.id },
+    });
+
+    if (pricingTiers.length > 0) {
+      await db.pricingTier.createMany({
+        data: pricingTiers.map((tier) => ({
+          tourId: safeTour.id,
+          label: tier.label,
+          minPax: tier.minPax,
+          maxPax: tier.maxPax,
+          roomType: tier.roomType,
+          pricePerPerson: tier.pricePerPerson,
+          currency: tier.currency,
+          isActive: tier.isActive,
+        })),
+      });
+    }
+
+    redirect("/admin/tours");
+  }
+
+  const privatePricingValue =
+    safeTour.privatePricing &&
+    typeof safeTour.privatePricing === "object" &&
+    !Array.isArray(safeTour.privatePricing)
+      ? (safeTour.privatePricing as Record<string, number | string | null>)
+      : undefined;
+
   return (
     <div className="max-w-5xl space-y-6">
-      <h1 className="text-2xl font-semibold">Edit Tour</h1>
+      <div>
+        <h1 className="text-2xl font-semibold">Edit Tour</h1>
+        <p className="text-sm text-muted-foreground">
+          Update tour details, pricing, images, and publishing settings.
+        </p>
+      </div>
 
       <TourForm
+        action={updateTour}
         mode="edit"
-        action={updateTour.bind(null, tour.id)}
         initialValues={{
-          title: tour.title ?? "",
-          category: tour.category ?? "",
-          duration: tour.duration ?? 1,
-          shortDescription: tour.shortDescription ?? "",
-          destinations: Array.isArray(tour.destinations) ? tour.destinations : [],
-          subcategories: Array.isArray(tour.subcategories)
-            ? tour.subcategories
-            : [],
-          tags: Array.isArray(tour.tags) ? tour.tags : [],
-          tourIntroduction: tour.tourIntroduction ?? "",
-          tourSignificance: tour.tourSignificance ?? "",
-          destinationBriefs: tour.destinationBriefs ?? "",
-          overview: tour.overview ?? "",
-          whyWeOfferThisTour: tour.whyWeOfferThisTour ?? "",
-          highlights: Array.isArray(tour.highlights) ? tour.highlights : [],
-          inclusions: Array.isArray(tour.inclusions) ? tour.inclusions : [],
-          exclusions: Array.isArray(tour.exclusions) ? tour.exclusions : [],
-          accommodations: Array.isArray(tour.accommodations)
-            ? tour.accommodations
-            : [],
-          overviewItinerary: tour.overviewItinerary ?? "",
-          itinerary: tour.itinerary ?? "",
-          isPublished: Boolean(tour.isPublished),
-          featured: Boolean(tour.featured),
-          requiresQuote: Boolean(tour.requiresQuote),
-          pricingType: tour.pricingType,
-          pricingTiers: tour.pricingTiers.map((t) => ({
-            label: t.label ?? "",
-            minPax: t.minPax ?? undefined,
-            maxPax: t.maxPax ?? undefined,
-            roomType: t.roomType ?? "DOUBLE_TWIN",
-            pricePerPerson: t.pricePerPerson,
-            currency: t.currency ?? "EUR",
-            isActive: t.isActive ?? true,
+          title: safeTour.title,
+          category: safeTour.category,
+          duration: safeTour.duration,
+          shortDescription: safeTour.shortDescription,
+          destinations: safeTour.destinations,
+          subcategories: safeTour.subcategories,
+          tags: safeTour.tags,
+          tourIntroduction: safeTour.tourIntroduction,
+          tourSignificance: safeTour.tourSignificance,
+          destinationBriefs: safeTour.destinationBriefs,
+          overview: safeTour.overview,
+          whyWeOfferThisTour: safeTour.whyWeOfferThisTour,
+          highlights: safeTour.highlights,
+          inclusions: safeTour.inclusions,
+          exclusions: safeTour.exclusions,
+          accommodations: safeTour.accommodations,
+          overviewItinerary: safeTour.overviewItinerary,
+          itinerary: safeTour.itinerary,
+          isPublished: safeTour.isPublished,
+          featured: safeTour.featured,
+          requiresQuote: safeTour.requiresQuote,
+          pricingType: safeTour.pricingType,
+          privatePricing: privatePricingValue,
+          pricingTiers: safeTour.pricingTiers.map((tier) => ({
+            label: tier.label,
+            minPax: tier.minPax,
+            maxPax: tier.maxPax,
+            roomType: tier.roomType,
+            pricePerPerson: tier.pricePerPerson,
+            currency: tier.currency,
+            isActive: tier.isActive,
           })),
+        }}
+        initialImages={{
+          mainImageUrl: safeTour.mainImageUrl,
+          imageUrl2: safeTour.imageUrl2,
+          imageUrl3: safeTour.imageUrl3,
+          imageUrl4: safeTour.imageUrl4,
+          mapImageUrl: safeTour.mapImageUrl,
+          brochureUrl: safeTour.brochureUrl,
         }}
       />
     </div>

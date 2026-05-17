@@ -1,98 +1,120 @@
-'use server'
+"use server";
 
-import { revalidatePath } from 'next/cache'
-import { prisma } from '@/lib/prisma'
+import { revalidatePath } from "next/cache";
+import { Prisma, QuotePurpose, QuoteStatus } from "@prisma/client";
 
-import { calculateQuote } from '@/lib/quotes/calculateQuote'
-import { toQuoteInput } from '../toQuoteInput'
-import type { FormState } from '../types'
+import { db } from "@/lib/db";
+import { calculateQuote } from "@/lib/quotes/calculateQuote";
+import { toQuoteInput } from "../toQuoteInput";
+import type { FormState } from "../types";
+
+function toJsonValue<T>(value: T): Prisma.InputJsonValue {
+  return JSON.parse(JSON.stringify(value)) as Prisma.InputJsonValue;
+}
 
 export async function saveQuoteAction(input: {
-  quoteId?: string
-  title?: string
-  recipientName?: string
-  recipientEmail?: string
-  templateId?: string | null
-  form: FormState
+  quoteId?: string;
+  title?: string;
+  recipientName?: string;
+  recipientEmail?: string;
+  templateId?: string | null;
+  form: FormState;
 }) {
-  const quoteInput = toQuoteInput(input.form)
-  const result = calculateQuote(quoteInput)
+  const quoteInput = toQuoteInput(input.form);
+  const result = calculateQuote(quoteInput);
 
   const data = {
-    title: input.title,
-    recipientName: input.recipientName,
-    recipientEmail: input.recipientEmail,
-    templateId: input.templateId ?? undefined,
+    title: input.title?.trim() || null,
+    recipientName: input.recipientName?.trim() || null,
+    recipientEmail: input.recipientEmail?.trim() || null,
+    templateId: input.templateId ?? null,
 
-    quoteBuilderPayload: input.form as any,
-    quoteBuilderSummary: result as any,
-    calculationVersion: 'v1',
+    quoteBuilderPayload: toJsonValue(input.form),
+    quoteBuilderSummary: toJsonValue(result),
+    calculationVersion: "v1",
 
     subtotal: result.totals.totalTourCost ?? 0,
     totalAmount: result.totals.totalTourCost ?? 0,
-    currency: 'EUR',
-  }
+    currency: "EUR",
+  };
 
   const quote = input.quoteId
-    ? await prisma.quote.update({
+    ? await db.quote.update({
         where: { id: input.quoteId },
         data,
       })
-    : await prisma.quote.create({
+    : await db.quote.create({
         data: {
           ...data,
-          status: 'DRAFT',
+          purpose: QuotePurpose.CUSTOM_REQUEST,
+          status: QuoteStatus.DRAFT,
         },
-      })
+      });
 
-  revalidatePath('/quotes')
-  return { id: quote.id }
+  revalidatePath("/admin/quotes");
+  revalidatePath("/admin/quotes/new");
+
+  return { id: quote.id };
 }
 
 export async function saveTemplateAction(input: {
-  name: string
-  description?: string
-  form: FormState
-  userId?: string
+  name: string;
+  description?: string;
+  form: FormState;
+  userId?: string;
 }) {
-  const quoteInput = toQuoteInput(input.form)
-  const result = calculateQuote(quoteInput)
+  const quoteInput = toQuoteInput(input.form);
+  const result = calculateQuote(quoteInput);
 
-  const template = await prisma.quoteTemplate.create({
+  const trimmedName = input.name.trim();
+
+  if (!trimmedName) {
+    throw new Error("Template name is required.");
+  }
+
+  const template = await db.quoteTemplate.create({
     data: {
-      name: input.name,
-      description: input.description,
-      createdById: input.userId,
+      title: trimmedName,
+      name: trimmedName,
+      description: input.description?.trim() || null,
+      createdById: input.userId ?? null,
 
-      payload: input.form as any,
-      summary: result as any,
-      calculationVersion: 'v1',
-      currency: 'EUR',
+      payload: toJsonValue(input.form),
+      summary: toJsonValue(result),
+      calculationVersion: "v1",
+      currency: "EUR",
     },
-  })
+  });
 
-  revalidatePath('/quotes')
-  return { id: template.id }
+  revalidatePath("/admin/quotes/templates");
+
+  return { id: template.id };
 }
 
 export async function loadTemplateAction(templateId: string) {
-  const template = await prisma.quoteTemplate.findUnique({
+  const template = await db.quoteTemplate.findUnique({
     where: { id: templateId },
-  })
+    select: {
+      payload: true,
+    },
+  });
 
-  if (!template) throw new Error('Template not found')
+  if (!template) {
+    throw new Error("Template not found");
+  }
 
-  return template.payload as FormState
+  return template.payload as unknown as FormState;
 }
 
 export async function listTemplatesAction() {
-  return prisma.quoteTemplate.findMany({
-    orderBy: { updatedAt: 'desc' },
+  return db.quoteTemplate.findMany({
+    orderBy: { updatedAt: "desc" },
     select: {
       id: true,
+      title: true,
       name: true,
       description: true,
       updatedAt: true,
     },
-  })
+  });
 }

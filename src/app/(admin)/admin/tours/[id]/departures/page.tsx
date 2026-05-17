@@ -1,8 +1,10 @@
+import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { DepartureStatus, Season } from "@prisma/client";
 
 import { db } from "@/lib/db";
 import { AddDepartureForm } from "@/components/admin/AddDepartureForm";
+import ToursToastHandler from "@/components/admin/ToursToastHandler";
 
 type PageProps = {
   params: Promise<{ id: string }>;
@@ -96,31 +98,34 @@ function toDateInputValue(value: Date | null) {
   return new Date(value).toISOString().split("T")[0];
 }
 
+function parseOptionalNumber(value: FormDataEntryValue | null): number | null {
+  if (typeof value !== "string" || value.trim() === "") return null;
+  const parsed = Number(value);
+  return Number.isNaN(parsed) ? null : parsed;
+}
+
 async function createDeparture(tourId: string, formData: FormData) {
   "use server";
 
   const date = new Date(String(formData.get("date")));
   const season = parseSeason(String(formData.get("season")));
-  const price = Number(formData.get("price"));
+  const priceDouble = Number(formData.get("priceDouble"));
+  let status = parseStatus(String(formData.get("status")));
   const capacity = Number(formData.get("capacity"));
-  const status = parseStatus(String(formData.get("status")));
+  const bookedSeats = Number(formData.get("bookedSeats") ?? 0);
 
-  const earlyDiscountPercentValue = formData.get("earlyDiscountPercent");
+  const singleSupplement = parseOptionalNumber(
+    formData.get("singleSupplement")
+  );
+  const tripleReduction = parseOptionalNumber(
+    formData.get("tripleReduction")
+  );
+
+  const earlyDiscountPercent = parseOptionalNumber(
+    formData.get("earlyDiscountPercent")
+  );
+
   const earlyDiscountDeadlineValue = formData.get("earlyDiscountDeadline");
-
-  const earlyDiscountPercent =
-    typeof earlyDiscountPercentValue === "string" &&
-    earlyDiscountPercentValue.trim() !== ""
-      ? Number(earlyDiscountPercentValue)
-      : null;
-
-  const validEarlyDiscountPercent =
-    earlyDiscountPercent !== null &&
-    !Number.isNaN(earlyDiscountPercent) &&
-    earlyDiscountPercent >= 0
-      ? earlyDiscountPercent
-      : null;
-
   const earlyDiscountDeadline =
     typeof earlyDiscountDeadlineValue === "string" &&
     earlyDiscountDeadlineValue.trim() !== ""
@@ -135,29 +140,40 @@ async function createDeparture(tourId: string, formData: FormData) {
 
   if (
     Number.isNaN(date.getTime()) ||
-    Number.isNaN(price) ||
-    price < 0 ||
+    Number.isNaN(priceDouble) ||
+    priceDouble < 0 ||
     Number.isNaN(capacity) ||
-    capacity < 0
+    capacity < 0 ||
+    Number.isNaN(bookedSeats) ||
+    bookedSeats < 0 ||
+    bookedSeats > capacity
   ) {
-    return;
+    redirect(`/admin/tours/${tourId}/departures?error=invalid-departure-data`);
+  }
+
+  const remainingSeats = Math.max(0, capacity - bookedSeats);
+  if (remainingSeats === 0) {
+    status = "SOLD_OUT";
   }
 
   await db.departureDate.create({
     data: {
-      tourId,
-      date,
-      season,
-      price,
+    tourId,
+    date,
+    season,
+    price: priceDouble,
+    priceDouble,
+      singleSupplement,
+      tripleReduction,
       capacity,
-      bookedSeats: 0,
+      bookedSeats,
       status,
-      earlyDiscountPercent: validEarlyDiscountPercent,
+      earlyDiscountPercent,
       earlyDiscountDeadline: validEarlyDiscountDeadline,
     },
   });
 
-  redirect(`/admin/tours/${tourId}/departures`);
+  redirect(`/admin/tours/${tourId}/departures?success=departure-created`);
 }
 
 async function updateDeparture(
@@ -179,31 +195,28 @@ async function updateDeparture(
   });
 
   if (!existing || existing.tourId !== tourId) {
-    return;
+    redirect(`/admin/tours/${tourId}/departures?error=departure-not-found`);
   }
 
   const date = new Date(String(formData.get("date")));
   const season = parseSeason(String(formData.get("season")));
-  const price = Number(formData.get("price"));
+  const priceDouble = Number(formData.get("priceDouble"));
+  let status = parseStatus(String(formData.get("status")));
   const capacity = Number(formData.get("capacity"));
-  const status = parseStatus(String(formData.get("status")));
+  const bookedSeats = Number(formData.get("bookedSeats") ?? existing.bookedSeats);
 
-  const earlyDiscountPercentValue = formData.get("earlyDiscountPercent");
+  const singleSupplement = parseOptionalNumber(
+    formData.get("singleSupplement")
+  );
+  const tripleReduction = parseOptionalNumber(
+    formData.get("tripleReduction")
+  );
+
+  const earlyDiscountPercent = parseOptionalNumber(
+    formData.get("earlyDiscountPercent")
+  );
+
   const earlyDiscountDeadlineValue = formData.get("earlyDiscountDeadline");
-
-  const earlyDiscountPercent =
-    typeof earlyDiscountPercentValue === "string" &&
-    earlyDiscountPercentValue.trim() !== ""
-      ? Number(earlyDiscountPercentValue)
-      : null;
-
-  const validEarlyDiscountPercent =
-    earlyDiscountPercent !== null &&
-    !Number.isNaN(earlyDiscountPercent) &&
-    earlyDiscountPercent >= 0
-      ? earlyDiscountPercent
-      : null;
-
   const earlyDiscountDeadline =
     typeof earlyDiscountDeadlineValue === "string" &&
     earlyDiscountDeadlineValue.trim() !== ""
@@ -218,20 +231,27 @@ async function updateDeparture(
 
   if (
     Number.isNaN(date.getTime()) ||
-    Number.isNaN(price) ||
-    price < 0 ||
+    Number.isNaN(priceDouble) ||
+    priceDouble < 0 ||
     Number.isNaN(capacity) ||
-    capacity < 0
+    capacity < 0 ||
+    Number.isNaN(bookedSeats) ||
+    bookedSeats < 0
   ) {
-    return;
+    redirect(`/admin/tours/${tourId}/departures?error=invalid-departure-data`);
   }
 
-  if (capacity < existing.bookedSeats) {
+  if (capacity < existing.bookedSeats || capacity < bookedSeats) {
     redirect(`/admin/tours/${tourId}/departures?error=capacity-below-booked`);
   }
 
-  if (existing._count.bookings > 0 && price !== Number(existing.price)) {
+  if (existing._count.bookings > 0 && priceDouble !== Number(existing.priceDouble)) {
     redirect(`/admin/tours/${tourId}/departures?error=price-locked`);
+  }
+
+  const remainingSeats = Math.max(0, capacity - bookedSeats);
+  if (remainingSeats === 0) {
+    status = "SOLD_OUT";
   }
 
   await db.departureDate.update({
@@ -239,15 +259,18 @@ async function updateDeparture(
     data: {
       date,
       season,
-      price,
+      priceDouble,
+      singleSupplement,
+      tripleReduction,
       capacity,
+      bookedSeats,
       status,
-      earlyDiscountPercent: validEarlyDiscountPercent,
+      earlyDiscountPercent,
       earlyDiscountDeadline: validEarlyDiscountDeadline,
     },
   });
 
-  redirect(`/admin/tours/${tourId}/departures`);
+  redirect(`/admin/tours/${tourId}/departures?success=departure-updated`);
 }
 
 async function deleteDeparture(tourId: string, departureId: string) {
@@ -265,7 +288,7 @@ async function deleteDeparture(tourId: string, departureId: string) {
   });
 
   if (!existing || existing.tourId !== tourId) {
-    return;
+    redirect(`/admin/tours/${tourId}/departures?error=departure-not-found`);
   }
 
   if (existing._count.bookings > 0) {
@@ -310,6 +333,31 @@ export default async function AdminTourDeparturesPage({
 
   return (
     <div className="space-y-6 p-6">
+      <ToursToastHandler
+        success={
+          success === "departure-deleted"
+            ? "Departure deleted successfully."
+            : success === "departure-created"
+              ? "Departure created successfully."
+              : success === "departure-updated"
+                ? "Departure updated successfully."
+                : success
+        }
+        error={
+          error === "departure-has-bookings"
+            ? "Cannot delete this departure because it has existing bookings."
+            : error === "capacity-below-booked"
+              ? "Capacity cannot be lower than the number of already booked seats."
+              : error === "price-locked"
+                ? "Double / twin price cannot be changed because this departure already has bookings."
+                : error === "invalid-departure-data"
+                  ? "Please check the departure data and try again."
+                  : error === "departure-not-found"
+                    ? "Departure not found."
+                    : error
+        }
+      />
+
       <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
         <div>
           <h1 className="text-2xl font-bold">Manage Departures</h1>
@@ -319,52 +367,27 @@ export default async function AdminTourDeparturesPage({
         </div>
 
         <div className="flex gap-3">
-          <a
+          <Link
             href={`/admin/tours/${tour.id}/edit`}
             className="text-sm underline underline-offset-4"
           >
             Edit Tour
-          </a>
+          </Link>
 
-          <a
+          <Link
             href="/admin/tours"
             className="text-sm underline underline-offset-4"
           >
             Back to Tours
-          </a>
+          </Link>
         </div>
       </div>
-
-      {success === "departure-deleted" && (
-        <div className="rounded-md border border-green-200 bg-green-50 p-4 text-sm text-green-800">
-          Departure deleted successfully.
-        </div>
-      )}
-
-      {error === "departure-has-bookings" && (
-        <div className="rounded-md border border-red-200 bg-red-50 p-4 text-sm text-red-800">
-          Cannot delete this departure because it has existing bookings.
-        </div>
-      )}
-
-      {error === "capacity-below-booked" && (
-        <div className="rounded-md border border-red-200 bg-red-50 p-4 text-sm text-red-800">
-          Capacity cannot be lower than the number of already booked seats.
-        </div>
-      )}
-
-      {error === "price-locked" && (
-        <div className="rounded-md border border-red-200 bg-red-50 p-4 text-sm text-red-800">
-          Price cannot be changed because this departure already has bookings.
-        </div>
-      )}
 
       <section className="rounded-lg border bg-white p-6">
         <div className="mb-4">
           <h2 className="text-lg font-semibold">Add Departure</h2>
           <p className="text-sm text-muted-foreground">
-            Create a new departure date for this tour. Price should be entered
-            as price per person in double room.
+            Create a new departure date for this tour.
           </p>
         </div>
 
@@ -407,8 +430,14 @@ export default async function AdminTourDeparturesPage({
                       {formatDate(departure.date)}
                     </h3>
                     <p className="text-sm text-muted-foreground">
-                      {getSeasonLabel(departure.season)} ·{" "}
-                      {formatCurrency(Number(departure.price))}
+                      {getSeasonLabel(departure.season)} · Double/Twin:{" "}
+                      {formatCurrency(Number(departure.priceDouble))}
+                      {departure.singleSupplement != null && (
+                        <> · Single Suppl.: {formatCurrency(Number(departure.singleSupplement))}</>
+                      )}
+                      {departure.tripleReduction != null && (
+                        <> · Triple Red.: {formatCurrency(Number(departure.tripleReduction))}</>
+                      )}
                     </p>
                   </div>
 
@@ -478,22 +507,27 @@ export default async function AdminTourDeparturesPage({
 
                   <div>
                     <label
-                      htmlFor={`price-${departure.id}`}
+                      htmlFor={`priceDouble-${departure.id}`}
                       className="text-sm font-medium"
                     >
-                      Price per Person in Double Room
+                      Double / Twin Price
                     </label>
                     <input
-                      id={`price-${departure.id}`}
-                      name="price"
+                      id={`priceDouble-${departure.id}`}
+                      name="priceDouble"
                       type="number"
                       min="0"
                       step="0.01"
                       required
-                      defaultValue={Number(departure.price)}
+                      defaultValue={Number(departure.priceDouble)}
                       disabled={hasBookings}
                       className="mt-1 w-full rounded border p-2 disabled:bg-gray-100 disabled:text-gray-500"
                     />
+                    {hasBookings && (
+                      <p className="mt-1 text-xs text-red-500">
+                        Price locked — bookings already exist.
+                      </p>
+                    )}
                   </div>
 
                   <div>
@@ -518,6 +552,42 @@ export default async function AdminTourDeparturesPage({
 
                   <div>
                     <label
+                      htmlFor={`singleSupplement-${departure.id}`}
+                      className="text-sm font-medium"
+                    >
+                      Single Supplement
+                    </label>
+                    <input
+                      id={`singleSupplement-${departure.id}`}
+                      name="singleSupplement"
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      defaultValue={departure.singleSupplement ?? ""}
+                      className="mt-1 w-full rounded border p-2"
+                    />
+                  </div>
+
+                  <div>
+                    <label
+                      htmlFor={`tripleReduction-${departure.id}`}
+                      className="text-sm font-medium"
+                    >
+                      Triple Reduction
+                    </label>
+                    <input
+                      id={`tripleReduction-${departure.id}`}
+                      name="tripleReduction"
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      defaultValue={departure.tripleReduction ?? ""}
+                      className="mt-1 w-full rounded border p-2"
+                    />
+                  </div>
+
+                  <div>
+                    <label
                       htmlFor={`capacity-${departure.id}`}
                       className="text-sm font-medium"
                     >
@@ -536,17 +606,19 @@ export default async function AdminTourDeparturesPage({
 
                   <div>
                     <label
-                      htmlFor={`booked-info-${departure.id}`}
+                      htmlFor={`bookedSeats-${departure.id}`}
                       className="text-sm font-medium"
                     >
                       Booked Seats
                     </label>
-                    <div
-                      id={`booked-info-${departure.id}`}
-                      className="mt-1 rounded border bg-gray-50 p-2 text-sm text-gray-700"
-                    >
-                      {departure.bookedSeats} booked / {departure.capacity} capacity
-                    </div>
+                    <input
+                      id={`bookedSeats-${departure.id}`}
+                      name="bookedSeats"
+                      type="number"
+                      min="0"
+                      defaultValue={departure.bookedSeats}
+                      className="mt-1 w-full rounded border p-2"
+                    />
                   </div>
 
                   <div>

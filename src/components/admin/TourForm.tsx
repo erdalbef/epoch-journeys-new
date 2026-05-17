@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import Image from "next/image";
 import type { PricingType, RoomType } from "@prisma/client";
 import PricingTierPresetHelper from "@/components/admin/PricingTierPresetHelper";
 
@@ -60,10 +61,37 @@ type TourFormValues = {
   }>;
 };
 
+type InitialImages = {
+  mainImageUrl?: string | null;
+  imageUrl2?: string | null;
+  imageUrl3?: string | null;
+  imageUrl4?: string | null;
+  mapImageUrl?: string | null;
+  brochureUrl?: string | null;
+};
+
 type TourFormProps = {
   action: (formData: FormData) => Promise<void>;
   mode?: "create" | "edit";
   initialValues?: TourFormValues;
+  initialImages?: InitialImages;
+};
+
+type PreviewState = {
+  main: string | null;
+  image2: string | null;
+  image3: string | null;
+  image4: string | null;
+  map: string | null;
+};
+
+type DeleteFlagsState = {
+  mainImage: boolean;
+  image2: boolean;
+  image3: boolean;
+  image4: boolean;
+  mapImage: boolean;
+  brochure: boolean;
 };
 
 const pricingTypeOptions: Array<{
@@ -97,32 +125,6 @@ const pricingTypeOptions: Array<{
     help: "Quote-based private tour. No instant selling price is required.",
   },
 ];
-
-function joinArray(arr?: string[] | null): string {
-  if (!arr || arr.length === 0) return "";
-  return arr.join(", ");
-}
-
-function normalizeCommaList(value: string): string {
-  return value
-    .split(",")
-    .map((item) => item.trim())
-    .filter(Boolean)
-    .join(", ");
-}
-
-function appendPreset(current: string, preset: string) {
-  const existing = current
-    .split(",")
-    .map((item) => item.trim())
-    .filter(Boolean);
-
-  if (existing.includes(preset)) {
-    return current;
-  }
-
-  return normalizeCommaList([...existing, preset].join(", "));
-}
 
 const highlightPresets = [
   "Biblical sites",
@@ -170,10 +172,86 @@ const accommodationPresets = [
   "Double / twin room basis",
 ];
 
+function joinArray(arr?: string[] | null): string {
+  if (!arr || arr.length === 0) return "";
+  return arr.join(", ");
+}
+
+function normalizeCommaList(value: string): string {
+  return value
+    .split(",")
+    .map((item) => item.trim())
+    .filter(Boolean)
+    .join(", ");
+}
+
+function appendPreset(current: string, preset: string) {
+  const existing = current
+    .split(",")
+    .map((item) => item.trim())
+    .filter(Boolean);
+
+  if (existing.includes(preset)) {
+    return current;
+  }
+
+  return normalizeCommaList([...existing, preset].join(", "));
+}
+
+function renderPreviewImage(src: string | null, alt: string, className: string) {
+  if (!src) return null;
+
+  return (
+    <Image
+      src={src}
+      alt={alt}
+      width={800}
+      height={400}
+      className={className}
+      unoptimized={src.startsWith("blob:")}
+    />
+  );
+}
+
+const galleryFieldConfig: Array<{
+  inputName: "image2" | "image3" | "image4";
+  previewKey: "image2" | "image3" | "image4";
+  initialImageKey: "imageUrl2" | "imageUrl3" | "imageUrl4";
+  deleteKey: "image2" | "image3" | "image4";
+  label: string;
+  alt: string;
+}> = [
+  {
+    inputName: "image2",
+    previewKey: "image2",
+    initialImageKey: "imageUrl2",
+    deleteKey: "image2",
+    label: "Gallery Image 1",
+    alt: "Gallery image 1 preview",
+  },
+  {
+    inputName: "image3",
+    previewKey: "image3",
+    initialImageKey: "imageUrl3",
+    deleteKey: "image3",
+    label: "Gallery Image 2",
+    alt: "Gallery image 2 preview",
+  },
+  {
+    inputName: "image4",
+    previewKey: "image4",
+    initialImageKey: "imageUrl4",
+    deleteKey: "image4",
+    label: "Gallery Image 3",
+    alt: "Gallery image 3 preview",
+  },
+];
+
 export default function TourForm({
   action,
   mode = "create",
   initialValues,
+  initialImages,
 }: TourFormProps) {
   const [pricingType, setPricingType] = useState<PricingType>(
     initialValues?.pricingType ?? "FIXED_GROUP"
@@ -217,6 +295,23 @@ export default function TourForm({
       : []
   );
 
+  const [preview, setPreview] = useState<PreviewState>({
+    main: initialImages?.mainImageUrl || null,
+    image2: initialImages?.imageUrl2 || null,
+    image3: initialImages?.imageUrl3 || null,
+    image4: initialImages?.imageUrl4 || null,
+    map: initialImages?.mapImageUrl || null,
+  });
+
+  const [deleteFlags, setDeleteFlags] = useState<DeleteFlagsState>({
+    mainImage: false,
+    image2: false,
+    image3: false,
+    image4: false,
+    mapImage: false,
+    brochure: false,
+  });
+
   const privatePricingJson = useMemo(
     () => JSON.stringify(privatePricing),
     [privatePricing]
@@ -237,6 +332,57 @@ export default function TourForm({
 
   const isQuoteDriven =
     pricingType === "GROUP_BASED" || pricingType === "FIT_DYNAMIC";
+
+  function handlePreview(
+    file: File | null,
+    key: keyof PreviewState,
+    deleteKey?: keyof DeleteFlagsState
+  ) {
+    if (!file) return;
+
+    const url = URL.createObjectURL(file);
+
+    setPreview((prev) => ({
+      ...prev,
+      [key]: url,
+    }));
+
+    if (deleteKey) {
+      setDeleteFlags((prev) => ({
+        ...prev,
+        [deleteKey]: false,
+      }));
+    }
+  }
+
+  function toggleDelete(
+    key: keyof DeleteFlagsState,
+    previewKey?: keyof PreviewState,
+    restoreValue?: string | null
+  ) {
+    setDeleteFlags((prev) => {
+      const nextValue = !prev[key];
+
+      if (previewKey && nextValue) {
+        setPreview((prevPreview) => ({
+          ...prevPreview,
+          [previewKey]: null,
+        }));
+      }
+
+      if (previewKey && !nextValue) {
+        setPreview((prevPreview) => ({
+          ...prevPreview,
+          [previewKey]: restoreValue ?? null,
+        }));
+      }
+
+      return {
+        ...prev,
+        [key]: nextValue,
+      };
+    });
+  }
 
   const addTier = () => {
     setPricingTiers((prev) => [
@@ -306,7 +452,42 @@ export default function TourForm({
   };
 
   return (
-    <form action={action} className="space-y-8 rounded-lg border bg-white p-6">
+    <form
+      action={action}
+      encType="multipart/form-data"
+      className="space-y-8 rounded-lg border bg-white p-6"
+    >
+      <input
+        type="hidden"
+        name="deleteMainImage"
+        value={String(deleteFlags.mainImage)}
+      />
+      <input
+        type="hidden"
+        name="deleteImage2"
+        value={String(deleteFlags.image2)}
+      />
+      <input
+        type="hidden"
+        name="deleteImage3"
+        value={String(deleteFlags.image3)}
+      />
+      <input
+        type="hidden"
+        name="deleteImage4"
+        value={String(deleteFlags.image4)}
+      />
+      <input
+        type="hidden"
+        name="deleteMapImage"
+        value={String(deleteFlags.mapImage)}
+      />
+      <input
+        type="hidden"
+        name="deleteBrochure"
+        value={String(deleteFlags.brochure)}
+      />
+
       <section className="space-y-4">
         <div>
           <h2 className="text-lg font-semibold">Basic Information</h2>
@@ -904,6 +1085,182 @@ export default function TourForm({
               defaultValue={initialValues?.itinerary ?? ""}
               className="mt-1 w-full rounded border p-2"
               rows={8}
+            />
+          </div>
+        </div>
+      </section>
+
+      <section className="space-y-4">
+        <div>
+          <h2 className="text-lg font-semibold">Media & Files</h2>
+          <p className="text-sm text-muted-foreground">
+            Upload images and documents. You can preview before saving and remove
+            current media when editing.
+          </p>
+        </div>
+
+        <div className="grid gap-6 md:grid-cols-2">
+          <div className="md:col-span-2">
+            <label className="text-sm font-medium">Main Image</label>
+
+            {preview.main && !deleteFlags.mainImage &&
+              renderPreviewImage(
+                preview.main,
+                "Main image preview",
+                "mt-2 h-48 w-full rounded border object-cover"
+              )}
+
+            {mode === "edit" && initialImages?.mainImageUrl && (
+              <label className="mt-3 flex items-center gap-2 text-sm text-red-600">
+                <input
+                  type="checkbox"
+                  checked={deleteFlags.mainImage}
+                  onChange={() =>
+                    toggleDelete(
+                      "mainImage",
+                      "main",
+                      initialImages.mainImageUrl ?? null
+                    )
+                  }
+                />
+                Delete current main image
+              </label>
+            )}
+
+            <input
+              type="file"
+              name="mainImage"
+              accept="image/*"
+              className="mt-2 w-full rounded border p-2"
+              onChange={(e) =>
+                handlePreview(e.target.files?.[0] || null, "main", "mainImage")
+              }
+            />
+          </div>
+
+          {galleryFieldConfig.map((field) => (
+            <div key={field.inputName}>
+              <label className="text-sm font-medium">{field.label}</label>
+
+              {preview[field.previewKey] && !deleteFlags[field.deleteKey] &&
+                renderPreviewImage(
+                  preview[field.previewKey],
+                  field.alt,
+                  "mt-2 h-32 w-full rounded border object-cover"
+                )}
+
+              {mode === "edit" && initialImages?.[field.initialImageKey] && (
+                <label className="mt-3 flex items-center gap-2 text-sm text-red-600">
+                  <input
+                    type="checkbox"
+                    checked={deleteFlags[field.deleteKey]}
+                    onChange={() =>
+                      toggleDelete(
+                        field.deleteKey,
+                        field.previewKey,
+                        initialImages[field.initialImageKey] ?? null
+                      )
+                    }
+                  />
+                  Delete current {field.label.toLowerCase()}
+                </label>
+              )}
+
+              <input
+                type="file"
+                name={field.inputName}
+                accept="image/*"
+                className="mt-2 w-full rounded border p-2"
+                onChange={(e) =>
+                  handlePreview(
+                    e.target.files?.[0] || null,
+                    field.previewKey,
+                    field.deleteKey
+                  )
+                }
+              />
+            </div>
+          ))}
+
+          <div>
+            <label className="text-sm font-medium">Map Image</label>
+
+            {preview.map && !deleteFlags.mapImage &&
+              renderPreviewImage(
+                preview.map,
+                "Map preview",
+                "mt-2 h-32 w-full rounded border object-cover"
+              )}
+
+            {mode === "edit" && initialImages?.mapImageUrl && (
+              <label className="mt-3 flex items-center gap-2 text-sm text-red-600">
+                <input
+                  type="checkbox"
+                  checked={deleteFlags.mapImage}
+                  onChange={() =>
+                    toggleDelete(
+                      "mapImage",
+                      "map",
+                      initialImages.mapImageUrl ?? null
+                    )
+                  }
+                />
+                Delete current map image
+              </label>
+            )}
+
+            <input
+              type="file"
+              name="mapImage"
+              accept="image/*"
+              className="mt-2 w-full rounded border p-2"
+              onChange={(e) =>
+                handlePreview(e.target.files?.[0] || null, "map", "mapImage")
+              }
+            />
+          </div>
+
+          <div className="md:col-span-2">
+            <label className="text-sm font-medium">Brochure (PDF)</label>
+
+            {mode === "edit" && initialImages?.brochureUrl && !deleteFlags.brochure && (
+              <a
+                href={initialImages.brochureUrl}
+                target="_blank"
+                rel="noreferrer"
+                className="mt-2 block text-sm text-blue-600 underline"
+              >
+                View current brochure
+              </a>
+            )}
+
+            {mode === "edit" && initialImages?.brochureUrl && (
+              <label className="mt-3 flex items-center gap-2 text-sm text-red-600">
+                <input
+                  type="checkbox"
+                  checked={deleteFlags.brochure}
+                  onChange={() =>
+                    setDeleteFlags((prev) => ({
+                      ...prev,
+                      brochure: !prev.brochure,
+                    }))
+                  }
+                />
+                Delete current brochure
+              </label>
+            )}
+
+            <input
+              type="file"
+              name="brochure"
+              accept="application/pdf"
+              className="mt-2 w-full rounded border p-2"
+              onChange={() =>
+                setDeleteFlags((prev) => ({
+                  ...prev,
+                  brochure: false,
+                }))
+              }
             />
           </div>
         </div>

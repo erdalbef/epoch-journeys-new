@@ -1,7 +1,7 @@
-import { prisma } from "@/lib/prisma";
+import { db } from "@/lib/db"
 
 export async function getToursForQuoteForm() {
-  return prisma.tour.findMany({
+  return db.tour.findMany({
     where: {
       requiresQuote: true,
     },
@@ -13,18 +13,23 @@ export async function getToursForQuoteForm() {
       title: true,
       category: true,
     },
-  });
+  })
 }
 
 export async function getQuoteById(id: string) {
-  return prisma.quote.findUnique({
+  return db.quote.findUnique({
     where: { id },
     include: {
       items: {
-        orderBy: { sortOrder: "asc" },
+        orderBy: {
+          sortOrder: "asc",
+        },
       },
+
       activities: {
-        orderBy: { createdAt: "desc" },
+        orderBy: {
+          createdAt: "desc",
+        },
         include: {
           actor: {
             select: {
@@ -35,9 +40,69 @@ export async function getQuoteById(id: string) {
           },
         },
       },
-      tour: true,
-      departureDate: true,
-      request: true,
+
+      template: {
+        select: {
+          id: true,
+          title: true,
+          name: true,
+        },
+      },
+
+      tour: {
+        select: {
+          id: true,
+          title: true,
+          category: true,
+          subcategories: true,
+          tags: true,
+          destinations: true,
+          duration: true,
+          shortDescription: true,
+          overview: true,
+          brochureUrl: true,
+          mainImageUrl: true,
+          mapImageUrl: true,
+        },
+      },
+
+      departureDate: {
+        select: {
+          id: true,
+          date: true,
+          price: true,
+          status: true,
+          season: true,
+          earlyDiscountPercent: true,
+          earlyDiscountDeadline: true,
+        },
+      },
+
+      request: {
+        include: {
+          user: {
+            select: {
+              id: true,
+              email: true,
+              fullName: true,
+              travelAgency: true,
+              phone: true,
+              agentCode: true,
+            },
+          },
+        },
+      },
+
+      booking: {
+        select: {
+          id: true,
+          bookingReference: true,
+          bookingDisplayCode: true,
+          status: true,
+          paymentStatus: true,
+        },
+      },
+
       finalizedBy: {
         select: {
           id: true,
@@ -45,6 +110,7 @@ export async function getQuoteById(id: string) {
           email: true,
         },
       },
+
       sentBy: {
         select: {
           id: true,
@@ -53,5 +119,5 @@ export async function getQuoteById(id: string) {
         },
       },
     },
-  });
+  })
 }

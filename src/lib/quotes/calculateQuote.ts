@@ -1,14 +1,14 @@
-import { aggregatePerPersonBuckets } from './aggregatePerPersonBuckets';
-import { aggregateTotals } from './aggregateTotals';
-import { applyFreePolicy } from './applyFreePolicy';
-import { applyPricing } from './applyPricing';
-import { normalizeQuoteLineItem } from './normalizeQuoteLineItem';
+import { aggregatePerPersonBuckets } from './aggregatePerPersonBuckets'
+import { aggregateTotals } from './aggregateTotals'
+import { applyFreePolicy } from './applyFreePolicy'
+import { applyPricing } from './applyPricing'
+import { normalizeQuoteLineItem } from './normalizeQuoteLineItem'
+
 import {
   CalculationContext,
   PricingMode,
-  QuoteCalculationResult,
   QuoteInput,
-} from './types';
+} from './types'
 
 function buildContext(input: QuoteInput): CalculationContext {
   return {
@@ -21,61 +21,61 @@ function buildContext(input: QuoteInput): CalculationContext {
     nights: input.nights ?? null,
     durationDays: input.durationDays ?? null,
     pricingMode: (input.pricingMode ?? 'LAND_ONLY') as PricingMode,
-  };
+  }
 }
 
 function round2(value: number): number {
-  return Math.round(value * 100) / 100;
+  return Math.round(value * 100) / 100
 }
 
 function hasOccupancy(
   passengerCount: number | null,
   occupancyCost: number | null
 ): boolean {
-  return (passengerCount ?? 0) > 0 || occupancyCost !== null;
+  return (passengerCount ?? 0) > 0 || occupancyCost !== null
 }
 
-export function calculateQuote(input: QuoteInput): QuoteCalculationResult {
-  const context = buildContext(input);
+export function calculateQuote(input: QuoteInput) {
+  const context = buildContext(input)
 
   const normalizedRows = input.lineItems
     .map((row) => normalizeQuoteLineItem(row, context))
-    .filter((row): row is NonNullable<typeof row> => Boolean(row));
+    .filter((row): row is NonNullable<typeof row> => Boolean(row))
 
-  const totals = aggregateTotals(normalizedRows);
-  const buckets = aggregatePerPersonBuckets(normalizedRows);
+  const totals = aggregateTotals(normalizedRows)
+  const buckets = aggregatePerPersonBuckets(normalizedRows)
 
-  const baseUniformPerPerson = buckets.uniformPerPerson;
+  const baseUniformPerPerson = buckets.uniformPerPerson
 
   const doubleTwinAvailable = hasOccupancy(
     context.doubleTwinPassengers,
     buckets.occupancy.doubleTwin
-  );
+  )
 
   const singleAvailable = hasOccupancy(
     context.singlePassengers,
     buckets.occupancy.single
-  );
+  )
 
   const tripleAvailable = hasOccupancy(
     context.triplePassengers,
     buckets.occupancy.triple
-  );
+  )
 
   const baseDoubleTwinPerPerson =
     doubleTwinAvailable && baseUniformPerPerson !== null
       ? round2(baseUniformPerPerson + (buckets.occupancy.doubleTwin ?? 0))
-      : null;
+      : null
 
   const baseSinglePerPerson =
     singleAvailable && baseUniformPerPerson !== null
       ? round2(baseUniformPerPerson + (buckets.occupancy.single ?? 0))
-      : null;
+      : null
 
   const baseTriplePerPerson =
     tripleAvailable && baseUniformPerPerson !== null
       ? round2(baseUniformPerPerson + (buckets.occupancy.triple ?? 0))
-      : null;
+      : null
 
   const freeAdjustedRaw = applyFreePolicy({
     baseUniformPerPerson,
@@ -84,14 +84,14 @@ export function calculateQuote(input: QuoteInput): QuoteCalculationResult {
     payingPassengers: context.payingPassengers,
     freeEnabled: input.freeEnabled ?? false,
     freeCalculationMethod: input.freeCalculationMethod ?? null,
-  });
+  })
 
   const freeAdjusted = {
     doubleTwin: doubleTwinAvailable ? freeAdjustedRaw.doubleTwin : null,
     single: singleAvailable ? freeAdjustedRaw.single : null,
     triple: tripleAvailable ? freeAdjustedRaw.triple : null,
     freeCostImpact: freeAdjustedRaw.freeCostImpact,
-  };
+  }
 
   const landOnly = applyPricing({
     doubleTwinNet: freeAdjusted.doubleTwin,
@@ -99,9 +99,9 @@ export function calculateQuote(input: QuoteInput): QuoteCalculationResult {
     tripleNet: freeAdjusted.triple,
     agencyCommissionPercent: input.agencyCommissionPercent ?? 0,
     epochMarkupPercent: input.epochMarkupPercent ?? 0,
-  });
+  })
 
-  const passengerFlightPerPerson = buckets.passengerFlightPerPerson ?? 0;
+  const passengerFlightPerPerson = buckets.passengerFlightPerPerson ?? 0
 
   const landAndAir = applyPricing({
     doubleTwinNet:
@@ -118,7 +118,7 @@ export function calculateQuote(input: QuoteInput): QuoteCalculationResult {
         : null,
     agencyCommissionPercent: input.agencyCommissionPercent ?? 0,
     epochMarkupPercent: input.epochMarkupPercent ?? 0,
-  });
+  })
 
   return {
     totals,
@@ -134,5 +134,8 @@ export function calculateQuote(input: QuoteInput): QuoteCalculationResult {
       landAndAir: context.pricingMode === 'LAND_ONLY' ? null : landAndAir,
     },
     normalizedRows,
-  };
+  }
 }
+
+// ✅ CRITICAL EXPORT (FIXES YOUR ERROR)
+export type QuoteCalculationResult = ReturnType<typeof calculateQuote>

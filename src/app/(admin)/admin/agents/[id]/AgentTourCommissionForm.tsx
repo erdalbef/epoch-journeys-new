@@ -1,204 +1,196 @@
 "use client";
 
-import { useState, useTransition } from "react";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
+import { useState } from "react";
+import { useRouter } from "next/navigation";
 
-type Tour = {
+type TourOption = {
   id: string;
   title: string;
 };
 
 type Props = {
   agentId: string;
-  tours: Tour[];
+  tours: TourOption[];
 };
 
-function parseOptionalNumber(value: string) {
-  const trimmed = value.trim();
-
-  if (trimmed === "") {
-    return null;
-  }
-
-  const parsed = Number(trimmed);
-  return Number.isNaN(parsed) ? NaN : parsed;
-}
-
-export function AgentTourCommissionForm({ agentId, tours }: Props) {
-  const [isPending, startTransition] = useTransition();
+export default function AgentTourCommissionForm({
+  agentId,
+  tours,
+}: Props) {
+  const router = useRouter();
 
   const [tourId, setTourId] = useState("");
-  const [commission, setCommission] = useState("");
+  const [commissionRate, setCommissionRate] = useState("");
   const [payoutPerPax, setPayoutPerPax] = useState("");
-
+  const [loading, setLoading] = useState(false);
+  const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [saved, setSaved] = useState(false);
 
-  function resetForm() {
-    setTourId("");
-    setCommission("");
-    setPayoutPerPax("");
-  }
+  async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
+    e.preventDefault();
 
-  function onSave() {
+    setLoading(true);
+    setMessage(null);
     setError(null);
-    setSaved(false);
 
-    if (!tourId) {
-      setError("Please select a tour.");
-      return;
-    }
+    try {
+      const parsedCommissionRate =
+        commissionRate.trim() === "" ? null : Number(commissionRate);
 
-    const parsedCommission = parseOptionalNumber(commission);
-    const parsedPayout = parseOptionalNumber(payoutPerPax);
+      const parsedPayoutPerPax =
+        payoutPerPax.trim() === "" ? null : Number(payoutPerPax);
 
-    if (Number.isNaN(parsedCommission)) {
-      setError("Commission must be a valid number.");
-      return;
-    }
+      if (
+        parsedCommissionRate !== null &&
+        (parsedCommissionRate < 0 || parsedCommissionRate > 100)
+      ) {
+        setError("Commission must be between 0 and 100.");
+        setLoading(false);
+        return;
+      }
 
-    if (Number.isNaN(parsedPayout)) {
-      setError("Payout per pax must be a valid number.");
-      return;
-    }
+      const commissionRateDecimal =
+        parsedCommissionRate === null ? null : parsedCommissionRate / 100;
 
-    if (
-      parsedCommission !== null &&
-      (parsedCommission < 0 || parsedCommission > 100)
-    ) {
-      setError("Commission must be between 0 and 100.");
-      return;
-    }
-
-    if (parsedPayout !== null && parsedPayout < 0) {
-      setError("Payout per pax cannot be negative.");
-      return;
-    }
-
-    if (parsedCommission === null && parsedPayout === null) {
-      setError("Enter either commission or payout per pax.");
-      return;
-    }
-
-    startTransition(async () => {
-      try {
-        const res = await fetch(`/api/admin/agents/${agentId}/tour-commissions`, {
+      const response = await fetch(
+        `/api/admin/agents/${agentId}/tour-commissions`,
+        {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
           },
           body: JSON.stringify({
-            tourId,
-            commissionRate:
-              parsedCommission === null ? null : parsedCommission / 100,
-            payoutPerPax: parsedPayout,
+            tourId: tourId || null,
+            commissionRate: commissionRateDecimal,
+            payoutPerPax: parsedPayoutPerPax,
           }),
-        });
-
-        const data = await res.json().catch(() => null);
-
-        if (!res.ok) {
-          setError(
-            typeof data?.error === "string"
-              ? data.error
-              : "Failed to save override."
-          );
-          return;
         }
+      );
 
-        setSaved(true);
-        resetForm();
-        window.location.reload();
-      } catch (err) {
-        console.error("AGENT_TOUR_COMMISSION_FORM_ERROR", err);
-        setError("Unexpected error. Please try again.");
+      let data: { success?: boolean; error?: string } = {};
+
+      try {
+        data = (await response.json()) as {
+          success?: boolean;
+          error?: string;
+        };
+      } catch {
+        setError("The server returned an invalid response.");
+        setLoading(false);
+        return;
       }
-    });
+
+      if (!response.ok) {
+        setError(data.error || "Failed to save commission.");
+        setLoading(false);
+        return;
+      }
+
+      setMessage(
+        tourId
+          ? "Tour commission override saved successfully."
+          : "General commission saved successfully."
+      );
+
+      setTourId("");
+      setCommissionRate("");
+      setPayoutPerPax("");
+
+      router.refresh();
+    } catch (err) {
+      console.error("COMMISSION_FORM_SUBMIT_ERROR", err);
+      setError("Something went wrong while saving the commission.");
+    } finally {
+      setLoading(false);
+    }
   }
 
   return (
-    <div className="space-y-4">
-      <div className="grid gap-2">
-        <label className="text-sm font-medium">Tour</label>
+    <form onSubmit={handleSubmit} className="space-y-4">
+      <div>
+        <label htmlFor="tourId" className="text-sm font-medium">
+          Commission Type
+        </label>
+
         <select
+          id="tourId"
           value={tourId}
-          onChange={(e) => {
-            setTourId(e.target.value);
-            setError(null);
-            setSaved(false);
-          }}
-          disabled={isPending}
-          className="w-full rounded-md border px-3 py-2 text-sm"
+          onChange={(e) => setTourId(e.target.value)}
+          className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-[#001F3F]"
         >
-          <option value="">Select a tour</option>
+          <option value="">General commission for this agent</option>
+
           {tours.map((tour) => (
             <option key={tour.id} value={tour.id}>
-              {tour.title}
+              Tour override: {tour.title}
             </option>
           ))}
         </select>
+
+        <p className="mt-1 text-xs text-muted-foreground">
+          Leave this as general commission unless this agent needs a special
+          commission for one specific tour.
+        </p>
       </div>
 
-      <div className="grid gap-4 md:grid-cols-2">
-        <div className="grid gap-2">
-          <label className="text-sm font-medium">Commission (%)</label>
-          <Input
-            type="number"
-            min="0"
-            max="100"
-            step="0.01"
-            value={commission}
-            onChange={(e) => {
-              setCommission(e.target.value);
-              setError(null);
-              setSaved(false);
-            }}
-            disabled={isPending}
-            placeholder="e.g. 12"
-          />
-        </div>
+      <div>
+        <label htmlFor="commissionRate" className="text-sm font-medium">
+          Commission Rate (%)
+        </label>
 
-        <div className="grid gap-2">
-          <label className="text-sm font-medium">Payout per Pax</label>
-          <Input
-            type="number"
-            min="0"
-            step="0.01"
-            value={payoutPerPax}
-            onChange={(e) => {
-              setPayoutPerPax(e.target.value);
-              setError(null);
-              setSaved(false);
-            }}
-            disabled={isPending}
-            placeholder="e.g. 50"
-          />
-        </div>
+        <input
+          id="commissionRate"
+          type="number"
+          min="0"
+          max="100"
+          step="1"
+          value={commissionRate}
+          onChange={(e) => setCommissionRate(e.target.value)}
+          placeholder="10"
+          className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-[#001F3F]"
+        />
+
+        <p className="mt-1 text-xs text-muted-foreground">
+          Enter percentage. Example: 10 for 10%.
+        </p>
       </div>
 
-      <p className="text-xs text-muted-foreground">
-        Use commission % for agencies / advisors. Use payout per pax for group
-        leader-style overrides. If both are entered, both will be saved.
-      </p>
+      <div>
+        <label htmlFor="payoutPerPax" className="text-sm font-medium">
+          Payout Per Pax
+        </label>
+
+        <input
+          id="payoutPerPax"
+          type="number"
+          min="0"
+          step="0.01"
+          value={payoutPerPax}
+          onChange={(e) => setPayoutPerPax(e.target.value)}
+          placeholder="Optional"
+          className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-[#001F3F]"
+        />
+      </div>
+
+      {message && (
+        <div className="rounded-lg border border-green-200 bg-green-50 px-3 py-2 text-sm text-green-700">
+          {message}
+        </div>
+      )}
 
       {error && (
-        <div className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+        <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
           {error}
         </div>
       )}
 
-      {saved && (
-        <div className="rounded-md border border-green-200 bg-green-50 px-3 py-2 text-sm text-green-700">
-          Override saved successfully.
-        </div>
-      )}
-
-      <div className="flex items-center gap-2">
-        <Button onClick={onSave} disabled={isPending}>
-          {isPending ? "Saving..." : "Save Override"}
-        </Button>
-      </div>
-    </div>
+      <button
+        type="submit"
+        disabled={loading}
+        className="rounded-lg bg-[#8B0000] px-4 py-2 text-sm font-medium text-white transition hover:bg-[#6f0000] disabled:cursor-not-allowed disabled:opacity-60"
+      >
+        {loading ? "Saving..." : "Save Commission"}
+      </button>
+    </form>
   );
 }

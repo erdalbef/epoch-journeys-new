@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { prisma } from "@/lib/prisma";
+import { db } from "@/lib/db";
 
 type Params = {
   params: Promise<{ tourId: string }>;
@@ -9,7 +9,7 @@ export async function GET(_req: NextRequest, { params }: Params) {
   try {
     const { tourId } = await params;
 
-    const departures = await prisma.departureDate.findMany({
+    const departures = await db.departureDate.findMany({
       where: { tourId },
       orderBy: { date: "asc" },
       select: {

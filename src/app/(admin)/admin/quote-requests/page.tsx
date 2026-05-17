@@ -1,31 +1,31 @@
-import Link from "next/link"
-import { db } from "@/lib/db"
+import Link from "next/link";
+import { db } from "@/lib/db";
 
 function formatDate(value: Date | string | null | undefined) {
-  if (!value) return "—"
+  if (!value) return "—";
 
-  const date = value instanceof Date ? value : new Date(value)
+  const date = value instanceof Date ? value : new Date(value);
 
-  if (Number.isNaN(date.getTime())) return "—"
+  if (Number.isNaN(date.getTime())) return "—";
 
   return new Intl.DateTimeFormat("en-GB", {
     day: "2-digit",
     month: "short",
     year: "numeric",
-  }).format(date)
+  }).format(date);
 }
 
 function formatMoney(amount: number | null | undefined, currency = "EUR") {
-  if (amount == null) return "—"
+  if (amount == null) return "—";
 
   try {
     return new Intl.NumberFormat("en-GB", {
       style: "currency",
       currency,
       maximumFractionDigits: 2,
-    }).format(amount)
+    }).format(amount);
   } catch {
-    return `${amount.toFixed(2)} ${currency}`
+    return `${amount.toFixed(2)} ${currency}`;
   }
 }
 
@@ -33,24 +33,24 @@ function badgeClasses(status: string) {
   switch (status) {
     case "NEW":
     case "DRAFT":
-      return "border-slate-200 bg-slate-100 text-slate-800"
+      return "border-slate-200 bg-slate-100 text-slate-800";
     case "IN_REVIEW":
     case "VIEWED":
-      return "border-amber-200 bg-amber-100 text-amber-800"
+      return "border-amber-200 bg-amber-100 text-amber-800";
     case "QUOTED":
     case "SENT":
-      return "border-blue-200 bg-blue-100 text-blue-800"
+      return "border-blue-200 bg-blue-100 text-blue-800";
     case "CONFIRMED":
     case "APPROVED":
     case "CONVERTED":
-      return "border-green-200 bg-green-100 text-green-800"
+      return "border-green-200 bg-green-100 text-green-800";
     case "REJECTED":
     case "CANCELLED":
-      return "border-red-200 bg-red-100 text-red-800"
+      return "border-red-200 bg-red-100 text-red-800";
     case "EXPIRED":
-      return "border-zinc-200 bg-zinc-100 text-zinc-700"
+      return "border-zinc-200 bg-zinc-100 text-zinc-700";
     default:
-      return "border-border bg-muted text-foreground"
+      return "border-border bg-muted text-foreground";
   }
 }
 
@@ -114,7 +114,7 @@ export default async function AdminQuoteRequestsPage() {
         },
       },
     },
-  })
+  });
 
   return (
     <div className="space-y-6 p-6">
@@ -124,7 +124,8 @@ export default async function AdminQuoteRequestsPage() {
             Quote Requests
           </h1>
           <p className="text-sm text-muted-foreground">
-            Review incoming custom tour requests, monitor quote progress, and open the active commercial offer.
+            Review incoming custom tour requests, monitor quote progress, and
+            open the active commercial offer.
           </p>
         </div>
       </div>
@@ -165,38 +166,38 @@ export default async function AdminQuoteRequestsPage() {
                     request.destination ||
                     (request.destinations.length > 0
                       ? request.destinations.join(", ")
-                      : "—")
+                      : "—");
 
                   const agencyText =
                     request.companyName ||
                     request.user.travelAgency ||
                     request.user.fullName ||
-                    "—"
+                    "—";
 
                   const paxText =
                     request.estimatedPax ??
-                    (((request.adults ?? 0) +
+                    ((request.adults ?? 0) +
                       (request.children ?? 0) +
-                      (request.infants ?? 0)) ||
-                    "—")
+                      (request.infants ?? 0) ||
+                      "—");
 
-                  const latestQuote = request.quotes[0] ?? null
-                  const activeQuote = request.selectedQuote ?? latestQuote
+                  const latestQuote = request.quotes[0] ?? null;
+                  const activeQuote = request.selectedQuote ?? latestQuote;
 
                   const quoteAmountText = activeQuote
                     ? formatMoney(activeQuote.totalAmount, activeQuote.currency)
-                    : "—"
+                    : "—";
 
                   const quoteLabel = activeQuote
                     ? activeQuote.quoteReference || `#${activeQuote.quoteNumber}`
-                    : null
+                    : null;
 
                   const requestDisplayName =
                     request.title ||
                     request.requestName ||
                     request.groupName ||
                     request.customerName ||
-                    "Untitled"
+                    "Untitled";
 
                   return (
                     <tr key={request.id} className="border-b last:border-0">
@@ -241,7 +242,6 @@ export default async function AdminQuoteRequestsPage() {
                       </td>
 
                       <td className="px-4 py-3 align-top">{request.requestType}</td>
-
                       <td className="px-4 py-3 align-top">{request.bookingType}</td>
 
                       <td className="px-4 py-3 align-top">
@@ -254,9 +254,7 @@ export default async function AdminQuoteRequestsPage() {
                       </td>
 
                       <td className="px-4 py-3 align-top">{agencyText}</td>
-
                       <td className="px-4 py-3 align-top">{destinationText}</td>
-
                       <td className="px-4 py-3 align-top">{paxText}</td>
 
                       <td className="px-4 py-3 align-top">
@@ -296,7 +294,7 @@ export default async function AdminQuoteRequestsPage() {
                         </div>
                       </td>
                     </tr>
-                  )
+                  );
                 })
               )}
             </tbody>
@@ -304,5 +302,5 @@ export default async function AdminQuoteRequestsPage() {
         </div>
       </div>
     </div>
-  )
+  );
 }

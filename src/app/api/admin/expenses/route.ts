@@ -1,172 +1,353 @@
-import { randomUUID } from "crypto";
-import fs from "fs/promises";
-import path from "path";
-import { ExpenseCategory, ExpensePaymentStatus, Role } from "@prisma/client";
-import { getServerSession } from "next-auth";
 import { NextResponse } from "next/server";
+import { getServerSession } from "next-auth";
+import {
+  ExpenseCategory,
+  ExpensePaymentStatus,
+  FinanceDirection,
+  FinanceSourceType,
+  FinanceTaxType,
+  Role,
+} from "@prisma/client";
 
 import { authOptions } from "@/lib/authOptions";
 import { db } from "@/lib/db";
-
-const ALLOWED_FILE_TYPES = [
-  "application/pdf",
-  "image/jpeg",
-  "image/png",
-  "image/webp",
-];
-
-const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10 MB
-
-function parseOptionalString(value: FormDataEntryValue | null) {
-  if (typeof value !== "string") return null;
-  const trimmed = value.trim();
-  return trimmed ? trimmed : null;
-}
-
-function parseRequiredString(value: FormDataEntryValue | null, fieldName: string) {
-  if (typeof value !== "string" || !value.trim()) {
-    throw new Error(`${fieldName} is required.`);
-  }
-  return value.trim();
-}
-
-function parsePositiveNumber(value: FormDataEntryValue | null, fieldName: string) {
-  if (typeof value !== "string" || !value.trim()) {
-    throw new Error(`${fieldName} is required.`);
-  }
-
-  const parsed = Number(value);
-
-  if (Number.isNaN(parsed) || parsed <= 0) {
-    throw new Error(`${fieldName} must be a positive number.`);
-  }
-
-  return parsed;
-}
-
-function parseDate(value: FormDataEntryValue | null, fieldName: string) {
-  if (typeof value !== "string" || !value.trim()) {
-    throw new Error(`${fieldName} is required.`);
-  }
-
-  const parsed = new Date(value);
-
-  if (Number.isNaN(parsed.getTime())) {
-    throw new Error(`${fieldName} is invalid.`);
-  }
-
-  return parsed;
-}
-
-function isExpenseCategory(value: string): value is ExpenseCategory {
-  return Object.values(ExpenseCategory).includes(value as ExpenseCategory);
-}
-
-function isExpensePaymentStatus(value: string): value is ExpensePaymentStatus {
-  return Object.values(ExpensePaymentStatus).includes(
-    value as ExpensePaymentStatus
-  );
-}
-
-async function saveReceiptFile(file: File) {
-  if (!ALLOWED_FILE_TYPES.includes(file.type)) {
-    throw new Error("Only PDF, JPG, PNG, and WEBP files are allowed.");
-  }
-
-  if (file.size > MAX_FILE_SIZE) {
-    throw new Error("File size must be 10MB or less.");
-  }
-
-  const bytes = await file.arrayBuffer();
-  const buffer = Buffer.from(bytes);
-
-  const uploadDir = path.join(process.cwd(), "public", "uploads", "expenses");
-  await fs.mkdir(uploadDir, { recursive: true });
-
-  const safeOriginalName = file.name.replace(/\s+/g, "-").replace(/[^a-zA-Z0-9.\-_]/g, "");
-  const fileName = `${Date.now()}-${randomUUID()}-${safeOriginalName}`;
-  const filePath = path.join(uploadDir, fileName);
-
-  await fs.writeFile(filePath, buffer);
-
-  return `/uploads/expenses/${fileName}`;
-}
 
 export async function POST(request: Request) {
   try {
     const session = await getServerSession(authOptions);
 
     if (!session?.user || session.user.role !== Role.ADMIN) {
-      return NextResponse.json({ error: "Unauthorized." }, { status: 401 });
+      return NextResponse.json(
+        { error: "Unauthorized" },
+        { status: 401 }
+      );
     }
 
     const formData = await request.formData();
 
-    const title = parseRequiredString(formData.get("title"), "Title");
-    const amount = parsePositiveNumber(formData.get("amount"), "Amount");
-    const expenseDate = parseDate(formData.get("expenseDate"), "Expense date");
+    const direction = String(
+      formData.get("direction") || "EXPENSE"
+    ).trim();
 
-    const currency =
-      parseOptionalString(formData.get("currency"))?.toUpperCase() || "EUR";
+    const sourceType = String(
+      formData.get("sourceType") || "INTERNAL"
+    ).trim();
 
-    const categoryValue = parseRequiredString(formData.get("category"), "Category");
-    if (!isExpenseCategory(categoryValue)) {
-      return NextResponse.json({ error: "Invalid expense category." }, { status: 400 });
+    const title = String(
+      formData.get("title") || ""
+    ).trim();
+
+    const description = String(
+      formData.get("description") || ""
+    ).trim();
+
+    const amount = Number(
+      formData.get("amount") || 0
+    );
+
+    const currency = String(
+      formData.get("currency") || "EUR"
+    ).trim();
+
+    const category = String(
+      formData.get("category") || ""
+    ).trim();
+
+    const paymentStatus = String(
+      formData.get("paymentStatus") || "PENDING"
+    ).trim();
+
+    const vendorName = String(
+      formData.get("vendorName") || ""
+    ).trim();
+
+    const expenseDateValue = String(
+      formData.get("expenseDate") || ""
+    ).trim();
+
+    const paidAtValue = String(
+      formData.get("paidAt") || ""
+    ).trim();
+
+    const receiptUrl = String(
+      formData.get("receiptUrl") || ""
+    ).trim();
+
+    const notes = String(
+      formData.get("notes") || ""
+    ).trim();
+
+    const bookingIdRaw = String(
+      formData.get("bookingId") || ""
+    ).trim();
+
+    const tourIdRaw = String(
+      formData.get("tourId") || ""
+    ).trim();
+
+    const departureDateIdRaw = String(
+      formData.get("departureDateId") || ""
+    ).trim();
+
+    const partnerCompanyIdRaw = String(
+      formData.get("partnerCompanyId") || ""
+    ).trim();
+
+    const taxType = String(
+      formData.get("taxType") || "NONE"
+    ).trim();
+
+    const taxRate = Number(
+      formData.get("taxRate") || 0
+    );
+
+    const taxAmount = Number(
+      formData.get("taxAmount") || 0
+    );
+
+    const netAmount = Number(
+      formData.get("netAmount") || 0
+    );
+
+    const grossAmount = Number(
+      formData.get("grossAmount") || 0
+    );
+
+    const agentNameSnapshot = String(
+      formData.get("agentNameSnapshot") || ""
+    ).trim();
+
+    const partnerCompanyName = String(
+      formData.get("partnerCompanyName") || ""
+    ).trim();
+
+    const tourLeaderName = String(
+      formData.get("tourLeaderName") || ""
+    ).trim();
+
+    const customPackageName = String(
+      formData.get("customPackageName") || ""
+    ).trim();
+
+    const groupName = String(
+      formData.get("groupName") || ""
+    ).trim();
+
+    if (!title) {
+      return NextResponse.json(
+        {
+          error: "Title is required.",
+        },
+        {
+          status: 400,
+        }
+      );
     }
 
-    const paymentStatusValue =
-      parseOptionalString(formData.get("paymentStatus")) || "PENDING";
-
-    if (!isExpensePaymentStatus(paymentStatusValue)) {
-      return NextResponse.json({ error: "Invalid payment status." }, { status: 400 });
+    if (!amount || amount <= 0) {
+      return NextResponse.json(
+        {
+          error: "Amount must be greater than zero.",
+        },
+        {
+          status: 400,
+        }
+      );
     }
 
-    const description = parseOptionalString(formData.get("description"));
-    const vendorName = parseOptionalString(formData.get("vendorName"));
-    const notes = parseOptionalString(formData.get("notes"));
-    const bookingId = parseOptionalString(formData.get("bookingId"));
-    const tourId = parseOptionalString(formData.get("tourId"));
-    const departureDateId = parseOptionalString(formData.get("departureDateId"));
-
-    const paidAtRaw = parseOptionalString(formData.get("paidAt"));
-    const paidAt = paidAtRaw ? new Date(paidAtRaw) : null;
-
-    if (paidAt && Number.isNaN(paidAt.getTime())) {
-      return NextResponse.json({ error: "Paid date is invalid." }, { status: 400 });
+    if (
+      !Object.values(FinanceDirection).includes(
+        direction as FinanceDirection
+      )
+    ) {
+      return NextResponse.json(
+        {
+          error: "Invalid finance direction.",
+        },
+        {
+          status: 400,
+        }
+      );
     }
 
-    let receiptUrl: string | null = null;
-    const receiptFile = formData.get("receipt");
-
-    if (receiptFile instanceof File && receiptFile.size > 0) {
-      receiptUrl = await saveReceiptFile(receiptFile);
+    if (
+      !Object.values(FinanceSourceType).includes(
+        sourceType as FinanceSourceType
+      )
+    ) {
+      return NextResponse.json(
+        {
+          error: "Invalid source type.",
+        },
+        {
+          status: 400,
+        }
+      );
     }
 
-    const expense = await db.expense.create({
+    if (
+      !Object.values(ExpenseCategory).includes(
+        category as ExpenseCategory
+      )
+    ) {
+      return NextResponse.json(
+        {
+          error: "Invalid category.",
+        },
+        {
+          status: 400,
+        }
+      );
+    }
+
+    if (
+      !Object.values(ExpensePaymentStatus).includes(
+        paymentStatus as ExpensePaymentStatus
+      )
+    ) {
+      return NextResponse.json(
+        {
+          error: "Invalid payment status.",
+        },
+        {
+          status: 400,
+        }
+      );
+    }
+
+    if (
+      !Object.values(FinanceTaxType).includes(
+        taxType as FinanceTaxType
+      )
+    ) {
+      return NextResponse.json(
+        {
+          error: "Invalid tax type.",
+        },
+        {
+          status: 400,
+        }
+      );
+    }
+
+    await db.expense.create({
       data: {
+        direction:
+          direction as FinanceDirection,
+
+        sourceType:
+          sourceType as FinanceSourceType,
+
         title,
-        description,
+
+        description:
+          description || null,
+
         amount,
+
         currency,
-        category: categoryValue,
-        paymentStatus: paymentStatusValue,
-        vendorName,
-        expenseDate,
-        paidAt,
-        receiptUrl,
-        notes,
-        bookingId,
-        tourId,
-        departureDateId,
-        createdById: session.user.id,
+
+        category:
+          category as ExpenseCategory,
+
+        paymentStatus:
+          paymentStatus as ExpensePaymentStatus,
+
+        vendorName:
+          vendorName || null,
+
+        expenseDate:
+          expenseDateValue
+            ? new Date(
+                `${expenseDateValue}T00:00:00.000Z`
+              )
+            : new Date(),
+
+        paidAt:
+          paidAtValue
+            ? new Date(
+                `${paidAtValue}T00:00:00.000Z`
+              )
+            : null,
+
+        receiptUrl:
+          receiptUrl || null,
+
+        notes:
+          notes || null,
+
+        bookingId:
+          bookingIdRaw &&
+          bookingIdRaw !== "NONE"
+            ? bookingIdRaw
+            : null,
+
+        tourId:
+          tourIdRaw &&
+          tourIdRaw !== "NONE"
+            ? tourIdRaw
+            : null,
+
+        departureDateId:
+          departureDateIdRaw &&
+          departureDateIdRaw !== "NONE"
+            ? departureDateIdRaw
+            : null,
+
+        partnerCompanyId:
+          partnerCompanyIdRaw &&
+          partnerCompanyIdRaw !== "NONE"
+            ? partnerCompanyIdRaw
+            : null,
+
+        taxType:
+          taxType as FinanceTaxType,
+
+        taxRate,
+
+        taxAmount,
+
+        netAmount,
+
+        grossAmount,
+
+        agentNameSnapshot:
+          agentNameSnapshot || null,
+
+        partnerCompanyName:
+          partnerCompanyName || null,
+
+        tourLeaderName:
+          tourLeaderName || null,
+
+        customPackageName:
+          customPackageName || null,
+
+        groupName:
+          groupName || null,
+
+        createdById:
+          session.user.id,
       },
     });
 
-    return NextResponse.json({ success: true, expenseId: expense.id });
+    return NextResponse.json({
+      success: true,
+    });
   } catch (error) {
-    const message =
-      error instanceof Error ? error.message : "Failed to create expense.";
+    console.error(
+      "CREATE_FINANCE_ENTRY_ERROR",
+      error
+    );
 
-    return NextResponse.json({ error: message }, { status: 400 });
+    return NextResponse.json(
+      {
+        error:
+          "Failed to create finance entry.",
+      },
+      {
+        status: 500,
+      }
+    );
   }
 }

@@ -1,67 +1,41 @@
-import { db } from "@/lib/db";
-import { notFound } from "next/navigation";
 import Link from "next/link";
-import { getServerSession } from "next-auth";
-import { authOptions } from "@/lib/authOptions";
-import { AgentCommercialForm } from "./AgentCommercialForm";
-import { AdminAgentActions } from "./AdminAgentActions";
-import { AgentTourCommissionForm } from "./AgentTourCommissionForm";
+import { notFound } from "next/navigation";
+import { db } from "@/lib/db";
 
 type PageProps = {
-  params: {
-    id: string;
-  };
+  params: Promise<{ id: string }>;
 };
 
-function formatPartnerType(partnerType: string | null) {
-  if (!partnerType) return "-";
-
-  switch (partnerType) {
-    case "TOUR_OPERATOR":
-      return "Tour Operator";
-    case "TRAVEL_AGENCY":
-      return "Travel Agency";
-    case "TRAVEL_EXPERT":
-      return "Travel Advisor / Expert";
-    case "GROUP_LEADER":
-      return "Group Leader";
-    default:
-      return partnerType;
-  }
+function formatDate(value: Date) {
+  return new Intl.DateTimeFormat("en-GB", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+  }).format(value);
 }
 
 export default async function AdminAgentDetailPage({ params }: PageProps) {
-  const session = await getServerSession(authOptions);
-
-  if (!session?.user || session.user.role !== "ADMIN") {
-    notFound();
-  }
-
-  const { id } = params;
-
-  if (!id) {
-    notFound();
-  }
+  const { id } = await params;
 
   const agent = await db.user.findUnique({
     where: { id },
     select: {
       id: true,
+      fullName: true,
       email: true,
+      phone: true,
       role: true,
       approved: true,
-      status: true,
-      partnerType: true,
       commissionRate: true,
-      payoutPerPax: true,
-      fullName: true,
+      createdAt: true,
       travelAgency: true,
-      phone: true,
       website: true,
       membership: true,
       notes: true,
-      createdAt: true,
-      updatedAt: true,
+      status: true,
+      partnerType: true,
+      agentCode: true,
+      agentLogoUrl: true,
     },
   });
 
@@ -69,124 +43,117 @@ export default async function AdminAgentDetailPage({ params }: PageProps) {
     notFound();
   }
 
-  const tours = await db.tour.findMany({
-    where: { isPublished: true },
-    select: {
-      id: true,
-      title: true,
-    },
-    orderBy: { title: "asc" },
-  });
-
-  const overrides = await db.agentTourCommission.findMany({
-    where: { agentId: agent.id },
-    include: {
-      tour: true,
-    },
-  });
+  const displayName = agent.fullName || agent.email || "Agent";
 
   return (
-    <div className="space-y-8">
-      {/* HEADER */}
-      <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-        <div>
-          <h1 className="text-2xl font-semibold">Partner Detail</h1>
-          <p className="text-sm text-muted-foreground">
-            Review account details and update commercial settings.
-          </p>
-        </div>
+    <div className="space-y-6">
+      <div className="overflow-hidden rounded-2xl border bg-white shadow-sm">
+        <div className="border-b bg-linear-to-r from-[#001F3F] via-slate-900 to-[#8B0000] px-6 py-6 text-white">
+          <div className="flex flex-col gap-5 lg:flex-row lg:items-start lg:justify-between">
+            <div className="flex items-start gap-4">
+              <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-white/10 text-xl font-bold">
+                {displayName.slice(0, 1).toUpperCase()}
+              </div>
 
-        <div className="flex items-center gap-3">
-          <Link
-            href="/admin/agents"
-            className="text-sm underline underline-offset-4"
-          >
-            Back to Partners
-          </Link>
+              <div>
+                <h1 className="text-2xl font-bold">{displayName}</h1>
+                <p className="text-sm text-white/80">{agent.email}</p>
 
-          <AdminAgentActions
-            agentId={agent.id}
-            approved={agent.approved}
-          />
-        </div>
-      </div>
+                <div className="mt-2 flex flex-wrap gap-2">
+                  <span className="rounded-full bg-white/10 px-3 py-1 text-xs">
+                    {agent.approved ? "Approved" : "Pending"}
+                  </span>
 
-      {/* ACCOUNT INFO */}
-      <section className="rounded-lg border bg-white p-6">
-        <h2 className="mb-4 text-lg font-semibold">Account Information</h2>
+                  <span className="rounded-full bg-white/10 px-3 py-1 text-xs">
+                    Role: {agent.role}
+                  </span>
 
-        <div className="grid gap-4 md:grid-cols-2">
-          <Field label="Email" value={agent.email} />
-          <Field label="Role" value={agent.role} />
-          <Field label="Approved" value={agent.approved ? "Yes" : "No"} />
-          <Field label="Status" value={agent.status} />
-          <Field label="Full Name" value={agent.fullName || "-"} />
-          <Field
-            label="Partner Type"
-            value={formatPartnerType(agent.partnerType)}
-          />
-          <Field label="Travel Agency" value={agent.travelAgency || "-"} />
-          <Field label="Phone" value={agent.phone || "-"} />
-          <Field label="Website" value={agent.website || "-"} />
-          <Field label="Membership" value={agent.membership || "-"} />
-        </div>
-      </section>
+                  {agent.partnerType && (
+                    <span className="rounded-full bg-white/10 px-3 py-1 text-xs">
+                      {agent.partnerType}
+                    </span>
+                  )}
 
-      {/* DEFAULT COMMISSION */}
-      <section className="rounded-lg border bg-white p-6">
-        <h2 className="mb-4 text-lg font-semibold">
-          Default Commercial Settings
-        </h2>
-
-        <AgentCommercialForm
-          agentId={agent.id}
-          partnerType={agent.partnerType}
-          commissionRate={agent.commissionRate}
-          payoutPerPax={agent.payoutPerPax}
-        />
-      </section>
-
-      {/* TOUR OVERRIDES */}
-      <section className="rounded-lg border bg-white p-6">
-        <h2 className="mb-4 text-lg font-semibold">
-          Tour Commission Overrides
-        </h2>
-
-        <AgentTourCommissionForm agentId={agent.id} tours={tours} />
-
-        <div className="mt-6 space-y-3">
-          {overrides.length === 0 ? (
-            <p className="text-sm text-muted-foreground">
-              No overrides defined.
-            </p>
-          ) : (
-            overrides.map((o) => (
-              <div
-                key={o.id}
-                className="flex justify-between items-center border rounded p-3 text-sm"
-              >
-                <div>
-                  <div className="font-medium">{o.tour.title}</div>
-                  <div className="text-muted-foreground">
-                    {o.commissionRate
-                      ? `Commission: ${o.commissionRate * 100}%`
-                      : `Payout: €${o.payoutPerPax}`}
-                  </div>
+                  {agent.commissionRate != null && (
+                    <span className="rounded-full bg-[#FFD8A8] px-3 py-1 text-xs font-semibold text-[#8B0000]">
+                      {agent.commissionRate}%
+                    </span>
+                  )}
                 </div>
               </div>
-            ))
-          )}
-        </div>
-      </section>
-    </div>
-  );
-}
+            </div>
 
-function Field({ label, value }: { label: string; value: string }) {
-  return (
-    <div>
-      <div className="text-sm font-medium text-muted-foreground">{label}</div>
-      <div className="text-sm">{value}</div>
+            <div className="flex gap-3">
+              <Link
+                href={`/admin/agents/${agent.id}/commissions`}
+                className="rounded bg-white px-4 py-2 text-sm font-semibold text-[#001F3F]"
+              >
+                Commissions
+              </Link>
+
+              <Link
+                href="/admin/agents"
+                className="rounded border px-4 py-2 text-sm text-white"
+              >
+                Back
+              </Link>
+            </div>
+          </div>
+        </div>
+
+        <div className="grid gap-6 p-6 xl:grid-cols-3">
+          <section className="space-y-4 xl:col-span-2">
+            <div className="rounded-xl border bg-slate-50 p-5">
+              <h2 className="mb-4 text-lg font-semibold">Profile</h2>
+
+              <div className="grid gap-4 md:grid-cols-2">
+                <div>Full Name: {agent.fullName || "—"}</div>
+                <div>Email: {agent.email}</div>
+                <div>Phone: {agent.phone || "—"}</div>
+                <div>Joined: {formatDate(agent.createdAt)}</div>
+                <div>Status: {agent.status}</div>
+                <div>Membership: {agent.membership || "—"}</div>
+              </div>
+            </div>
+
+            <div className="rounded-xl border bg-white p-5">
+              <h2 className="mb-4 text-lg font-semibold">
+                Business Information
+              </h2>
+
+              <div className="grid gap-4 md:grid-cols-2">
+                <div>Travel Agency: {agent.travelAgency || "—"}</div>
+                <div>Partner Type: {agent.partnerType}</div>
+                <div>Website: {agent.website || "—"}</div>
+                <div>Agent Code: {agent.agentCode || "—"}</div>
+              </div>
+            </div>
+
+            <div className="rounded-xl border bg-white p-5">
+              <h2 className="mb-4 text-lg font-semibold">Notes</h2>
+              <div>{agent.notes || "No notes"}</div>
+            </div>
+          </section>
+
+          <aside className="space-y-4">
+            <div className="rounded-xl border bg-white p-5">
+              <h2 className="mb-4 text-lg font-semibold">Commission</h2>
+
+              <div className="text-3xl font-bold">
+                {agent.commissionRate != null
+                  ? `${agent.commissionRate}%`
+                  : "—"}
+              </div>
+            </div>
+
+            <div className="rounded-xl border bg-white p-5">
+              <h2 className="mb-4 text-lg font-semibold">Agent Info</h2>
+
+              <div>Logo: {agent.agentLogoUrl || "—"}</div>
+            </div>
+          </aside>
+        </div>
+      </div>
     </div>
   );
 }

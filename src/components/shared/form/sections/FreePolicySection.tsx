@@ -3,11 +3,16 @@
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Switch } from '@/components/ui/switch'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
 
-export type FreeMethod = 'SPREAD_ACROSS_PAYING_PASSENGERS' | 'ABSORBED_INTERNALLY'
+export type FreeMethod =
+  | 'SPREAD_ACROSS_PAYING_PASSENGERS'
+  | 'ABSORBED_INTERNALLY'
 
 export type FreePolicyValues = {
   enabled: boolean
+  freePer: number   // ✅ CRITICAL
   method: FreeMethod
 }
 
@@ -23,26 +28,49 @@ export function FreePolicySection({ value, onChange }: Props) {
         <CardTitle className="text-lg">Free Policy</CardTitle>
       </CardHeader>
 
-      <CardContent>
-        <div className="flex flex-col gap-5 md:flex-row md:items-center md:justify-between">
-          <div className="flex items-center gap-3">
-            <Switch
-              checked={value.enabled}
-              onCheckedChange={(checked) =>
+      <CardContent className="space-y-5">
+
+        {/* ENABLE SWITCH */}
+        <div className="flex items-center gap-3">
+          <Switch
+            checked={value.enabled}
+            onCheckedChange={(checked) =>
+              onChange({
+                ...value,
+                enabled: checked,
+              })
+            }
+          />
+
+          <div>
+            <p className="font-medium text-slate-900">Enable Free Policy</p>
+            <p className="text-sm text-slate-600">
+              Apply free-of-charge passengers logic
+            </p>
+          </div>
+        </div>
+
+        {/* FREE RATIO */}
+        {value.enabled && (
+          <div className="space-y-2">
+            <Label>Free Ratio</Label>
+            <Input
+              type="number"
+              min={1}
+              value={value.freePer}
+              onChange={(e) =>
                 onChange({
                   ...value,
-                  enabled: checked,
+                  freePer: Number(e.target.value) || 0,
                 })
               }
+              placeholder="e.g. 20 (1 free per 20 pax)"
             />
-            <div>
-              <p className="font-medium text-slate-900">Enable Free Policy</p>
-              <p className="text-sm text-slate-600">
-                Spread free cost across paying pax or absorb internally.
-              </p>
-            </div>
           </div>
+        )}
 
+        {/* METHOD */}
+        {value.enabled && (
           <Tabs
             value={value.method}
             onValueChange={(v) =>
@@ -52,16 +80,18 @@ export function FreePolicySection({ value, onChange }: Props) {
               })
             }
           >
-            <TabsList className="grid w-full grid-cols-2 md:w-90">
+            <TabsList className="grid w-full grid-cols-2">
               <TabsTrigger value="SPREAD_ACROSS_PAYING_PASSENGERS">
                 Spread Across Paying
               </TabsTrigger>
+
               <TabsTrigger value="ABSORBED_INTERNALLY">
                 Absorb Internally
               </TabsTrigger>
             </TabsList>
           </Tabs>
-        </div>
+        )}
+
       </CardContent>
     </Card>
   )
