@@ -21,9 +21,9 @@ type SearchParams = {
   status?: string;
   direction?: string;
   sourceType?: string;
-  currency?: string;
   from?: string;
   to?: string;
+  page?: string;
 };
 
 function formatDate(value: Date | string | null | undefined) {
@@ -87,9 +87,12 @@ export default async function AdminFinanceEntriesPage({
   const status = params.status?.trim() ?? "";
   const direction = params.direction?.trim() ?? "";
   const sourceType = params.sourceType?.trim() ?? "";
-  const currency = params.currency?.trim().toUpperCase() ?? "";
   const from = params.from?.trim() ?? "";
   const to = params.to?.trim() ?? "";
+
+  const currentPage = Math.max(1, Number(params.page || "1"));
+  const pageSize = 25;
+  const skip = (currentPage - 1) * pageSize;
 
   const searchConditions: Prisma.ExpenseWhereInput[] = q
     ? [
@@ -121,7 +124,12 @@ export default async function AdminFinanceEntriesPage({
             mode: Prisma.QueryMode.insensitive,
           },
         },
-        { groupName: { contains: q, mode: Prisma.QueryMode.insensitive } },
+        {
+          groupName: {
+            contains: q,
+            mode: Prisma.QueryMode.insensitive,
+          },
+        },
         {
           tour: {
             title: {
@@ -166,16 +174,6 @@ export default async function AdminFinanceEntriesPage({
       ? { sourceType: sourceType as FinanceSourceType }
       : {}),
 
-    ...(currency
-      ? {
-          OR: [
-            { currency },
-            { originalCurrency: currency },
-            { baseCurrency: currency },
-          ],
-        }
-      : {}),
-
     ...(from || to
       ? {
           expenseDate: {
@@ -186,78 +184,106 @@ export default async function AdminFinanceEntriesPage({
       : {}),
   };
 
-  const expenses = await db.expense.findMany({
-    where,
-    orderBy: [{ expenseDate: "desc" }, { createdAt: "desc" }],
-    include: {
-      booking: {
-        select: {
-          id: true,
-          bookingDisplayCode: true,
-          bookingReference: true,
+  const [expenses, totalCount, summaryEntries] = await Promise.all([
+    db.expense.findMany({
+      where,
+      orderBy: [{ expenseDate: "desc" }, { createdAt: "desc" }],
+      skip,
+      take: pageSize,
+      include: {
+        booking: {
+          select: {
+            id: true,
+            bookingDisplayCode: true,
+            bookingReference: true,
+          },
+        },
+        tour: {
+          select: {
+            id: true,
+            title: true,
+            tourCode: true,
+          },
+        },
+        departureDate: {
+          select: {
+            id: true,
+            date: true,
+          },
         },
       },
-      tour: {
-        select: {
-          id: true,
-          title: true,
-          tourCode: true,
-        },
-      },
-      departureDate: {
-        select: {
-          id: true,
-          date: true,
-        },
-      },
-      createdBy: {
-        select: {
-          fullName: true,
-          email: true,
-        },
-      },
-    },
-  });
+    }),
 
-  function reportingAmount(entry: (typeof expenses)[number]) {
-    return entry.baseAmount && entry.baseAmount > 0
-      ? entry.baseAmount
-      : entry.amount;
-  }
+    db.expense.count({
+      where,
+    }),
 
-  const totalIncome = expenses
+    db.expense.findMany({
+      where,
+      select: {
+        amount: true,
+        direction: true,
+        paymentStatus: true,
+        taxAmount: true,
+      },
+    }),
+  ]);
+
+  const totalPages = Math.max(1, Math.ceil(totalCount / pageSize));
+
+  const buildPageHref = (page: number) => {
+    const search = new URLSearchParams();
+
+    if (q) search.set("q", q);
+    if (category) search.set("category", category);
+    if (status) search.set("status", status);
+    if (direction) search.set("direction", direction);
+    if (sourceType) search.set("sourceType", sourceType);
+    if (from) search.set("from", from);
+    if (to) search.set("to", to);
+
+    search.set("page", String(page));
+
+    return `/admin/finance/expenses?${search.toString()}`;
+  };
+
+  const totalIncome = summaryEntries
     .filter((item) => item.direction === "INCOME")
-    .reduce((sum, item) => sum + reportingAmount(item), 0);
+    .reduce((sum, item) => sum + item.amount, 0);
 
-  const totalExpenses = expenses
+  const totalExpenses = summaryEntries
     .filter((item) => item.direction === "EXPENSE")
-    .reduce((sum, item) => sum + reportingAmount(item), 0);
+    .reduce((sum, item) => sum + item.amount, 0);
 
-  const paidIncome = expenses
+  const paidIncome = summaryEntries
     .filter(
       (item) => item.direction === "INCOME" && item.paymentStatus === "PAID"
     )
-    .reduce((sum, item) => sum + reportingAmount(item), 0);
+    .reduce((sum, item) => sum + item.amount, 0);
 
-  const pendingIncome = expenses
+  const pendingIncome = summaryEntries
     .filter(
       (item) => item.direction === "INCOME" && item.paymentStatus === "PENDING"
     )
-    .reduce((sum, item) => sum + reportingAmount(item), 0);
+    .reduce((sum, item) => sum + item.amount, 0);
 
-  const paidExpenses = expenses
+  const paidExpenses = summaryEntries
     .filter(
       (item) => item.direction === "EXPENSE" && item.paymentStatus === "PAID"
     )
-    .reduce((sum, item) => sum + reportingAmount(item), 0);
+    .reduce((sum, item) => sum + item.amount, 0);
 
-  const pendingExpenses = expenses
+  const pendingExpenses = summaryEntries
     .filter(
       (item) => item.direction === "EXPENSE" && item.paymentStatus === "PENDING"
     )
-    .reduce((sum, item) => sum + reportingAmount(item), 0);
+    .reduce((sum, item) => sum + item.amount, 0);
 
-  const totalTax = expenses.reduce((sum, item) => sum + (item.taxAmount || 0), 0);
+  const totalTax = summaryEntries.reduce(
+    (sum, item) => sum + (item.taxAmount || 0),
+    0
+  );
+
   const netProfit = totalIncome - totalExpenses;
 
   return (
@@ -268,8 +294,8 @@ export default async function AdminFinanceEntriesPage({
             Finance Entries
           </h1>
           <p className="mt-1 text-sm text-muted-foreground">
-            Full operational ledger for income, expenses, tax, agencies, tours,
-            groups, and multi-currency reporting.
+            Full EUR ledger for income, expenses, tax, agencies, tours, and
+            groups.
           </p>
         </div>
 
@@ -353,7 +379,7 @@ export default async function AdminFinanceEntriesPage({
       </div>
 
       <form className="rounded-2xl border bg-white p-5 shadow-sm">
-        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-8">
+        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-7">
           <div className="xl:col-span-2">
             <label className="mb-2 block text-sm font-medium text-slate-700">
               Search
@@ -438,20 +464,7 @@ export default async function AdminFinanceEntriesPage({
             </select>
           </div>
 
-          <div>
-            <label className="mb-2 block text-sm font-medium text-slate-700">
-              Currency
-            </label>
-            <input
-              name="currency"
-              defaultValue={currency}
-              placeholder="EUR / USD / GBP"
-              maxLength={3}
-              className="w-full rounded-xl border px-4 py-2.5 text-sm uppercase outline-none transition focus:border-[#8B0000]"
-            />
-          </div>
-
-          <div className="flex items-end gap-2">
+          <div className="flex items-end">
             <button
               type="submit"
               className="w-full rounded-xl bg-black px-4 py-2.5 text-sm font-medium text-white transition hover:bg-slate-800"
@@ -499,7 +512,7 @@ export default async function AdminFinanceEntriesPage({
 
       <div className="overflow-hidden rounded-2xl border bg-white shadow-sm">
         <div className="overflow-x-auto">
-          <table className="w-full min-w-[2100px] text-sm">
+          <table className="w-full min-w-[1700px] text-sm">
             <thead className="bg-slate-50 text-left text-slate-600">
               <tr>
                 <th className="px-4 py-3 font-medium">Date</th>
@@ -513,11 +526,9 @@ export default async function AdminFinanceEntriesPage({
                 <th className="px-4 py-3 font-medium">Booking</th>
                 <th className="px-4 py-3 font-medium">Tour</th>
                 <th className="px-4 py-3 font-medium">Departure</th>
-                <th className="px-4 py-3 font-medium">Original</th>
-                <th className="px-4 py-3 font-medium">Base EUR</th>
-                <th className="px-4 py-3 font-medium">Rate</th>
                 <th className="px-4 py-3 font-medium">Tax</th>
                 <th className="px-4 py-3 font-medium">Status</th>
+                <th className="px-4 py-3 text-right font-medium">Amount</th>
                 <th className="px-4 py-3 text-right font-medium">Actions</th>
               </tr>
             </thead>
@@ -629,35 +640,6 @@ export default async function AdminFinanceEntriesPage({
                       : "-"}
                   </td>
 
-                  <td
-                    className={`whitespace-nowrap px-4 py-3 font-semibold ${
-                      expense.direction === "INCOME"
-                        ? "text-green-700"
-                        : "text-red-700"
-                    }`}
-                  >
-                    {expense.direction === "INCOME" ? "+" : "-"}
-                    {formatCurrency(
-                      expense.originalAmount || expense.amount,
-                      expense.originalCurrency || expense.currency
-                    )}
-                  </td>
-
-                  <td
-                    className={`whitespace-nowrap px-4 py-3 font-semibold ${
-                      expense.direction === "INCOME"
-                        ? "text-green-700"
-                        : "text-red-700"
-                    }`}
-                  >
-                    {expense.direction === "INCOME" ? "+" : "-"}
-                    {formatCurrency(reportingAmount(expense), "EUR")}
-                  </td>
-
-                  <td className="whitespace-nowrap px-4 py-3">
-                    {expense.exchangeRateToBase || 1}
-                  </td>
-
                   <td className="whitespace-nowrap px-4 py-3">
                     <div>{formatEnumLabel(expense.taxType)}</div>
                     {(expense.taxAmount || 0) > 0 && (
@@ -675,6 +657,17 @@ export default async function AdminFinanceEntriesPage({
                     >
                       {formatEnumLabel(expense.paymentStatus)}
                     </span>
+                  </td>
+
+                  <td
+                    className={`whitespace-nowrap px-4 py-3 text-right font-semibold ${
+                      expense.direction === "INCOME"
+                        ? "text-green-700"
+                        : "text-red-700"
+                    }`}
+                  >
+                    {expense.direction === "INCOME" ? "+" : "-"}
+                    {formatCurrency(expense.amount, "EUR")}
                   </td>
 
                   <td className="px-4 py-3">
@@ -695,7 +688,7 @@ export default async function AdminFinanceEntriesPage({
               {expenses.length === 0 && (
                 <tr>
                   <td
-                    colSpan={17}
+                    colSpan={15}
                     className="px-4 py-10 text-center text-sm text-slate-500"
                   >
                     No finance entries found.
@@ -704,6 +697,37 @@ export default async function AdminFinanceEntriesPage({
               )}
             </tbody>
           </table>
+        </div>
+
+        <div className="flex flex-col gap-3 border-t bg-white px-6 py-4 md:flex-row md:items-center md:justify-between">
+          <p className="text-sm text-slate-500">
+            Showing {expenses.length} of {totalCount} entries — Page{" "}
+            {currentPage} of {totalPages}
+          </p>
+
+          <div className="flex gap-2">
+            <Link
+              href={buildPageHref(Math.max(1, currentPage - 1))}
+              className={`rounded-lg border px-4 py-2 text-sm ${
+                currentPage <= 1
+                  ? "pointer-events-none opacity-50"
+                  : "hover:border-[#8B0000] hover:text-[#8B0000]"
+              }`}
+            >
+              Previous
+            </Link>
+
+            <Link
+              href={buildPageHref(Math.min(totalPages, currentPage + 1))}
+              className={`rounded-lg border px-4 py-2 text-sm ${
+                currentPage >= totalPages
+                  ? "pointer-events-none opacity-50"
+                  : "hover:border-[#8B0000] hover:text-[#8B0000]"
+              }`}
+            >
+              Next
+            </Link>
+          </div>
         </div>
       </div>
     </div>
