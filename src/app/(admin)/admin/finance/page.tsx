@@ -39,32 +39,41 @@ export default async function AdminFinanceDashboardPage() {
     redirect("/admin-login");
   }
 
-  const financeEntries = await db.expense.findMany({
-    orderBy: [{ expenseDate: "desc" }, { createdAt: "desc" }],
-    take: 300,
-    include: {
-      booking: {
-        select: {
-          id: true,
-          bookingDisplayCode: true,
-          bookingReference: true,
+  const [financeEntries, bankAccount] = await Promise.all([
+    db.expense.findMany({
+      orderBy: [{ expenseDate: "desc" }, { createdAt: "desc" }],
+      take: 300,
+      include: {
+        booking: {
+          select: {
+            id: true,
+            bookingDisplayCode: true,
+            bookingReference: true,
+          },
+        },
+        tour: {
+          select: {
+            id: true,
+            title: true,
+            tourCode: true,
+          },
         },
       },
-      tour: {
-        select: {
-          id: true,
-          title: true,
-          tourCode: true,
-        },
+    }),
+
+    db.bankAccount.findFirst({
+      where: {
+        isActive: true,
       },
-    },
-  });
+      orderBy: {
+        createdAt: "asc",
+      },
+    }),
+  ]);
 
-  const getReportingAmount = (entry: (typeof financeEntries)[number]) => {
-    if (entry.baseAmount && entry.baseAmount > 0) {
-      return entry.baseAmount;
-    }
-
+  const getReportingAmount = (
+    entry: (typeof financeEntries)[number]
+  ) => {
     return entry.amount;
   };
 
@@ -139,6 +148,9 @@ export default async function AdminFinanceDashboardPage() {
 
   const netProfit = totalIncome - totalExpenses;
 
+  const openingBalance = bankAccount?.openingBalance || 0;
+  const estimatedBankBalance = openingBalance + paidIncome - paidExpenses;
+
   const agencyMap = new Map<string, SummaryItem>();
   const tourMap = new Map<string, SummaryItem>();
   const groupMap = new Map<string, SummaryItem>();
@@ -149,13 +161,8 @@ export default async function AdminFinanceDashboardPage() {
 
     const agencyLabel =
       entry.partnerCompanyName || entry.agentNameSnapshot || "Unassigned";
-    addToSummary(
-      agencyMap,
-      agencyLabel,
-      agencyLabel,
-      entry.direction,
-      amount
-    );
+
+    addToSummary(agencyMap, agencyLabel, agencyLabel, entry.direction, amount);
 
     const tourLabel = entry.tour
       ? entry.tour.tourCode
@@ -167,9 +174,11 @@ export default async function AdminFinanceDashboardPage() {
 
     const groupLabel =
       entry.groupName || entry.customPackageName || "Unassigned Group";
+
     addToSummary(groupMap, groupLabel, groupLabel, entry.direction, amount);
 
     const supplierLabel = entry.vendorName || "Unassigned Supplier / Payer";
+
     addToSummary(
       supplierMap,
       supplierLabel,
@@ -197,7 +206,7 @@ export default async function AdminFinanceDashboardPage() {
           </h1>
           <p className="mt-2 text-sm text-muted-foreground">
             Executive overview of income, expenses, receivables, payables, tax,
-            agencies, tours, and operation profitability.
+            bank balance, agencies, tours, and operation profitability.
           </p>
         </div>
 
@@ -218,7 +227,19 @@ export default async function AdminFinanceDashboardPage() {
         </div>
       </div>
 
-      <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+      <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
+        <div className="rounded-2xl border bg-emerald-50 p-5 shadow-sm">
+          <p className="text-sm font-medium text-emerald-700">
+            Estimated Bank Balance
+          </p>
+          <p className="mt-2 text-3xl font-bold text-emerald-800">
+            {formatCurrency(estimatedBankBalance, "EUR")}
+          </p>
+          <p className="mt-2 text-xs text-emerald-700">
+            Opening balance + paid income - paid expenses
+          </p>
+        </div>
+
         <div className="rounded-2xl border bg-green-50 p-5 shadow-sm">
           <p className="text-sm font-medium text-green-700">Total Income</p>
           <p className="mt-2 text-3xl font-bold text-green-800">
@@ -254,16 +275,19 @@ export default async function AdminFinanceDashboardPage() {
 
       <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
         <div className="rounded-2xl border bg-white p-5 shadow-sm">
-          <p className="text-sm text-slate-500">Paid Income</p>
-          <p className="mt-2 text-2xl font-bold text-green-700">
-            {formatCurrency(paidIncome, "EUR")}
+          <p className="text-sm text-slate-500">Opening Bank Balance</p>
+          <p className="mt-2 text-2xl font-bold text-slate-800">
+            {formatCurrency(openingBalance, "EUR")}
+          </p>
+          <p className="mt-1 text-xs text-slate-500">
+            {bankAccount?.name || "No active bank account selected"}
           </p>
         </div>
 
         <div className="rounded-2xl border bg-white p-5 shadow-sm">
-          <p className="text-sm text-slate-500">Pending Receivables</p>
-          <p className="mt-2 text-2xl font-bold text-amber-700">
-            {formatCurrency(pendingIncome, "EUR")}
+          <p className="text-sm text-slate-500">Paid Income</p>
+          <p className="mt-2 text-2xl font-bold text-green-700">
+            {formatCurrency(paidIncome, "EUR")}
           </p>
         </div>
 
@@ -275,14 +299,34 @@ export default async function AdminFinanceDashboardPage() {
         </div>
 
         <div className="rounded-2xl border bg-white p-5 shadow-sm">
-          <p className="text-sm text-slate-500">Pending Payables</p>
-          <p className="mt-2 text-2xl font-bold text-amber-700">
-            {formatCurrency(pendingExpenses, "EUR")}
+          <p className="text-sm text-slate-500">Cash Movement</p>
+          <p
+            className={`mt-2 text-2xl font-bold ${
+              paidIncome - paidExpenses >= 0
+                ? "text-green-700"
+                : "text-red-700"
+            }`}
+          >
+            {formatCurrency(paidIncome - paidExpenses, "EUR")}
           </p>
         </div>
       </section>
 
       <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+        <div className="rounded-2xl border bg-white p-5 shadow-sm">
+          <p className="text-sm text-slate-500">Pending Receivables</p>
+          <p className="mt-2 text-2xl font-bold text-amber-700">
+            {formatCurrency(pendingIncome, "EUR")}
+          </p>
+        </div>
+
+        <div className="rounded-2xl border bg-white p-5 shadow-sm">
+          <p className="text-sm text-slate-500">Pending Payables</p>
+          <p className="mt-2 text-2xl font-bold text-amber-700">
+            {formatCurrency(pendingExpenses, "EUR")}
+          </p>
+        </div>
+
         <div className="rounded-2xl border bg-white p-5 shadow-sm">
           <p className="text-sm text-slate-500">Top Agency / Partner</p>
           <p className="mt-2 text-lg font-bold text-[#001F3F]">
@@ -318,7 +362,9 @@ export default async function AdminFinanceDashboardPage() {
               : formatCurrency(0, "EUR")}
           </p>
         </div>
+      </section>
 
+      <section className="grid gap-4 md:grid-cols-2">
         <div className="rounded-2xl border bg-white p-5 shadow-sm">
           <p className="text-sm text-slate-500">Top Group</p>
           <p className="mt-2 text-lg font-bold text-[#001F3F]">
@@ -466,6 +512,18 @@ export default async function AdminFinanceDashboardPage() {
           <p className="mt-1 text-sm text-slate-500">
             Quick access to operational finance tools.
           </p>
+           <Link
+              href="/admin/finance/bank-accounts"
+              className="rounded-xl border p-4 transition hover:border-[#8B0000] hover:bg-red-50"
+            >
+              <p className="font-semibold text-[#001F3F]">
+                Bank Accounts
+              </p>
+
+              <p className="mt-1 text-sm text-slate-500">
+                Manage opening balances and active company bank accounts.
+              </p>
+            </Link>
 
           <div className="mt-5 grid gap-3">
             <Link
@@ -494,23 +552,11 @@ export default async function AdminFinanceDashboardPage() {
               className="rounded-xl border p-4 transition hover:border-[#8B0000] hover:bg-red-50"
             >
               <p className="font-semibold text-[#001F3F]">
-                Booking Payments — Coming Soon
+                Bank Accounts — Coming Soon
               </p>
               <p className="mt-1 text-sm text-slate-500">
-                Future page for booking payment submissions and received
-                payments.
-              </p>
-            </Link>
-
-            <Link
-              href="/admin/finance"
-              className="rounded-xl border p-4 transition hover:border-[#8B0000] hover:bg-red-50"
-            >
-              <p className="font-semibold text-[#001F3F]">
-                Partner Payouts — Coming Soon
-              </p>
-              <p className="mt-1 text-sm text-slate-500">
-                Future page for commissions, partner payouts, and settlements.
+                Future page for bank account balances and account-level cash
+                tracking.
               </p>
             </Link>
           </div>
