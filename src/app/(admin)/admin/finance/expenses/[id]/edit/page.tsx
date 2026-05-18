@@ -254,99 +254,40 @@ export default async function EditExpensePage({ params }: PageProps) {
               </div>
             </div>
           </section>
-
           <section>
             <h2 className="mb-4 text-lg font-semibold text-[#001F3F]">
-              Currency / Reporting Amount
+              Amount
             </h2>
 
             <div className="grid gap-6 md:grid-cols-2">
               <div>
                 <label className="mb-2 block text-sm font-medium text-slate-700">
-                  Original Amount *
+                  Amount (EUR) *
                 </label>
 
                 <input
-                  name="originalAmount"
+                  name="amount"
                   type="number"
                   step="0.01"
                   min="0.01"
                   required
-                  defaultValue={expense.originalAmount || expense.amount}
+                  defaultValue={expense.amount}
                   className="w-full rounded-xl border px-4 py-2.5 text-sm outline-none transition focus:border-[#8B0000]"
                 />
               </div>
 
-              <div>
-                <label className="mb-2 block text-sm font-medium text-slate-700">
-                  Original Currency *
-                </label>
-
-                <input
-                  name="originalCurrency"
-                  defaultValue={
-                    expense.originalCurrency || expense.currency || "EUR"
-                  }
-                  maxLength={3}
-                  required
-                  className="w-full rounded-xl border px-4 py-2.5 text-sm uppercase outline-none transition focus:border-[#8B0000]"
-                />
-              </div>
-
-              <div>
-                <label className="mb-2 block text-sm font-medium text-slate-700">
-                  Exchange Rate to EUR *
-                </label>
-
-                <input
-                  name="exchangeRateToBase"
-                  type="number"
-                  step="0.000001"
-                  min="0"
-                  required
-                  defaultValue={expense.exchangeRateToBase || 1}
-                  className="w-full rounded-xl border px-4 py-2.5 text-sm outline-none transition focus:border-[#8B0000]"
-                />
-              </div>
-
-              <div>
-                <label className="mb-2 block text-sm font-medium text-slate-700">
-                  Base Currency
-                </label>
-
-                <input
-                  name="baseCurrency"
-                  defaultValue={expense.baseCurrency || "EUR"}
-                  maxLength={3}
-                  className="w-full rounded-xl border px-4 py-2.5 text-sm uppercase outline-none transition focus:border-[#8B0000]"
-                />
-              </div>
-
               <input
-                name="baseAmount"
                 type="hidden"
-                defaultValue={expense.baseAmount || expense.amount}
-              />
-
-              <input
-                name="amount"
-                type="hidden"
-                defaultValue={expense.amount}
-              />
-
-              <input
                 name="currency"
-                type="hidden"
-                defaultValue={expense.currency}
+                value="EUR"
               />
 
               <div className="md:col-span-2 rounded-xl border bg-slate-50 p-4 text-sm text-slate-600">
-                Editing the original amount or exchange rate will update the EUR
-                reporting value when you save.
+                All finance entries are stored and reported in EUR.
               </div>
             </div>
           </section>
-
+                    
           <section>
             <h2 className="mb-4 text-lg font-semibold text-[#001F3F]">
               Operation / Partner Summary

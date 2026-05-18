@@ -226,80 +226,34 @@ export default async function AdminCreateExpensePage() {
               </div>
             </div>
           </section>
-
           <section>
-            <h2 className="mb-4 text-lg font-semibold text-[#001F3F]">
-              Currency / Reporting Amount
-            </h2>
+  <h2 className="mb-4 text-lg font-semibold text-[#001F3F]">
+    Amount
+  </h2>
 
-            <div className="grid gap-6 md:grid-cols-2">
-              <div>
-                <label className="mb-2 block text-sm font-medium text-slate-700">
-                  Original Amount *
-                </label>
-                <input
-                  name="originalAmount"
-                  type="number"
-                  step="0.01"
-                  min="0.01"
-                  required
-                  placeholder="10000"
-                  className="w-full rounded-xl border px-4 py-2.5 text-sm outline-none transition focus:border-[#8B0000]"
-                />
-              </div>
+  <div className="grid gap-6 md:grid-cols-2">
+    <div>
+      <label className="mb-2 block text-sm font-medium text-slate-700">
+        Amount (EUR) *
+      </label>
 
-              <div>
-                <label className="mb-2 block text-sm font-medium text-slate-700">
-                  Original Currency *
-                </label>
-                <input
-                  name="originalCurrency"
-                  defaultValue="EUR"
-                  maxLength={3}
-                  required
-                  placeholder="EUR / USD / GBP"
-                  className="w-full rounded-xl border px-4 py-2.5 text-sm uppercase outline-none transition focus:border-[#8B0000]"
-                />
-              </div>
-
-              <div>
-                <label className="mb-2 block text-sm font-medium text-slate-700">
-                  Exchange Rate to EUR *
-                </label>
-                <input
-                  name="exchangeRateToBase"
-                  type="number"
-                  step="0.000001"
-                  min="0"
-                  defaultValue="1"
-                  required
-                  placeholder="Example: USD to EUR 0.92"
-                  className="w-full rounded-xl border px-4 py-2.5 text-sm outline-none transition focus:border-[#8B0000]"
-                />
-              </div>
-
-              <div>
-                <label className="mb-2 block text-sm font-medium text-slate-700">
-                  Base Currency
-                </label>
-                <input
-                  name="baseCurrency"
-                  defaultValue="EUR"
-                  maxLength={3}
-                  className="w-full rounded-xl border px-4 py-2.5 text-sm uppercase outline-none transition focus:border-[#8B0000]"
-                />
-              </div>
-
-              <input name="amount" type="hidden" value="" />
-              <input name="currency" type="hidden" value="" />
-
-              <div className="md:col-span-2 rounded-xl border bg-slate-50 p-4 text-sm text-slate-600">
-                Enter the original amount and currency. The system will save
-                the original value and the EUR reporting value using the
-                exchange rate.
-              </div>
+      <input
+        name="amount"
+        type="number"
+        step="0.01"
+        min="0.01"
+        required
+        className="w-full rounded-xl border px-4 py-2.5 text-sm outline-none transition focus:border-[#8B0000]"
+      />
             </div>
-          </section>
+
+            <input type="hidden" name="currency" value="EUR" />
+
+            <div className="md:col-span-2 rounded-xl border bg-slate-50 p-4 text-sm text-slate-600">
+              All finance entries are stored and reported in EUR.
+            </div>
+            </div>
+          </section>      
 
           <section>
             <h2 className="mb-4 text-lg font-semibold text-[#001F3F]">
