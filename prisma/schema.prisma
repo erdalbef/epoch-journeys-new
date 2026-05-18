@@ -1091,6 +1091,18 @@ model AgentCommunication {
   attachments Json?
 }
 
+model BankAccount {
+  id             String   @id @default(cuid())
+  name           String
+  currency       String   @default("EUR")
+  openingBalance Float    @default(0)
+  currentBalance Float    @default(0)
+  isActive       Boolean  @default(true)
+  notes          String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+}
+
 enum PayoutStatus {
   PENDING
   APPROVED
