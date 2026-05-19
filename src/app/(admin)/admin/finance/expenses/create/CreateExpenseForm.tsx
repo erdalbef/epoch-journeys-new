@@ -20,24 +20,15 @@ export default function CreateExpenseForm({ children }: Props) {
     const method = String(formData.get("_method") || "POST");
     const expenseId = String(formData.get("expenseId") || "");
 
-    const originalAmount = Number(formData.get("originalAmount") || 0);
-    const originalCurrency = String(
-      formData.get("originalCurrency") || "EUR"
-    ).toUpperCase();
-    const exchangeRateToBase = Number(
-      formData.get("exchangeRateToBase") || 1
-    );
-    const baseCurrency = String(formData.get("baseCurrency") || "EUR").toUpperCase();
-    const baseAmount = originalAmount * exchangeRateToBase;
+    const amount = Number(formData.get("amount") || 0);
 
-    formData.set("originalAmount", String(originalAmount));
-    formData.set("originalCurrency", originalCurrency);
-    formData.set("exchangeRateToBase", String(exchangeRateToBase));
-    formData.set("baseCurrency", baseCurrency);
-    formData.set("baseAmount", String(baseAmount));
+    if (!amount || amount <= 0) {
+      toast.error("Amount must be greater than zero.");
+      return;
+    }
 
-    formData.set("amount", String(originalAmount));
-    formData.set("currency", originalCurrency);
+    formData.set("amount", String(amount));
+    formData.set("currency", "EUR");
 
     const endpoint =
       method === "PATCH" && expenseId
