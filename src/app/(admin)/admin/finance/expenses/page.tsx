@@ -91,7 +91,7 @@ export default async function AdminFinanceEntriesPage({
   const to = params.to?.trim() ?? "";
 
   const currentPage = Math.max(1, Number(params.page || "1"));
-  const pageSize = 25;
+  const pageSize = 10;
   const skip = (currentPage - 1) * pageSize;
 
   const searchConditions: Prisma.ExpenseWhereInput[] = q
