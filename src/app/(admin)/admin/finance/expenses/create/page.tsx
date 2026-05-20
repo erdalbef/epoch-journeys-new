@@ -86,9 +86,10 @@ export default async function AdminCreateExpensePage() {
           <h1 className="text-3xl font-bold text-[#001F3F]">
             Add Finance Entry
           </h1>
+
           <p className="mt-1 text-sm text-muted-foreground">
-            Add income, expense, payment, tax, partner, or operation-related
-            finance record.
+            Add income, expense, tax, partner, or operation-related finance
+            record.
           </p>
         </div>
 
@@ -112,6 +113,7 @@ export default async function AdminCreateExpensePage() {
                 <label className="mb-2 block text-sm font-medium text-slate-700">
                   Direction *
                 </label>
+
                 <select
                   name="direction"
                   defaultValue="EXPENSE"
@@ -130,6 +132,7 @@ export default async function AdminCreateExpensePage() {
                 <label className="mb-2 block text-sm font-medium text-slate-700">
                   Source Type *
                 </label>
+
                 <select
                   name="sourceType"
                   defaultValue="INTERNAL"
@@ -148,6 +151,7 @@ export default async function AdminCreateExpensePage() {
                 <label className="mb-2 block text-sm font-medium text-slate-700">
                   Category *
                 </label>
+
                 <select
                   name="category"
                   required
@@ -166,6 +170,7 @@ export default async function AdminCreateExpensePage() {
                 <label className="mb-2 block text-sm font-medium text-slate-700">
                   Title *
                 </label>
+
                 <input
                   name="title"
                   required
@@ -178,6 +183,7 @@ export default async function AdminCreateExpensePage() {
                 <label className="mb-2 block text-sm font-medium text-slate-700">
                   Vendor / Supplier / Payer
                 </label>
+
                 <input
                   name="vendorName"
                   placeholder="Hotel, agency, partner, supplier..."
@@ -189,6 +195,7 @@ export default async function AdminCreateExpensePage() {
                 <label className="mb-2 block text-sm font-medium text-slate-700">
                   Payment Status
                 </label>
+
                 <select
                   name="paymentStatus"
                   defaultValue="PENDING"
@@ -206,6 +213,7 @@ export default async function AdminCreateExpensePage() {
                 <label className="mb-2 block text-sm font-medium text-slate-700">
                   Transaction / Expense Date *
                 </label>
+
                 <input
                   name="expenseDate"
                   type="date"
@@ -218,6 +226,7 @@ export default async function AdminCreateExpensePage() {
                 <label className="mb-2 block text-sm font-medium text-slate-700">
                   Paid At
                 </label>
+
                 <input
                   name="paidAt"
                   type="date"
@@ -237,6 +246,7 @@ export default async function AdminCreateExpensePage() {
                 <label className="mb-2 block text-sm font-medium text-slate-700">
                   Amount (EUR) *
                 </label>
+
                 <input
                   name="amount"
                   type="number"
@@ -265,6 +275,7 @@ export default async function AdminCreateExpensePage() {
                 <label className="mb-2 block text-sm font-medium text-slate-700">
                   Agent / Travel Advisor
                 </label>
+
                 <input
                   name="agentNameSnapshot"
                   placeholder="Agent or travel advisor name"
@@ -276,6 +287,7 @@ export default async function AdminCreateExpensePage() {
                 <label className="mb-2 block text-sm font-medium text-slate-700">
                   Partner Company Name
                 </label>
+
                 <input
                   name="partnerCompanyName"
                   placeholder="Partner company name"
@@ -287,12 +299,14 @@ export default async function AdminCreateExpensePage() {
                 <label className="mb-2 block text-sm font-medium text-slate-700">
                   Partner Company Record
                 </label>
+
                 <select
                   name="partnerCompanyId"
                   defaultValue=""
                   className="w-full rounded-xl border px-4 py-2.5 text-sm outline-none transition focus:border-[#8B0000]"
                 >
                   <option value="">Not linked</option>
+
                   {partnerCompanies.map((partner) => (
                     <option key={partner.id} value={partner.id}>
                       {partner.name}
@@ -305,6 +319,7 @@ export default async function AdminCreateExpensePage() {
                 <label className="mb-2 block text-sm font-medium text-slate-700">
                   Custom Package Name
                 </label>
+
                 <input
                   name="customPackageName"
                   placeholder="Partner package or operation name"
@@ -316,6 +331,7 @@ export default async function AdminCreateExpensePage() {
                 <label className="mb-2 block text-sm font-medium text-slate-700">
                   Tour Leader Name
                 </label>
+
                 <input
                   name="tourLeaderName"
                   placeholder="Group leader / priest / tour leader"
@@ -327,6 +343,7 @@ export default async function AdminCreateExpensePage() {
                 <label className="mb-2 block text-sm font-medium text-slate-700">
                   Group Name
                 </label>
+
                 <input
                   name="groupName"
                   placeholder="Group name"
@@ -346,12 +363,14 @@ export default async function AdminCreateExpensePage() {
                 <label className="mb-2 block text-sm font-medium text-slate-700">
                   Link to Tour
                 </label>
+
                 <select
                   name="tourId"
                   defaultValue=""
                   className="w-full rounded-xl border px-4 py-2.5 text-sm outline-none transition focus:border-[#8B0000]"
                 >
                   <option value="">Not linked</option>
+
                   {tours.map((tour) => (
                     <option key={tour.id} value={tour.id}>
                       {tour.tourCode
@@ -366,12 +385,14 @@ export default async function AdminCreateExpensePage() {
                 <label className="mb-2 block text-sm font-medium text-slate-700">
                   Link to Booking
                 </label>
+
                 <select
                   name="bookingId"
                   defaultValue=""
                   className="w-full rounded-xl border px-4 py-2.5 text-sm outline-none transition focus:border-[#8B0000]"
                 >
                   <option value="">Not linked</option>
+
                   {bookings.map((booking) => (
                     <option key={booking.id} value={booking.id}>
                       {(booking.bookingDisplayCode ||
@@ -389,12 +410,14 @@ export default async function AdminCreateExpensePage() {
                 <label className="mb-2 block text-sm font-medium text-slate-700">
                   Link to Departure
                 </label>
+
                 <select
                   name="departureDateId"
                   defaultValue=""
                   className="w-full rounded-xl border px-4 py-2.5 text-sm outline-none transition focus:border-[#8B0000]"
                 >
                   <option value="">Not linked</option>
+
                   {departures.map((departure) => (
                     <option key={departure.id} value={departure.id}>
                       {departure.tour.title} —{" "}
@@ -420,6 +443,7 @@ export default async function AdminCreateExpensePage() {
                 <label className="mb-2 block text-sm font-medium text-slate-700">
                   Tax Type
                 </label>
+
                 <select
                   name="taxType"
                   defaultValue="NONE"
@@ -437,6 +461,7 @@ export default async function AdminCreateExpensePage() {
                 <label className="mb-2 block text-sm font-medium text-slate-700">
                   Tax Rate %
                 </label>
+
                 <input
                   name="taxRate"
                   type="number"
@@ -450,6 +475,7 @@ export default async function AdminCreateExpensePage() {
                 <label className="mb-2 block text-sm font-medium text-slate-700">
                   Tax Amount
                 </label>
+
                 <input
                   name="taxAmount"
                   type="number"
@@ -463,6 +489,7 @@ export default async function AdminCreateExpensePage() {
                 <label className="mb-2 block text-sm font-medium text-slate-700">
                   Net Amount
                 </label>
+
                 <input
                   name="netAmount"
                   type="number"
@@ -476,11 +503,49 @@ export default async function AdminCreateExpensePage() {
                 <label className="mb-2 block text-sm font-medium text-slate-700">
                   Gross Amount
                 </label>
+
                 <input
                   name="grossAmount"
                   type="number"
                   step="0.01"
                   min="0"
+                  className="w-full rounded-xl border px-4 py-2.5 text-sm outline-none transition focus:border-[#8B0000]"
+                />
+              </div>
+            </div>
+          </section>
+
+          <section>
+            <h2 className="mb-4 text-lg font-semibold text-[#001F3F]">
+              Receipt / Invoice
+            </h2>
+
+            <div className="grid gap-6">
+              <div>
+                <label className="mb-2 block text-sm font-medium text-slate-700">
+                  Upload Receipt / Invoice
+                </label>
+
+                <input
+                  name="receipt"
+                  type="file"
+                  accept=".pdf,image/png,image/jpeg,image/webp"
+                  className="block w-full rounded-xl border px-4 py-2.5 text-sm"
+                />
+
+                <p className="mt-2 text-xs text-muted-foreground">
+                  Allowed: PDF, JPG, PNG, WEBP. Max file size: 10MB.
+                </p>
+              </div>
+
+              <div>
+                <label className="mb-2 block text-sm font-medium text-slate-700">
+                  Receipt / Invoice URL
+                </label>
+
+                <input
+                  name="receiptUrl"
+                  placeholder="/uploads/expenses/invoice.pdf"
                   className="w-full rounded-xl border px-4 py-2.5 text-sm outline-none transition focus:border-[#8B0000]"
                 />
               </div>
@@ -497,6 +562,7 @@ export default async function AdminCreateExpensePage() {
                 <label className="mb-2 block text-sm font-medium text-slate-700">
                   Description
                 </label>
+
                 <textarea
                   name="description"
                   rows={3}
@@ -509,22 +575,12 @@ export default async function AdminCreateExpensePage() {
                 <label className="mb-2 block text-sm font-medium text-slate-700">
                   Internal Notes
                 </label>
+
                 <textarea
                   name="notes"
                   rows={4}
                   className="w-full rounded-xl border px-4 py-3 text-sm outline-none transition focus:border-[#8B0000]"
                   placeholder="Internal finance notes"
-                />
-              </div>
-
-              <div>
-                <label className="mb-2 block text-sm font-medium text-slate-700">
-                  Receipt / Invoice URL
-                </label>
-                <input
-                  name="receiptUrl"
-                  placeholder="/uploads/receipts/invoice.pdf"
-                  className="w-full rounded-xl border px-4 py-2.5 text-sm outline-none transition focus:border-[#8B0000]"
                 />
               </div>
             </div>
