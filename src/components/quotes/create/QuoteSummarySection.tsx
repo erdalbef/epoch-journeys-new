@@ -1,121 +1,145 @@
-"use client";
-
-import CostSummaryCard from "@/components/quotes/create/CostSummaryCard";
+type PricingMode = "CALCULATED" | "MANUAL";
 
 type Props = {
   currency: string;
-  formatMoney: (value: number, currency?: string) => string;
-
+  pricingMode: PricingMode;
+  activeSellingPrice: number;
   calculations: {
     hotelDoubleTwinPerPerson: number;
     fixedCostPerPerson: number;
     operationalCostPerPerson: number;
     doubleTwinNetCost: number;
     freeCostPerPayingPassenger: number;
-    preHotelTotal: number;
-    postHotelTotal: number;
   };
-
-  activeSellingPrice: number;
-  pricingMode: "CALCULATED" | "MANUAL";
+  formatMoney: (amount: number, currency?: string) => string;
 };
 
 export default function QuoteSummarySection({
   currency,
-  formatMoney,
-  calculations,
-  activeSellingPrice,
   pricingMode,
+  activeSellingPrice,
+  calculations,
+  formatMoney,
 }: Props) {
+  const profitPerPerson =
+    activeSellingPrice - calculations.doubleTwinNetCost;
+
+  const marginPercent =
+    activeSellingPrice > 0
+      ? (profitPerPerson / activeSellingPrice) * 100
+      : 0;
+
   return (
-    <section className="overflow-hidden rounded-xl border">
-      <div className="bg-[#8B0000] px-5 py-3 text-white">
-        <h2 className="text-lg font-semibold">Pricing Summary</h2>
-        <p className="mt-1 text-xs text-white/80">
-          Based on active{" "}
-          {pricingMode === "MANUAL" ? "manual / net" : "calculated"} selling
-          prices.
+    <section className="rounded-xl border bg-white p-5">
+      <div className="mb-5">
+        <h2 className="text-lg font-semibold">
+          Summary & Selling Price
+        </h2>
+        <p className="mt-1 text-sm text-slate-500">
+          Reference occupancy: Double / Twin per person. Pre/post stays are optional add-ons and are not included in the main tour price.
         </p>
       </div>
 
-      <div className="space-y-6 p-5">
-        <div>
-          <h3 className="mb-3 text-sm font-semibold text-slate-700">
-            Main Tour Pricing / Person
-          </h3>
+      <div className="grid gap-5 lg:grid-cols-2">
+        <div className="space-y-3 text-sm">
+          <div className="rounded-lg border bg-slate-50 p-4">
+            <div className="mb-2 font-medium">
+              Net Cost / Person — Double / Twin
+            </div>
 
-          <div className="grid gap-3 md:grid-cols-4">
-            <CostSummaryCard
-              label="Hotel / Person"
-              value={formatMoney(
-                calculations.hotelDoubleTwinPerPerson,
-                currency
-              )}
-            />
+            <div className="flex justify-between">
+              <span>Hotel / Person</span>
+              <span>
+                {formatMoney(
+                  calculations.hotelDoubleTwinPerPerson,
+                  currency
+                )}
+              </span>
+            </div>
 
-            <CostSummaryCard
-              label="Fixed Costs / Person"
-              value={formatMoney(calculations.fixedCostPerPerson, currency)}
-            />
+            <div className="flex justify-between">
+              <span>Fixed Costs / Person</span>
+              <span>
+                {formatMoney(calculations.fixedCostPerPerson, currency)}
+              </span>
+            </div>
 
-            <CostSummaryCard
-              label="Operational Costs / Person"
-              value={formatMoney(
-                calculations.operationalCostPerPerson,
-                currency
-              )}
-            />
+            <div className="flex justify-between">
+              <span>Operational Costs / Person</span>
+              <span>
+                {formatMoney(
+                  calculations.operationalCostPerPerson,
+                  currency
+                )}
+              </span>
+            </div>
 
-            <CostSummaryCard
-              label="Net Cost / Person"
-              value={formatMoney(calculations.doubleTwinNetCost, currency)}
-              highlight
-            />
+            <div className="flex justify-between">
+              <span>Free Cost Impact / Paying Pax</span>
+              <span>
+                {formatMoney(
+                  calculations.freeCostPerPayingPassenger,
+                  currency
+                )}
+              </span>
+            </div>
+
+            <div className="mt-3 flex justify-between border-t pt-3 font-semibold">
+              <span>Net Cost / Person</span>
+              <span>
+                {formatMoney(calculations.doubleTwinNetCost, currency)}
+              </span>
+            </div>
           </div>
         </div>
 
-        <div>
-          <h3 className="mb-3 text-sm font-semibold text-slate-700">
-            Selling & Free Passenger Impact
-          </h3>
+        <div className="space-y-3 text-sm">
+          <div className="rounded-lg border bg-slate-50 p-4">
+            <div className="mb-2 font-medium">
+              Active Selling Price
+            </div>
 
-          <div className="grid gap-3 md:grid-cols-3">
-            <CostSummaryCard
-              label="Selling Price / Person"
-              value={formatMoney(activeSellingPrice, currency)}
-              highlight
-            />
+            <div className="flex justify-between">
+              <span>Pricing Mode</span>
+              <span>
+                {pricingMode === "MANUAL"
+                  ? "Manual Override"
+                  : "Calculated"}
+              </span>
+            </div>
 
-            <CostSummaryCard
-              label="Free Cost Impact / Paying Pax"
-              value={formatMoney(
-                calculations.freeCostPerPayingPassenger,
-                currency
-              )}
-            />
+            <div className="flex justify-between">
+              <span>Selling Price / Person</span>
+              <span>
+                {formatMoney(activeSellingPrice, currency)}
+              </span>
+            </div>
 
-            <CostSummaryCard
-              label="Pricing Mode"
-              value={pricingMode === "MANUAL" ? "Manual / Net" : "Calculated"}
-            />
+            <div className="flex justify-between">
+              <span>Net Cost / Person</span>
+              <span>
+                {formatMoney(calculations.doubleTwinNetCost, currency)}
+              </span>
+            </div>
+
+            <div className="mt-3 flex justify-between border-t pt-3 font-semibold">
+              <span>Profit / Person</span>
+              <span>
+                {formatMoney(profitPerPerson, currency)}
+              </span>
+            </div>
+
+            <div className="flex justify-between font-semibold">
+              <span>Margin</span>
+              <span>{marginPercent.toFixed(2)}%</span>
+            </div>
           </div>
-        </div>
 
-        <div>
-          <h3 className="mb-3 text-sm font-semibold text-slate-700">
-            Pre / Post Stay Totals
-          </h3>
-
-          <div className="grid gap-3 md:grid-cols-2">
-            <CostSummaryCard
-              label="Pre-Stay Total"
-              value={formatMoney(calculations.preHotelTotal, currency)}
-            />
-
-            <CostSummaryCard
-              label="Post-Stay Total"
-              value={formatMoney(calculations.postHotelTotal, currency)}
-            />
+          <div className="rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
+            Main tour price is calculated on a Double / Twin per-person basis.
+            Single and triple prices should be shown separately in passenger
+            pricing. Pre/post stay prices should be optional per-person add-ons,
+            not group totals.
           </div>
         </div>
       </div>

@@ -132,18 +132,18 @@ export default function AboutPage() {
             </p>
           </div>
 
-          {/* MERT */}
+          {/* EMRE */}
           <div className="text-center">
             <Image
-              src="/team/mert.jpg"
-              alt="Mert"
+              src="/team/emre.jpg"
+              alt="Emre Vardarli"
               width={160}
               height={160}
               className="mx-auto h-32 w-32 rounded-full object-cover"
             />
 
             <h3 className="mt-4 text-lg font-semibold text-[#001F3F]">
-              Mert
+              Emre Vardarli
             </h3>
 
             <p className="text-sm text-[#8B0000]">European Operations</p>
@@ -153,6 +153,29 @@ export default function AboutPage() {
               supporting cost control and operational planning.
             </p>
           </div>
+
+          {/* NIL */}
+          <div className="text-center">
+            <Image
+              src="/team/emre.jpg"
+              alt="Nil"
+              width={160}
+              height={160}
+              className="mx-auto h-32 w-32 rounded-full object-cover"
+            />
+
+            <h3 className="mt-4 text-lg font-semibold text-[#001F3F]">
+              Nil
+            </h3>
+
+            <p className="text-sm text-[#8B0000]">European Operations</p>
+
+            <p className="mt-3 text-sm leading-7 text-gray-600">
+              Responsible for coordination and supplier management across Europe,
+              supporting cost control and operational planning.
+            </p>
+          </div>
+          
         </div>
       </section>
 

@@ -96,7 +96,8 @@ type OperationalCostRow = {
     | "FERRY"
     | "TRANSFER"
     | "OTHER";
-  totalCost: number;
+  dailyRate: number;
+  numberOfDays: number;
 };
 
 type GroupSetup = {
@@ -284,7 +285,8 @@ function createEmptyOperationalCostRow(): OperationalCostRow {
   return {
     label: "Bus",
     category: "BUS",
-    totalCost: 0,
+    dailyRate: 0,
+    numberOfDays: 1,
   };
 }
 
@@ -305,8 +307,9 @@ function fixedCostRowTotal(row: FixedCostRow) {
 }
 
 function operationalCostRowTotal(row: OperationalCostRow) {
-  return toNumber(row.totalCost);
+  return toNumber(row.dailyRate) * toNumber(row.numberOfDays);
 }
+
 
 function calculateFreePassengersForPax(
   paxCount: number,
@@ -763,7 +766,16 @@ export default function QuoteCreateForm({
         summary.operationalCostRows.map((row) => ({
           label: row.label || "",
           category: row.category || "OTHER",
-          totalCost: toNumber(row.totalCost),
+          dailyRate: toNumber(
+            "dailyRate" in row
+              ? (row as { dailyRate?: unknown }).dailyRate
+              : (row as unknown as { totalCost?: unknown }).totalCost
+          ),
+          numberOfDays: toNumber(
+            "numberOfDays" in row
+              ? (row as { numberOfDays?: unknown }).numberOfDays
+              : 1
+          ) || 1,
         }))
       );
     } else {
@@ -776,7 +788,8 @@ export default function QuoteCreateForm({
             .map((row) => ({
               label: row.label || "",
               category: "OTHER" as const,
-              totalCost: toNumber(row.totalCost),
+              dailyRate: toNumber(row.totalCost),
+              numberOfDays: 1,
             }))
         );
       }
@@ -788,7 +801,8 @@ export default function QuoteCreateForm({
             .map((row) => ({
               label: row.label || "Tour Manager",
               category: "TOUR_MANAGER" as const,
-              totalCost: legacyStaffTotal(row),
+              dailyRate: toNumber(row.dailyRate) || legacyStaffTotal(row),
+              numberOfDays: toNumber(row.days) || 1,
             }))
         );
       }
@@ -800,7 +814,8 @@ export default function QuoteCreateForm({
             .map((row) => ({
               label: row.label || "Guide",
               category: "TOUR_GUIDE" as const,
-              totalCost: legacyStaffTotal(row),
+              dailyRate: toNumber(row.dailyRate) || legacyStaffTotal(row),
+              numberOfDays: toNumber(row.days) || 1,
             }))
         );
       }
@@ -812,7 +827,8 @@ export default function QuoteCreateForm({
             .map((row) => ({
               label: row.label || "Driver",
               category: "DRIVER" as const,
-              totalCost: legacyDriverTotal(row),
+              dailyRate: legacyDriverTotal(row),
+              numberOfDays: 1,
             }))
         );
       }
@@ -1052,10 +1068,15 @@ export default function QuoteCreateForm({
       const discountAmount =
         typeof item.discountAmount === "number" ? item.discountAmount : 0;
 
+      const safeDays = quantity > 0 ? quantity : 1;
+      const totalCost = quantity * unitPrice - discountAmount;
+      const dailyRate = totalCost / safeDays;
+
       return {
         label: item.title || "Template Cost",
         category: "OTHER",
-        totalCost: quantity * unitPrice - discountAmount,
+        dailyRate,
+        numberOfDays: safeDays,
       };
     });
 
@@ -1114,7 +1135,8 @@ export default function QuoteCreateForm({
       {
         label: "",
         category: "OTHER",
-        totalCost: 0,
+        dailyRate: 0,
+        numberOfDays: 1,
       },
     ]);
   }
@@ -1337,7 +1359,9 @@ export default function QuoteCreateForm({
         operationalCostRows: operationalCostRows.map((row) => ({
           label: row.label,
           category: row.category,
-          totalCost: row.totalCost,
+          dailyRate: row.dailyRate,
+          numberOfDays: row.numberOfDays,
+          totalCost: operationalCostRowTotal(row),
         })),
 
         clientDocumentTitle,
@@ -1502,14 +1526,19 @@ export default function QuoteCreateForm({
         toNumber={toNumber}
       />
 
-      <HotelsSection
+     <HotelsSection
         hotels={hotels}
+        currency={currency}
         onAddHotel={addHotel}
         onRemoveHotel={removeHotel}
         onUpdateHotel={updateHotel}
+        hotelCostPerPerson={(hotel) =>
+          toNumber(hotel.doubleTwinPerPerson) *
+          toNumber(hotel.nights)
+        }
+        formatMoney={formatMoney}
         toNumber={toNumber}
       />
-
       <FixedCostsSection
         rows={fixedCostRows}
         currency={currency}
@@ -1525,11 +1554,20 @@ export default function QuoteCreateForm({
       <OperationalCostsSection
         rows={operationalCostRows}
         currency={currency}
+        totalPassengers={calculations.totalPassengers}
         onAddRow={addOperationalCostRow}
         onRemoveRow={removeOperationalCostRow}
         onUpdateRow={updateOperationalCostRow}
         rowTotal={operationalCostRowTotal}
-        sectionTotal={calculations.operationalCostsSectionTotal}
+        rowPerPerson={(row) =>
+          calculations.totalPassengers > 0
+            ? operationalCostRowTotal(row) /
+              calculations.totalPassengers
+            : 0
+        }
+        sectionTotal={
+          calculations.operationalCostsSectionTotal
+        }
         formatMoney={formatMoney}
         toNumber={toNumber}
       />
@@ -1694,22 +1732,30 @@ export default function QuoteCreateForm({
       </section>
 
       <div className="border-t pt-6 space-y-4">
-        <QuoteSummarySection
-          currency={currency}
-          formatMoney={formatMoney}
-          pricingMode={pricingMode}
-          activeSellingPrice={activeDoubleTwinPrice}
-          calculations={{
-            hotelDoubleTwinPerPerson: calculations.fixedDoubleTwinPerPerson,
-            fixedCostPerPerson: calculations.fixedCostPerPerson,
-            operationalCostPerPerson: calculations.operationalPerPerson,
-            doubleTwinNetCost: calculations.doubleTwinNetCost,
-            freeCostPerPayingPassenger: calculations.freeCostPerPayingPassenger,
-            preHotelTotal: calculations.preHotelTotal,
-            postHotelTotal: calculations.postHotelTotal,
-          }}
-        />
+            <div className="border-t pt-6 space-y-4">
+              <QuoteSummarySection
+                currency={currency}
+                formatMoney={formatMoney}
+                pricingMode={pricingMode}
+                activeSellingPrice={activeDoubleTwinPrice}
+                calculations={{
+                  hotelDoubleTwinPerPerson:
+                    calculations.fixedDoubleTwinPerPerson,
 
+                  fixedCostPerPerson:
+                    calculations.fixedCostPerPerson,
+
+                  operationalCostPerPerson:
+                    calculations.operationalPerPerson,
+
+                  doubleTwinNetCost:
+                    calculations.doubleTwinNetCost,
+
+                  freeCostPerPayingPassenger:
+                    calculations.freeCostPerPayingPassenger,
+                }}
+              />
+            </div>
         <ProfitViewSection
           currency={currency}
           pricingMode={pricingMode}
