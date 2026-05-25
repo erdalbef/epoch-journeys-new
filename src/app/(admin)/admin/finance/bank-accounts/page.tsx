@@ -7,6 +7,7 @@ import { authOptions } from "@/lib/authOptions";
 import { db } from "@/lib/db";
 import { formatCurrency } from "@/lib/payments/formatCurrency";
 import BankAccountForm from "./BankAccountForm";
+import BankAccountActions from "./BankAccountActions";
 
 export default async function BankAccountsPage() {
   const session = await getServerSession(authOptions);
@@ -23,9 +24,7 @@ export default async function BankAccountsPage() {
     <div className="space-y-6 p-6">
       <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
         <div>
-          <h1 className="text-3xl font-bold text-[#001F3F]">
-            Bank Accounts
-          </h1>
+          <h1 className="text-3xl font-bold text-[#001F3F]">Bank Accounts</h1>
           <p className="mt-1 text-sm text-slate-500">
             Manage opening balances and active bank account for finance reports.
           </p>
@@ -55,6 +54,7 @@ export default async function BankAccountsPage() {
               </th>
               <th className="px-4 py-3 font-medium">Status</th>
               <th className="px-4 py-3 font-medium">Notes</th>
+              <th className="px-4 py-3 text-right font-medium">Actions</th>
             </tr>
           </thead>
 
@@ -90,13 +90,17 @@ export default async function BankAccountsPage() {
                 <td className="px-4 py-3 text-slate-500">
                   {account.notes || "-"}
                 </td>
+
+                <td className="px-4 py-3">
+                  <BankAccountActions account={account} />
+                </td>
               </tr>
             ))}
 
             {accounts.length === 0 && (
               <tr>
                 <td
-                  colSpan={6}
+                  colSpan={7}
                   className="px-4 py-10 text-center text-slate-500"
                 >
                   No bank accounts yet.

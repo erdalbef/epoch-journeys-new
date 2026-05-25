@@ -5,7 +5,13 @@ import { Role } from "@prisma/client";
 import { authOptions } from "@/lib/authOptions";
 import { db } from "@/lib/db";
 
-export async function POST(request: Request) {
+type RouteContext = {
+  params: Promise<{
+    id: string;
+  }>;
+};
+
+export async function PATCH(request: Request, context: RouteContext) {
   try {
     const session = await getServerSession(authOptions);
 
@@ -13,7 +19,34 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
+    const { id } = await context.params;
     const formData = await request.formData();
+
+    const setActiveOnly = String(formData.get("setActiveOnly") || "") === "true";
+    const isActive = formData.get("isActive") === "on" || setActiveOnly;
+
+    if (isActive) {
+      await db.bankAccount.updateMany({
+        where: {
+          isActive: true,
+          NOT: {
+            id,
+          },
+        },
+        data: {
+          isActive: false,
+        },
+      });
+    }
+
+    if (setActiveOnly) {
+      await db.bankAccount.update({
+        where: { id },
+        data: { isActive: true },
+      });
+
+      return NextResponse.json({ success: true });
+    }
 
     const name = String(formData.get("name") || "").trim();
     const currency = String(formData.get("currency") || "EUR")
@@ -22,7 +55,6 @@ export async function POST(request: Request) {
     const openingBalance = Number(formData.get("openingBalance") || 0);
     const currentBalance = Number(formData.get("currentBalance") || 0);
     const notes = String(formData.get("notes") || "").trim();
-    const isActive = formData.get("isActive") === "on";
 
     if (!name) {
       return NextResponse.json(
@@ -31,14 +63,8 @@ export async function POST(request: Request) {
       );
     }
 
-    if (isActive) {
-      await db.bankAccount.updateMany({
-        where: { isActive: true },
-        data: { isActive: false },
-      });
-    }
-
-    await db.bankAccount.create({
+    await db.bankAccount.update({
+      where: { id },
       data: {
         name,
         currency,
@@ -51,10 +77,35 @@ export async function POST(request: Request) {
 
     return NextResponse.json({ success: true });
   } catch (error) {
-    console.error("CREATE_BANK_ACCOUNT_ERROR", error);
+    console.error("UPDATE_BANK_ACCOUNT_ERROR", error);
 
     return NextResponse.json(
-      { error: "Failed to create bank account." },
+      { error: "Failed to update bank account." },
+      { status: 500 }
+    );
+  }
+}
+
+export async function DELETE(_request: Request, context: RouteContext) {
+  try {
+    const session = await getServerSession(authOptions);
+
+    if (!session?.user || session.user.role !== Role.ADMIN) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
+    const { id } = await context.params;
+
+    await db.bankAccount.delete({
+      where: { id },
+    });
+
+    return NextResponse.json({ success: true });
+  } catch (error) {
+    console.error("DELETE_BANK_ACCOUNT_ERROR", error);
+
+    return NextResponse.json(
+      { error: "Failed to delete bank account." },
       { status: 500 }
     );
   }

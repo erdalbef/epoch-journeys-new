@@ -100,36 +100,11 @@ export default async function AdminFinanceEntriesPage({
         { vendorName: { contains: q, mode: Prisma.QueryMode.insensitive } },
         { description: { contains: q, mode: Prisma.QueryMode.insensitive } },
         { notes: { contains: q, mode: Prisma.QueryMode.insensitive } },
-        {
-          agentNameSnapshot: {
-            contains: q,
-            mode: Prisma.QueryMode.insensitive,
-          },
-        },
-        {
-          partnerCompanyName: {
-            contains: q,
-            mode: Prisma.QueryMode.insensitive,
-          },
-        },
-        {
-          tourLeaderName: {
-            contains: q,
-            mode: Prisma.QueryMode.insensitive,
-          },
-        },
-        {
-          customPackageName: {
-            contains: q,
-            mode: Prisma.QueryMode.insensitive,
-          },
-        },
-        {
-          groupName: {
-            contains: q,
-            mode: Prisma.QueryMode.insensitive,
-          },
-        },
+        { agentNameSnapshot: { contains: q, mode: Prisma.QueryMode.insensitive } },
+        { partnerCompanyName: { contains: q, mode: Prisma.QueryMode.insensitive } },
+        { tourLeaderName: { contains: q, mode: Prisma.QueryMode.insensitive } },
+        { customPackageName: { contains: q, mode: Prisma.QueryMode.insensitive } },
+        { groupName: { contains: q, mode: Prisma.QueryMode.insensitive } },
         {
           tour: {
             title: {
@@ -214,9 +189,7 @@ export default async function AdminFinanceEntriesPage({
       },
     }),
 
-    db.expense.count({
-      where,
-    }),
+    db.expense.count({ where }),
 
     db.expense.findMany({
       where,
@@ -512,7 +485,7 @@ export default async function AdminFinanceEntriesPage({
 
       <div className="overflow-hidden rounded-2xl border bg-white shadow-sm">
         <div className="overflow-x-auto">
-          <table className="w-full min-w-[1700px] text-sm">
+          <table className="w-full min-w-[1800px] text-sm">
             <thead className="bg-slate-50 text-left text-slate-600">
               <tr>
                 <th className="px-4 py-3 font-medium">Date</th>
@@ -526,6 +499,7 @@ export default async function AdminFinanceEntriesPage({
                 <th className="px-4 py-3 font-medium">Booking</th>
                 <th className="px-4 py-3 font-medium">Tour</th>
                 <th className="px-4 py-3 font-medium">Departure</th>
+                <th className="px-4 py-3 font-medium">Invoice</th>
                 <th className="px-4 py-3 font-medium">Tax</th>
                 <th className="px-4 py-3 font-medium">Status</th>
                 <th className="px-4 py-3 text-right font-medium">Amount</th>
@@ -641,6 +615,30 @@ export default async function AdminFinanceEntriesPage({
                   </td>
 
                   <td className="whitespace-nowrap px-4 py-3">
+                    {expense.receiptUrl ? (
+                      <div className="flex gap-3">
+                        <Link
+                          href={expense.receiptUrl}
+                          target="_blank"
+                          className="text-blue-600 hover:underline"
+                        >
+                          View PDF
+                        </Link>
+
+                        <a
+                          href={expense.receiptUrl}
+                          download
+                          className="text-green-700 hover:underline"
+                        >
+                          Download
+                        </a>
+                      </div>
+                    ) : (
+                      "-"
+                    )}
+                  </td>
+
+                  <td className="whitespace-nowrap px-4 py-3">
                     <div>{formatEnumLabel(expense.taxType)}</div>
                     {(expense.taxAmount || 0) > 0 && (
                       <div className="text-xs text-slate-500">
@@ -688,7 +686,7 @@ export default async function AdminFinanceEntriesPage({
               {expenses.length === 0 && (
                 <tr>
                   <td
-                    colSpan={15}
+                    colSpan={16}
                     className="px-4 py-10 text-center text-sm text-slate-500"
                   >
                     No finance entries found.
