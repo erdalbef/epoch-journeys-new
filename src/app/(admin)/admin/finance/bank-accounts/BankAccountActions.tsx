@@ -13,7 +13,7 @@ export default function BankAccountActions({ account }: Props) {
   const router = useRouter();
   const [isEditing, setIsEditing] = useState(false);
 
-  async function submitAction(formData: FormData) {
+  async function updateAccount(formData: FormData) {
     const res = await fetch(`/api/admin/bank-accounts/${account.id}`, {
       method: "PATCH",
       body: formData,
@@ -32,6 +32,18 @@ export default function BankAccountActions({ account }: Props) {
     toast.success("Bank account updated.");
     setIsEditing(false);
     router.refresh();
+  }
+
+  async function handleEditSubmit(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    await updateAccount(new FormData(event.currentTarget));
+  }
+
+  async function setActiveAccount() {
+    const formData = new FormData();
+    formData.set("setActiveOnly", "true");
+
+    await updateAccount(formData);
   }
 
   async function deleteAccount() {
@@ -58,7 +70,7 @@ export default function BankAccountActions({ account }: Props) {
   if (isEditing) {
     return (
       <form
-        action={submitAction}
+        onSubmit={handleEditSubmit}
         className="min-w-[360px] space-y-3 rounded-xl border bg-slate-50 p-4 text-left"
       >
         <input
@@ -137,12 +149,13 @@ export default function BankAccountActions({ account }: Props) {
       </button>
 
       {!account.isActive && (
-        <form action={submitAction}>
-          <input type="hidden" name="setActiveOnly" value="true" />
-          <button type="submit" className="text-green-700 hover:underline">
-            Set Active
-          </button>
-        </form>
+        <button
+          type="button"
+          onClick={setActiveAccount}
+          className="text-green-700 hover:underline"
+        >
+          Set Active
+        </button>
       )}
 
       <button
