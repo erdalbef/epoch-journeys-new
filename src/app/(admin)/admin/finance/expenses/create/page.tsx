@@ -293,6 +293,42 @@ export default async function AdminCreateExpensePage() {
                   placeholder="Partner company name"
                   className="w-full rounded-xl border px-4 py-2.5 text-sm outline-none transition focus:border-[#8B0000]"
                 />
+
+                <div>
+                  <label className="mb-2 block text-sm font-medium text-slate-700">
+                   Client Company
+                </label>
+
+                <input
+                  name="clientCompanyName"
+                  placeholder="CTS, Corporate Travel, etc."
+                  className="w-full rounded-xl border px-4 py-2.5 text-sm outline-none transition focus:border-[#8B0000]"
+                />
+            </div>
+
+            <div>
+              <label className="mb-2 block text-sm font-medium text-slate-700">
+                Spender / Cash Holder
+              </label>
+
+              <input
+                name="spenderName"
+                placeholder="Erdal, Sedat, Driver, Guide..."
+                className="w-full rounded-xl border px-4 py-2.5 text-sm outline-none transition focus:border-[#8B0000]"
+              />
+            </div>
+
+            <div>
+              <label className="mb-2 block text-sm font-medium text-slate-700">
+                Tour Category
+              </label>
+
+              <input
+                name="tourCategoryName"
+                placeholder="Pilgrimage, Cultural, Cruise..."
+                className="w-full rounded-xl border px-4 py-2.5 text-sm outline-none transition focus:border-[#8B0000]"
+              />
+            </div>
               </div>
 
               <div>

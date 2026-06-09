@@ -872,7 +872,12 @@ model Expense {
   tourLeaderName     String?
   customPackageName  String?
   groupName          String?
-  partnerCompanyId   String?
+
+  clientCompanyName String?
+  spenderName       String?
+  tourCategoryName  String?
+
+  partnerCompanyId String?
 
   @@index([category])
   @@index([paymentStatus])
@@ -884,6 +889,9 @@ model Expense {
   @@index([sourceType])
   @@index([partnerCompanyId])
   @@index([baseCurrency])
+  @@index([clientCompanyName])
+  @@index([spenderName])
+  @@index([tourCategoryName])
 }
 
 model BookingPaymentSchedule {

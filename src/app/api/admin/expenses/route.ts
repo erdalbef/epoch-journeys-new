@@ -118,6 +118,20 @@ export async function POST(request: Request) {
 
     const groupName = String(formData.get("groupName") || "").trim();
 
+    const clientCompanyName = String(
+      formData.get("clientCompanyName") || ""
+    ).trim();
+
+    const spenderName = String(
+      formData.get("spenderName") || ""
+    ).trim();
+
+    const tourCategoryName = String(
+      formData.get("tourCategoryName") || ""
+    ) .trim();
+
+
+
     const partnerCompanyIdRaw = String(
       formData.get("partnerCompanyId") || ""
     ).trim();
@@ -229,6 +243,11 @@ export async function POST(request: Request) {
         tourLeaderName: tourLeaderName || null,
         customPackageName: customPackageName || null,
         groupName: groupName || null,
+
+        clientCompanyName: clientCompanyName || null,
+        spenderName: spenderName || null,
+        tourCategoryName: tourCategoryName || null,
+
         partnerCompanyId: partnerCompanyIdRaw || null,
       },
     });
