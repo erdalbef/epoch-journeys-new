@@ -320,6 +320,45 @@ export default async function EditExpensePage({ params }: PageProps) {
 
               <div>
                 <label className="mb-2 block text-sm font-medium text-slate-700">
+                  Client Company
+                </label>
+
+                <input
+                  name="clientCompanyName"
+                  defaultValue={expense.clientCompanyName ?? ""}
+                  placeholder="CTS, Corporate Travel..."
+                  className="w-full rounded-xl border px-4 py-2.5 text-sm outline-none transition focus:border-[#8B0000]"
+                />
+              </div>
+
+              <div>
+                <label className="mb-2 block text-sm font-medium text-slate-700">
+                  Spender / Cash Holder
+                </label>
+
+                <input
+                  name="spenderName"
+                  defaultValue={expense.spenderName ?? ""}
+                  placeholder="Erdal, Sedat, Guide..."
+                  className="w-full rounded-xl border px-4 py-2.5 text-sm outline-none transition focus:border-[#8B0000]"
+                />
+              </div>
+
+              <div>
+                <label className="mb-2 block text-sm font-medium text-slate-700">
+                  Tour Category
+                </label>
+
+                <input
+                  name="tourCategoryName"
+                  defaultValue={expense.tourCategoryName ?? ""}
+                  placeholder="Pilgrimage, Cultural, Cruise..."
+                  className="w-full rounded-xl border px-4 py-2.5 text-sm outline-none transition focus:border-[#8B0000]"
+                />
+              </div>
+
+              <div>
+                <label className="mb-2 block text-sm font-medium text-slate-700">
                   Partner Company Record
                 </label>
 

@@ -144,6 +144,18 @@ export async function PATCH(
       formData.get("groupName") || ""
     ).trim();
 
+    const clientCompanyName = String(
+      formData.get("clientCompanyName") || ""
+    ).trim();
+
+    const spenderName = String(
+      formData.get("spenderName") || ""
+    ).trim();
+
+    const tourCategoryName = String(
+      formData.get("tourCategoryName") || ""
+    ).trim();
+
     if (!title) {
       return NextResponse.json(
         {
@@ -340,6 +352,17 @@ export async function PATCH(
 
         groupName:
           groupName || null,
+
+        clientCompanyName:
+          clientCompanyName || null,
+
+        spenderName:
+          spenderName || null,
+
+        tourCategoryName:
+          tourCategoryName || null,
+
+        
       },
     });
 
