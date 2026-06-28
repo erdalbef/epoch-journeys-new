@@ -21,6 +21,9 @@ type SearchParams = {
   status?: string;
   direction?: string;
   sourceType?: string;
+  clientCompany?: string;
+  spender?: string;
+  tourCategory?: string;
   from?: string;
   to?: string;
   page?: string;
@@ -87,8 +90,9 @@ export default async function AdminFinanceEntriesPage({
   const status = params.status?.trim() ?? "";
   const direction = params.direction?.trim() ?? "";
   const sourceType = params.sourceType?.trim() ?? "";
-  const from = params.from?.trim() ?? "";
   const to = params.to?.trim() ?? "";
+  const from = params.from?.trim() ?? "";
+  
 
   const currentPage = Math.max(1, Number(params.page || "1"));
   const pageSize = 10;
@@ -105,6 +109,9 @@ export default async function AdminFinanceEntriesPage({
         { tourLeaderName: { contains: q, mode: Prisma.QueryMode.insensitive } },
         { customPackageName: { contains: q, mode: Prisma.QueryMode.insensitive } },
         { groupName: { contains: q, mode: Prisma.QueryMode.insensitive } },
+        { clientCompanyName: { contains: q, mode: Prisma.QueryMode.insensitive } },
+        { spenderName: { contains: q, mode: Prisma.QueryMode.insensitive } },
+        { tourCategoryName: { contains: q, mode: Prisma.QueryMode.insensitive } },
         {
           tour: {
             title: {
@@ -124,39 +131,74 @@ export default async function AdminFinanceEntriesPage({
       ]
     : [];
 
-  const where: Prisma.ExpenseWhereInput = {
-    ...(searchConditions.length > 0 ? { OR: searchConditions } : {}),
+    const clientCompany = params.clientCompany?.trim() ?? "";
+    const spender = params.spender?.trim() ?? "";
+    const tourCategory = params.tourCategory?.trim() ?? "";
 
-    ...(category &&
-    Object.values(ExpenseCategory).includes(category as ExpenseCategory)
-      ? { category: category as ExpenseCategory }
-      : {}),
+    const where: Prisma.ExpenseWhereInput = {
+      ...(searchConditions.length > 0 ? { OR: searchConditions } : {}),
 
-    ...(status &&
-    Object.values(ExpensePaymentStatus).includes(
-      status as ExpensePaymentStatus
-    )
-      ? { paymentStatus: status as ExpensePaymentStatus }
-      : {}),
+      ...(category &&
+      Object.values(ExpenseCategory).includes(category as ExpenseCategory)
+        ? { category: category as ExpenseCategory }
+        : {}),
 
-    ...(direction &&
-    Object.values(FinanceDirection).includes(direction as FinanceDirection)
-      ? { direction: direction as FinanceDirection }
-      : {}),
+      ...(status &&
+      Object.values(ExpensePaymentStatus).includes(
+        status as ExpensePaymentStatus
+      )
+        ? { paymentStatus: status as ExpensePaymentStatus }
+        : {}),
 
-    ...(sourceType &&
-    Object.values(FinanceSourceType).includes(sourceType as FinanceSourceType)
-      ? { sourceType: sourceType as FinanceSourceType }
-      : {}),
+      ...(direction &&
+      Object.values(FinanceDirection).includes(direction as FinanceDirection)
+        ? { direction: direction as FinanceDirection }
+        : {}),
 
-    ...(from || to
-      ? {
-          expenseDate: {
-            ...(from ? { gte: new Date(`${from}T00:00:00.000Z`) } : {}),
-            ...(to ? { lte: new Date(`${to}T23:59:59.999Z`) } : {}),
-          },
-        }
-      : {}),
+      ...(sourceType &&
+      Object.values(FinanceSourceType).includes(sourceType as FinanceSourceType)
+        ? { sourceType: sourceType as FinanceSourceType }
+        : {}),
+
+      ...(clientCompany
+        ? {
+            clientCompanyName: {
+              contains: clientCompany,
+              mode: Prisma.QueryMode.insensitive,
+            },
+          }
+        : {}),
+
+      ...(spender
+        ? {
+            spenderName: {
+              contains: spender,
+              mode: Prisma.QueryMode.insensitive,
+            },
+          }
+        : {}),
+
+      ...(tourCategory
+        ? {
+            tourCategoryName: {
+              contains: tourCategory,
+              mode: Prisma.QueryMode.insensitive,
+            },
+          }
+        : {}),
+
+      ...(from || to
+        ? {
+            expenseDate: {
+              ...(from
+                ? { gte: new Date(`${from}T00:00:00.000Z`) }
+                : {}),
+              ...(to
+                ? { lte: new Date(`${to}T23:59:59.999Z`) }
+                : {}),
+            },
+          }
+        : {}),
   };
 
   const [expenses, totalCount, summaryEntries] = await Promise.all([
@@ -214,6 +256,9 @@ export default async function AdminFinanceEntriesPage({
     if (sourceType) search.set("sourceType", sourceType);
     if (from) search.set("from", from);
     if (to) search.set("to", to);
+    if (clientCompany) search.set("clientCompany", clientCompany);
+    if (spender) search.set("spender", spender);
+    if (tourCategory) search.set("tourCategory", tourCategory);
 
     search.set("page", String(page));
 
@@ -447,7 +492,7 @@ export default async function AdminFinanceEntriesPage({
           </div>
         </div>
 
-        <div className="mt-4 grid gap-4 md:grid-cols-3">
+        <div className="mt-4 grid gap-4 md:grid-cols-3 xl:grid-cols-6">
           <div>
             <label className="mb-2 block text-sm font-medium text-slate-700">
               From
@@ -468,6 +513,42 @@ export default async function AdminFinanceEntriesPage({
               type="date"
               name="to"
               defaultValue={to}
+              className="w-full rounded-xl border px-4 py-2.5 text-sm outline-none transition focus:border-[#8B0000]"
+            />
+          </div>
+
+          <div>
+            <label className="mb-2 block text-sm font-medium text-slate-700">
+              Client Company
+            </label>
+            <input
+              name="clientCompany"
+              defaultValue={clientCompany}
+              placeholder="CTS"
+              className="w-full rounded-xl border px-4 py-2.5 text-sm outline-none transition focus:border-[#8B0000]"
+            />
+          </div>
+
+          <div>
+            <label className="mb-2 block text-sm font-medium text-slate-700">
+              Spender
+            </label>
+            <input
+              name="spender"
+              defaultValue={spender}
+              placeholder="Erdal"
+              className="w-full rounded-xl border px-4 py-2.5 text-sm outline-none transition focus:border-[#8B0000]"
+            />
+          </div>
+
+          <div>
+            <label className="mb-2 block text-sm font-medium text-slate-700">
+              Tour Category
+            </label>
+            <input
+              name="tourCategory"
+              defaultValue={tourCategory}
+              placeholder="Pilgrimage"
               className="w-full rounded-xl border px-4 py-2.5 text-sm outline-none transition focus:border-[#8B0000]"
             />
           </div>

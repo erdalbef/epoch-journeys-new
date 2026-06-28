@@ -114,14 +114,14 @@ export default function AboutPage() {
           <div className="text-center">
             <Image
               src="/team/okan.jpg"
-              alt="Okan Cuhan"
+              alt=""
               width={160}
               height={160}
               className="mx-auto h-32 w-32 rounded-full object-cover"
             />
 
             <h3 className="mt-4 text-lg font-semibold text-[#001F3F]">
-              Okan Cuhan
+             
             </h3>
 
             <p className="text-sm text-[#8B0000]">Operations & Guiding</p>
@@ -158,14 +158,14 @@ export default function AboutPage() {
           <div className="text-center">
             <Image
               src="/team/emre.jpg"
-              alt="Nil"
+              alt=""
               width={160}
               height={160}
               className="mx-auto h-32 w-32 rounded-full object-cover"
             />
 
             <h3 className="mt-4 text-lg font-semibold text-[#001F3F]">
-              Nil
+             
             </h3>
 
             <p className="text-sm text-[#8B0000]">European Operations</p>

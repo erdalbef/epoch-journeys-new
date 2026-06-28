@@ -22,13 +22,13 @@ export const authOptions: NextAuthOptions = {
 
         const user = await db.user.findUnique({
           where: { email },
-        });
+            });
 
-        if (!user) return null;
+            if (!user) return null;
 
-        if (user.role === "AGENT" && !user.approved) {
-          return null;
-        }
+            if (user.role === "AGENT" && !user.approved) {
+              return null;
+}
 
         const ok = await bcrypt.compare(password, user.password);
         if (!ok) return null;
