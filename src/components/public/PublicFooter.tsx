@@ -30,7 +30,6 @@ export function PublicFooter() {
               <li><Link href="/" className="transition hover:text-white">Home</Link></li>
               <li><Link href="/pages/about" className="transition hover:text-white">About</Link></li>
               <li><Link href="/pages/journey-collections" className="transition hover:text-white">Journey Collections</Link></li>
-              <li><Link href="/pages/destinations" className="transition hover:text-white">Destinations</Link></li>
               <li><Link href="/pages/services" className="transition hover:text-white">Services</Link></li>
               <li><Link href="/pages/why-epoch" className="transition hover:text-white">Why Epoch</Link></li>
               <li><Link href="/pages/contact" className="transition hover:text-white">Contact</Link></li>

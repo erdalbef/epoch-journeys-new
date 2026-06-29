@@ -31,7 +31,7 @@ export function PublicHeader() {
             alt="Epoch Journeys"
             width={220}
             height={220}
-            className="h-14 w-14 object-contain"
+            className="h-16 w-16 object-contain"
             priority
           />
 
