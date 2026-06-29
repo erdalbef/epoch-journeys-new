@@ -88,7 +88,7 @@ export default function WhyEpochPage() {
           </p>
 
           <h1 className="mt-5 text-4xl font-semibold tracking-tight text-[#0B1F3A] sm:text-5xl">
-            Why Travel Professionals Choose Epoch
+            Why Pilgrimage Specialists Choose Epoch
           </h1>
 
           <p className="mx-auto mt-6 max-w-3xl text-lg leading-8 text-gray-600">

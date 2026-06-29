@@ -23,12 +23,11 @@ export default function HomePage() {
               </p>
 
               <h1 className="max-w-4xl text-4xl font-semibold leading-[1.02] tracking-tight text-white drop-shadow-[0_2px_12px_rgba(0,0,0,0.25)] sm:text-5xl lg:text-6xl">
-                European Specialists in Catholic Pilgrimages
+                Specialists in Catholic Pilgrimages & Christian Heritage Journeys.
               </h1>
 
               <p className="mt-7 max-w-2xl text-xl leading-8 text-white/90">
-                Tailor-made Catholic Pilgrimages and Christian Heritage Journeys
-                across Europe and the Holy Land.
+                Headquartered in Europe. Serving Tailor-made Catholic Pilgrimages and Christian Heritage Journeys around the world.
               </p>
 
               <p className="mt-6 text-xl font-semibold text-[#C9A24D] sm:text-2xl">
@@ -36,7 +35,7 @@ export default function HomePage() {
               </p>
 
               <p className="mt-8 max-w-2xl text-base leading-8 text-white/85 sm:text-lg">
-                Epoch Journeys is a European Destination Management Company
+                Epoch Journeys is a Destination Management Company
                 specializing in Catholic pilgrimages and Christian heritage
                 journeys. We help travel agencies, dioceses, parishes, and
                 religious organizations create meaningful journeys supported by

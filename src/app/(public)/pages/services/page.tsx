@@ -41,14 +41,17 @@ const afterServices = [
 
 const destinations = [
   "Italy",
-  "Greece",
-  "Türkiye",
   "France",
   "Spain & Portugal",
+  "Greece",
+  "Türkiye",
   "Holy Land",
-  "Central Europe",
+  "Medjugorje & the Balkans",
+  "Central & Eastern Europe",
   "British Isles",
   "Northern Europe",
+  "Mexico",
+  "Japan & South Korea",
 ];
 
 const managedItems = [
@@ -118,11 +121,11 @@ export default function ServicesPage() {
       <section className="bg-[#F7F3EA] px-6 py-24 sm:px-10 lg:px-16">
         <div className="mx-auto max-w-6xl text-center">
           <p className="text-xs font-semibold uppercase tracking-[0.28em] text-[#C9A24D]">
-            Destination Expertise
+            Our Network
           </p>
 
           <h2 className="mt-5 text-3xl font-semibold tracking-tight text-[#0B1F3A] sm:text-4xl">
-            Our Destination Expertise
+            Our Pilgrimage Destinations
           </h2>
 
           <div className="mt-12 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
@@ -140,8 +143,9 @@ export default function ServicesPage() {
           </div>
 
           <p className="mx-auto mt-10 max-w-3xl text-base leading-8 text-gray-600">
-            Our destination portfolio continues to grow as Epoch Journeys expands
-            its network of meaningful Catholic pilgrimage destinations worldwide.
+            Epoch Journeys continues to expand its network of Catholic pilgrimage 
+            and Christian heritage destinations through trusted local partnerships 
+            and carefully designed journey collections.
           </p>
         </div>
       </section>
