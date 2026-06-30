@@ -17,26 +17,82 @@ import {
 } from "lucide-react";
 
 const beforeServices = [
-  { title: "Pilgrimage Planning", text: "Tailor-made concepts designed around your group’s vision.", icon: Church },
-  { title: "Itinerary Design", text: "Routes that balance faith, heritage, pace, and logistics.", icon: Map },
-  { title: "Hotel Selection", text: "Carefully selected hotels balancing comfort, location, and group requirements.", icon: Hotel },
-  { title: "Program Budgeting", text: "Clear proposals shaped around your objectives and expectations.", icon: ClipboardList },
+  {
+    title: "Pilgrimage Planning",
+    text: "Tailor-made concepts designed around your group’s vision.",
+    icon: Church,
+  },
+  {
+    title: "Itinerary Design",
+    text: "Routes that balance faith, heritage, pace, and logistics.",
+    icon: Map,
+  },
+  {
+    title: "Hotel Selection",
+    text: "Carefully selected hotels balancing comfort, location, and group requirements.",
+    icon: Hotel,
+  },
+  {
+    title: "Program Budgeting",
+    text: "Clear proposals shaped around your objectives and expectations.",
+    icon: ClipboardList,
+  },
 ];
 
 const duringServices = [
-  { title: "Airport Meet & Assist", text: "Professional arrival and departure coordination.", icon: Plane },
-  { title: "Transportation", text: "Reliable coaches and transfers throughout the pilgrimage.", icon: Bus },
-  { title: "Licensed Local Guides", text: "Guides who understand history, faith, and sacred places.", icon: Users },
-  { title: "Mass Arrangements", text: "Assistance coordinating Masses with local churches when possible.", icon: Church },
-  { title: "Restaurant Reservations", text: "Restaurants selected for quality, timing, and group needs.", icon: Utensils },
-  { title: "Whisper Systems", text: "Audio guide systems for clear communication during visits.", icon: Headphones },
-  { title: "Operational Support", text: "Responsive support while your pilgrims are with us.", icon: ShieldCheck },
+  {
+    title: "Airport Meet & Assist",
+    text: "Professional arrival and departure coordination.",
+    icon: Plane,
+  },
+  {
+    title: "Transportation",
+    text: "Reliable coaches and transfers throughout the pilgrimage.",
+    icon: Bus,
+  },
+  {
+    title: "Licensed Local Guides",
+    text: "Guides who understand history, faith, and sacred places.",
+    icon: Users,
+  },
+  {
+    title: "Mass Arrangements",
+    text: "Assistance coordinating Masses with local churches when possible.",
+    icon: Church,
+  },
+  {
+    title: "Restaurant Reservations",
+    text: "Restaurants selected for quality, timing, and group needs.",
+    icon: Utensils,
+  },
+  {
+    title: "Whisper Systems",
+    text: "Audio guide systems for clear communication during visits.",
+    icon: Headphones,
+  },
+  {
+    title: "Operational Support",
+    text: "Responsive support while your pilgrims are with us.",
+    icon: ShieldCheck,
+  },
 ];
 
 const afterServices = [
-  { title: "Follow-Up", text: "We welcome feedback and use it to improve future pilgrimages.", icon: MessageCircle },
-  { title: "Future Planning", text: "We help you develop your next pilgrimage with confidence.", icon: ClipboardList },
-  { title: "Long-Term Partnership", text: "Our goal is years of successful pilgrimages together.", icon: Handshake },
+  {
+    title: "Follow-Up",
+    text: "We welcome feedback and use it to improve future pilgrimages.",
+    icon: MessageCircle,
+  },
+  {
+    title: "Future Planning",
+    text: "We help you develop your next pilgrimage with confidence.",
+    icon: ClipboardList,
+  },
+  {
+    title: "Long-Term Partnership",
+    text: "Our goal is years of successful pilgrimages together.",
+    icon: Handshake,
+  },
 ];
 
 const destinations = [
@@ -50,8 +106,8 @@ const destinations = [
   "Central & Eastern Europe",
   "British Isles",
   "Northern Europe",
-  "Mexico",
-  "Japan & South Korea",
+  "Mexico (Coming Soon)",
+  "Japan & South Korea (Coming Soon)",
 ];
 
 const managedItems = [
@@ -85,7 +141,8 @@ export default function ServicesPage() {
           <p className="mx-auto mt-6 max-w-3xl text-lg leading-8 text-gray-600">
             We provide comprehensive destination management services for Catholic
             pilgrimages and Christian heritage journeys, helping our partners
-            deliver meaningful pilgrimages with confidence.
+            create meaningful experiences through trusted local expertise,
+            thoughtful planning, and reliable operations.
           </p>
 
           <div className="mt-9">
@@ -143,9 +200,10 @@ export default function ServicesPage() {
           </div>
 
           <p className="mx-auto mt-10 max-w-3xl text-base leading-8 text-gray-600">
-            Epoch Journeys continues to expand its network of Catholic pilgrimage 
-            and Christian heritage destinations through trusted local partnerships 
-            and carefully designed journey collections.
+            Epoch Journeys continues to expand its network of Catholic
+            pilgrimage and Christian heritage destinations through trusted local
+            partnerships, carefully curated journey collections, and a commitment
+            to meaningful pilgrimage experiences.
           </p>
         </div>
       </section>
@@ -186,9 +244,10 @@ export default function ServicesPage() {
           </h2>
 
           <p className="mt-6 text-lg leading-8 text-white/75">
-            Whether you already have a pilgrimage in mind or are looking for
-            ideas, our team is ready to help you create a thoughtfully planned
-            journey for your pilgrims.
+            Whether you already have a pilgrimage in mind or are beginning with
+            an idea, our team is ready to help you create a thoughtfully planned
+            pilgrimage that reflects your group’s faith, expectations, and
+            purpose.
           </p>
 
           <div className="mt-9">

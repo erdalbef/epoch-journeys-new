@@ -1,5 +1,4 @@
-
- import Link from "next/link";
+import Link from "next/link";
 import {
   CheckCircle2,
   Handshake,
@@ -21,8 +20,8 @@ const differenceItems = [
     icon: ShieldCheck,
   },
   {
-    title: "European Expertise",
-    text: "Trusted destination specialists across Europe and the Holy Land.",
+    title: "Destination Expertise",
+    text: "Trusted destination specialists providing authentic local knowledge and dependable operational support.",
     icon: Landmark,
   },
   {
@@ -41,7 +40,7 @@ const promiseItems = [
 ];
 
 const checklistItems = [
-  "European specialists in Catholic pilgrimages",
+  "Specialists in Catholic pilgrimages",
   "Christian heritage expertise",
   "Tailor-made pilgrimage programs",
   "Multi-country planning",
@@ -88,13 +87,13 @@ export default function WhyEpochPage() {
           </p>
 
           <h1 className="mt-5 text-4xl font-semibold tracking-tight text-[#0B1F3A] sm:text-5xl">
-            Why Pilgrimage Specialists Choose Epoch
+            Why Partners Choose Epoch Journeys
           </h1>
 
           <p className="mx-auto mt-6 max-w-3xl text-lg leading-8 text-gray-600">
-            European specialists in Catholic pilgrimages, combining thoughtful
-            planning, trusted partnerships, and professional destination
-            management across Europe and the Holy Land.
+            Specialists in Catholic pilgrimages and Christian heritage journeys,
+            combining thoughtful planning, trusted partnerships, and professional
+            destination management.
           </p>
 
           <div className="mt-9">
@@ -121,14 +120,14 @@ export default function WhyEpochPage() {
           <p className="mt-6 text-lg leading-8 text-gray-600">
             A successful pilgrimage is about far more than reservations and
             logistics. It begins with understanding your vision, respecting the
-            spiritual purpose of the journey, and carefully planning every
-            detail so your pilgrims can focus on what matters most.
+            spiritual purpose of the journey, and carefully planning every detail
+            so your pilgrims can focus on what matters most.
           </p>
 
           <p className="mt-6 text-lg leading-8 text-gray-600">
             At Epoch Journeys, we become an extension of your team, providing
             the expertise, local knowledge, and operational support needed to
-            deliver exceptional Catholic pilgrimages.
+            deliver meaningful Catholic pilgrimages with confidence.
           </p>
         </div>
       </section>
@@ -231,7 +230,7 @@ export default function WhyEpochPage() {
         <div className="mx-auto max-w-6xl">
           <div className="mx-auto max-w-3xl text-center">
             <p className="text-xs font-semibold uppercase tracking-[0.28em] text-[#C9A24D]">
-              Why Professionals Choose Epoch
+              Why Partners Choose Epoch
             </p>
 
             <h2 className="mt-5 text-3xl font-semibold tracking-tight text-[#0B1F3A] sm:text-4xl">
@@ -298,8 +297,8 @@ export default function WhyEpochPage() {
           </h2>
 
           <p className="mt-6 text-lg leading-8 text-white/75">
-            Whether you organize one pilgrimage each year or many throughout
-            Europe, Epoch Journeys is ready to become your trusted destination
+            Whether you organize one pilgrimage each year or many throughout the
+            world, Epoch Journeys is ready to become your trusted destination
             management partner.
           </p>
 

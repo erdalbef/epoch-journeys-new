@@ -86,8 +86,8 @@ export default function ContactPage() {
           </h1>
 
           <p className="mx-auto mt-6 max-w-3xl text-lg leading-8 text-gray-600">
-            Whether you are planning your first pilgrimage or looking for a
-            trusted destination management partner, our team is ready to help.
+            Whether you are planning your first pilgrimage or looking for a trusted
+            pilgrimage destination management partner, our team is ready to help..
           </p>
         </div>
       </section>
@@ -213,8 +213,8 @@ export default function ContactPage() {
           </h2>
 
           <p className="mt-6 text-lg leading-8 text-white/75">
-            We would be delighted to learn about your pilgrimage plans and
-            explore how Epoch Journeys can support your organization.
+            We would be delighted to learn about your pilgrimage plans and explore how
+            Epoch Journeys can support your next pilgrimage.
           </p>
         </div>
       </section>

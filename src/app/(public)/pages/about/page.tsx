@@ -3,7 +3,7 @@ import Link from "next/link";
 const standards = [
   {
     title: "Thoughtfully Planned",
-    text: "Every pilgrimage begins with careful planning, spiritual understanding, and attention to detail. We design journeys that reflect the objectives, traditions, and expectations of each group.",
+    text: "Every pilgrimage begins with careful planning, spiritual understanding, and attention to detail. We design journeys that reflect the goals, traditions, and expectations of each group.",
   },
   {
     title: "Faithfully Delivered",
@@ -14,8 +14,8 @@ const standards = [
     text: "Successful pilgrimages are built on trust. We cultivate long-term relationships through transparency, responsiveness, and consistent service.",
   },
   {
-    title: "European Expertise",
-    text: "Our trusted network of destination specialists throughout Europe and the Holy Land provides authentic local knowledge and dependable operational support.",
+    title: "Destination Expertise",
+    text: "Our trusted network of destination specialists provides authentic local knowledge and dependable operational support across meaningful Catholic pilgrimage destinations.",
   },
 ];
 
@@ -29,13 +29,14 @@ export default function AboutPage() {
           </p>
 
           <h1 className="mt-5 text-4xl font-semibold tracking-tight text-[#0B1F3A] sm:text-5xl">
-            Building Meaningful Catholic Pilgrimages Across Europe
+            Building Meaningful Catholic Pilgrimages
           </h1>
 
           <p className="mx-auto mt-6 max-w-3xl text-lg leading-8 text-gray-600">
-            European specialists in Catholic pilgrimages and Christian heritage
-            journeys, partnering with travel professionals to create exceptional
-            faith-based experiences across Europe and the Holy Land.
+            Specialists in Catholic pilgrimages and Christian heritage journeys,
+            partnering with agencies, dioceses, parishes, religious
+            organizations, and pilgrimage leaders to create meaningful journeys
+            of faith.
           </p>
         </div>
       </section>
@@ -73,13 +74,13 @@ export default function AboutPage() {
           </p>
 
           <h2 className="mt-5 text-3xl font-semibold tracking-tight sm:text-4xl">
-            A European Destination Management Company for Faith-Based Travel
+            A Destination Management Company for Catholic Pilgrimages
           </h2>
 
           <p className="mx-auto mt-6 max-w-3xl text-lg leading-8 text-white/75">
             Epoch Journeys specializes in Catholic pilgrimages and Christian
-            heritage journeys. We work with travel agencies, tour operators,
-            dioceses, parishes, religious organizations, and pilgrimage leaders.
+            heritage journeys. We work with agencies, tour operators, dioceses,
+            parishes, religious organizations, and pilgrimage leaders.
           </p>
 
           <p className="mx-auto mt-6 max-w-3xl text-lg leading-8 text-white/75">
@@ -97,7 +98,7 @@ export default function AboutPage() {
             </p>
 
             <h2 className="mt-5 text-3xl font-semibold tracking-tight text-[#0B1F3A] sm:text-4xl">
-              Thoughtful Planning. Trusted Delivery.
+              Thoughtfully Planned. Faithfully Delivered.
             </h2>
           </div>
 
@@ -131,10 +132,10 @@ export default function AboutPage() {
             </h2>
 
             <p className="mt-6 text-lg leading-8 text-gray-600">
-              To help travel professionals, dioceses, parishes, and religious
-              organizations create meaningful Catholic pilgrimages and Christian
-              heritage journeys through thoughtful planning, trusted European
-              expertise, and professional destination management.
+              To help agencies, dioceses, parishes, religious organizations, and
+              pilgrimage leaders create meaningful Catholic pilgrimages and
+              Christian heritage journeys through thoughtful planning, trusted
+              destination expertise, and professional destination management.
             </p>
           </div>
 
@@ -144,13 +145,13 @@ export default function AboutPage() {
             </p>
 
             <h2 className="mt-5 text-3xl font-semibold text-[#0B1F3A]">
-              Becoming Europe’s Most Trusted Pilgrimage DMC
+              Becoming a Trusted Pilgrimage DMC
             </h2>
 
             <p className="mt-6 text-lg leading-8 text-gray-600">
-              To become Europe’s most trusted Destination Management Company for
-              Catholic pilgrimages and Christian heritage journeys, recognized
-              for excellence, integrity, and enduring partnerships.
+              To become one of the most trusted Destination Management Companies
+              for Catholic pilgrimages and Christian heritage journeys,
+              recognized for excellence, integrity, and enduring partnerships.
             </p>
           </div>
         </div>
@@ -173,9 +174,10 @@ export default function AboutPage() {
           </p>
 
           <p className="mx-auto mt-5 max-w-3xl text-base leading-8 text-gray-600">
-            Our international team is connected across Europe and united by one
-            commitment: delivering exceptional Catholic pilgrimages and Christian
-            heritage journeys with professionalism and care.
+            Our international team is connected across different destinations
+            and united by one commitment: delivering exceptional Catholic
+            pilgrimages and Christian heritage journeys with professionalism and
+            care.
           </p>
 
           <div className="mt-9">
@@ -202,7 +204,7 @@ export default function AboutPage() {
           <p className="mt-6 text-lg leading-8 text-white/75">
             Whether you are organizing your first pilgrimage or your fiftieth,
             our team is ready to help you create a journey tailored to your
-            group’s spiritual, pastoral, and operational goals.
+            group’s faith, expectations, and pilgrimage goals.
           </p>
 
           <div className="mt-9">

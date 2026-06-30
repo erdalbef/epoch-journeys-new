@@ -1,197 +1,315 @@
 import Link from "next/link";
+import {
+  CheckCircle2,
+  Handshake,
+  Landmark,
+  MessageCircle,
+  ShieldCheck,
+  Sparkles,
+} from "lucide-react";
 
-const themeItems = [
+const differenceItems = [
   {
-    title: "Pilgrimage Tours",
-    description:
-      "Faith-based journeys designed with spiritual purpose, cultural context, and careful operational planning for churches, ministries, and religious groups.",
-    points: [
-      "Catholic and Christian pilgrimage programs",
-      "Sacred sites, shrines, churches, and spiritual heritage",
-      "Group-friendly planning with liturgical sensitivity",
-    ],
+    title: "Thoughtfully Planned",
+    text: "Every pilgrimage begins with understanding your group’s vision, expectations, and pilgrimage goals.",
+    icon: Sparkles,
   },
   {
-    title: "Cultural Journeys",
-    description:
-      "Programs that connect travelers with the history, identity, and traditions of each destination through thoughtfully structured itineraries.",
-    points: [
-      "Historical cities and heritage-focused routes",
-      "Art, architecture, traditions, and local context",
-      "Designed for travelers seeking more than sightseeing",
-    ],
+    title: "Faithfully Delivered",
+    text: "Professional execution from arrival until departure, with every detail managed with care.",
+    icon: ShieldCheck,
   },
   {
-    title: "Historical Programs",
-    description:
-      "Itineraries built around civilizations, empires, and major historical narratives, offering real depth for groups with educational or thematic interests.",
-    points: [
-      "Ancient, classical, Byzantine, and medieval themes",
-      "Narrative-led itineraries with meaningful site selection",
-      "Suitable for educational and affinity groups",
-    ],
+    title: "Destination Expertise",
+    text: "Trusted destination specialists providing authentic local knowledge and dependable operational support.",
+    icon: Landmark,
   },
   {
-    title: "Custom Group Travel",
-    description:
-      "Tailor-made programs for agencies, institutions, organizations, and private groups with specific goals, interests, and travel profiles.",
-    points: [
-      "Customized pacing, inclusions, and route planning",
-      "Adaptable for group size, budget, and audience",
-      "Built in close collaboration with the partner",
-    ],
-  },
-  {
-    title: "Faith & Heritage Programs",
-    description:
-      "Journeys that combine spiritual significance with the wider cultural and historical setting of a destination for a more complete experience.",
-    points: [
-      "Balanced spiritual and cultural content",
-      "Ideal for travelers seeking both reflection and discovery",
-      "Well suited for mixed-interest religious groups",
-    ],
-  },
-  {
-    title: "Special Interest Series",
-    description:
-      "Programs built around a distinct theme, subject, or travel purpose for partners who want a more differentiated product offering.",
-    points: [
-      "Thematic concepts shaped around audience interest",
-      "Suitable for niche groups and specialist travel sellers",
-      "Designed to stand apart from standard touring",
-    ],
+    title: "Built for Partnerships",
+    text: "Your reputation becomes our responsibility.",
+    icon: Handshake,
   },
 ];
 
-export default function ThemesPage() {
+const promiseItems = [
+  "We listen before we design.",
+  "We customize every pilgrimage.",
+  "We communicate clearly and promptly.",
+  "We protect your reputation.",
+  "We build long-term partnerships.",
+];
+
+const checklistItems = [
+  "Specialists in Catholic pilgrimages",
+  "Christian heritage expertise",
+  "Tailor-made pilgrimage programs",
+  "Multi-country planning",
+  "Carefully selected hotels",
+  "Licensed local guides",
+  "Transportation coordination",
+  "Assistance with Mass arrangements",
+  "Customized proposals",
+  "Responsive communication",
+  "Transparent pricing",
+  "Long-term partnerships",
+];
+
+const processItems = [
+  {
+    step: "01",
+    title: "Share Your Vision",
+    text: "Tell us about your group, destinations, travel dates, and pilgrimage goals.",
+  },
+  {
+    step: "02",
+    title: "We Design Your Pilgrimage",
+    text: "Our specialists prepare a tailored proposal reflecting your objectives.",
+  },
+  {
+    step: "03",
+    title: "We Coordinate Every Detail",
+    text: "Hotels, transportation, local guides, restaurants, operational support, and assistance with Mass arrangements.",
+  },
+  {
+    step: "04",
+    title: "Together We Deliver",
+    text: "Your pilgrims return inspired. Your organization grows. Our partnership continues.",
+  },
+];
+
+export default function WhyEpochPage() {
   return (
-    <main className="bg-[#f8f9fb] text-black">
-      <section className="mx-auto max-w-5xl px-6 pt-24 pb-16 text-center sm:px-10 lg:px-16">
-        <p className="text-xs font-semibold uppercase tracking-[0.3em] text-[#8B0000]">
-          Themes
-        </p>
+    <main className="bg-white text-black">
+      <section className="bg-[#F7F3EA] px-6 py-24 text-center sm:px-10 lg:px-16">
+        <div className="mx-auto max-w-4xl">
+          <p className="text-xs font-semibold uppercase tracking-[0.3em] text-[#C9A24D]">
+            Why Epoch Journeys
+          </p>
 
-        <h1 className="mt-4 text-4xl font-semibold tracking-tight text-[#001F3F] sm:text-5xl">
-          Thoughtfully designed travel themes for professional partners
-        </h1>
+          <h1 className="mt-5 text-4xl font-semibold tracking-tight text-[#0B1F3A] sm:text-5xl">
+            Why Partners Choose Epoch Journeys
+          </h1>
 
-        <p className="mx-auto mt-6 max-w-3xl text-lg leading-8 text-gray-600">
-          Epoch Journeys develops travel programs around meaningful themes that
-          help travel advisors, agencies, and group leaders offer more
-          distinctive and more purposeful experiences.
-        </p>
-      </section>
+          <p className="mx-auto mt-6 max-w-3xl text-lg leading-8 text-gray-600">
+            Specialists in Catholic pilgrimages and Christian heritage journeys,
+            combining thoughtful planning, trusted partnerships, and professional
+            destination management.
+          </p>
 
-      <section className="mx-auto max-w-7xl px-6 pb-24 sm:px-10 lg:px-16">
-        <div className="grid gap-8 md:grid-cols-2 xl:grid-cols-3">
-          {themeItems.map((item) => (
-            <article
-              key={item.title}
-              className="rounded-2xl border border-gray-200/70 bg-white p-7 shadow-[0_8px_24px_rgba(0,0,0,0.04)] transition hover:shadow-[0_12px_30px_rgba(0,0,0,0.06)]"
+          <div className="mt-9">
+            <Link
+              href="/request-partnership"
+              className="inline-flex items-center justify-center rounded-full bg-[#C9A24D] px-8 py-3.5 text-sm font-semibold text-[#0B1F3A] transition hover:bg-[#0B1F3A] hover:text-[#C9A24D]"
             >
-              <h2 className="text-xl font-semibold tracking-tight text-[#001F3F]">
-                {item.title}
-              </h2>
-
-              <p className="mt-4 text-sm leading-7 text-gray-600">
-                {item.description}
-              </p>
-
-              <ul className="mt-5 space-y-3">
-                {item.points.map((point) => (
-                  <li key={point} className="flex gap-3">
-                    <span className="mt-2.5 h-2 w-2 rounded-full bg-[#8B0000]" />
-                    <span className="text-sm leading-7 text-gray-700">
-                      {point}
-                    </span>
-                  </li>
-                ))}
-              </ul>
-            </article>
-          ))}
-        </div>
-      </section>
-
-      <section className="bg-white py-24">
-        <div className="mx-auto max-w-6xl px-6 sm:px-10 lg:px-16">
-          <div className="grid gap-12 lg:grid-cols-[1fr_1fr] lg:items-start">
-            <div>
-              <p className="text-xs font-semibold uppercase tracking-[0.28em] text-[#8B0000]">
-                How We Build Themes
-              </p>
-
-              <h2 className="mt-4 text-3xl font-semibold tracking-tight text-[#001F3F]">
-                Structured around audience, purpose, and destination depth
-              </h2>
-
-              <p className="mt-6 text-base leading-8 text-gray-600">
-                Our themes are not built as generic labels. Each program is
-                shaped by the profile of the traveler, the purpose of the
-                journey, and the cultural or spiritual identity of the
-                destination itself.
-              </p>
-            </div>
-
-            <div className="grid gap-6">
-              <div className="rounded-2xl border border-gray-200/70 bg-[#f8f9fb] p-6">
-                <h3 className="text-lg font-semibold text-[#001F3F]">
-                  Audience-Focused
-                </h3>
-                <p className="mt-3 text-sm leading-7 text-gray-600">
-                  We shape the theme around who the program is for, whether that
-                  means pilgrimage groups, culturally curious travelers, private
-                  groups, or specialist audiences.
-                </p>
-              </div>
-
-              <div className="rounded-2xl border border-gray-200/70 bg-[#f8f9fb] p-6">
-                <h3 className="text-lg font-semibold text-[#001F3F]">
-                  Destination-Led
-                </h3>
-                <p className="mt-3 text-sm leading-7 text-gray-600">
-                  We build around what the destination can genuinely offer,
-                  rather than forcing a concept that does not fit the local
-                  context or travel rhythm.
-                </p>
-              </div>
-
-              <div className="rounded-2xl border border-gray-200/70 bg-[#f8f9fb] p-6">
-                <h3 className="text-lg font-semibold text-[#001F3F]">
-                  Operationally Practical
-                </h3>
-                <p className="mt-3 text-sm leading-7 text-gray-600">
-                  Every theme is translated into a workable program with
-                  attention to routing, pacing, logistics, and the expectations
-                  of travel professionals.
-                </p>
-              </div>
-            </div>
+              Become a Partner
+            </Link>
           </div>
         </div>
       </section>
 
-      <section className="mx-auto max-w-4xl px-6 py-24 text-center sm:px-10 lg:px-16">
-        <p className="text-xs font-semibold uppercase tracking-[0.28em] text-[#8B0000]">
-          Work With Us
-        </p>
+      <section className="px-6 py-24 sm:px-10 lg:px-16">
+        <div className="mx-auto max-w-4xl text-center">
+          <p className="text-xs font-semibold uppercase tracking-[0.28em] text-[#C9A24D]">
+            Our Approach
+          </p>
 
-        <h2 className="mt-4 text-3xl font-semibold tracking-tight text-[#001F3F]">
-          Let’s shape the right thematic programs for your clients
-        </h2>
+          <h2 className="mt-5 text-3xl font-semibold tracking-tight text-[#0B1F3A] sm:text-4xl">
+            We Become Part of Your Team
+          </h2>
 
-        <p className="mt-6 text-lg leading-8 text-gray-600">
-          Whether you are looking for pilgrimage journeys, cultural itineraries,
-          historical routes, or custom group concepts, we are ready to help you
-          build programs with clarity and purpose.
-        </p>
+          <p className="mt-6 text-lg leading-8 text-gray-600">
+            A successful pilgrimage is about far more than reservations and
+            logistics. It begins with understanding your vision, respecting the
+            spiritual purpose of the journey, and carefully planning every detail
+            so your pilgrims can focus on what matters most.
+          </p>
 
-        <div className="mt-8 flex justify-center">
-          <Link
-            href="/request-partnership"
-            className="rounded-full bg-[#8B0000] px-8 py-3.5 text-sm font-semibold text-white shadow-md transition hover:bg-[#6f0000]"
-          >
-            Request Partnership
-          </Link>
+          <p className="mt-6 text-lg leading-8 text-gray-600">
+            At Epoch Journeys, we become an extension of your team, providing
+            the expertise, local knowledge, and operational support needed to
+            deliver meaningful Catholic pilgrimages with confidence.
+          </p>
+        </div>
+      </section>
+
+      <section className="bg-[#F7F3EA] px-6 py-24 sm:px-10 lg:px-16">
+        <div className="mx-auto max-w-7xl">
+          <div className="mx-auto max-w-3xl text-center">
+            <p className="text-xs font-semibold uppercase tracking-[0.28em] text-[#C9A24D]">
+              The Epoch Difference
+            </p>
+
+            <h2 className="mt-5 text-3xl font-semibold tracking-tight text-[#0B1F3A] sm:text-4xl">
+              Built for Trust. Designed for Pilgrimages.
+            </h2>
+          </div>
+
+          <div className="mt-14 grid gap-8 md:grid-cols-2 lg:grid-cols-4">
+            {differenceItems.map((item) => {
+              const Icon = item.icon;
+
+              return (
+                <div
+                  key={item.title}
+                  className="rounded-3xl border border-gray-200 bg-white p-7 shadow-[0_12px_34px_rgba(0,0,0,0.05)] transition hover:-translate-y-1 hover:shadow-[0_18px_40px_rgba(0,0,0,0.08)]"
+                >
+                  <div className="flex h-12 w-12 items-center justify-center rounded-full bg-[#0B1F3A] text-[#C9A24D]">
+                    <Icon size={22} />
+                  </div>
+
+                  <h3 className="mt-6 text-xl font-semibold text-[#0B1F3A]">
+                    {item.title}
+                  </h3>
+
+                  <p className="mt-4 text-sm leading-7 text-gray-600">
+                    {item.text}
+                  </p>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      </section>
+
+      <section className="bg-[#0B1F3A] px-6 py-24 text-center text-white sm:px-10 lg:px-16">
+        <div className="mx-auto max-w-4xl">
+          <p className="text-xs font-semibold uppercase tracking-[0.28em] text-[#C9A24D]">
+            The Epoch Standard
+          </p>
+
+          <h2 className="mt-5 text-4xl font-semibold tracking-tight sm:text-5xl">
+            Thoughtfully Planned.
+            <br />
+            Faithfully Delivered.
+          </h2>
+
+          <p className="mx-auto mt-8 max-w-3xl text-lg leading-8 text-white/75">
+            Every itinerary. Every hotel. Every local guide. Every partnership.
+            Every pilgrimage. Guided by one commitment: The Epoch Standard.
+          </p>
+        </div>
+      </section>
+
+      <section className="px-6 py-24 sm:px-10 lg:px-16">
+        <div className="mx-auto max-w-7xl">
+          <div className="mx-auto max-w-3xl text-center">
+            <p className="text-xs font-semibold uppercase tracking-[0.28em] text-[#C9A24D]">
+              Our Promise to Partners
+            </p>
+
+            <h2 className="mt-5 text-3xl font-semibold tracking-tight text-[#0B1F3A] sm:text-4xl">
+              We Protect the Trust You Place in Us
+            </h2>
+          </div>
+
+          <div className="mt-14 grid gap-5 md:grid-cols-5">
+            {promiseItems.map((item) => (
+              <div
+                key={item}
+                className="rounded-2xl border border-gray-200 bg-white p-6 text-center shadow-[0_10px_28px_rgba(0,0,0,0.04)]"
+              >
+                <MessageCircle
+                  className="mx-auto text-[#C9A24D]"
+                  size={24}
+                />
+                <p className="mt-4 text-sm font-semibold leading-6 text-[#0B1F3A]">
+                  {item}
+                </p>
+              </div>
+            ))}
+          </div>
+
+          <p className="mx-auto mt-12 max-w-3xl text-center text-lg leading-8 text-gray-600">
+            When your pilgrims travel with Epoch Journeys, they travel under
+            your name. We never forget that responsibility.
+          </p>
+        </div>
+      </section>
+
+      <section className="bg-[#F7F3EA] px-6 py-24 sm:px-10 lg:px-16">
+        <div className="mx-auto max-w-6xl">
+          <div className="mx-auto max-w-3xl text-center">
+            <p className="text-xs font-semibold uppercase tracking-[0.28em] text-[#C9A24D]">
+              Why Partners Choose Epoch
+            </p>
+
+            <h2 className="mt-5 text-3xl font-semibold tracking-tight text-[#0B1F3A] sm:text-4xl">
+              Everything Needed for a Thoughtfully Managed Pilgrimage
+            </h2>
+          </div>
+
+          <div className="mt-14 grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
+            {checklistItems.map((item) => (
+              <div key={item} className="flex items-start gap-3">
+                <CheckCircle2 className="mt-0.5 text-[#C9A24D]" size={20} />
+                <span className="text-base leading-7 text-gray-700">
+                  {item}
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      <section className="px-6 py-24 sm:px-10 lg:px-16">
+        <div className="mx-auto max-w-7xl">
+          <div className="mx-auto max-w-3xl text-center">
+            <p className="text-xs font-semibold uppercase tracking-[0.28em] text-[#C9A24D]">
+              How We Work
+            </p>
+
+            <h2 className="mt-5 text-3xl font-semibold tracking-tight text-[#0B1F3A] sm:text-4xl">
+              From Vision to Pilgrimage
+            </h2>
+          </div>
+
+          <div className="mt-14 grid gap-8 md:grid-cols-4">
+            {processItems.map((item) => (
+              <div
+                key={item.step}
+                className="rounded-3xl border border-gray-200 bg-white p-7 shadow-[0_12px_34px_rgba(0,0,0,0.05)]"
+              >
+                <p className="text-sm font-semibold tracking-[0.18em] text-[#C9A24D]">
+                  {item.step}
+                </p>
+
+                <h3 className="mt-4 text-lg font-semibold text-[#0B1F3A]">
+                  {item.title}
+                </h3>
+
+                <p className="mt-4 text-sm leading-7 text-gray-600">
+                  {item.text}
+                </p>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      <section className="bg-[#0B1F3A] px-6 py-24 text-center text-white sm:px-10 lg:px-16">
+        <div className="mx-auto max-w-3xl">
+          <p className="text-xs font-semibold uppercase tracking-[0.28em] text-[#C9A24D]">
+            Begin Your Partnership
+          </p>
+
+          <h2 className="mt-5 text-3xl font-semibold tracking-tight sm:text-4xl">
+            Let’s Begin Your Next Pilgrimage
+          </h2>
+
+          <p className="mt-6 text-lg leading-8 text-white/75">
+            Whether you organize one pilgrimage each year or many throughout the
+            world, Epoch Journeys is ready to become your trusted destination
+            management partner.
+          </p>
+
+          <div className="mt-9">
+            <Link
+              href="/request-partnership"
+              className="inline-flex items-center justify-center rounded-full bg-[#C9A24D] px-8 py-3.5 text-sm font-semibold text-[#0B1F3A] transition hover:bg-white"
+            >
+              Become a Partner
+            </Link>
+          </div>
         </div>
       </section>
     </main>
