@@ -11,40 +11,32 @@ export default function HomePage() {
           }}
         />
 
-        <div className="absolute inset-0 bg-linear-to-r from-[#0B1F3A]/95 via-[#0B1F3A]/82 to-[#0B1F3A]/25" />
-        <div className="absolute inset-0 bg-black/15" />
+        <div className="absolute inset-0 bg-linear-to-r from-[#0B1F3A]/95 via-[#0B1F3A]/80 to-[#0B1F3A]/20" />
+        <div className="absolute inset-0 bg-black/10" />
         <div className="pointer-events-none absolute inset-x-0 bottom-0 h-44 bg-linear-to-b from-transparent to-white" />
 
         <div className="relative flex min-h-[92vh] items-center">
           <div className="mx-auto w-full max-w-7xl px-6 py-24 sm:px-10 lg:px-16 lg:py-32">
-            <div className="max-w-4xl text-white">
-              <p className="mb-5 text-xs font-semibold uppercase tracking-[0.32em] text-[#C9A24D] sm:text-sm">
+            <div className="max-w-3xl text-white">
+              <p className="mb-5 text-xs font-semibold uppercase tracking-[0.34em] text-[#C9A24D] sm:text-sm">
                 Epoch Journeys
               </p>
 
-              <h1 className="max-w-4xl text-4xl font-semibold leading-[1.02] tracking-tight text-white drop-shadow-[0_2px_12px_rgba(0,0,0,0.25)] sm:text-5xl lg:text-6xl">
+              <h1 className="text-4xl font-semibold leading-[1.03] tracking-tight text-white drop-shadow-[0_2px_12px_rgba(0,0,0,0.25)] sm:text-5xl lg:text-6xl">
                 Specialists in Catholic Pilgrimages & Christian Heritage Journeys
               </h1>
 
-              <p className="mt-7 max-w-2xl text-xl leading-8 text-white/90">
-                Headquartered in Europe. Creating tailor-made pilgrimages across
-                Europe, the Holy Land, and the world’s most meaningful Catholic
-                destinations.
+              <p className="mt-7 max-w-2xl text-lg leading-8 text-white/90 sm:text-xl">
+                Creating tailor-made Catholic pilgrimages across Europe, the Holy
+                Land, Turkey, Greece, and beyond — with trusted local expertise
+                and seamless operations.
               </p>
 
               <p className="mt-6 text-xl font-semibold text-[#C9A24D] sm:text-2xl">
                 Thoughtfully Planned. Faithfully Delivered.
               </p>
 
-              <p className="mt-8 max-w-2xl text-base leading-8 text-white/85 sm:text-lg">
-                Epoch Journeys is a Destination Management Company specializing
-                in Catholic pilgrimages and Christian heritage journeys. We help
-                travel agencies, dioceses, parishes, and religious organizations
-                create meaningful journeys supported by trusted local expertise
-                and seamless operations.
-              </p>
-
-              <div className="mt-10 flex flex-col gap-7 sm:flex-row sm:items-center">
+              <div className="mt-10 flex flex-col gap-4 sm:flex-row sm:items-center">
                 <Link
                   href="/request-partnership"
                   className="inline-flex items-center justify-center rounded-full bg-[#C9A24D] px-8 py-3.5 text-sm font-semibold tracking-wide text-[#0B1F3A] shadow-[0_10px_30px_rgba(0,0,0,0.18)] transition hover:bg-[#0B1F3A] hover:text-[#C9A24D]"
@@ -81,7 +73,7 @@ export default function HomePage() {
 
           <p className="mx-auto mt-6 max-w-3xl text-base leading-8 text-gray-600 sm:text-lg">
             An epoch marks the beginning of a new chapter. We believe every
-            pilgrimage marks the beginning of something meaningful—for pilgrims,
+            pilgrimage marks the beginning of something meaningful — for pilgrims,
             for communities, and for the partnerships that make these journeys
             possible.
           </p>

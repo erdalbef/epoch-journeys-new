@@ -5,6 +5,7 @@ export type JourneyDestination = {
   country: string;
   description: string;
   image: string;
+  href?: string;
 };
 
 export type JourneyGlanceItem = {
@@ -43,16 +44,24 @@ export type JourneyCollection = {
     label: string;
     title: string;
     description: string;
-    features: string[];
+    groups: {
+      title: string;
+      description: string;
+      icon: LucideIcon;
+    }[];
   };
 
-  promise: {
+  journeyInspirations: {
     title: string;
+    days: string;
+    countries: string;
+    theme: string;
     description: string;
-    tagline: string;
-  };
+    href: string;
+  }[];
 
   quote: {
+    label: string;
     text: string;
     author: string;
   };

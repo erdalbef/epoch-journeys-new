@@ -2,3 +2,8 @@ export { default as JourneyHero } from "./JourneyHero";
 export { default as OpeningReflection } from "./OpeningReflection";
 export { default as JourneyAtGlance } from "./JourneyAtGlance";
 export { default as DestinationCards } from "./DestinationCards";
+export { default as DesignedFor } from "./DesignedFor";
+export { default as EpochDifference } from "./EpochDifference";
+export { default as JourneyInspirations } from "./JourneyInspirations";
+export { default as PilgrimReflection } from "./PilgrimReflection";
+export { default as JourneyCTA } from "./JourneyCTA";

@@ -10,7 +10,7 @@ import { Menu, X } from "lucide-react";
 const navItems = [
   { href: "/", label: "Home" },
   { href: "/pages/about", label: "About" },
-  { href: "/pages/journey-collections", label: "Journey Collections" },
+  { href: "/pages/journeys", label: "Journeys" },
   { href: "/pages/services", label: "Services" },
   { href: "/pages/why-epoch", label: "Why Epoch" },
   { href: "/pages/contact", label: "Contact" },
@@ -20,58 +20,62 @@ export function PublicHeader() {
   const [open, setOpen] = useState(false);
 
   return (
-    <header className="sticky top-0 z-50 w-full border-b border-slate-200/60 bg-white/95 shadow-sm backdrop-blur">
-      <div className="mx-auto flex h-24 max-w-7xl items-center justify-between px-6 lg:px-8">
-        <Link
-          href="/"
-          className="flex items-center gap-4 transition-opacity hover:opacity-90"
-        >
+    <header className="sticky top-0 z-50 w-full border-b border-slate-200/70 bg-white/95 shadow-md backdrop-blur">
+      <div className="mx-auto flex h-[104px] max-w-7xl items-center justify-between gap-8 px-6 lg:px-8">
+        <Link href="/" className="flex shrink-0 items-center gap-4">
           <Image
-            src="/epoch-logo.png"
+            src="/epoch-compass-logo.png"
             alt="Epoch Journeys"
-            width={220}
-            height={220}
-            className="h-16 w-16 object-contain"
+            width={104}
+            height={104}
             priority
+            className="h-[68px] w-[68px] object-contain"
           />
 
-          <span className="text-[1.3rem] font-semibold tracking-tight text-[#0B1F3A]">
-            Epoch Journeys
-          </span>
+          <div className="leading-tight">
+            <div className="whitespace-nowrap text-[28px] font-semibold tracking-tight text-[#0B1F3A]">
+              Epoch Journeys
+            </div>
+            <div className="mt-1 whitespace-nowrap text-[11px] font-semibold uppercase tracking-[0.34em] text-[#A57A1C]">
+              Christian Pilgrimages
+            </div>
+          </div>
         </Link>
 
-        <nav className="hidden items-center gap-1 lg:flex">
+        <nav className="hidden flex-1 items-center justify-center gap-4 lg:flex">
           {navItems.map((item) => (
             <Link
               key={item.href}
               href={item.href}
-              className="rounded-full px-3.5 py-2 text-[15px] font-medium text-[#0B1F3A] transition hover:bg-[#F7F3EA]"
+              className="whitespace-nowrap rounded-full px-3.5 py-2 text-[15px] font-semibold text-[#0B1F3A] transition hover:bg-[#F7F3EA] hover:text-[#A57A1C]"
             >
               {item.label}
             </Link>
           ))}
+        </nav>
 
-          <Separator orientation="vertical" className="mx-3 h-6" />
+        <div className="hidden shrink-0 items-center gap-3 lg:flex">
+          <Separator orientation="vertical" className="mr-1 h-7" />
 
           <Button
-            className="rounded-full border border-transparent bg-[#C9A24D] px-6 py-2.5 font-semibold text-[#0B1F3A] shadow-sm transition-all duration-300 ease-in-out hover:border-[#C9A24D] hover:bg-[#0B1F3A] hover:text-[#C9A24D] hover:shadow-md"
             asChild
+            className="rounded-full bg-[#C9A24D] px-8 py-5 text-[15px] font-semibold text-[#0B1F3A] shadow-md transition hover:bg-[#0B1F3A] hover:text-[#C9A24D] hover:shadow-lg"
           >
             <Link href="/request-partnership">Become a Partner</Link>
           </Button>
 
           <Button
-            variant="outline"
-            className="rounded-full border-slate-300 px-5 font-semibold text-[#0B1F3A] transition hover:bg-[#F7F3EA]"
             asChild
+            variant="outline"
+            className="rounded-full border-slate-300 px-6 py-5 text-[15px] font-semibold text-[#0B1F3A] transition hover:bg-[#F7F3EA]"
           >
             <Link href="/agent-login">Agent Login</Link>
           </Button>
-        </nav>
+        </div>
 
         <button
           onClick={() => setOpen(!open)}
-          className="inline-flex h-11 w-11 items-center justify-center rounded-full border border-slate-200 text-[#0B1F3A] transition hover:bg-[#F7F3EA] lg:hidden"
+          className="inline-flex h-12 w-12 items-center justify-center rounded-full border border-slate-200 text-[#0B1F3A] transition hover:bg-[#F7F3EA] lg:hidden"
           aria-label={open ? "Close menu" : "Open menu"}
         >
           {open ? <X size={22} /> : <Menu size={22} />}
@@ -87,7 +91,7 @@ export function PublicHeader() {
                   key={item.href}
                   href={item.href}
                   onClick={() => setOpen(false)}
-                  className="rounded-xl px-3 py-3 text-sm font-medium text-[#0B1F3A] transition hover:bg-[#F7F3EA]"
+                  className="rounded-xl px-3 py-3 text-sm font-semibold text-[#0B1F3A] transition hover:bg-[#F7F3EA]"
                 >
                   {item.label}
                 </Link>
