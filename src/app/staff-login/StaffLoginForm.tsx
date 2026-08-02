@@ -3,7 +3,12 @@
 import { useMemo, useState } from "react";
 import { signIn, signOut } from "next-auth/react";
 import { useRouter } from "next/navigation";
-import { LockKeyhole } from "lucide-react";
+import {
+  Eye,
+  EyeOff,
+  LoaderCircle,
+  LockKeyhole,
+} from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -19,6 +24,10 @@ export function StaffLoginForm() {
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+
+  const [emailTouched, setEmailTouched] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
+
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -28,24 +37,52 @@ export function StaffLoginForm() {
   );
 
   const emailError = useMemo(() => {
-    if (!emailNormalized) return "Email is required.";
+    if (!emailTouched) return null;
+
+    if (!emailNormalized) {
+      return "Email address is required.";
+    }
 
     if (!isValidEmail(emailNormalized)) {
       return "Please enter a valid email address.";
     }
 
     return null;
-  }, [emailNormalized]);
+  }, [emailNormalized, emailTouched]);
 
-  async function onSubmit(e: React.FormEvent<HTMLFormElement>) {
-    e.preventDefault();
+  function handleEmailChange(value: string) {
+    setEmail(value);
+
+    if (error) {
+      setError(null);
+    }
+  }
+
+  function handlePasswordChange(value: string) {
+    setPassword(value);
+
+    if (error) {
+      setError(null);
+    }
+  }
+
+  async function onSubmit(
+    event: React.FormEvent<HTMLFormElement>
+  ) {
+    event.preventDefault();
 
     if (loading) return;
 
+    setEmailTouched(true);
     setError(null);
 
-    if (emailError) {
-      setError(emailError);
+    if (!emailNormalized) {
+      setError("Email address is required.");
+      return;
+    }
+
+    if (!isValidEmail(emailNormalized)) {
+      setError("Please enter a valid email address.");
       return;
     }
 
@@ -56,39 +93,56 @@ export function StaffLoginForm() {
 
     setLoading(true);
 
-    const res = await signIn("credentials", {
-      email: emailNormalized,
-      password,
-      redirect: false,
-      callbackUrl: "/staff",
-    });
-
-    if (!res || res.error || res.ok === false) {
-      setLoading(false);
-      setError("Invalid staff credentials.");
-      return;
-    }
-
-    const sessionResponse = await fetch("/api/auth/session", {
-      cache: "no-store",
-    });
-
-    const sessionData = await sessionResponse.json();
-
-    const role = sessionData?.user?.role;
-
-    if (role !== "STAFF" && role !== "ADMIN") {
-      await signOut({
+    try {
+      const result = await signIn("credentials", {
+        email: emailNormalized,
+        password,
         redirect: false,
+        callbackUrl: "/staff",
       });
 
-      setLoading(false);
-      setError("This account does not have access to the Epoch Workspace.");
-      return;
-    }
+      if (!result || result.error || result.ok === false) {
+        setError("Invalid staff credentials.");
+        return;
+      }
 
-    router.push("/staff");
-    router.refresh();
+      const sessionResponse = await fetch("/api/auth/session", {
+        cache: "no-store",
+      });
+
+      if (!sessionResponse.ok) {
+        setError(
+          "We could not verify your Workspace access. Please try again."
+        );
+        return;
+      }
+
+      const sessionData = await sessionResponse.json();
+      const role = sessionData?.user?.role;
+
+      if (role !== "STAFF" && role !== "ADMIN") {
+        await signOut({
+          redirect: false,
+        });
+
+        setError(
+          "This account does not have access to the Epoch Workspace."
+        );
+
+        return;
+      }
+
+      router.replace("/staff");
+      router.refresh();
+    } catch (loginError) {
+      console.error("Epoch Workspace login error:", loginError);
+
+      setError(
+        "The Workspace could not be reached. Please try again."
+      );
+    } finally {
+      setLoading(false);
+    }
   }
 
   return (
@@ -124,27 +178,45 @@ export function StaffLoginForm() {
           </p>
         </div>
 
-        <form onSubmit={onSubmit} className="mt-8 space-y-5">
+        <form
+          onSubmit={onSubmit}
+          className="mt-8 space-y-5"
+          noValidate
+        >
           <div className="space-y-2">
             <label
               htmlFor="staff-email"
               className="text-sm font-medium text-slate-800"
             >
-              Email
+              Email Address
             </label>
 
             <Input
               id="staff-email"
+              name="email"
               type="email"
               value={email}
-              onChange={(e) => setEmail(e.target.value)}
+              onChange={(event) =>
+                handleEmailChange(event.target.value)
+              }
+              onBlur={() => setEmailTouched(true)}
               autoComplete="email"
-              required
+              placeholder="name@epochjourneys.com"
               disabled={loading}
+              aria-invalid={Boolean(emailError)}
+              aria-describedby={
+                emailError ? "staff-email-error" : undefined
+              }
+              className="h-12"
             />
 
             {emailError ? (
-              <p className="text-xs text-red-600">{emailError}</p>
+              <p
+                id="staff-email-error"
+                className="text-xs text-red-600"
+              >
+                {emailError}
+              </p>
             ) : null}
           </div>
 
@@ -156,29 +228,70 @@ export function StaffLoginForm() {
               Password
             </label>
 
-            <Input
-              id="staff-password"
-              type="password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              autoComplete="current-password"
-              required
-              disabled={loading}
-            />
+            <div className="relative">
+              <Input
+                id="staff-password"
+                name="password"
+                type={showPassword ? "text" : "password"}
+                value={password}
+                onChange={(event) =>
+                  handlePasswordChange(event.target.value)
+                }
+                autoComplete="current-password"
+                disabled={loading}
+                className="h-12 pr-12"
+              />
+
+              <button
+                type="button"
+                onClick={() =>
+                  setShowPassword((current) => !current)
+                }
+                disabled={loading}
+                className="absolute inset-y-0 right-0 flex w-12 items-center justify-center text-slate-400 transition hover:text-[#0B1F3A] disabled:cursor-not-allowed disabled:opacity-50"
+                aria-label={
+                  showPassword
+                    ? "Hide password"
+                    : "Show password"
+                }
+              >
+                {showPassword ? (
+                  <EyeOff size={18} />
+                ) : (
+                  <Eye size={18} />
+                )}
+              </button>
+            </div>
           </div>
 
           {error ? (
-            <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+            <div
+              role="alert"
+              className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700"
+            >
               {error}
             </div>
           ) : null}
 
           <Button
             type="submit"
-            className="w-full bg-[#C9A24D] text-[#0B1F3A] hover:bg-[#B8903E]"
+            className="h-12 w-full bg-[#C9A24D] font-semibold text-[#0B1F3A] hover:bg-[#B8903E]"
             disabled={loading}
           >
-            {loading ? "Entering Workspace..." : "Enter Epoch Workspace"}
+            {loading ? (
+              <>
+                <LoaderCircle
+                  size={17}
+                  className="mr-2 animate-spin"
+                />
+                Opening Workspace...
+              </>
+            ) : (
+              <>
+                <LockKeyhole size={17} className="mr-2" />
+                Continue Your Journey
+              </>
+            )}
           </Button>
         </form>
 
