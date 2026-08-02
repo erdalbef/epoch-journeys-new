@@ -1129,6 +1129,7 @@ enum DepartureStatus {
 
 enum Role {
   ADMIN
+  STAFF
   AGENT
 }
 

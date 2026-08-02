@@ -61,7 +61,7 @@ export const authOptions: NextAuthOptions = {
     async session({ session, token }) {
       if (session.user) {
         session.user.id = String(token.id ?? "");
-        session.user.role = (token.role ?? "AGENT") as "ADMIN" | "AGENT";
+        session.user.role = (token.role ?? "AGENT") as "ADMIN" | "STAFF" | "AGENT";
         session.user.approved = Boolean(token.approved);
         session.user.commissionRate =
           typeof token.commissionRate === "number"

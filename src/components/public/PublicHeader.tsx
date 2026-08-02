@@ -14,6 +14,7 @@ const navItems = [
   { href: "/pages/services", label: "Services" },
   { href: "/pages/why-epoch", label: "Why Epoch" },
   { href: "/pages/contact", label: "Contact" },
+  { href: "/pages/epoch-academy", label: "Epoch Academy" },
 ];
 
 export function PublicHeader() {
@@ -113,6 +114,13 @@ export function PublicHeader() {
                 className="inline-flex items-center justify-center rounded-xl border border-slate-300 px-4 py-3 text-sm font-semibold text-[#0B1F3A] transition hover:bg-[#F7F3EA]"
               >
                 Agent Login
+              </Link>
+              <Link
+                href="/epoch-academy"
+                onClick={() => setOpen(false)}
+                className="inline-flex items-center justify-center rounded-xl border border-slate-300 px-4 py-3 text-sm font-semibold text-[#0B1F3A] transition hover:bg-[#F7F3EA]"
+              >
+                Epoch Academy
               </Link>
             </div>
           </div>
