@@ -259,6 +259,7 @@ async function updateDeparture(
     data: {
       date,
       season,
+      price: priceDouble,
       priceDouble,
       singleSupplement,
       tripleReduction,
@@ -282,6 +283,7 @@ async function deleteDeparture(tourId: string, departureId: string) {
       _count: {
         select: {
           bookings: true,
+          quotes: true,
         },
       },
     },
@@ -293,6 +295,10 @@ async function deleteDeparture(tourId: string, departureId: string) {
 
   if (existing._count.bookings > 0) {
     redirect(`/admin/tours/${tourId}/departures?error=departure-has-bookings`);
+  }
+
+  if (existing._count.quotes > 0) {
+    redirect(`/admin/tours/${tourId}/departures?error=departure-has-quotes`);
   }
 
   await db.departureDate.delete({
@@ -346,6 +352,8 @@ export default async function AdminTourDeparturesPage({
         error={
           error === "departure-has-bookings"
             ? "Cannot delete this departure because it has existing bookings."
+            : error === "departure-has-quotes"
+              ? "Cannot delete this departure because it is linked to existing quotes."
             : error === "capacity-below-booked"
               ? "Capacity cannot be lower than the number of already booked seats."
               : error === "price-locked"

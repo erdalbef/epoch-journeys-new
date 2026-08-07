@@ -28,7 +28,7 @@ const workspaceSections = [
       "Explore Epoch Journeys, pilgrimage themes, internal itineraries, and presentation guidance.",
     href: "/staff/journeys",
     icon: Compass,
-    available: false,
+    available: true,
   },
   {
     title: "Destination Library",

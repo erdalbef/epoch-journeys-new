@@ -22,11 +22,22 @@ export async function POST(
     select: {
       id: true,
       userId: true,
+      numberOfGuests: true,
+      _count: { select: { passengers: true } },
     },
   });
 
   if (!booking || booking.userId !== session.user.id) {
     return NextResponse.json({ error: "Booking not found" }, { status: 404 });
+  }
+
+  if (booking._count.passengers >= booking.numberOfGuests) {
+    return NextResponse.json(
+      {
+        error: `This booking already has all ${booking.numberOfGuests} passenger records.`,
+      },
+      { status: 409 }
+    );
   }
 
   if (!body.firstName?.trim() || !body.lastName?.trim()) {

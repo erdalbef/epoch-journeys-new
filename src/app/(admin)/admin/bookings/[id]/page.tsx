@@ -1,11 +1,16 @@
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { getServerSession } from "next-auth";
-import { BookingStatus, PaymentStatus } from "@prisma/client";
+import {
+  BookingStatus,
+  PaymentStatus,
+} from "@prisma/client";
 
 import { db } from "@/lib/db";
 import { authOptions } from "@/lib/authOptions";
+
 import BookingDetailClient from "@/components/bookings/BookingDetailClient";
+import AddPaymentForm from "@/components/admin/bookings/AddPaymentForm";
 import ActionButton from "@/components/shared/button/ActionButton";
 
 type PageProps = {
@@ -14,7 +19,10 @@ type PageProps = {
   }>;
 };
 
-function formatCurrency(value: number | null | undefined, currency = "EUR") {
+function formatCurrency(
+  value: number | null | undefined,
+  currency = "EUR",
+) {
   return new Intl.NumberFormat("en-US", {
     style: "currency",
     currency,
@@ -22,73 +30,108 @@ function formatCurrency(value: number | null | undefined, currency = "EUR") {
   }).format(value ?? 0);
 }
 
-function formatDate(value?: Date | string | null) {
-  if (!value) return "-";
+function formatDate(
+  value?: Date | string | null,
+) {
+  if (!value) {
+    return "-";
+  }
 
-  const date = value instanceof Date ? value : new Date(value);
+  const date =
+    value instanceof Date
+      ? value
+      : new Date(value);
 
-  if (Number.isNaN(date.getTime())) return "-";
+  if (Number.isNaN(date.getTime())) {
+    return "-";
+  }
 
-  return date.toLocaleDateString("en-GB", {
-    day: "2-digit",
-    month: "short",
-    year: "numeric",
-  });
+  return date.toLocaleDateString(
+    "en-GB",
+    {
+      day: "2-digit",
+      month: "short",
+      year: "numeric",
+    },
+  );
 }
 
-function getStatusBadgeClass(status: BookingStatus) {
+function getStatusBadgeClass(
+  status: BookingStatus,
+) {
   switch (status) {
     case "CONFIRMED":
       return "bg-green-100 text-green-800";
+
     case "PENDING":
       return "bg-amber-100 text-amber-800";
+
     case "ON_REQUEST":
       return "bg-blue-100 text-blue-800";
+
     case "WAITLIST":
       return "bg-purple-100 text-purple-800";
+
     case "CANCELLED":
       return "bg-red-100 text-red-800";
+
     default:
       return "bg-gray-100 text-gray-800";
   }
 }
 
-function getPaymentBadgeClass(status: PaymentStatus) {
+function getPaymentBadgeClass(
+  status: PaymentStatus,
+) {
   switch (status) {
     case "PAID":
       return "bg-green-100 text-green-800";
+
     case "PARTIALLY_PAID":
       return "bg-amber-100 text-amber-800";
+
     case "UNPAID":
       return "bg-red-100 text-red-800";
+
     case "REFUNDED":
       return "bg-slate-200 text-slate-800";
+
     default:
       return "bg-gray-100 text-gray-800";
   }
 }
 
-function getOperationBadgeClass(status?: string | null) {
+function getOperationBadgeClass(
+  status?: string | null,
+) {
   switch (status) {
     case "READY":
       return "bg-green-100 text-green-800";
+
     case "IN_PROGRESS":
       return "bg-yellow-100 text-yellow-800";
+
     default:
       return "bg-red-100 text-red-800";
   }
 }
 
-function getFinancialStatus(params: {
+function getFinancialStatus({
+  totalPrice,
+  amountPaid,
+  paymentDueDate,
+}: {
   totalPrice: number;
   amountPaid: number;
   paymentDueDate?: Date | null;
 }) {
-  const { totalPrice, amountPaid, paymentDueDate } = params;
   const now = new Date();
 
   if (amountPaid === 0) {
-    if (paymentDueDate && paymentDueDate < now) {
+    if (
+      paymentDueDate &&
+      paymentDueDate < now
+    ) {
       return "OVERDUE";
     }
 
@@ -96,7 +139,10 @@ function getFinancialStatus(params: {
   }
 
   if (amountPaid < totalPrice) {
-    if (paymentDueDate && paymentDueDate < now) {
+    if (
+      paymentDueDate &&
+      paymentDueDate < now
+    ) {
       return "OVERDUE";
     }
 
@@ -106,28 +152,43 @@ function getFinancialStatus(params: {
   return "PAID";
 }
 
-function getFinancialBadgeClass(status: string) {
+function getFinancialBadgeClass(
+  status: string,
+) {
   switch (status) {
     case "PAID":
       return "bg-green-100 text-green-800";
+
     case "PARTIAL":
       return "bg-amber-100 text-amber-800";
+
     case "UNPAID":
       return "bg-red-100 text-red-800";
+
     case "OVERDUE":
       return "bg-red-200 text-red-900 font-semibold";
+
     default:
       return "bg-gray-100 text-gray-800";
   }
 }
 
-function InfoCard({ label, value }: { label: string; value: string }) {
+function InfoCard({
+  label,
+  value,
+}: {
+  label: string;
+  value: string;
+}) {
   return (
     <div className="rounded-xl border bg-white p-4 shadow-sm">
       <p className="text-xs font-medium uppercase tracking-wide text-gray-500">
         {label}
       </p>
-      <p className="mt-2 text-sm font-semibold text-gray-900">{value}</p>
+
+      <p className="mt-2 text-sm font-semibold text-gray-900">
+        {value}
+      </p>
     </div>
   );
 }
@@ -141,7 +202,10 @@ function Section({
 }) {
   return (
     <section className="rounded-2xl border bg-white p-6 shadow-sm">
-      <h2 className="mb-4 text-lg font-semibold text-gray-900">{title}</h2>
+      <h2 className="mb-4 text-lg font-semibold text-gray-900">
+        {title}
+      </h2>
+
       {children}
     </section>
   );
@@ -156,99 +220,170 @@ function DataRow({
 }) {
   return (
     <div className="grid grid-cols-1 gap-1 border-b py-3 last:border-b-0 md:grid-cols-[220px_1fr]">
-      <div className="text-sm font-medium text-gray-500">{label}</div>
-      <div className="text-sm text-gray-900">{value}</div>
+      <div className="text-sm font-medium text-gray-500">
+        {label}
+      </div>
+
+      <div className="text-sm text-gray-900">
+        {value}
+      </div>
     </div>
   );
 }
 
-export default async function AdminBookingDetailPage({ params }: PageProps) {
-  const session = await getServerSession(authOptions);
+export default async function AdminBookingDetailPage({
+  params,
+}: PageProps) {
+  const session =
+    await getServerSession(
+      authOptions,
+    );
 
-  if (!session?.user || session.user.role !== "ADMIN") {
+  if (
+    !session?.user ||
+    session.user.role !== "ADMIN"
+  ) {
     redirect("/admin-login");
   }
 
-  const { id } = await params;
+  const { id } =
+    await params;
 
-  const booking = await db.booking.findUnique({
-    where: { id },
-    include: {
-      quote: {
+  const [booking, bankAccounts] =
+    await Promise.all([
+      db.booking.findUnique({
+        where: {
+          id,
+        },
+
+        include: {
+          quote: {
+            select: {
+              id: true,
+              quoteNumber: true,
+              status: true,
+            },
+          },
+
+          user: {
+            select: {
+              id: true,
+              fullName: true,
+              email: true,
+            },
+          },
+
+          departureDate: {
+            select: {
+              id: true,
+              date: true,
+              season: true,
+              status: true,
+            },
+          },
+
+          tour: {
+            select: {
+              id: true,
+              title: true,
+            },
+          },
+
+          operationControl: true,
+
+          passengers: {
+            orderBy: [
+              {
+                isLeadPassenger:
+                  "desc",
+              },
+              {
+                lastName: "asc",
+              },
+              {
+                firstName: "asc",
+              },
+            ],
+          },
+        },
+      }),
+
+      db.bankAccount.findMany({
+        where: {
+          isActive: true,
+        },
+
+        orderBy: {
+          name: "asc",
+        },
+
         select: {
           id: true,
-          quoteNumber: true,
-          status: true,
+          name: true,
+          currency: true,
         },
-      },
-      user: {
-        select: {
-          id: true,
-          fullName: true,
-          email: true,
-        },
-      },
-      departureDate: {
-        select: {
-          id: true,
-          date: true,
-          season: true,
-          status: true,
-        },
-      },
-      tour: {
-        select: {
-          id: true,
-          title: true,
-        },
-      },
-      operationControl: true,
-    },
-  });
+      }),
+    ]);
 
   if (!booking) {
     notFound();
   }
 
-  const due = booking.totalPrice - booking.amountPaid;
+  const due =
+    booking.totalPrice -
+    booking.amountPaid;
 
-  const financialStatus = getFinancialStatus({
-    totalPrice: booking.totalPrice,
-    amountPaid: booking.amountPaid,
-    paymentDueDate: booking.paymentDueDate,
-  });
+  const financialStatus =
+    getFinancialStatus({
+      totalPrice:
+        booking.totalPrice,
 
-  const operationStatus = booking.operationControl?.status || "PENDING";
+      amountPaid:
+        booking.amountPaid,
+
+      paymentDueDate:
+        booking.paymentDueDate,
+    });
+
+  const operationStatus =
+    booking.operationControl?.status ||
+    "PENDING";
 
   return (
     <div className="mx-auto max-w-7xl space-y-6 p-8">
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
-          <p className="text-sm font-medium text-gray-500">Booking</p>
+          <p className="text-sm font-medium text-gray-500">
+            Booking
+          </p>
 
           <h1 className="text-3xl font-bold text-gray-900">
             {booking.bookingReference}
           </h1>
 
           <p className="mt-2 text-sm text-gray-600">
-            {booking.tourTitleSnapshot || booking.tour?.title || "Tour not set"}
+            {booking.tourTitleSnapshot ||
+              booking.tour?.title ||
+              "Tour not set"}
           </p>
 
           <div className="mt-3 flex flex-wrap gap-2">
             <span
               className={`rounded px-2 py-1 text-xs font-medium ${getStatusBadgeClass(
-                booking.status
+                booking.status,
               )}`}
             >
-              Booking: {booking.status}
+              Booking:{" "}
+              {booking.status}
             </span>
 
             <span
               className={`rounded px-2 py-1 text-xs font-medium ${getOperationBadgeClass(
-                operationStatus
+                operationStatus,
               )}`}
             >
-              Operation: {operationStatus}
+              Operation:{" "}
+              {operationStatus}
             </span>
           </div>
         </div>
@@ -279,32 +414,71 @@ export default async function AdminBookingDetailPage({ params }: PageProps) {
       </div>
 
       <div className="grid grid-cols-1 gap-4 md:grid-cols-6">
-        <InfoCard label="Status" value={booking.status} />
-        <InfoCard label="Operation" value={operationStatus} />
-        <InfoCard label="Payment" value={booking.paymentStatus} />
-        <InfoCard label="Guests" value={String(booking.numberOfGuests ?? 0)} />
+        <InfoCard
+          label="Status"
+          value={booking.status}
+        />
+
+        <InfoCard
+          label="Operation"
+          value={operationStatus}
+        />
+
+        <InfoCard
+          label="Payment"
+          value={booking.paymentStatus}
+        />
+
+        <InfoCard
+          label="Guests"
+          value={String(
+            booking.numberOfGuests ??
+              0,
+          )}
+        />
+
         <InfoCard
           label="Departure"
           value={formatDate(
-            booking.departureDateSnapshot || booking.departureDate?.date
+            booking.departureDateSnapshot ||
+              booking.departureDate
+                ?.date,
           )}
         />
+
         <InfoCard
           label="Outstanding"
-          value={formatCurrency(due, booking.currency)}
+          value={formatCurrency(
+            due,
+            booking.currency,
+          )}
         />
       </div>
 
       <BookingDetailClient
         booking={{
           id: booking.id,
-          bookingReference: booking.bookingReference,
-          status: booking.status,
-          paymentStatus: booking.paymentStatus,
-          totalPrice: booking.totalPrice,
-          amountPaid: booking.amountPaid,
-          amountDue: booking.amountDue,
-          currency: booking.currency,
+
+          bookingReference:
+            booking.bookingReference,
+
+          status:
+            booking.status,
+
+          paymentStatus:
+            booking.paymentStatus,
+
+          totalPrice:
+            booking.totalPrice,
+
+          amountPaid:
+            booking.amountPaid,
+
+          amountDue:
+            booking.amountDue,
+
+          currency:
+            booking.currency,
         }}
       />
 
@@ -313,12 +487,18 @@ export default async function AdminBookingDetailPage({ params }: PageProps) {
           <Section title="Booking Overview">
             <DataRow
               label="Booking Reference"
-              value={booking.bookingReference || "-"}
+              value={
+                booking.bookingReference ||
+                "-"
+              }
             />
 
             <DataRow
               label="Display Code"
-              value={booking.bookingDisplayCode || "-"}
+              value={
+                booking.bookingDisplayCode ||
+                "-"
+              }
             />
 
             <DataRow
@@ -326,7 +506,7 @@ export default async function AdminBookingDetailPage({ params }: PageProps) {
               value={
                 <span
                   className={`rounded px-2 py-1 text-xs font-medium ${getStatusBadgeClass(
-                    booking.status
+                    booking.status,
                   )}`}
                 >
                   {booking.status}
@@ -339,7 +519,7 @@ export default async function AdminBookingDetailPage({ params }: PageProps) {
               value={
                 <span
                   className={`rounded px-2 py-1 text-xs font-medium ${getOperationBadgeClass(
-                    operationStatus
+                    operationStatus,
                   )}`}
                 >
                   {operationStatus}
@@ -352,10 +532,12 @@ export default async function AdminBookingDetailPage({ params }: PageProps) {
               value={
                 <span
                   className={`rounded px-2 py-1 text-xs font-medium ${getPaymentBadgeClass(
-                    booking.paymentStatus
+                    booking.paymentStatus,
                   )}`}
                 >
-                  {booking.paymentStatus}
+                  {
+                    booking.paymentStatus
+                  }
                 </span>
               }
             />
@@ -365,7 +547,7 @@ export default async function AdminBookingDetailPage({ params }: PageProps) {
               value={
                 <span
                   className={`rounded px-2 py-1 text-xs ${getFinancialBadgeClass(
-                    financialStatus
+                    financialStatus,
                   )}`}
                 >
                   {financialStatus}
@@ -373,12 +555,25 @@ export default async function AdminBookingDetailPage({ params }: PageProps) {
               }
             />
 
-            <DataRow label="Created" value={formatDate(booking.createdAt)} />
-            <DataRow label="Updated" value={formatDate(booking.updatedAt)} />
+            <DataRow
+              label="Created"
+              value={formatDate(
+                booking.createdAt,
+              )}
+            />
+
+            <DataRow
+              label="Updated"
+              value={formatDate(
+                booking.updatedAt,
+              )}
+            />
 
             <DataRow
               label="Payment Due Date"
-              value={formatDate(booking.paymentDueDate)}
+              value={formatDate(
+                booking.paymentDueDate,
+              )}
             />
 
             <DataRow
@@ -389,7 +584,11 @@ export default async function AdminBookingDetailPage({ params }: PageProps) {
                     href={`/admin/quotes/${booking.quote.id}`}
                     className="text-blue-600 hover:underline"
                   >
-                    Quote #{booking.quote.quoteNumber}
+                    Quote #
+                    {
+                      booking.quote
+                        .quoteNumber
+                    }
                   </Link>
                 ) : (
                   "-"
@@ -399,22 +598,78 @@ export default async function AdminBookingDetailPage({ params }: PageProps) {
           </Section>
 
           <Section title="Customer & Lead Information">
-            <DataRow label="Customer Name" value={booking.customerName || "-"} />
-            <DataRow label="Customer Email" value={booking.customerEmail || "-"} />
-            <DataRow label="Customer Phone" value={booking.customerPhone || "-"} />
-            <DataRow label="Lead First Name" value={booking.leadFirstName || "-"} />
-            <DataRow label="Lead Last Name" value={booking.leadLastName || "-"} />
-            <DataRow label="Lead Email" value={booking.leadEmail || "-"} />
-            <DataRow label="Lead Phone" value={booking.leadPhone || "-"} />
+            <DataRow
+              label="Customer Name"
+              value={
+                booking.customerName ||
+                "-"
+              }
+            />
+
+            <DataRow
+              label="Customer Email"
+              value={
+                booking.customerEmail ||
+                "-"
+              }
+            />
+
+            <DataRow
+              label="Customer Phone"
+              value={
+                booking.customerPhone ||
+                "-"
+              }
+            />
+
+            <DataRow
+              label="Lead First Name"
+              value={
+                booking.leadFirstName ||
+                "-"
+              }
+            />
+
+            <DataRow
+              label="Lead Last Name"
+              value={
+                booking.leadLastName ||
+                "-"
+              }
+            />
+
+            <DataRow
+              label="Lead Email"
+              value={
+                booking.leadEmail ||
+                "-"
+              }
+            />
+
+            <DataRow
+              label="Lead Phone"
+              value={
+                booking.leadPhone ||
+                "-"
+              }
+            />
 
             <DataRow
               label="Linked User"
               value={
                 booking.user ? (
                   <div>
-                    <div>{booking.user.fullName || booking.user.email || "-"}</div>
+                    <div>
+                      {booking.user
+                        .fullName ||
+                        booking.user
+                          .email ||
+                        "-"}
+                    </div>
+
                     <div className="text-xs text-gray-500">
-                      {booking.user.email || "-"}
+                      {booking.user
+                        .email || "-"}
                     </div>
                   </div>
                 ) : (
@@ -427,15 +682,26 @@ export default async function AdminBookingDetailPage({ params }: PageProps) {
           <Section title="Tour & Departure Snapshot">
             <DataRow
               label="Tour"
-              value={booking.tourTitleSnapshot || booking.tour?.title || "-"}
+              value={
+                booking.tourTitleSnapshot ||
+                booking.tour?.title ||
+                "-"
+              }
             />
 
-            <DataRow label="Category" value={booking.categorySnapshot || "-"} />
+            <DataRow
+              label="Category"
+              value={
+                booking.categorySnapshot ||
+                "-"
+              }
+            />
 
             <DataRow
               label="Duration"
               value={
-                booking.durationSnapshot != null
+                booking.durationSnapshot !=
+                null
                   ? `${booking.durationSnapshot} days`
                   : "-"
               }
@@ -444,32 +710,46 @@ export default async function AdminBookingDetailPage({ params }: PageProps) {
             <DataRow
               label="Departure Date"
               value={formatDate(
-                booking.departureDateSnapshot || booking.departureDate?.date
+                booking.departureDateSnapshot ||
+                  booking
+                    .departureDate
+                    ?.date,
               )}
             />
 
             <DataRow
               label="Season"
-              value={booking.seasonSnapshot || booking.departureDate?.season || "-"}
+              value={
+                booking.seasonSnapshot ||
+                booking
+                  .departureDate
+                  ?.season ||
+                "-"
+              }
             />
 
             <DataRow
               label="Departure Status"
-              value={booking.departureDate?.status || "-"}
+              value={
+                booking
+                  .departureDate
+                  ?.status || "-"
+              }
             />
 
             <DataRow
               label="Price Per Person Snapshot"
               value={formatCurrency(
                 booking.pricePerPersonSnapshot,
-                booking.currency
+                booking.currency,
               )}
             />
 
             <DataRow
               label="Early Discount %"
               value={
-                booking.earlyDiscountPercentSnapshot != null
+                booking.earlyDiscountPercentSnapshot !=
+                null
                   ? `${booking.earlyDiscountPercentSnapshot}%`
                   : "-"
               }
@@ -477,7 +757,9 @@ export default async function AdminBookingDetailPage({ params }: PageProps) {
 
             <DataRow
               label="Early Discount Deadline"
-              value={formatDate(booking.earlyDiscountDeadlineSnapshot)}
+              value={formatDate(
+                booking.earlyDiscountDeadlineSnapshot,
+              )}
             />
 
             <DataRow
@@ -485,7 +767,9 @@ export default async function AdminBookingDetailPage({ params }: PageProps) {
               value={
                 booking.brochureUrlSnapshot ? (
                   <a
-                    href={booking.brochureUrlSnapshot}
+                    href={
+                      booking.brochureUrlSnapshot
+                    }
                     target="_blank"
                     rel="noreferrer"
                     className="text-blue-600 hover:underline"
@@ -502,86 +786,293 @@ export default async function AdminBookingDetailPage({ params }: PageProps) {
           <Section title="Passengers & Rooming">
             <DataRow
               label="Number of Guests"
-              value={String(booking.numberOfGuests ?? 0)}
+              value={String(
+                booking.numberOfGuests ??
+                  0,
+              )}
             />
 
             <DataRow
               label="Estimated Pax"
               value={
-                booking.estimatedPax != null ? String(booking.estimatedPax) : "-"
+                booking.estimatedPax !=
+                null
+                  ? String(
+                      booking.estimatedPax,
+                    )
+                  : "-"
               }
             />
 
-            <DataRow label="Adults" value={String(booking.adults ?? 0)} />
-            <DataRow label="Children" value={String(booking.children ?? 0)} />
-            <DataRow label="Infants" value={String(booking.infants ?? 0)} />
-            <DataRow label="Single Rooms" value={String(booking.singleRooms ?? 0)} />
-            <DataRow label="Double Rooms" value={String(booking.doubleRooms ?? 0)} />
-            <DataRow label="Twin Rooms" value={String(booking.twinRooms ?? 0)} />
-            <DataRow label="Triple Rooms" value={String(booking.tripleRooms ?? 0)} />
-            <DataRow label="Land Only" value={booking.landOnly ? "Yes" : "No"} />
-            <DataRow label="Needs Flights" value={booking.needsFlights ? "Yes" : "No"} />
-            <DataRow label="Group Name" value={booking.groupName || "-"} />
-            <DataRow label="Group Leader" value={booking.groupLeaderName || "-"} />
+            <DataRow
+              label="Adults"
+              value={String(
+                booking.adults ?? 0,
+              )}
+            />
+
+            <DataRow
+              label="Children"
+              value={String(
+                booking.children ?? 0,
+              )}
+            />
+
+            <DataRow
+              label="Infants"
+              value={String(
+                booking.infants ?? 0,
+              )}
+            />
+
+            <DataRow
+              label="Single Rooms"
+              value={String(
+                booking.singleRooms ??
+                  0,
+              )}
+            />
+
+            <DataRow
+              label="Double Rooms"
+              value={String(
+                booking.doubleRooms ??
+                  0,
+              )}
+            />
+
+            <DataRow
+              label="Twin Rooms"
+              value={String(
+                booking.twinRooms ?? 0,
+              )}
+            />
+
+            <DataRow
+              label="Triple Rooms"
+              value={String(
+                booking.tripleRooms ??
+                  0,
+              )}
+            />
+
+            <DataRow
+              label="Land Only"
+              value={
+                booking.landOnly
+                  ? "Yes"
+                  : "No"
+              }
+            />
+
+            <DataRow
+              label="Needs Flights"
+              value={
+                booking.needsFlights
+                  ? "Yes"
+                  : "No"
+              }
+            />
+
+            <DataRow
+              label="Group Name"
+              value={
+                booking.groupName ||
+                "-"
+              }
+            />
+
+            <DataRow
+              label="Group Leader"
+              value={
+                booking.groupLeaderName ||
+                "-"
+              }
+            />
+
+            <DataRow
+              label="Passenger Records"
+              value={`${booking.passengers.length} of ${
+                booking.numberOfGuests ??
+                0
+              } completed`}
+            />
+
+            {booking.passengers.length >
+            0 ? (
+              <div className="mt-4 overflow-hidden rounded-xl border">
+                <div className="grid grid-cols-[1fr_140px_120px] bg-slate-50 px-4 py-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
+                  <span>
+                    Passenger
+                  </span>
+
+                  <span>
+                    Room
+                  </span>
+
+                  <span>
+                    Lead
+                  </span>
+                </div>
+
+                <div className="divide-y">
+                  {booking.passengers.map(
+                    (passenger) => (
+                      <div
+                        key={
+                          passenger.id
+                        }
+                        className="grid grid-cols-[1fr_140px_120px] px-4 py-3 text-sm"
+                      >
+                        <span className="font-medium text-slate-900">
+                          {[
+                            passenger.title,
+                            passenger.firstName,
+                            passenger.middleName,
+                            passenger.lastName,
+                          ]
+                            .filter(
+                              Boolean,
+                            )
+                            .join(
+                              " ",
+                            )}
+                        </span>
+
+                        <span className="text-slate-600">
+                          {passenger.roomType ||
+                            "Unassigned"}
+                        </span>
+
+                        <span className="text-slate-600">
+                          {passenger.isLeadPassenger
+                            ? "Yes"
+                            : "No"}
+                        </span>
+                      </div>
+                    ),
+                  )}
+                </div>
+              </div>
+            ) : (
+              <p className="mt-4 rounded-xl bg-amber-50 p-4 text-sm text-amber-800">
+                Passenger details
+                have not been
+                entered yet.
+              </p>
+            )}
           </Section>
 
           <Section title="Requests & Notes">
             <DataRow
               label="Special Requests"
-              value={booking.specialRequests?.trim() ? booking.specialRequests : "-"}
+              value={
+                booking.specialRequests?.trim()
+                  ? booking.specialRequests
+                  : "-"
+              }
             />
 
             <DataRow
               label="Notes"
-              value={booking.notes?.trim() ? booking.notes : "-"}
+              value={
+                booking.notes?.trim()
+                  ? booking.notes
+                  : "-"
+              }
             />
 
             <DataRow
               label="Internal Notes"
-              value={booking.internalNotes?.trim() ? booking.internalNotes : "-"}
+              value={
+                booking.internalNotes?.trim()
+                  ? booking.internalNotes
+                  : "-"
+              }
             />
           </Section>
         </div>
 
         <div className="space-y-6">
           <Section title="Financial Summary">
-            <DataRow label="Currency" value={booking.currency || "EUR"} />
+            <DataRow
+              label="Currency"
+              value={
+                booking.currency ||
+                "EUR"
+              }
+            />
 
             <DataRow
               label="Total Price"
-              value={formatCurrency(booking.totalPrice, booking.currency)}
+              value={formatCurrency(
+                booking.totalPrice,
+                booking.currency,
+              )}
             />
 
             <DataRow
               label="Gross Amount"
-              value={formatCurrency(booking.grossAmount, booking.currency)}
+              value={formatCurrency(
+                booking.grossAmount,
+                booking.currency,
+              )}
             />
 
             <DataRow
               label="Commission"
-              value={formatCurrency(booking.commissionAmount, booking.currency)}
+              value={formatCurrency(
+                booking.commissionAmount,
+                booking.currency,
+              )}
             />
 
             <DataRow
               label="Net Amount"
-              value={formatCurrency(booking.netAmount, booking.currency)}
+              value={formatCurrency(
+                booking.netAmount,
+                booking.currency,
+              )}
             />
 
             <DataRow
               label="Amount Paid"
-              value={formatCurrency(booking.amountPaid, booking.currency)}
+              value={formatCurrency(
+                booking.amountPaid,
+                booking.currency,
+              )}
             />
 
             <DataRow
               label="Amount Due"
-              value={formatCurrency(booking.amountDue, booking.currency)}
+              value={formatCurrency(
+                booking.amountDue,
+                booking.currency,
+              )}
             />
 
             <DataRow
               label="Outstanding Calculated"
-              value={formatCurrency(due, booking.currency)}
+              value={formatCurrency(
+                due,
+                booking.currency,
+              )}
             />
           </Section>
+
+          <AddPaymentForm
+            bookingId={booking.id}
+            defaultCurrency={
+              booking.currency ||
+              "EUR"
+            }
+            disabled={
+              booking.amountDue <= 0
+            }
+            bankAccounts={
+              bankAccounts
+            }
+          />
 
           <Section title="Quick Links">
             <div className="space-y-3">
@@ -600,7 +1091,8 @@ export default async function AdminBookingDetailPage({ params }: PageProps) {
                 </Link>
               ) : null}
 
-              {booking.departureDateId && booking.tourId ? (
+              {booking.departureDateId &&
+              booking.tourId ? (
                 <Link
                   href={`/admin/tours/${booking.tourId}/departures`}
                   className="block rounded-lg border px-4 py-3 text-sm font-medium hover:bg-gray-50"

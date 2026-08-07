@@ -2,12 +2,12 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 
 type Params = {
-  params: Promise<{ tourId: string }>;
+  params: Promise<{ id: string }>;
 };
 
 export async function GET(_req: NextRequest, { params }: Params) {
   try {
-    const { tourId } = await params;
+    const { id: tourId } = await params;
 
     const departures = await db.departureDate.findMany({
       where: { tourId },
@@ -16,6 +16,11 @@ export async function GET(_req: NextRequest, { params }: Params) {
         id: true,
         date: true,
         price: true,
+        priceDouble: true,
+        singleSupplement: true,
+        tripleReduction: true,
+        capacity: true,
+        bookedSeats: true,
         status: true,
         season: true,
       },

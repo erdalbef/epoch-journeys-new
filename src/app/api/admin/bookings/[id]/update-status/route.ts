@@ -81,6 +81,8 @@ export async function PATCH(
         departureDateSnapshot: true,
         agentNameSnapshot: true,
         agentEmailSnapshot: true,
+        departureDateId: true,
+        numberOfGuests: true,
       },
     });
 
@@ -111,28 +113,63 @@ export async function PATCH(
       derivedPaymentStatus = PaymentStatus.PARTIALLY_PAID;
     }
 
-    const updatedBooking = await db.booking.update({
-      where: { id },
-      data: {
-        ...(status !== undefined ? { status } : {}),
-        paymentStatus: derivedPaymentStatus,
-        ...(amountPaidInput !== undefined
-          ? {
-              amountPaid: nextAmountPaid,
-              amountDue: nextAmountDue,
-            }
-          : {}),
-      },
-      select: {
-        id: true,
-        status: true,
-        paymentStatus: true,
-        amountPaid: true,
-        amountDue: true,
-        totalPrice: true,
-        bookingReference: true,
-        bookingDisplayCode: true,
-      },
+    const updatedBooking = await db.$transaction(async (tx) => {
+      const wasCancelled = existingBooking.status === BookingStatus.CANCELLED;
+      const willBeCancelled = status === BookingStatus.CANCELLED;
+
+      if (!wasCancelled && willBeCancelled && existingBooking.departureDateId) {
+        await tx.departureDate.update({
+          where: { id: existingBooking.departureDateId },
+          data: {
+            bookedSeats: { decrement: existingBooking.numberOfGuests },
+          },
+        });
+      }
+
+      if (wasCancelled && status !== undefined && !willBeCancelled && existingBooking.departureDateId) {
+        const departure = await tx.departureDate.findUnique({
+          where: { id: existingBooking.departureDateId },
+          select: { capacity: true, bookedSeats: true },
+        });
+
+        if (
+          !departure ||
+          departure.bookedSeats + existingBooking.numberOfGuests > departure.capacity
+        ) {
+          throw new Error("NOT_ENOUGH_SEATS");
+        }
+
+        await tx.departureDate.update({
+          where: { id: existingBooking.departureDateId },
+          data: {
+            bookedSeats: { increment: existingBooking.numberOfGuests },
+          },
+        });
+      }
+
+      return tx.booking.update({
+        where: { id },
+        data: {
+          ...(status !== undefined ? { status } : {}),
+          paymentStatus: derivedPaymentStatus,
+          ...(amountPaidInput !== undefined
+            ? {
+                amountPaid: nextAmountPaid,
+                amountDue: nextAmountDue,
+              }
+            : {}),
+        },
+        select: {
+          id: true,
+          status: true,
+          paymentStatus: true,
+          amountPaid: true,
+          amountDue: true,
+          totalPrice: true,
+          bookingReference: true,
+          bookingDisplayCode: true,
+        },
+      });
     });
 
     const statusChanged =
@@ -173,6 +210,13 @@ export async function PATCH(
     });
   } catch (error) {
     console.error("UPDATE_BOOKING_STATUS_ERROR", error);
+
+    if (error instanceof Error && error.message === "NOT_ENOUGH_SEATS") {
+      return NextResponse.json(
+        { error: "This booking cannot be restored because the departure no longer has enough available seats." },
+        { status: 409 }
+      );
+    }
 
     return NextResponse.json(
       { error: "Failed to update booking" },

@@ -169,8 +169,24 @@ export async function POST(req: Request) {
 
     const netAmount = Math.max(0, grossAmount - payout.commissionAmount);
 
-    const createdBooking = await db.booking.create({
-      data: {
+    const createdBooking = await db.$transaction(async (tx) => {
+      const reserved = await tx.departureDate.updateMany({
+        where: {
+          id: departure.id,
+          tourId: tour.id,
+          bookedSeats: { lte: departure.capacity - numberOfGuests },
+        },
+        data: {
+          bookedSeats: { increment: numberOfGuests },
+        },
+      });
+
+      if (reserved.count !== 1) {
+        throw new Error("NOT_ENOUGH_SEATS");
+      }
+
+      return tx.booking.create({
+        data: {
         bookingReference: `BK-${Date.now()}`,
 
         userId: agent.id,
@@ -254,7 +270,8 @@ export async function POST(req: Request) {
             : null,
         groupLeaderName: body.groupLeaderName ?? null,
         groupName: body.groupName ?? null,
-      },
+        },
+      });
     });
 
     return NextResponse.json({
@@ -263,6 +280,16 @@ export async function POST(req: Request) {
     });
   } catch (error) {
     console.error("BOOKING_CREATE_ERROR", error);
+
+    if (error instanceof Error && error.message === "NOT_ENOUGH_SEATS") {
+      return NextResponse.json(
+        {
+          success: false,
+          message: "Not enough seats available for this departure.",
+        },
+        { status: 409 }
+      );
+    }
 
     return NextResponse.json(
       { success: false, message: "Failed to create booking." },

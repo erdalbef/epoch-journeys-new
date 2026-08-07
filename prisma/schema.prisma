@@ -52,6 +52,12 @@ model User {
   quoteTemplates     QuoteTemplate[]
   AgentCommunication AgentCommunication[]
 
+  supplierPayablesCreated  SupplierPayable[]        @relation("SupplierPayableCreatedBy")
+  supplierPayablesApproved SupplierPayable[]        @relation("SupplierPayableApprovedBy")
+  supplierPaymentsRecorded SupplierPayablePayment[] @relation("SupplierPaymentRecordedBy")
+
+  bankTransactionsCreated BankTransaction[] @relation("BankTransactionCreatedBy")
+
   @@index([role])
   @@index([approved])
   @@index([status])
@@ -103,8 +109,12 @@ model Tour {
   quotes               Quote[]
   partnerTourAliases   PartnerTourAlias[]
 
-  expenses       Expense[]
-  financeEntries FinanceEntry[]
+  expenses         Expense[]
+  financeEntries   FinanceEntry[]
+  massArrangements MassArrangement[]
+  supplierPayables SupplierPayable[]
+
+  bankTransactions BankTransaction[]
 
   @@index([category])
   @@index([featured])
@@ -150,7 +160,11 @@ model DepartureDate {
   bookings Booking[]
   quotes   Quote[]
 
-  expenses Expense[]
+  expenses         Expense[]
+  massArrangements MassArrangement[]
+  supplierPayables SupplierPayable[]
+
+  bankTransactions BankTransaction[]
 
   @@index([tourId])
   @@index([date])
@@ -293,6 +307,10 @@ model Booking {
   paymentSchedules BookingPaymentSchedule[]
 
   operationControl BookingOperationControl?
+  massArrangements MassArrangement[]
+  supplierPayables SupplierPayable[]
+
+  bankTransactions BankTransaction[]
 
   @@index([userId])
   @@index([tourId])
@@ -682,6 +700,8 @@ model Payment {
   booking     Booking             @relation(fields: [bookingId], references: [id], onDelete: Cascade)
   allocations PaymentAllocation[]
 
+  bankTransactions BankTransaction[]
+
   @@index([bookingId])
   @@index([status])
   @@index([paidAt])
@@ -878,6 +898,8 @@ model Expense {
   tourCategoryName  String?
 
   partnerCompanyId String?
+
+  bankTransactions BankTransaction[]
 
   @@index([category])
   @@index([paymentStatus])
@@ -1109,6 +1131,10 @@ model BankAccount {
   notes          String?
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
+
+  supplierPayablePayments SupplierPayablePayment[]
+
+  bankTransactions BankTransaction[]
 
   @@index([isActive])
 }
@@ -1359,4 +1385,566 @@ enum FinanceTaxType {
   WITHHOLDING
   CITY_TAX
   OTHER
+}
+
+// ============================================================
+// SUPPLIER CRM
+// ============================================================
+
+model Supplier {
+  id String @id @default(cuid())
+
+  name      String
+  legalName String?
+  code      String?        @unique
+  type      SupplierType
+  status    SupplierStatus @default(ACTIVE)
+
+  country    String?
+  city       String?
+  address    String?
+  postalCode String?
+  website    String?
+
+  email          String?
+  phone          String?
+  emergencyPhone String?
+
+  defaultCurrency   String  @default("EUR")
+  taxNumber         String?
+  paymentTerms      String?
+  cancellationTerms String?
+
+  preferred Boolean @default(false)
+  rating    Int?
+  notes     String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  contacts         SupplierContact[]
+  services         SupplierService[]
+  rates            SupplierRate[]
+  contracts        SupplierContract[]
+  massArrangements MassArrangement[]
+  payables         SupplierPayable[]
+
+  @@index([name])
+  @@index([type])
+  @@index([status])
+  @@index([country])
+  @@index([city])
+  @@index([preferred])
+}
+
+model SupplierContact {
+  id         String @id @default(cuid())
+  supplierId String
+
+  firstName  String?
+  lastName   String?
+  jobTitle   String?
+  department String?
+
+  email  String?
+  phone  String?
+  mobile String?
+
+  isPrimary   Boolean @default(false)
+  isEmergency Boolean @default(false)
+  notes       String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  supplier Supplier @relation(fields: [supplierId], references: [id], onDelete: Cascade)
+
+  @@index([supplierId])
+  @@index([isPrimary])
+  @@index([isEmergency])
+}
+
+model SupplierService {
+  id         String @id @default(cuid())
+  supplierId String
+
+  type        SupplierServiceType
+  name        String
+  description String?
+
+  country String?
+  city    String?
+
+  isActive Boolean @default(true)
+  notes    String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  supplier Supplier          @relation(fields: [supplierId], references: [id], onDelete: Cascade)
+  rates    SupplierRate[]
+  payables SupplierPayable[]
+
+  @@index([supplierId])
+  @@index([type])
+  @@index([isActive])
+  @@index([country])
+  @@index([city])
+}
+
+model SupplierRate {
+  id         String  @id @default(cuid())
+  supplierId String
+  serviceId  String?
+
+  name        String
+  description String?
+
+  validFrom DateTime
+  validTo   DateTime
+
+  currency String           @default("EUR")
+  amount   Decimal          @db.Decimal(12, 2)
+  unit     SupplierRateUnit
+
+  roomType  RoomType?
+  mealBasis String?
+
+  minPax Int?
+  maxPax Int?
+
+  taxIncluded     Boolean  @default(true)
+  taxRate         Decimal? @db.Decimal(7, 4)
+  cityTaxIncluded Boolean  @default(false)
+
+  freePlaces  String?
+  supplements String?
+  reductions  String?
+
+  cancellationTerms String?
+  paymentTerms      String?
+
+  isActive Boolean @default(true)
+  notes    String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  supplier Supplier          @relation(fields: [supplierId], references: [id], onDelete: Cascade)
+  service  SupplierService?  @relation(fields: [serviceId], references: [id], onDelete: SetNull)
+  payables SupplierPayable[]
+
+  @@index([supplierId])
+  @@index([serviceId])
+  @@index([validFrom])
+  @@index([validTo])
+  @@index([currency])
+  @@index([unit])
+  @@index([roomType])
+  @@index([isActive])
+}
+
+model SupplierContract {
+  id         String @id @default(cuid())
+  supplierId String
+
+  title     String
+  reference String?
+  status    SupplierContractStatus @default(ACTIVE)
+
+  validFrom DateTime?
+  validTo   DateTime?
+  currency  String?
+
+  paymentTerms      String?
+  cancellationTerms String?
+  documentUrl       String?
+  notes             String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  supplier Supplier @relation(fields: [supplierId], references: [id], onDelete: Cascade)
+
+  @@index([supplierId])
+  @@index([status])
+  @@index([validFrom])
+  @@index([validTo])
+}
+
+// ============================================================
+// BANK TRANSACTION LEDGER
+// ============================================================
+
+model BankTransaction {
+  id String @id @default(cuid())
+
+  bankAccountId String
+  createdById   String?
+
+  type      BankTransactionType
+  direction BankTransactionDirection
+  status    BankTransactionStatus    @default(POSTED)
+
+  amount   Decimal @db.Decimal(12, 2)
+  currency String  @default("EUR")
+
+  transactionDate DateTime  @default(now())
+  valueDate       DateTime?
+
+  reference   String?
+  description String?
+  notes       String?
+
+  bookingId                String?
+  paymentId                String?
+  supplierPayablePaymentId String?
+  expenseId                String?
+  tourId                   String?
+  departureDateId          String?
+
+  transferGroupId String?
+
+  reversalOfId String?   @unique
+  reversedAt   DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  bankAccount BankAccount @relation(fields: [bankAccountId], references: [id], onDelete: Restrict)
+  createdBy   User?       @relation("BankTransactionCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+
+  booking                Booking?                @relation(fields: [bookingId], references: [id], onDelete: SetNull)
+  payment                Payment?                @relation(fields: [paymentId], references: [id], onDelete: SetNull)
+  supplierPayablePayment SupplierPayablePayment? @relation(fields: [supplierPayablePaymentId], references: [id], onDelete: SetNull)
+  expense                Expense?                @relation(fields: [expenseId], references: [id], onDelete: SetNull)
+  tour                   Tour?                   @relation(fields: [tourId], references: [id], onDelete: SetNull)
+  departureDate          DepartureDate?          @relation(fields: [departureDateId], references: [id], onDelete: SetNull)
+
+  reversalOf BankTransaction? @relation("BankTransactionReversal", fields: [reversalOfId], references: [id], onDelete: Restrict)
+  reversedBy BankTransaction? @relation("BankTransactionReversal")
+
+  @@index([bankAccountId])
+  @@index([createdById])
+  @@index([type])
+  @@index([direction])
+  @@index([status])
+  @@index([transactionDate])
+  @@index([valueDate])
+  @@index([bookingId])
+  @@index([paymentId])
+  @@index([supplierPayablePaymentId])
+  @@index([expenseId])
+  @@index([tourId])
+  @@index([departureDateId])
+  @@index([transferGroupId])
+  @@index([reversalOfId])
+}
+
+// ============================================================
+// SUPPLIER PAYABLES / ACCOUNTS PAYABLE
+// ============================================================
+
+model SupplierPayable {
+  id String @id @default(cuid())
+
+  supplierId String
+  serviceId  String?
+  rateId     String?
+
+  tourId          String?
+  departureDateId String?
+  bookingId       String?
+
+  createdById  String?
+  approvedById String?
+
+  title       String
+  description String?
+
+  supplierInvoiceNumber String?
+  supplierReference     String?
+  invoiceDate           DateTime?
+  dueDate               DateTime?
+
+  currency String @default("EUR")
+
+  contractedAmount Decimal? @db.Decimal(12, 2)
+  approvedAmount   Decimal  @db.Decimal(12, 2)
+  creditAmount     Decimal  @default(0) @db.Decimal(12, 2)
+  amountPaid       Decimal  @default(0) @db.Decimal(12, 2)
+  balance          Decimal  @default(0) @db.Decimal(12, 2)
+
+  approvalStatus SupplierPayableApprovalStatus @default(DRAFT)
+  paymentStatus  SupplierPayablePaymentStatus  @default(UNPAID)
+
+  approvedAt  DateTime?
+  cancelledAt DateTime?
+
+  cancellationReason String?
+
+  documentUrl   String?
+  internalNotes String?
+
+  supplierNameSnapshot String
+  serviceNameSnapshot  String?
+  rateNameSnapshot     String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  supplier Supplier         @relation(fields: [supplierId], references: [id], onDelete: Restrict)
+  service  SupplierService? @relation(fields: [serviceId], references: [id], onDelete: SetNull)
+  rate     SupplierRate?    @relation(fields: [rateId], references: [id], onDelete: SetNull)
+
+  tour          Tour?          @relation(fields: [tourId], references: [id], onDelete: SetNull)
+  departureDate DepartureDate? @relation(fields: [departureDateId], references: [id], onDelete: SetNull)
+  booking       Booking?       @relation(fields: [bookingId], references: [id], onDelete: SetNull)
+
+  createdBy  User? @relation("SupplierPayableCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  approvedBy User? @relation("SupplierPayableApprovedBy", fields: [approvedById], references: [id], onDelete: SetNull)
+
+  payments SupplierPayablePayment[]
+
+  @@index([supplierId])
+  @@index([serviceId])
+  @@index([rateId])
+  @@index([tourId])
+  @@index([departureDateId])
+  @@index([bookingId])
+  @@index([createdById])
+  @@index([approvedById])
+  @@index([approvalStatus])
+  @@index([paymentStatus])
+  @@index([dueDate])
+  @@index([invoiceDate])
+  @@index([createdAt])
+}
+
+model SupplierPayablePayment {
+  id String @id @default(cuid())
+
+  payableId String
+
+  bankAccountId String?
+  recordedById  String?
+
+  amount   Decimal @db.Decimal(12, 2)
+  currency String  @default("EUR")
+
+  paymentDate DateTime      @default(now())
+  method      PaymentMethod
+
+  reference String?
+  notes     String?
+  proofUrl  String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  payable     SupplierPayable @relation(fields: [payableId], references: [id], onDelete: Cascade)
+  bankAccount BankAccount?    @relation(fields: [bankAccountId], references: [id], onDelete: SetNull)
+  recordedBy  User?           @relation("SupplierPaymentRecordedBy", fields: [recordedById], references: [id], onDelete: SetNull)
+
+  bankTransactions BankTransaction[]
+
+  @@index([payableId])
+  @@index([bankAccountId])
+  @@index([recordedById])
+  @@index([paymentDate])
+}
+
+// ============================================================
+// PILGRIMAGE / MASS ARRANGEMENTS
+// ============================================================
+
+model MassArrangement {
+  id String @id @default(cuid())
+
+  supplierId String?
+
+  tourId          String?
+  departureDateId String?
+  bookingId       String?
+
+  churchName String
+  shrineName String?
+
+  country String?
+  city    String?
+  address String?
+
+  massDate DateTime?
+  massTime String?
+  language String?
+
+  celebrantName String?
+
+  sacristyContactName  String?
+  sacristyContactEmail String?
+  sacristyContactPhone String?
+
+  groupSize Int?
+
+  status MassArrangementStatus @default(REQUESTED)
+
+  confirmationReference String?
+  confirmationDate      DateTime?
+
+  donationAmount Decimal?          @db.Decimal(12, 2)
+  currency       String            @default("EUR")
+  paymentStatus  MassPaymentStatus @default(NOT_REQUIRED)
+
+  busAccessNotes      String?
+  accessibilityNotes  String?
+  liturgicalNotes     String?
+  vestmentNotes       String?
+  specialRequirements String?
+
+  documentUrl   String?
+  internalNotes String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  supplier      Supplier?      @relation(fields: [supplierId], references: [id], onDelete: SetNull)
+  tour          Tour?          @relation(fields: [tourId], references: [id], onDelete: SetNull)
+  departureDate DepartureDate? @relation(fields: [departureDateId], references: [id], onDelete: SetNull)
+  booking       Booking?       @relation(fields: [bookingId], references: [id], onDelete: SetNull)
+
+  @@index([supplierId])
+  @@index([tourId])
+  @@index([departureDateId])
+  @@index([bookingId])
+  @@index([massDate])
+  @@index([status])
+  @@index([country])
+  @@index([city])
+}
+
+// ============================================================
+// SUPPLIER CRM ENUMS
+// ============================================================
+
+enum SupplierType {
+  HOTEL
+  DMC
+  TRANSPORT
+  GUIDE
+  TOUR_MANAGER
+  RESTAURANT
+  CHURCH_SHRINE
+  ATTRACTION
+  TICKET_PROVIDER
+  AIRLINE
+  CRUISE
+  FERRY
+  RAIL
+  INSURANCE
+  OTHER
+}
+
+enum SupplierStatus {
+  ACTIVE
+  INACTIVE
+  SUSPENDED
+  BLACKLISTED
+}
+
+enum SupplierServiceType {
+  ACCOMMODATION
+  TRANSPORT
+  GUIDE
+  TOUR_MANAGER
+  MEAL
+  MASS_ARRANGEMENT
+  CHURCH_RESERVATION
+  ENTRANCE
+  TICKET
+  FLIGHT
+  CRUISE
+  FERRY
+  RAIL
+  INSURANCE
+  DMC_SERVICE
+  OTHER
+}
+
+enum SupplierRateUnit {
+  PER_PERSON
+  PER_PERSON_PER_DAY
+  PER_PERSON_PER_NIGHT
+  PER_ROOM
+  PER_ROOM_PER_NIGHT
+  PER_GROUP
+  PER_DAY
+  PER_HALF_DAY
+  PER_HOUR
+  PER_TRANSFER
+  PER_VEHICLE
+  PER_MEAL
+  PER_TICKET
+  FLAT_RATE
+}
+
+enum SupplierContractStatus {
+  DRAFT
+  ACTIVE
+  EXPIRED
+  TERMINATED
+  ARCHIVED
+}
+
+enum MassArrangementStatus {
+  REQUESTED
+  PENDING
+  CONFIRMED
+  DECLINED
+  CANCELLED
+}
+
+enum MassPaymentStatus {
+  NOT_REQUIRED
+  PENDING
+  PAID
+}
+
+enum SupplierPayableApprovalStatus {
+  DRAFT
+  PENDING_APPROVAL
+  APPROVED
+  REJECTED
+  CANCELLED
+}
+
+enum SupplierPayablePaymentStatus {
+  UNPAID
+  PARTIALLY_PAID
+  PAID
+  OVERDUE
+  CANCELLED
+}
+
+enum BankTransactionType {
+  CUSTOMER_RECEIPT
+  SUPPLIER_PAYMENT
+  EXPENSE_PAYMENT
+  REFUND
+  TRANSFER_OUT
+  TRANSFER_IN
+  ADJUSTMENT
+  REVERSAL
+  OPENING_BALANCE
+  OTHER
+}
+
+enum BankTransactionDirection {
+  IN
+  OUT
+}
+
+enum BankTransactionStatus {
+  POSTED
+  REVERSED
+  VOIDED
 }
