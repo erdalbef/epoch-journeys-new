@@ -1,8 +1,7 @@
 import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { Role } from "@prisma/client";
-import fs from "fs/promises";
-import path from "path";
+import { get } from "@vercel/blob";
 
 import { authOptions } from "@/lib/authOptions";
 import { db } from "@/lib/db";
@@ -23,42 +22,6 @@ function safeDownloadName(
   );
 }
 
-function resolveFinanceStoragePath(
-  storagePath: string,
-) {
-  const absolutePath =
-    path.resolve(
-      process.cwd(),
-      storagePath,
-    );
-
-  const financeStorageRoot =
-    path.resolve(
-      process.cwd(),
-      "storage",
-      "finance",
-    );
-
-  const relativePath =
-    path.relative(
-      financeStorageRoot,
-      absolutePath,
-    );
-
-  if (
-    relativePath.startsWith(
-      "..",
-    ) ||
-    path.isAbsolute(
-      relativePath,
-    )
-  ) {
-    return null;
-  }
-
-  return absolutePath;
-}
-
 export async function GET(
   _request: Request,
   context: RouteContext,
@@ -76,8 +39,7 @@ export async function GET(
     ) {
       return NextResponse.json(
         {
-          error:
-            "Unauthorized",
+          error: "Unauthorized",
         },
         {
           status: 401,
@@ -101,22 +63,20 @@ export async function GET(
     }
 
     const document =
-      await db.financeDocument.findUnique(
-        {
-          where: {
-            id,
-          },
-
-          select: {
-            id: true,
-            title: true,
-            originalFileName: true,
-            storagePath: true,
-            mimeType: true,
-            fileSize: true,
-          },
+      await db.financeDocument.findUnique({
+        where: {
+          id,
         },
-      );
+
+        select: {
+          id: true,
+          title: true,
+          originalFileName: true,
+          storagePath: true,
+          mimeType: true,
+          fileSize: true,
+        },
+      });
 
     if (!document) {
       return NextResponse.json(
@@ -131,68 +91,24 @@ export async function GET(
     }
 
     /*
-     * Database contains a relative path such as:
+     * Private Blob storage path saved in PostgreSQL.
      *
-     * storage/finance/expenses/file.pdf
-     *
-     * Resolve it against the project root.
+     * Example:
+     * finance/expenses/1234-uuid-invoice.pdf
      */
-    const absolutePath =
-      resolveFinanceStoragePath(
+    const blobResult =
+      await get(
         document.storagePath,
-      );
-
-    if (!absolutePath) {
-      console.error(
-        "FINANCE_DOCUMENT_INVALID_STORAGE_PATH",
         {
-          documentId:
-            document.id,
-
-          storagePath:
-            document.storagePath,
+          access: "private",
         },
       );
 
+    if (!blobResult) {
       return NextResponse.json(
         {
           error:
-            "Invalid finance document storage path.",
-        },
-        {
-          status: 400,
-        },
-      );
-    }
-
-    /*
-     * Read the private physical file.
-     */
-    let fileBuffer: Buffer;
-
-    try {
-      fileBuffer =
-        await fs.readFile(
-          absolutePath,
-        );
-    } catch (error) {
-      console.error(
-        "FINANCE_DOCUMENT_FILE_READ_ERROR",
-        {
-          documentId:
-            document.id,
-
-          storagePath:
-            document.storagePath,
-
-          error,
-        },
-      );
-
-      return NextResponse.json(
-        {
-          error:
-            "The document record exists, but the physical file could not be found.",
+            "The document record exists, but the Blob file could not be found.",
         },
         {
           status: 404,
@@ -200,60 +116,34 @@ export async function GET(
       );
     }
 
-    /*
-     * NextResponse uses the Web Response API.
-     *
-     * Node Buffer is not accepted by the
-     * BodyInit type in this Next.js version,
-     * so convert it into a browser-compatible
-     * Uint8Array and Blob.
-     */
-    const fileBytes =
-      new Uint8Array(
-        fileBuffer,
-      );
-
-    const fileBlob =
-      new Blob(
-        [fileBytes],
-        {
-          type:
-            document.mimeType ||
-            "application/octet-stream",
-        },
-      );
-
     const downloadName =
       safeDownloadName(
         document.originalFileName,
       );
 
-    /*
-     * Encode the UTF-8 filename as well.
-     *
-     * filename= provides compatibility,
-     * filename*=UTF-8 provides proper support
-     * for international filenames.
-     */
     const encodedFileName =
       encodeURIComponent(
         downloadName,
       );
 
-    return new NextResponse(
-      fileBlob,
+    /*
+     * Stream the private Blob through
+     * this authenticated Admin route.
+     *
+     * The browser never receives direct
+     * access to the private Blob store.
+     */
+    return new Response(
+      blobResult.stream,
       {
         status: 200,
 
         headers: {
           "Content-Type":
+            blobResult.blob
+              .contentType ||
             document.mimeType ||
             "application/octet-stream",
-
-          "Content-Length":
-            String(
-              fileBuffer.byteLength,
-            ),
 
           "Content-Disposition":
             `attachment; filename="${downloadName}"; filename*=UTF-8''${encodedFileName}`,

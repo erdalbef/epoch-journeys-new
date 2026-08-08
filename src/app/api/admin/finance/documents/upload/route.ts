@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { FinanceDocumentType, Role } from "@prisma/client";
-import fs from "fs/promises";
+import { put } from "@vercel/blob";
 import path from "path";
 import crypto from "crypto";
 
@@ -21,7 +21,9 @@ const ALLOWED_MIME_TYPES = new Set([
   "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
 ]);
 
-function cleanString(value: FormDataEntryValue | null) {
+function cleanString(
+  value: FormDataEntryValue | null,
+) {
   if (typeof value !== "string") {
     return "";
   }
@@ -29,23 +31,33 @@ function cleanString(value: FormDataEntryValue | null) {
   return value.trim();
 }
 
-function parseDate(value: FormDataEntryValue | null) {
+function parseDate(
+  value: FormDataEntryValue | null,
+) {
   const raw = cleanString(value);
 
   if (!raw) {
     return null;
   }
 
-  const date = new Date(`${raw}T12:00:00.000Z`);
+  const date = new Date(
+    `${raw}T12:00:00.000Z`,
+  );
 
-  if (Number.isNaN(date.getTime())) {
+  if (
+    Number.isNaN(
+      date.getTime(),
+    )
+  ) {
     return null;
   }
 
   return date;
 }
 
-function sanitizeBaseName(name: string) {
+function sanitizeBaseName(
+  name: string,
+) {
   return name
     .normalize("NFKD")
     .replace(/[^\w.-]+/g, "-")
@@ -54,8 +66,12 @@ function sanitizeBaseName(name: string) {
     .slice(0, 120);
 }
 
-function extensionFromName(fileName: string) {
-  const ext = path.extname(fileName).toLowerCase();
+function extensionFromName(
+  fileName: string,
+) {
+  const ext = path
+    .extname(fileName)
+    .toLowerCase();
 
   if (!ext) {
     return "";
@@ -64,7 +80,9 @@ function extensionFromName(fileName: string) {
   return ext.slice(0, 12);
 }
 
-function buildStorageFolder(type: FinanceDocumentType) {
+function buildStorageFolder(
+  type: FinanceDocumentType,
+) {
   switch (type) {
     case FinanceDocumentType.EXPENSE_RECEIPT:
     case FinanceDocumentType.EXPENSE_INVOICE:
@@ -128,8 +146,12 @@ async function validateLinkedRecords({
     checks.push(
       db.expense
         .findUnique({
-          where: { id: expenseId },
-          select: { id: true },
+          where: {
+            id: expenseId,
+          },
+          select: {
+            id: true,
+          },
         })
         .then(Boolean),
     );
@@ -139,19 +161,30 @@ async function validateLinkedRecords({
     checks.push(
       db.supplierPayable
         .findUnique({
-          where: { id: supplierPayableId },
-          select: { id: true },
+          where: {
+            id: supplierPayableId,
+          },
+          select: {
+            id: true,
+          },
         })
         .then(Boolean),
     );
   }
 
-  if (supplierPayablePaymentId) {
+  if (
+    supplierPayablePaymentId
+  ) {
     checks.push(
       db.supplierPayablePayment
         .findUnique({
-          where: { id: supplierPayablePaymentId },
-          select: { id: true },
+          where: {
+            id:
+              supplierPayablePaymentId,
+          },
+          select: {
+            id: true,
+          },
         })
         .then(Boolean),
     );
@@ -161,8 +194,12 @@ async function validateLinkedRecords({
     checks.push(
       db.refund
         .findUnique({
-          where: { id: refundId },
-          select: { id: true },
+          where: {
+            id: refundId,
+          },
+          select: {
+            id: true,
+          },
         })
         .then(Boolean),
     );
@@ -172,8 +209,12 @@ async function validateLinkedRecords({
     checks.push(
       db.bankTransaction
         .findUnique({
-          where: { id: bankTransactionId },
-          select: { id: true },
+          where: {
+            id: bankTransactionId,
+          },
+          select: {
+            id: true,
+          },
         })
         .then(Boolean),
     );
@@ -183,8 +224,12 @@ async function validateLinkedRecords({
     checks.push(
       db.booking
         .findUnique({
-          where: { id: bookingId },
-          select: { id: true },
+          where: {
+            id: bookingId,
+          },
+          select: {
+            id: true,
+          },
         })
         .then(Boolean),
     );
@@ -194,8 +239,12 @@ async function validateLinkedRecords({
     checks.push(
       db.tour
         .findUnique({
-          where: { id: tourId },
-          select: { id: true },
+          where: {
+            id: tourId,
+          },
+          select: {
+            id: true,
+          },
         })
         .then(Boolean),
     );
@@ -205,8 +254,12 @@ async function validateLinkedRecords({
     checks.push(
       db.departureDate
         .findUnique({
-          where: { id: departureDateId },
-          select: { id: true },
+          where: {
+            id: departureDateId,
+          },
+          select: {
+            id: true,
+          },
         })
         .then(Boolean),
     );
@@ -216,8 +269,12 @@ async function validateLinkedRecords({
     checks.push(
       db.supplier
         .findUnique({
-          where: { id: supplierId },
-          select: { id: true },
+          where: {
+            id: supplierId,
+          },
+          select: {
+            id: true,
+          },
         })
         .then(Boolean),
     );
@@ -227,20 +284,29 @@ async function validateLinkedRecords({
     return true;
   }
 
-  const results = await Promise.all(checks);
+  const results =
+    await Promise.all(checks);
 
   return results.every(Boolean);
 }
 
-export async function POST(request: Request) {
-  let writtenFilePath: string | null = null;
+export async function POST(
+  request: Request,
+) {
+  let uploadedBlobUrl:
+    | string
+    | null = null;
 
   try {
-    const session = await getServerSession(authOptions);
+    const session =
+      await getServerSession(
+        authOptions,
+      );
 
     if (
       !session?.user?.id ||
-      session.user.role !== Role.ADMIN
+      session.user.role !==
+        Role.ADMIN
     ) {
       return NextResponse.json(
         {
@@ -252,9 +318,11 @@ export async function POST(request: Request) {
       );
     }
 
-    const formData = await request.formData();
+    const formData =
+      await request.formData();
 
-    const file = formData.get("file");
+    const file =
+      formData.get("file");
 
     if (
       !file ||
@@ -262,7 +330,8 @@ export async function POST(request: Request) {
     ) {
       return NextResponse.json(
         {
-          error: "A document file is required.",
+          error:
+            "A document file is required.",
         },
         {
           status: 400,
@@ -273,7 +342,8 @@ export async function POST(request: Request) {
     if (file.size <= 0) {
       return NextResponse.json(
         {
-          error: "Uploaded file is empty.",
+          error:
+            "Uploaded file is empty.",
         },
         {
           status: 400,
@@ -281,10 +351,14 @@ export async function POST(request: Request) {
       );
     }
 
-    if (file.size > MAX_FILE_SIZE) {
+    if (
+      file.size >
+      MAX_FILE_SIZE
+    ) {
       return NextResponse.json(
         {
-          error: "File must be smaller than 20 MB.",
+          error:
+            "File must be smaller than 20 MB.",
         },
         {
           status: 400,
@@ -292,7 +366,11 @@ export async function POST(request: Request) {
       );
     }
 
-    if (!ALLOWED_MIME_TYPES.has(file.type)) {
+    if (
+      !ALLOWED_MIME_TYPES.has(
+        file.type,
+      )
+    ) {
       return NextResponse.json(
         {
           error:
@@ -304,18 +382,22 @@ export async function POST(request: Request) {
       );
     }
 
-    const typeRaw = cleanString(
-      formData.get("type"),
-    );
+    const typeRaw =
+      cleanString(
+        formData.get("type"),
+      );
 
     if (
-      !Object.values(FinanceDocumentType).includes(
+      !Object.values(
+        FinanceDocumentType,
+      ).includes(
         typeRaw as FinanceDocumentType,
       )
     ) {
       return NextResponse.json(
         {
-          error: "Invalid finance document type.",
+          error:
+            "Invalid finance document type.",
         },
         {
           status: 400,
@@ -327,12 +409,15 @@ export async function POST(request: Request) {
       typeRaw as FinanceDocumentType;
 
     const title =
-      cleanString(formData.get("title"));
+      cleanString(
+        formData.get("title"),
+      );
 
     if (!title) {
       return NextResponse.json(
         {
-          error: "Document title is required.",
+          error:
+            "Document title is required.",
         },
         {
           status: 400,
@@ -342,17 +427,23 @@ export async function POST(request: Request) {
 
     const description =
       cleanString(
-        formData.get("description"),
+        formData.get(
+          "description",
+        ),
       ) || null;
 
     const documentDate =
       parseDate(
-        formData.get("documentDate"),
+        formData.get(
+          "documentDate",
+        ),
       );
 
     const referenceNumber =
       cleanString(
-        formData.get("referenceNumber"),
+        formData.get(
+          "referenceNumber",
+        ),
       ) || null;
 
     const notes =
@@ -362,12 +453,16 @@ export async function POST(request: Request) {
 
     const expenseId =
       cleanString(
-        formData.get("expenseId"),
+        formData.get(
+          "expenseId",
+        ),
       ) || null;
 
     const supplierPayableId =
       cleanString(
-        formData.get("supplierPayableId"),
+        formData.get(
+          "supplierPayableId",
+        ),
       ) || null;
 
     const supplierPayablePaymentId =
@@ -379,32 +474,44 @@ export async function POST(request: Request) {
 
     const refundId =
       cleanString(
-        formData.get("refundId"),
+        formData.get(
+          "refundId",
+        ),
       ) || null;
 
     const bankTransactionId =
       cleanString(
-        formData.get("bankTransactionId"),
+        formData.get(
+          "bankTransactionId",
+        ),
       ) || null;
 
     const bookingId =
       cleanString(
-        formData.get("bookingId"),
+        formData.get(
+          "bookingId",
+        ),
       ) || null;
 
     const tourId =
       cleanString(
-        formData.get("tourId"),
+        formData.get(
+          "tourId",
+        ),
       ) || null;
 
     const departureDateId =
       cleanString(
-        formData.get("departureDateId"),
+        formData.get(
+          "departureDateId",
+        ),
       ) || null;
 
     const supplierId =
       cleanString(
-        formData.get("supplierId"),
+        formData.get(
+          "supplierId",
+        ),
       ) || null;
 
     const linksAreValid =
@@ -435,30 +542,10 @@ export async function POST(request: Request) {
     const folder =
       buildStorageFolder(type);
 
-    const storageRoot =
-      path.join(
-        process.cwd(),
-        "storage",
-        "finance",
-      );
-
-    const storageDirectory =
-      path.join(
-        storageRoot,
-        folder,
-      );
-
-    await fs.mkdir(
-      storageDirectory,
-      {
-        recursive: true,
-      },
-    );
-
     const originalFileName =
       file.name || "document";
 
-    const originalExtension =
+    const extension =
       extensionFromName(
         originalFileName,
       );
@@ -473,37 +560,45 @@ export async function POST(request: Request) {
         ),
       ) || "document";
 
-    const uniquePart =
-      crypto.randomUUID();
-
     const storedFileName =
-      `${Date.now()}-${uniquePart}-${baseName}${originalExtension}`;
+      `${Date.now()}-${crypto.randomUUID()}-${baseName}${extension}`;
 
-    const absoluteStoragePath =
-      path.join(
-        storageDirectory,
-        storedFileName,
+    /*
+     * Private Blob pathname.
+     *
+     * Example:
+     * finance/expenses/1234-uuid-hotel-invoice.pdf
+     */
+    const blobPathname =
+      `finance/${folder}/${storedFileName}`;
+
+    const blob =
+      await put(
+        blobPathname,
+        file,
+        {
+          access: "private",
+
+          contentType:
+            file.type ||
+            "application/octet-stream",
+
+          addRandomSuffix:
+            false,
+        },
       );
 
-    const relativeStoragePath =
-      path
-        .relative(
-          process.cwd(),
-          absoluteStoragePath,
-        )
-        .replaceAll("\\", "/");
+    uploadedBlobUrl =
+      blob.url;
 
-    const bytes =
-      await file.arrayBuffer();
-
-    await fs.writeFile(
-      absoluteStoragePath,
-      Buffer.from(bytes),
-    );
-
-    writtenFilePath =
-      absoluteStoragePath;
-
+    /*
+     * For Blob storage we store the
+     * pathname rather than a filesystem
+     * path.
+     *
+     * Example:
+     * finance/expenses/123-file.pdf
+     */
     const document =
       await db.financeDocument.create({
         data: {
@@ -512,12 +607,15 @@ export async function POST(request: Request) {
           description,
 
           originalFileName,
+
           storedFileName,
+
           storagePath:
-            relativeStoragePath,
+            blob.pathname,
 
           mimeType:
-            file.type,
+            file.type ||
+            "application/octet-stream",
 
           fileSize:
             file.size,
@@ -546,19 +644,30 @@ export async function POST(request: Request) {
         success: true,
 
         document: {
-          id: document.id,
-          type: document.type,
-          title: document.title,
+          id:
+            document.id,
+
+          type:
+            document.type,
+
+          title:
+            document.title,
+
           originalFileName:
             document.originalFileName,
+
           mimeType:
             document.mimeType,
+
           fileSize:
             document.fileSize,
+
           documentDate:
             document.documentDate,
+
           referenceNumber:
             document.referenceNumber,
+
           createdAt:
             document.createdAt,
         },
@@ -568,14 +677,22 @@ export async function POST(request: Request) {
       },
     );
   } catch (error) {
-    if (writtenFilePath) {
-      try {
-        await fs.unlink(
-          writtenFilePath,
-        );
-      } catch {
-        // Ignore cleanup failure.
-      }
+    /*
+     * We will add Blob cleanup during the
+     * delete-route conversion immediately
+     * after this route.
+     *
+     * For now, log the uploaded URL if the
+     * Blob write succeeded but the database
+     * insert failed.
+     */
+    if (uploadedBlobUrl) {
+      console.error(
+        "FINANCE_DOCUMENT_ORPHANED_BLOB",
+        {
+          uploadedBlobUrl,
+        },
+      );
     }
 
     console.error(

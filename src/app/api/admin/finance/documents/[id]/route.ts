@@ -1,8 +1,7 @@
 import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { Role } from "@prisma/client";
-import fs from "fs/promises";
-import path from "path";
+import { del } from "@vercel/blob";
 
 import { authOptions } from "@/lib/authOptions";
 import { db } from "@/lib/db";
@@ -12,44 +11,6 @@ type RouteContext = {
     id: string;
   }>;
 };
-
-function resolveFinanceStoragePath(
-  storagePath: string,
-) {
-  const absolutePath = path.resolve(
-    process.cwd(),
-    storagePath,
-  );
-
-  const financeStorageRoot =
-    path.resolve(
-      process.cwd(),
-      "storage",
-      "finance",
-    );
-
-  const relativePath =
-    path.relative(
-      financeStorageRoot,
-      absolutePath,
-    );
-
-  /*
-   * Prevent a database path from escaping
-   * the private Finance storage directory.
-   *
-   * Example that must never be allowed:
-   * ../../.env
-   */
-  if (
-    relativePath.startsWith("..") ||
-    path.isAbsolute(relativePath)
-  ) {
-    return null;
-  }
-
-  return absolutePath;
-}
 
 export async function DELETE(
   _request: Request,
@@ -63,7 +24,8 @@ export async function DELETE(
 
     if (
       !session?.user ||
-      session.user.role !== Role.ADMIN
+      session.user.role !==
+        Role.ADMIN
     ) {
       return NextResponse.json(
         {
@@ -116,58 +78,50 @@ export async function DELETE(
       );
     }
 
-    const absolutePath =
-      resolveFinanceStoragePath(
+    /*
+     * First delete the Blob.
+     *
+     * storagePath contains the private
+     * Blob pathname, for example:
+     *
+     * finance/expenses/123-file.pdf
+     */
+    try {
+      await del(
         document.storagePath,
       );
-
-    if (!absolutePath) {
+    } catch (error) {
       console.error(
-        "FINANCE_DOCUMENT_INVALID_DELETE_PATH",
+        "FINANCE_DOCUMENT_BLOB_DELETE_ERROR",
         {
           documentId:
             document.id,
 
           storagePath:
             document.storagePath,
+
+          error,
         },
       );
 
       return NextResponse.json(
         {
           error:
-            "Invalid finance document storage path.",
+            "The finance document could not be removed from private storage.",
         },
         {
-          status: 400,
+          status: 500,
         },
       );
     }
 
     /*
-     * First verify whether the physical
-     * file exists.
+     * Only delete the database record
+     * after Blob deletion succeeds.
      *
-     * A missing file should NOT prevent us
-     * from deleting an orphaned DB record.
-     */
-    let physicalFileExists =
-      true;
-
-    try {
-      await fs.access(
-        absolutePath,
-      );
-    } catch {
-      physicalFileExists =
-        false;
-    }
-
-    /*
-     * Delete the database record first.
-     *
-     * If DB deletion fails, the physical
-     * file remains safely stored.
+     * This avoids leaving a database
+     * record pointing to a file we
+     * failed to remove.
      */
     await db.financeDocument.delete({
       where: {
@@ -175,43 +129,6 @@ export async function DELETE(
           document.id,
       },
     });
-
-    /*
-     * Now remove the physical file.
-     *
-     * If this part fails, the database
-     * record is already gone, so we log
-     * the orphaned file for maintenance.
-     */
-    let fileDeleted =
-      false;
-
-    if (physicalFileExists) {
-      try {
-        await fs.unlink(
-          absolutePath,
-        );
-
-        fileDeleted =
-          true;
-      } catch (error) {
-        console.error(
-          "FINANCE_DOCUMENT_PHYSICAL_DELETE_ERROR",
-          {
-            documentId:
-              document.id,
-
-            originalFileName:
-              document.originalFileName,
-
-            storagePath:
-              document.storagePath,
-
-            error,
-          },
-        );
-      }
-    }
 
     return NextResponse.json(
       {
@@ -226,14 +143,6 @@ export async function DELETE(
 
           originalFileName:
             document.originalFileName,
-        },
-
-        physicalFile: {
-          existed:
-            physicalFileExists,
-
-          deleted:
-            fileDeleted,
         },
       },
       {
