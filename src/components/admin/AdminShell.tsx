@@ -11,6 +11,7 @@ import {
   Church,
   BriefcaseBusiness,
   CalendarDays,
+  ChartNoAxesCombined,
   ChevronDown,
   CircleDollarSign,
   ClipboardCheck,
@@ -119,6 +120,11 @@ const navSections: NavSection[] = [
       icon: CircleDollarSign,
     },
     {
+      label: "Profitability",
+      href: "/admin/finance/profitability",
+      icon: ChartNoAxesCombined,
+    },
+    {
       label: "Payments",
       href: "/admin/payments",
       icon: CreditCard,
@@ -144,7 +150,7 @@ const navSections: NavSection[] = [
       icon: FileText,
     },
   ],
-},
+  },
   {
     label: "Service",
     items: [
