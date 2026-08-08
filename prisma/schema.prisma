@@ -58,6 +58,8 @@ model User {
 
   bankTransactionsCreated BankTransaction[] @relation("BankTransactionCreatedBy")
 
+  refundsCreated Refund[] @relation("RefundCreatedBy")
+
   @@index([role])
   @@index([approved])
   @@index([status])
@@ -311,6 +313,8 @@ model Booking {
   supplierPayables SupplierPayable[]
 
   bankTransactions BankTransaction[]
+
+  refunds Refund[]
 
   @@index([userId])
   @@index([tourId])
@@ -702,6 +706,8 @@ model Payment {
 
   bankTransactions BankTransaction[]
 
+  refunds Refund[]
+
   @@index([bookingId])
   @@index([status])
   @@index([paidAt])
@@ -844,20 +850,48 @@ model SupportMessage {
 }
 
 model Expense {
-  id            String               @id @default(cuid())
-  title         String
-  description   String?
-  amount        Float
-  currency      String               @default("EUR")
-  category      ExpenseCategory
-  paymentStatus ExpensePaymentStatus @default(PENDING)
+  id          String  @id @default(cuid())
+  title       String
+  description String?
 
-  vendorName  String?
+  amount   Float
+  currency String @default("EUR")
+
+  // Existing broad category remains for backward compatibility.
+  category ExpenseCategory
+
+  // New ERP-level classification.
+  costType    ExpenseCostType    @default(OVERHEAD)
+  expenseItem ExpenseItem?
+  costCenter  ExpenseCostCenter?
+
+  approvalStatus ExpenseApprovalStatus @default(DRAFT)
+  paymentStatus  ExpensePaymentStatus  @default(PENDING)
+
+  vendorName String?
+
+  // Optional CRM supplier connection.
+  supplierId String?
+
+  // Optional bank/cash account used when the expense is actually paid.
+  bankAccountId String?
+
+  paymentMethod    PaymentMethod?
+  paymentReference String?
+
+  supplierInvoiceNumber String?
+  invoiceDate           DateTime?
+  dueDate               DateTime?
+
   expenseDate DateTime
   paidAt      DateTime?
 
-  receiptUrl String?
-  notes      String?
+  receiptUrl  String?
+  documentUrl String?
+  notes       String?
+
+  recurring    Boolean @default(false)
+  reimbursable Boolean @default(false)
 
   bookingId       String?
   tourId          String?
@@ -868,6 +902,9 @@ model Expense {
   tour          Tour?          @relation(fields: [tourId], references: [id], onDelete: SetNull)
   departureDate DepartureDate? @relation(fields: [departureDateId], references: [id], onDelete: SetNull)
   createdBy     User?          @relation("ExpenseCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+
+  supplier    Supplier?    @relation(fields: [supplierId], references: [id], onDelete: SetNull)
+  bankAccount BankAccount? @relation(fields: [bankAccountId], references: [id], onDelete: SetNull)
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -902,8 +939,15 @@ model Expense {
   bankTransactions BankTransaction[]
 
   @@index([category])
+  @@index([costType])
+  @@index([expenseItem])
+  @@index([costCenter])
+  @@index([approvalStatus])
   @@index([paymentStatus])
   @@index([expenseDate])
+  @@index([dueDate])
+  @@index([supplierId])
+  @@index([bankAccountId])
   @@index([bookingId])
   @@index([tourId])
   @@index([departureDateId])
@@ -1135,6 +1179,9 @@ model BankAccount {
   supplierPayablePayments SupplierPayablePayment[]
 
   bankTransactions BankTransaction[]
+  expenses         Expense[]
+
+  refunds Refund[]
 
   @@index([isActive])
 }
@@ -1428,6 +1475,7 @@ model Supplier {
   contracts        SupplierContract[]
   massArrangements MassArrangement[]
   payables         SupplierPayable[]
+  expenses         Expense[]
 
   @@index([name])
   @@index([type])
@@ -1573,6 +1621,58 @@ model SupplierContract {
 }
 
 // ============================================================
+// CUSTOMER REFUNDS
+// ============================================================
+
+model Refund {
+  id String @id @default(cuid())
+
+  bookingId String
+  paymentId String?
+
+  bankAccountId String
+  createdById   String?
+
+  amount   Decimal @db.Decimal(12, 2)
+  currency String  @default("EUR")
+
+  status RefundStatus @default(PENDING)
+
+  method PaymentMethod?
+
+  reason RefundReason @default(OTHER)
+
+  reasonDetails String?
+
+  refundDate DateTime?
+
+  reference String?
+  notes     String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  booking Booking @relation(fields: [bookingId], references: [id], onDelete: Restrict)
+
+  payment Payment? @relation(fields: [paymentId], references: [id], onDelete: SetNull)
+
+  bankAccount BankAccount @relation(fields: [bankAccountId], references: [id], onDelete: Restrict)
+
+  createdBy User? @relation("RefundCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+
+  bankTransactions BankTransaction[]
+
+  @@index([bookingId])
+  @@index([paymentId])
+  @@index([bankAccountId])
+  @@index([createdById])
+  @@index([status])
+  @@index([reason])
+  @@index([refundDate])
+  @@index([createdAt])
+}
+
+// ============================================================
 // BANK TRANSACTION LEDGER
 // ============================================================
 
@@ -1600,6 +1700,7 @@ model BankTransaction {
   paymentId                String?
   supplierPayablePaymentId String?
   expenseId                String?
+  refundId                 String?
   tourId                   String?
   departureDateId          String?
 
@@ -1618,6 +1719,7 @@ model BankTransaction {
   payment                Payment?                @relation(fields: [paymentId], references: [id], onDelete: SetNull)
   supplierPayablePayment SupplierPayablePayment? @relation(fields: [supplierPayablePaymentId], references: [id], onDelete: SetNull)
   expense                Expense?                @relation(fields: [expenseId], references: [id], onDelete: SetNull)
+  refund                 Refund?                 @relation(fields: [refundId], references: [id], onDelete: SetNull)
   tour                   Tour?                   @relation(fields: [tourId], references: [id], onDelete: SetNull)
   departureDate          DepartureDate?          @relation(fields: [departureDateId], references: [id], onDelete: SetNull)
 
@@ -1635,6 +1737,7 @@ model BankTransaction {
   @@index([paymentId])
   @@index([supplierPayablePaymentId])
   @@index([expenseId])
+  @@index([refundId])
   @@index([tourId])
   @@index([departureDateId])
   @@index([transferGroupId])
@@ -1947,4 +2050,114 @@ enum BankTransactionStatus {
   POSTED
   REVERSED
   VOIDED
+}
+
+enum ExpenseCostType {
+  DIRECT_TOUR_COST
+  OVERHEAD
+}
+
+enum ExpenseApprovalStatus {
+  DRAFT
+  PENDING_APPROVAL
+  APPROVED
+  REJECTED
+  CANCELLED
+}
+
+enum ExpenseCostCenter {
+  TOUR_OPERATIONS
+  PILGRIMAGE_OPERATIONS
+  SALES_MARKETING
+  ADMINISTRATION
+  FINANCE
+  IT_TECHNOLOGY
+  STAFF_HR
+  BUSINESS_TRAVEL
+  OTHER
+}
+
+enum ExpenseItem {
+  HOTEL_ACCOMMODATION
+  STAFF_ACCOMMODATION
+
+  TOUR_MANAGER
+  LOCAL_GUIDE
+  TOUR_LEADER_EXPENSE
+  DRIVER
+  STAFF
+  STAFF_MEALS
+  STAFF_TRANSPORTATION
+
+  COACH_BUS
+  PRIVATE_TRANSFER
+  TAXI_LOCAL_TRANSPORT
+  PARKING_TOLLS
+  FUEL
+
+  FLIGHT
+  TRAIN
+  FERRY
+  BOAT_TRIP_CRUISE
+
+  BREAKFAST
+  LUNCH
+  DINNER
+  REFRESHMENTS
+
+  ENTRANCE_FEES
+  MUSEUM_ATTRACTION
+  TICKETS
+  AUDIO_GUIDE_HEADSETS
+
+  MASS_ARRANGEMENT
+  CHURCH_SHRINE_DONATION
+  PRIEST_CELEBRANT_OFFERING
+
+  PORTERAGE
+  LUGGAGE_HANDLING
+  TIPS_GRATUITIES
+  GIFTS_HOSPITALITY_TREATS
+
+  VISA_PERMIT
+  LOCAL_CITY_TAX
+  INSURANCE
+
+  EMERGENCY_EXPENSE
+  TOUR_MARKETING_PROMOTION
+  PRINTING_TOUR_MATERIALS
+  OTHER_DIRECT_TOUR_COST
+
+  OFFICE_RENT
+  UTILITIES
+  PHONE_INTERNET
+  SOFTWARE_SUBSCRIPTION
+  WEBSITE_HOSTING
+  GENERAL_MARKETING_ADVERTISING
+  TRADE_SHOW_MEMBERSHIP
+  ACCOUNTING_LEGAL
+  BANK_CHARGES
+  OFFICE_SUPPLIES
+  BUSINESS_TRAVEL
+  TRAINING
+  GOVERNMENT_FEES_TAXES
+  OTHER_OVERHEAD
+}
+
+enum RefundStatus {
+  PENDING
+  APPROVED
+  PAID
+  CANCELLED
+}
+
+enum RefundReason {
+  BOOKING_CANCELLATION
+  PARTIAL_CANCELLATION
+  OVERPAYMENT
+  SERVICE_NOT_PROVIDED
+  PRICE_ADJUSTMENT
+  DUPLICATE_PAYMENT
+  GOODWILL
+  OTHER
 }

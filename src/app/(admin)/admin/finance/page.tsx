@@ -1,567 +1,1481 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { getServerSession } from "next-auth";
-import { ExpensePaymentStatus, Role } from "@prisma/client";
+
+import {
+  BankTransactionDirection,
+  BankTransactionStatus,
+  BankTransactionType,
+  BookingStatus,
+  ExpenseApprovalStatus,
+  ExpensePaymentStatus,
+  RefundStatus,
+  Role,
+  SupplierPayableApprovalStatus,
+  SupplierPayablePaymentStatus,
+} from "@prisma/client";
 
 import { authOptions } from "@/lib/authOptions";
 import { db } from "@/lib/db";
-import { formatCurrency } from "@/lib/payments/formatCurrency";
 
-function formatDate(value: Date | string | null | undefined) {
-  if (!value) return "-";
+type CurrencyMap = Record<string, number>;
 
-  return new Date(value).toLocaleDateString("en-GB", {
+function money(
+  value: number,
+  currency: string,
+) {
+  return new Intl.NumberFormat("en-GB", {
+    style: "currency",
+    currency,
+    maximumFractionDigits: 2,
+  }).format(value);
+}
+
+function formatDate(
+  value: Date | null | undefined,
+) {
+  if (!value) {
+    return "-";
+  }
+
+  return value.toLocaleDateString("en-GB", {
     day: "2-digit",
     month: "short",
     year: "numeric",
   });
 }
 
-type SummaryItem = {
-  label: string;
-  income: number;
-  expenses: number;
-  count: number;
-};
-
-function getResult(item: SummaryItem) {
-  return item.income - item.expenses;
+function enumLabel(value: string) {
+  return value
+    .replaceAll("_", " ")
+    .toLowerCase()
+    .replace(/\b\w/g, (letter) =>
+      letter.toUpperCase(),
+    );
 }
 
-function getTopItem(map: Map<string, SummaryItem>) {
-  return Array.from(map.values()).sort((a, b) => getResult(b) - getResult(a))[0];
+function addCurrency(
+  totals: CurrencyMap,
+  currency: string,
+  amount: number,
+) {
+  totals[currency] =
+    (totals[currency] ?? 0) +
+    amount;
 }
 
-export default async function AdminFinanceDashboardPage() {
-  const session = await getServerSession(authOptions);
+function getTransactionBadge(
+  type: BankTransactionType,
+) {
+  switch (type) {
+    case BankTransactionType.CUSTOMER_RECEIPT:
+      return "bg-emerald-100 text-emerald-800";
 
-  if (!session?.user || session.user.role !== Role.ADMIN) {
+    case BankTransactionType.SUPPLIER_PAYMENT:
+      return "bg-amber-100 text-amber-800";
+
+    case BankTransactionType.EXPENSE_PAYMENT:
+      return "bg-orange-100 text-orange-800";
+
+    case BankTransactionType.REFUND:
+      return "bg-red-100 text-red-800";
+
+    case BankTransactionType.TRANSFER_OUT:
+    case BankTransactionType.TRANSFER_IN:
+      return "bg-blue-100 text-blue-800";
+
+    case BankTransactionType.REVERSAL:
+      return "bg-purple-100 text-purple-800";
+
+    case BankTransactionType.ADJUSTMENT:
+      return "bg-slate-200 text-slate-800";
+
+    default:
+      return "bg-slate-100 text-slate-700";
+  }
+}
+
+export default async function AdminFinancePage() {
+  const session =
+    await getServerSession(
+      authOptions,
+    );
+
+  if (
+    !session?.user ||
+    session.user.role !== Role.ADMIN
+  ) {
     redirect("/admin-login");
   }
 
-  const [financeEntries, bankAccount] = await Promise.all([
-    db.expense.findMany({
-      orderBy: [{ expenseDate: "desc" }, { createdAt: "desc" }],
-      take: 300,
-      include: {
+  const now = new Date();
+
+  const monthStart = new Date(
+    now.getFullYear(),
+    now.getMonth(),
+    1,
+  );
+
+  const [
+    bankAccounts,
+    ledgerByAccount,
+    monthCashRows,
+    recentTransactions,
+    payableSummary,
+    receivableSummary,
+    pendingRefundSummary,
+    paidExpenseSummary,
+    overduePayablesCount,
+    pendingExpenseApprovals,
+    pendingRefundCount,
+  ] = await Promise.all([
+    // --------------------------------------------------------
+    // BANK ACCOUNTS
+    // --------------------------------------------------------
+
+    db.bankAccount.findMany({
+      where: {
+        isActive: true,
+      },
+
+      orderBy: [
+        {
+          currency: "asc",
+        },
+        {
+          name: "asc",
+        },
+      ],
+
+      select: {
+        id: true,
+        name: true,
+        currency: true,
+        openingBalance: true,
+        currentBalance: true,
+        notes: true,
+      },
+    }),
+
+    // --------------------------------------------------------
+    // LEDGER MOVEMENT PER BANK ACCOUNT
+    // --------------------------------------------------------
+
+    db.bankTransaction.groupBy({
+      by: [
+        "bankAccountId",
+        "direction",
+      ],
+
+      where: {
+        status:
+          BankTransactionStatus.POSTED,
+      },
+
+      _sum: {
+        amount: true,
+      },
+    }),
+
+    // --------------------------------------------------------
+    // MONTH-TO-DATE EXTERNAL CASH FLOW
+    //
+    // Transfers are intentionally excluded.
+    // Opening balance is intentionally excluded.
+    // --------------------------------------------------------
+
+    db.bankTransaction.groupBy({
+      by: [
+        "currency",
+        "direction",
+      ],
+
+      where: {
+        status:
+          BankTransactionStatus.POSTED,
+
+        transactionDate: {
+          gte: monthStart,
+        },
+
+        type: {
+          notIn: [
+            BankTransactionType.TRANSFER_IN,
+            BankTransactionType.TRANSFER_OUT,
+            BankTransactionType.OPENING_BALANCE,
+          ],
+        },
+      },
+
+      _sum: {
+        amount: true,
+      },
+    }),
+
+    // --------------------------------------------------------
+    // RECENT LEDGER
+    // --------------------------------------------------------
+
+    db.bankTransaction.findMany({
+      where: {
+        status:
+          BankTransactionStatus.POSTED,
+      },
+
+      orderBy: {
+        transactionDate: "desc",
+      },
+
+      take: 15,
+
+      select: {
+        id: true,
+        type: true,
+        direction: true,
+        amount: true,
+        currency: true,
+        transactionDate: true,
+        reference: true,
+        description: true,
+
+        bankAccount: {
+          select: {
+            id: true,
+            name: true,
+          },
+        },
+
         booking: {
           select: {
             id: true,
-            bookingDisplayCode: true,
             bookingReference: true,
+            bookingDisplayCode: true,
           },
         },
+
         tour: {
           select: {
             id: true,
             title: true,
-            tourCode: true,
           },
         },
       },
     }),
 
-    db.bankAccount.findFirst({
+    // --------------------------------------------------------
+    // SUPPLIER LIABILITIES
+    // --------------------------------------------------------
+
+    db.supplierPayable.groupBy({
+      by: ["currency"],
+
       where: {
-        isActive: true,
+        approvalStatus:
+          SupplierPayableApprovalStatus.APPROVED,
+
+        paymentStatus: {
+          in: [
+            SupplierPayablePaymentStatus.UNPAID,
+            SupplierPayablePaymentStatus.PARTIALLY_PAID,
+            SupplierPayablePaymentStatus.OVERDUE,
+          ],
+        },
       },
-      orderBy: {
-        createdAt: "asc",
+
+      _sum: {
+        balance: true,
+      },
+
+      _count: {
+        _all: true,
+      },
+    }),
+
+    // --------------------------------------------------------
+    // CUSTOMER RECEIVABLES
+    // --------------------------------------------------------
+
+    db.booking.groupBy({
+      by: ["currency"],
+
+      where: {
+        status: {
+          not:
+            BookingStatus.CANCELLED,
+        },
+
+        amountDue: {
+          gt: 0,
+        },
+      },
+
+      _sum: {
+        amountDue: true,
+      },
+
+      _count: {
+        _all: true,
+      },
+    }),
+
+    // --------------------------------------------------------
+    // PENDING / APPROVED REFUNDS
+    // --------------------------------------------------------
+
+    db.refund.groupBy({
+      by: [
+        "currency",
+        "status",
+      ],
+
+      where: {
+        status: {
+          in: [
+            RefundStatus.PENDING,
+            RefundStatus.APPROVED,
+          ],
+        },
+      },
+
+      _sum: {
+        amount: true,
+      },
+    }),
+
+    // --------------------------------------------------------
+    // PAID EXPENSES
+    // --------------------------------------------------------
+
+    db.expense.groupBy({
+      by: [
+        "currency",
+        "costType",
+      ],
+
+      where: {
+        approvalStatus:
+          ExpenseApprovalStatus.APPROVED,
+
+        paymentStatus:
+          ExpensePaymentStatus.PAID,
+      },
+
+      _sum: {
+        amount: true,
+      },
+    }),
+
+    // --------------------------------------------------------
+    // ALERT COUNTS
+    // --------------------------------------------------------
+
+    db.supplierPayable.count({
+      where: {
+        approvalStatus:
+          SupplierPayableApprovalStatus.APPROVED,
+
+        paymentStatus: {
+          in: [
+            SupplierPayablePaymentStatus.UNPAID,
+            SupplierPayablePaymentStatus.PARTIALLY_PAID,
+            SupplierPayablePaymentStatus.OVERDUE,
+          ],
+        },
+
+        dueDate: {
+          lt: now,
+        },
+      },
+    }),
+
+    db.expense.count({
+      where: {
+        approvalStatus:
+          ExpenseApprovalStatus.PENDING_APPROVAL,
+      },
+    }),
+
+    db.refund.count({
+      where: {
+        status:
+          RefundStatus.PENDING,
       },
     }),
   ]);
 
-  const getReportingAmount = (
-    entry: (typeof financeEntries)[number]
-  ) => {
-    return entry.amount;
-  };
+  // ========================================================
+  // BANK BALANCES
+  // ========================================================
 
-  const addToSummary = (
-    map: Map<string, SummaryItem>,
-    key: string,
-    label: string,
-    direction: string,
-    amount: number
-  ) => {
-    const existing = map.get(key) ?? {
-      label,
-      income: 0,
-      expenses: 0,
-      count: 0,
-    };
+  const ledgerMovementByAccount =
+    new Map<
+      string,
+      {
+        incoming: number;
+        outgoing: number;
+      }
+    >();
 
-    if (direction === "INCOME") {
-      existing.income += amount;
+  for (const row of ledgerByAccount) {
+    const current =
+      ledgerMovementByAccount.get(
+        row.bankAccountId,
+      ) ?? {
+        incoming: 0,
+        outgoing: 0,
+      };
+
+    const amount =
+      Number(
+        row._sum.amount ?? 0,
+      );
+
+    if (
+      row.direction ===
+      BankTransactionDirection.IN
+    ) {
+      current.incoming += amount;
     } else {
-      existing.expenses += amount;
+      current.outgoing += amount;
     }
 
-    existing.count += 1;
-    map.set(key, existing);
-  };
-
-  const totalIncome = financeEntries
-    .filter((entry) => entry.direction === "INCOME")
-    .reduce((sum, entry) => sum + getReportingAmount(entry), 0);
-
-  const totalExpenses = financeEntries
-    .filter((entry) => entry.direction === "EXPENSE")
-    .reduce((sum, entry) => sum + getReportingAmount(entry), 0);
-
-  const paidIncome = financeEntries
-    .filter(
-      (entry) =>
-        entry.direction === "INCOME" &&
-        entry.paymentStatus === ExpensePaymentStatus.PAID
-    )
-    .reduce((sum, entry) => sum + getReportingAmount(entry), 0);
-
-  const pendingIncome = financeEntries
-    .filter(
-      (entry) =>
-        entry.direction === "INCOME" &&
-        entry.paymentStatus === ExpensePaymentStatus.PENDING
-    )
-    .reduce((sum, entry) => sum + getReportingAmount(entry), 0);
-
-  const paidExpenses = financeEntries
-    .filter(
-      (entry) =>
-        entry.direction === "EXPENSE" &&
-        entry.paymentStatus === ExpensePaymentStatus.PAID
-    )
-    .reduce((sum, entry) => sum + getReportingAmount(entry), 0);
-
-  const pendingExpenses = financeEntries
-    .filter(
-      (entry) =>
-        entry.direction === "EXPENSE" &&
-        entry.paymentStatus === ExpensePaymentStatus.PENDING
-    )
-    .reduce((sum, entry) => sum + getReportingAmount(entry), 0);
-
-  const totalTax = financeEntries.reduce(
-    (sum, entry) => sum + (entry.taxAmount || 0),
-    0
-  );
-
-  const netProfit = totalIncome - totalExpenses;
-
-  const openingBalance = bankAccount?.openingBalance || 0;
-  const estimatedBankBalance = openingBalance + paidIncome - paidExpenses;
-
-  const agencyMap = new Map<string, SummaryItem>();
-  const tourMap = new Map<string, SummaryItem>();
-  const groupMap = new Map<string, SummaryItem>();
-  const supplierMap = new Map<string, SummaryItem>();
-
-  for (const entry of financeEntries) {
-    const amount = getReportingAmount(entry);
-
-    const agencyLabel =
-      entry.partnerCompanyName || entry.agentNameSnapshot || "Unassigned";
-
-    addToSummary(agencyMap, agencyLabel, agencyLabel, entry.direction, amount);
-
-    const tourLabel = entry.tour
-      ? entry.tour.tourCode
-        ? `${entry.tour.tourCode} — ${entry.tour.title}`
-        : entry.tour.title
-      : entry.customPackageName || "Unlinked Tour / Package";
-
-    addToSummary(tourMap, tourLabel, tourLabel, entry.direction, amount);
-
-    const groupLabel =
-      entry.groupName || entry.customPackageName || "Unassigned Group";
-
-    addToSummary(groupMap, groupLabel, groupLabel, entry.direction, amount);
-
-    const supplierLabel = entry.vendorName || "Unassigned Supplier / Payer";
-
-    addToSummary(
-      supplierMap,
-      supplierLabel,
-      supplierLabel,
-      entry.direction,
-      amount
+    ledgerMovementByAccount.set(
+      row.bankAccountId,
+      current,
     );
   }
 
-  const topAgency = getTopItem(agencyMap);
-  const topTour = getTopItem(tourMap);
-  const topGroup = getTopItem(groupMap);
-  const topSupplier = Array.from(supplierMap.values()).sort(
-    (a, b) => b.expenses - a.expenses
-  )[0];
+  const accountPositions =
+    bankAccounts.map((account) => {
+      const movement =
+        ledgerMovementByAccount.get(
+          account.id,
+        ) ?? {
+          incoming: 0,
+          outgoing: 0,
+        };
 
-  const recentEntries = financeEntries.slice(0, 8);
+      const ledgerBalance =
+        account.openingBalance +
+        movement.incoming -
+        movement.outgoing;
+
+      return {
+        ...account,
+        ledgerIn:
+          movement.incoming,
+        ledgerOut:
+          movement.outgoing,
+        ledgerBalance,
+      };
+    });
+
+  const bankTotals: CurrencyMap = {};
+
+  for (const account of accountPositions) {
+    addCurrency(
+      bankTotals,
+      account.currency,
+      account.ledgerBalance,
+    );
+  }
+
+  // ========================================================
+  // MONTH CASH FLOW
+  // ========================================================
+
+  const cashIn: CurrencyMap = {};
+  const cashOut: CurrencyMap = {};
+
+  for (const row of monthCashRows) {
+    const amount =
+      Number(
+        row._sum.amount ?? 0,
+      );
+
+    if (
+      row.direction ===
+      BankTransactionDirection.IN
+    ) {
+      addCurrency(
+        cashIn,
+        row.currency,
+        amount,
+      );
+    } else {
+      addCurrency(
+        cashOut,
+        row.currency,
+        amount,
+      );
+    }
+  }
+
+  const cashCurrencies =
+    Array.from(
+      new Set([
+        ...Object.keys(cashIn),
+        ...Object.keys(cashOut),
+      ]),
+    ).sort();
+
+  // ========================================================
+  // SUPPLIER LIABILITIES
+  // ========================================================
+
+  const supplierLiabilities =
+    payableSummary.map((row) => ({
+      currency: row.currency,
+      amount: Number(
+        row._sum.balance ?? 0,
+      ),
+      count:
+        row._count._all,
+    }));
+
+  // ========================================================
+  // CUSTOMER RECEIVABLES
+  // ========================================================
+
+  const receivables =
+    receivableSummary.map((row) => ({
+      currency: row.currency,
+      amount:
+        row._sum.amountDue ?? 0,
+      count:
+        row._count._all,
+    }));
+
+  // ========================================================
+  // REFUND COMMITMENTS
+  // ========================================================
+
+  const refundCommitments: CurrencyMap =
+    {};
+
+  for (
+    const row of pendingRefundSummary
+  ) {
+    addCurrency(
+      refundCommitments,
+      row.currency,
+      Number(
+        row._sum.amount ?? 0,
+      ),
+    );
+  }
+
+  // ========================================================
+  // PAID EXPENSES
+  // ========================================================
+
+  const directTourCosts: CurrencyMap =
+    {};
+
+  const overheadCosts: CurrencyMap =
+    {};
+
+  for (
+    const row of paidExpenseSummary
+  ) {
+    const amount =
+      row._sum.amount ?? 0;
+
+    if (
+      row.costType ===
+      "DIRECT_TOUR_COST"
+    ) {
+      addCurrency(
+        directTourCosts,
+        row.currency,
+        amount,
+      );
+    } else {
+      addCurrency(
+        overheadCosts,
+        row.currency,
+        amount,
+      );
+    }
+  }
 
   return (
-    <div className="space-y-8 p-6">
-      <div className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
+    <div className="mx-auto max-w-[1600px] space-y-6 p-4 sm:p-6 lg:p-8">
+      {/* ================================================== */}
+      {/* HEADER */}
+      {/* ================================================== */}
+
+      <div className="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
         <div>
-          <h1 className="text-3xl font-bold text-[#001F3F]">
-            Finance Dashboard
+          <p className="text-xs font-bold uppercase tracking-[0.2em] text-[#8B0000]">
+            Epoch Journeys ERP
+          </p>
+
+          <h1 className="mt-1 text-3xl font-bold text-[#001F3F]">
+            Finance Center
           </h1>
-          <p className="mt-2 text-sm text-muted-foreground">
-            Executive overview of income, expenses, receivables, payables, tax,
-            bank balance, agencies, tours, and operation profitability.
+
+          <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-500">
+            Consolidated cash,
+            receivables, supplier
+            liabilities, expenses,
+            refunds and bank-ledger
+            activity.
           </p>
         </div>
 
-        <div className="flex flex-wrap gap-3">
-          <Link
-            href="/admin/finance/expenses"
-            className="rounded-xl border px-4 py-2 text-sm font-medium transition hover:border-[#8B0000] hover:text-[#8B0000]"
-          >
-            Open Finance Ledger
-          </Link>
-
-          <Link
+        <div className="flex flex-wrap gap-2">
+          <FinanceLink
             href="/admin/finance/expenses/create"
-            className="rounded-xl bg-[#8B0000] px-4 py-2 text-sm font-medium text-white transition hover:bg-[#6f0000]"
-          >
-            Add Finance Entry
-          </Link>
+            label="+ Add Expense"
+            primary
+          />
+
+          <FinanceLink
+            href="/admin/supplier-payables"
+            label="Supplier Payables"
+          />
+
+          <FinanceLink
+            href="/admin/finance/bank-transfers"
+            label="Bank Transfers"
+          />
+
+          <FinanceLink
+            href="/admin/finance/expenses"
+            label="Expenses"
+          />
         </div>
       </div>
 
-      <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
-        <div className="rounded-2xl border bg-emerald-50 p-5 shadow-sm">
-          <p className="text-sm font-medium text-emerald-700">
-            Estimated Bank Balance
-          </p>
-          <p className="mt-2 text-3xl font-bold text-emerald-800">
-            {formatCurrency(estimatedBankBalance, "EUR")}
-          </p>
-          <p className="mt-2 text-xs text-emerald-700">
-            Opening balance + paid income - paid expenses
-          </p>
-        </div>
+      {/* ================================================== */}
+      {/* ALERTS */}
+      {/* ================================================== */}
 
-        <div className="rounded-2xl border bg-green-50 p-5 shadow-sm">
-          <p className="text-sm font-medium text-green-700">Total Income</p>
-          <p className="mt-2 text-3xl font-bold text-green-800">
-            {formatCurrency(totalIncome, "EUR")}
-          </p>
-        </div>
-
-        <div className="rounded-2xl border bg-red-50 p-5 shadow-sm">
-          <p className="text-sm font-medium text-red-700">Total Expenses</p>
-          <p className="mt-2 text-3xl font-bold text-red-800">
-            {formatCurrency(totalExpenses, "EUR")}
-          </p>
-        </div>
-
-        <div className="rounded-2xl border bg-blue-50 p-5 shadow-sm">
-          <p className="text-sm font-medium text-blue-700">Net Profit</p>
-          <p
-            className={`mt-2 text-3xl font-bold ${
-              netProfit >= 0 ? "text-blue-800" : "text-red-700"
-            }`}
-          >
-            {formatCurrency(netProfit, "EUR")}
-          </p>
-        </div>
-
-        <div className="rounded-2xl border bg-amber-50 p-5 shadow-sm">
-          <p className="text-sm font-medium text-amber-700">VAT / Tax</p>
-          <p className="mt-2 text-3xl font-bold text-amber-800">
-            {formatCurrency(totalTax, "EUR")}
-          </p>
-        </div>
-      </section>
-
-      <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-        <div className="rounded-2xl border bg-white p-5 shadow-sm">
-          <p className="text-sm text-slate-500">Opening Bank Balance</p>
-          <p className="mt-2 text-2xl font-bold text-slate-800">
-            {formatCurrency(openingBalance, "EUR")}
-          </p>
-          <p className="mt-1 text-xs text-slate-500">
-            {bankAccount?.name || "No active bank account selected"}
-          </p>
-        </div>
-
-        <div className="rounded-2xl border bg-white p-5 shadow-sm">
-          <p className="text-sm text-slate-500">Paid Income</p>
-          <p className="mt-2 text-2xl font-bold text-green-700">
-            {formatCurrency(paidIncome, "EUR")}
-          </p>
-        </div>
-
-        <div className="rounded-2xl border bg-white p-5 shadow-sm">
-          <p className="text-sm text-slate-500">Paid Expenses</p>
-          <p className="mt-2 text-2xl font-bold text-red-700">
-            {formatCurrency(paidExpenses, "EUR")}
-          </p>
-        </div>
-
-        <div className="rounded-2xl border bg-white p-5 shadow-sm">
-          <p className="text-sm text-slate-500">Cash Movement</p>
-          <p
-            className={`mt-2 text-2xl font-bold ${
-              paidIncome - paidExpenses >= 0
-                ? "text-green-700"
-                : "text-red-700"
-            }`}
-          >
-            {formatCurrency(paidIncome - paidExpenses, "EUR")}
-          </p>
-        </div>
-      </section>
-
-      <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-        <div className="rounded-2xl border bg-white p-5 shadow-sm">
-          <p className="text-sm text-slate-500">Pending Receivables</p>
-          <p className="mt-2 text-2xl font-bold text-amber-700">
-            {formatCurrency(pendingIncome, "EUR")}
-          </p>
-        </div>
-
-        <div className="rounded-2xl border bg-white p-5 shadow-sm">
-          <p className="text-sm text-slate-500">Pending Payables</p>
-          <p className="mt-2 text-2xl font-bold text-amber-700">
-            {formatCurrency(pendingExpenses, "EUR")}
-          </p>
-        </div>
-
-        <div className="rounded-2xl border bg-white p-5 shadow-sm">
-          <p className="text-sm text-slate-500">Top Agency / Partner</p>
-          <p className="mt-2 text-lg font-bold text-[#001F3F]">
-            {topAgency?.label || "-"}
-          </p>
-          <p
-            className={`mt-1 text-sm font-medium ${
-              topAgency && getResult(topAgency) >= 0
-                ? "text-green-700"
-                : "text-red-700"
-            }`}
-          >
-            {topAgency
-              ? formatCurrency(getResult(topAgency), "EUR")
-              : formatCurrency(0, "EUR")}
-          </p>
-        </div>
-
-        <div className="rounded-2xl border bg-white p-5 shadow-sm">
-          <p className="text-sm text-slate-500">Top Tour / Package</p>
-          <p className="mt-2 text-lg font-bold text-[#001F3F]">
-            {topTour?.label || "-"}
-          </p>
-          <p
-            className={`mt-1 text-sm font-medium ${
-              topTour && getResult(topTour) >= 0
-                ? "text-green-700"
-                : "text-red-700"
-            }`}
-          >
-            {topTour
-              ? formatCurrency(getResult(topTour), "EUR")
-              : formatCurrency(0, "EUR")}
-          </p>
-        </div>
-      </section>
-
-      <section className="grid gap-4 md:grid-cols-2">
-        <div className="rounded-2xl border bg-white p-5 shadow-sm">
-          <p className="text-sm text-slate-500">Top Group</p>
-          <p className="mt-2 text-lg font-bold text-[#001F3F]">
-            {topGroup?.label || "-"}
-          </p>
-          <p
-            className={`mt-1 text-sm font-medium ${
-              topGroup && getResult(topGroup) >= 0
-                ? "text-green-700"
-                : "text-red-700"
-            }`}
-          >
-            {topGroup
-              ? formatCurrency(getResult(topGroup), "EUR")
-              : formatCurrency(0, "EUR")}
-          </p>
-        </div>
-
-        <div className="rounded-2xl border bg-white p-5 shadow-sm">
-          <p className="text-sm text-slate-500">Largest Supplier / Payer</p>
-          <p className="mt-2 text-lg font-bold text-[#001F3F]">
-            {topSupplier?.label || "-"}
-          </p>
-          <p className="mt-1 text-sm font-medium text-red-700">
-            {topSupplier
-              ? formatCurrency(topSupplier.expenses, "EUR")
-              : formatCurrency(0, "EUR")}
-          </p>
-        </div>
-      </section>
-
-      <section className="grid gap-4 xl:grid-cols-2">
-        <div className="rounded-2xl border bg-white p-5 shadow-sm">
-          <div className="mb-4 flex items-center justify-between gap-3">
+      {(overduePayablesCount >
+        0 ||
+        pendingExpenseApprovals >
+          0 ||
+        pendingRefundCount >
+          0) && (
+        <section className="rounded-2xl border border-amber-200 bg-amber-50 p-5">
+          <div className="flex flex-wrap items-center justify-between gap-4">
             <div>
-              <h2 className="text-lg font-semibold text-[#001F3F]">
-                Recent Finance Entries
+              <h2 className="font-bold text-amber-950">
+                Finance attention
+                required
               </h2>
-              <p className="text-sm text-slate-500">
-                Latest income and expense records.
+
+              <p className="mt-1 text-sm text-amber-800">
+                There are finance
+                items requiring review
+                or action.
               </p>
             </div>
 
-            <Link
-              href="/admin/finance/expenses"
-              className="text-sm font-medium text-[#8B0000] hover:underline"
-            >
-              View all
-            </Link>
+            <div className="flex flex-wrap gap-2 text-xs font-semibold">
+              {overduePayablesCount >
+                0 && (
+                <span className="rounded-full bg-red-100 px-3 py-1.5 text-red-800">
+                  {
+                    overduePayablesCount
+                  }{" "}
+                  overdue supplier
+                  payable
+                  {overduePayablesCount ===
+                  1
+                    ? ""
+                    : "s"}
+                </span>
+              )}
+
+              {pendingExpenseApprovals >
+                0 && (
+                <span className="rounded-full bg-amber-100 px-3 py-1.5 text-amber-900">
+                  {
+                    pendingExpenseApprovals
+                  }{" "}
+                  expense approval
+                  {pendingExpenseApprovals ===
+                  1
+                    ? ""
+                    : "s"}
+                </span>
+              )}
+
+              {pendingRefundCount >
+                0 && (
+                <span className="rounded-full bg-blue-100 px-3 py-1.5 text-blue-800">
+                  {
+                    pendingRefundCount
+                  }{" "}
+                  pending refund
+                  {pendingRefundCount ===
+                  1
+                    ? ""
+                    : "s"}
+                </span>
+              )}
+            </div>
+          </div>
+        </section>
+      )}
+
+      {/* ================================================== */}
+      {/* HIGH LEVEL CARDS */}
+      {/* ================================================== */}
+
+      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        <MetricCard
+          title="Bank Position"
+          description="Calculated from opening balances + posted ledger movements."
+        >
+          <CurrencyValues
+            totals={bankTotals}
+            empty="No active accounts"
+          />
+        </MetricCard>
+
+        <MetricCard
+          title="Supplier Liabilities"
+          description="Approved supplier payables still outstanding."
+        >
+          {supplierLiabilities.length >
+          0 ? (
+            <div className="space-y-1">
+              {supplierLiabilities.map(
+                (item) => (
+                  <div
+                    key={
+                      item.currency
+                    }
+                    className="flex items-end justify-between gap-3"
+                  >
+                    <span className="text-xl font-bold text-amber-700">
+                      {money(
+                        item.amount,
+                        item.currency,
+                      )}
+                    </span>
+
+                    <span className="text-xs text-slate-500">
+                      {
+                        item.count
+                      }{" "}
+                      payable
+                      {item.count ===
+                      1
+                        ? ""
+                        : "s"}
+                    </span>
+                  </div>
+                ),
+              )}
+            </div>
+          ) : (
+            <EmptyValue text="No outstanding approved payables" />
+          )}
+        </MetricCard>
+
+        <MetricCard
+          title="Customer Receivables"
+          description="Outstanding amounts currently shown on open bookings."
+        >
+          {receivables.length >
+          0 ? (
+            <div className="space-y-1">
+              {receivables.map(
+                (item) => (
+                  <div
+                    key={
+                      item.currency
+                    }
+                    className="flex items-end justify-between gap-3"
+                  >
+                    <span className="text-xl font-bold text-[#001F3F]">
+                      {money(
+                        item.amount,
+                        item.currency,
+                      )}
+                    </span>
+
+                    <span className="text-xs text-slate-500">
+                      {
+                        item.count
+                      }{" "}
+                      booking
+                      {item.count ===
+                      1
+                        ? ""
+                        : "s"}
+                    </span>
+                  </div>
+                ),
+              )}
+            </div>
+          ) : (
+            <EmptyValue text="No booking receivables" />
+          )}
+        </MetricCard>
+
+        <MetricCard
+          title="Refund Commitments"
+          description="Pending and approved customer refunds not yet excluded from booking receipts."
+        >
+          <CurrencyValues
+            totals={
+              refundCommitments
+            }
+            empty="No refund commitments"
+            negative
+          />
+        </MetricCard>
+      </div>
+
+      {/* ================================================== */}
+      {/* MONTH-TO-DATE CASH FLOW */}
+      {/* ================================================== */}
+
+      <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
+        <div className="mb-5 flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <h2 className="text-lg font-bold text-[#001F3F]">
+              Month-to-Date Cash
+              Flow
+            </h2>
+
+            <p className="mt-1 text-sm text-slate-500">
+              External posted cash
+              movements only.
+              Internal bank transfers
+              are excluded.
+            </p>
           </div>
 
+          <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-600">
+            {monthStart.toLocaleDateString(
+              "en-GB",
+              {
+                month: "long",
+                year: "numeric",
+              },
+            )}
+          </span>
+        </div>
+
+        {cashCurrencies.length ===
+        0 ? (
+          <EmptyValue text="No posted cash activity this month" />
+        ) : (
+          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+            {cashCurrencies.map(
+              (currency) => {
+                const incoming =
+                  cashIn[
+                    currency
+                  ] ?? 0;
+
+                const outgoing =
+                  cashOut[
+                    currency
+                  ] ?? 0;
+
+                const net =
+                  incoming -
+                  outgoing;
+
+                return (
+                  <div
+                    key={
+                      currency
+                    }
+                    className="rounded-2xl border border-slate-200 bg-slate-50 p-5"
+                  >
+                    <div className="flex items-center justify-between">
+                      <p className="font-bold text-slate-900">
+                        {
+                          currency
+                        }
+                      </p>
+
+                      <span
+                        className={`rounded-full px-2.5 py-1 text-xs font-semibold ${
+                          net >= 0
+                            ? "bg-emerald-100 text-emerald-800"
+                            : "bg-red-100 text-red-800"
+                        }`}
+                      >
+                        Net{" "}
+                        {net >= 0
+                          ? "+"
+                          : ""}
+                        {money(
+                          net,
+                          currency,
+                        )}
+                      </span>
+                    </div>
+
+                    <div className="mt-4 grid grid-cols-2 gap-3">
+                      <div>
+                        <p className="text-xs text-slate-500">
+                          Cash In
+                        </p>
+
+                        <p className="mt-1 font-bold text-emerald-700">
+                          {money(
+                            incoming,
+                            currency,
+                          )}
+                        </p>
+                      </div>
+
+                      <div>
+                        <p className="text-xs text-slate-500">
+                          Cash Out
+                        </p>
+
+                        <p className="mt-1 font-bold text-red-700">
+                          {money(
+                            outgoing,
+                            currency,
+                          )}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                );
+              },
+            )}
+          </div>
+        )}
+      </section>
+
+      {/* ================================================== */}
+      {/* COSTS */}
+      {/* ================================================== */}
+
+      <div className="grid gap-6 xl:grid-cols-2">
+        <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
+          <div>
+            <h2 className="text-lg font-bold text-[#001F3F]">
+              Paid Direct Tour
+              Costs
+            </h2>
+
+            <p className="mt-1 text-sm text-slate-500">
+              Paid Expense records
+              classified as Direct
+              Tour Cost.
+            </p>
+          </div>
+
+          <div className="mt-5">
+            <CurrencyValues
+              totals={
+                directTourCosts
+              }
+              empty="No paid direct tour expenses"
+              negative
+            />
+          </div>
+
+          <p className="mt-4 text-xs leading-5 text-slate-500">
+            Supplier Payables remain
+            separate from this figure.
+            Tour profitability will
+            combine supplier costs and
+            direct expenses in the
+            profitability module.
+          </p>
+        </section>
+
+        <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
+          <div>
+            <h2 className="text-lg font-bold text-[#001F3F]">
+              Paid Overhead
+            </h2>
+
+            <p className="mt-1 text-sm text-slate-500">
+              Administration,
+              marketing, IT, office,
+              staff and other company
+              overhead expenses.
+            </p>
+          </div>
+
+          <div className="mt-5">
+            <CurrencyValues
+              totals={
+                overheadCosts
+              }
+              empty="No paid overhead expenses"
+              negative
+            />
+          </div>
+        </section>
+      </div>
+
+      {/* ================================================== */}
+      {/* BANK ACCOUNTS */}
+      {/* ================================================== */}
+
+      <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
+        <div className="mb-5 flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <h2 className="text-lg font-bold text-[#001F3F]">
+              Bank & Cash
+              Positions
+            </h2>
+
+            <p className="mt-1 text-sm text-slate-500">
+              Ledger-calculated
+              balances by account.
+            </p>
+          </div>
+
+          <Link
+            href="/admin/finance/bank-transfers"
+            className="rounded-xl border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700 transition hover:border-[#8B0000] hover:text-[#8B0000]"
+          >
+            Transfer Funds
+          </Link>
+        </div>
+
+        {accountPositions.length ===
+        0 ? (
+          <EmptyValue text="No active bank or cash accounts" />
+        ) : (
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[760px] text-sm">
-              <thead className="bg-slate-50 text-left text-slate-600">
+            <table className="min-w-full text-left text-sm">
+              <thead className="border-b border-slate-200 bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
                 <tr>
-                  <th className="px-3 py-3 font-medium">Date</th>
-                  <th className="px-3 py-3 font-medium">Title</th>
-                  <th className="px-3 py-3 font-medium">Agency / Group</th>
-                  <th className="px-3 py-3 font-medium">Status</th>
-                  <th className="px-3 py-3 text-right font-medium">Amount</th>
+                  <th className="px-4 py-3">
+                    Account
+                  </th>
+
+                  <th className="px-4 py-3">
+                    Currency
+                  </th>
+
+                  <th className="px-4 py-3 text-right">
+                    Opening
+                  </th>
+
+                  <th className="px-4 py-3 text-right">
+                    Ledger In
+                  </th>
+
+                  <th className="px-4 py-3 text-right">
+                    Ledger Out
+                  </th>
+
+                  <th className="px-4 py-3 text-right">
+                    Ledger Balance
+                  </th>
                 </tr>
               </thead>
 
-              <tbody>
-                {recentEntries.map((entry) => (
-                  <tr key={entry.id} className="border-t">
-                    <td className="whitespace-nowrap px-3 py-3">
-                      {formatDate(entry.expenseDate)}
-                    </td>
-
-                    <td className="px-3 py-3">
-                      <div className="font-medium text-[#001F3F]">
-                        {entry.title}
-                      </div>
-
-                      {entry.tour && (
-                        <div className="text-xs text-slate-500">
-                          {entry.tour.tourCode
-                            ? `${entry.tour.tourCode} — ${entry.tour.title}`
-                            : entry.tour.title}
-                        </div>
-                      )}
-                    </td>
-
-                    <td className="px-3 py-3">
-                      <div className="font-medium">
-                        {entry.partnerCompanyName ||
-                          entry.agentNameSnapshot ||
-                          "-"}
-                      </div>
-
-                      {(entry.groupName || entry.customPackageName) && (
-                        <div className="text-xs text-slate-500">
-                          {entry.groupName || entry.customPackageName}
-                        </div>
-                      )}
-                    </td>
-
-                    <td className="whitespace-nowrap px-3 py-3">
-                      <span
-                        className={`rounded-full px-2.5 py-1 text-xs font-medium ${
-                          entry.paymentStatus === "PAID"
-                            ? "bg-green-100 text-green-700"
-                            : entry.paymentStatus === "PENDING"
-                              ? "bg-amber-100 text-amber-700"
-                              : "bg-red-100 text-red-700"
-                        }`}
-                      >
-                        {entry.paymentStatus}
-                      </span>
-                    </td>
-
-                    <td
-                      className={`whitespace-nowrap px-3 py-3 text-right font-semibold ${
-                        entry.direction === "INCOME"
-                          ? "text-green-700"
-                          : "text-red-700"
-                      }`}
+              <tbody className="divide-y divide-slate-100">
+                {accountPositions.map(
+                  (account) => (
+                    <tr
+                      key={
+                        account.id
+                      }
+                      className="hover:bg-slate-50"
                     >
-                      {entry.direction === "INCOME" ? "+" : "-"}
-                      {formatCurrency(getReportingAmount(entry), "EUR")}
-                    </td>
-                  </tr>
-                ))}
+                      <td className="px-4 py-3">
+                        <p className="font-semibold text-slate-900">
+                          {
+                            account.name
+                          }
+                        </p>
 
-                {recentEntries.length === 0 && (
-                  <tr>
-                    <td
-                      colSpan={5}
-                      className="px-3 py-8 text-center text-sm text-slate-500"
-                    >
-                      No finance entries yet.
-                    </td>
-                  </tr>
+                        {account.notes ? (
+                          <p className="mt-0.5 text-xs text-slate-500">
+                            {
+                              account.notes
+                            }
+                          </p>
+                        ) : null}
+                      </td>
+
+                      <td className="px-4 py-3 text-slate-600">
+                        {
+                          account.currency
+                        }
+                      </td>
+
+                      <td className="px-4 py-3 text-right text-slate-600">
+                        {money(
+                          account.openingBalance,
+                          account.currency,
+                        )}
+                      </td>
+
+                      <td className="px-4 py-3 text-right font-medium text-emerald-700">
+                        {money(
+                          account.ledgerIn,
+                          account.currency,
+                        )}
+                      </td>
+
+                      <td className="px-4 py-3 text-right font-medium text-red-700">
+                        {money(
+                          account.ledgerOut,
+                          account.currency,
+                        )}
+                      </td>
+
+                      <td className="px-4 py-3 text-right text-base font-bold text-[#001F3F]">
+                        {money(
+                          account.ledgerBalance,
+                          account.currency,
+                        )}
+                      </td>
+                    </tr>
+                  ),
                 )}
               </tbody>
             </table>
           </div>
+        )}
+
+        <div className="mt-4 rounded-xl border border-blue-100 bg-blue-50 p-4">
+          <p className="text-xs leading-5 text-blue-800">
+            <strong>
+              Ledger Balance
+            </strong>{" "}
+            is calculated from Opening
+            Balance + posted IN
+            transactions − posted OUT
+            transactions. The legacy
+            `currentBalance` field is
+            intentionally not used as
+            the finance source of truth.
+          </p>
+        </div>
+      </section>
+
+      {/* ================================================== */}
+      {/* RECENT LEDGER */}
+      {/* ================================================== */}
+
+      <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
+        <div className="mb-5">
+          <h2 className="text-lg font-bold text-[#001F3F]">
+            Recent Bank Ledger
+          </h2>
+
+          <p className="mt-1 text-sm text-slate-500">
+            Latest posted customer
+            receipts, supplier
+            payments, expenses,
+            refunds and transfers.
+          </p>
         </div>
 
-        <div className="rounded-2xl border bg-white p-5 shadow-sm">
-          <h2 className="text-lg font-semibold text-[#001F3F]">
-            Finance Actions
-          </h2>
-          <p className="mt-1 text-sm text-slate-500">
-            Quick access to operational finance tools.
-          </p>
-           <Link
-              href="/admin/finance/bank-accounts"
-              className="rounded-xl border p-4 transition hover:border-[#8B0000] hover:bg-red-50"
-            >
-              <p className="font-semibold text-[#001F3F]">
-                Bank Accounts
-              </p>
+        {recentTransactions.length ===
+        0 ? (
+          <EmptyValue text="No Bank Ledger transactions yet" />
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="min-w-full text-left text-sm">
+              <thead className="border-b border-slate-200 bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
+                <tr>
+                  <th className="px-4 py-3">
+                    Date
+                  </th>
 
-              <p className="mt-1 text-sm text-slate-500">
-                Manage opening balances and active company bank accounts.
-              </p>
-            </Link>
+                  <th className="px-4 py-3">
+                    Type
+                  </th>
 
-          <div className="mt-5 grid gap-3">
-            <Link
-              href="/admin/finance/expenses/create"
-              className="rounded-xl border p-4 transition hover:border-[#8B0000] hover:bg-red-50"
-            >
-              <p className="font-semibold text-[#001F3F]">Add Finance Entry</p>
-              <p className="mt-1 text-sm text-slate-500">
-                Add income, supplier expense, VAT, bank fee, commission, or
-                operation finance record.
-              </p>
-            </Link>
+                  <th className="px-4 py-3">
+                    Account
+                  </th>
 
-            <Link
-              href="/admin/finance/expenses"
-              className="rounded-xl border p-4 transition hover:border-[#8B0000] hover:bg-red-50"
-            >
-              <p className="font-semibold text-[#001F3F]">Open Ledger</p>
-              <p className="mt-1 text-sm text-slate-500">
-                View, filter, edit, and remove all finance entries.
-              </p>
-            </Link>
+                  <th className="px-4 py-3">
+                    Description
+                  </th>
 
-            <Link
-              href="/admin/finance"
-              className="rounded-xl border p-4 transition hover:border-[#8B0000] hover:bg-red-50"
-            >
-              <p className="font-semibold text-[#001F3F]">
-                Bank Accounts — Coming Soon
-              </p>
-              <p className="mt-1 text-sm text-slate-500">
-                Future page for bank account balances and account-level cash
-                tracking.
-              </p>
-            </Link>
+                  <th className="px-4 py-3">
+                    Booking / Tour
+                  </th>
+
+                  <th className="px-4 py-3 text-right">
+                    Amount
+                  </th>
+                </tr>
+              </thead>
+
+              <tbody className="divide-y divide-slate-100">
+                {recentTransactions.map(
+                  (transaction) => {
+                    const incoming =
+                      transaction.direction ===
+                      BankTransactionDirection.IN;
+
+                    return (
+                      <tr
+                        key={
+                          transaction.id
+                        }
+                        className="hover:bg-slate-50"
+                      >
+                        <td className="whitespace-nowrap px-4 py-3 text-slate-600">
+                          {formatDate(
+                            transaction.transactionDate,
+                          )}
+                        </td>
+
+                        <td className="px-4 py-3">
+                          <span
+                            className={`inline-flex rounded-full px-2.5 py-1 text-xs font-semibold ${getTransactionBadge(
+                              transaction.type,
+                            )}`}
+                          >
+                            {enumLabel(
+                              transaction.type,
+                            )}
+                          </span>
+                        </td>
+
+                        <td className="px-4 py-3 font-medium text-slate-900">
+                          {
+                            transaction.bankAccount.name
+                          }
+                        </td>
+
+                        <td className="max-w-[280px] px-4 py-3">
+                          <p className="truncate text-slate-800">
+                            {transaction.description ||
+                              "-"}
+                          </p>
+
+                          {transaction.reference ? (
+                            <p className="mt-0.5 text-xs text-slate-500">
+                              Ref:{" "}
+                              {
+                                transaction.reference
+                              }
+                            </p>
+                          ) : null}
+                        </td>
+
+                        <td className="px-4 py-3">
+                          {transaction.booking ? (
+                            <Link
+                              href={`/admin/bookings/${transaction.booking.id}`}
+                              className="font-medium text-blue-700 hover:underline"
+                            >
+                              {transaction.booking.bookingDisplayCode ||
+                                transaction.booking.bookingReference}
+                            </Link>
+                          ) : transaction.tour ? (
+                            <span className="text-slate-700">
+                              {
+                                transaction.tour.title
+                              }
+                            </span>
+                          ) : (
+                            <span className="text-slate-400">
+                              -
+                            </span>
+                          )}
+                        </td>
+
+                        <td
+                          className={`whitespace-nowrap px-4 py-3 text-right font-bold ${
+                            incoming
+                              ? "text-emerald-700"
+                              : "text-red-700"
+                          }`}
+                        >
+                          {incoming
+                            ? "+"
+                            : "-"}
+                          {money(
+                            Number(
+                              transaction.amount,
+                            ),
+                            transaction.currency,
+                          )}
+                        </td>
+                      </tr>
+                    );
+                  },
+                )}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </section>
+
+      {/* ================================================== */}
+      {/* NEXT FINANCE LAYER */}
+      {/* ================================================== */}
+
+      <section className="rounded-2xl border border-[#001F3F]/15 bg-[#001F3F] p-6 text-white">
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-[0.18em] text-blue-200">
+              Finance Architecture
+            </p>
+
+            <h2 className="mt-1 text-xl font-bold">
+              Tour Profitability is
+              the next reporting
+              layer
+            </h2>
+
+            <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-200">
+              The ledger now provides
+              actual cash movement.
+              Supplier Payables
+              provide supplier
+              liabilities, while
+              detailed Expenses
+              identify direct tour
+              costs versus overhead.
+              These can next be
+              combined with booking
+              revenue by Tour and
+              Departure.
+            </p>
+          </div>
+
+          <div className="rounded-xl bg-white/10 px-4 py-3 text-sm">
+            Revenue − Supplier Costs
+            − Direct Expenses =
+            <strong>
+              {" "}
+              Tour Gross Profit
+            </strong>
           </div>
         </div>
       </section>
     </div>
+  );
+}
+
+/* ======================================================== */
+/* UI HELPERS */
+/* ======================================================== */
+
+function FinanceLink({
+  href,
+  label,
+  primary = false,
+}: {
+  href: string;
+  label: string;
+  primary?: boolean;
+}) {
+  return (
+    <Link
+      href={href}
+      className={
+        primary
+          ? "rounded-xl bg-[#8B0000] px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-[#6f0000]"
+          : "rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:border-[#8B0000] hover:text-[#8B0000]"
+      }
+    >
+      {label}
+    </Link>
+  );
+}
+
+function MetricCard({
+  title,
+  description,
+  children,
+}: {
+  title: string;
+  description: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+      <p className="text-sm font-bold text-slate-950">
+        {title}
+      </p>
+
+      <p className="mt-1 min-h-10 text-xs leading-5 text-slate-500">
+        {description}
+      </p>
+
+      <div className="mt-4">
+        {children}
+      </div>
+    </section>
+  );
+}
+
+function CurrencyValues({
+  totals,
+  empty,
+  negative = false,
+}: {
+  totals: CurrencyMap;
+  empty: string;
+  negative?: boolean;
+}) {
+  const entries =
+    Object.entries(totals).sort(
+      ([currencyA], [currencyB]) =>
+        currencyA.localeCompare(
+          currencyB,
+        ),
+    );
+
+  if (entries.length === 0) {
+    return (
+      <EmptyValue text={empty} />
+    );
+  }
+
+  return (
+    <div className="space-y-1.5">
+      {entries.map(
+        ([currency, value]) => (
+          <div
+            key={currency}
+            className="flex items-baseline justify-between gap-3"
+          >
+            <span
+              className={`text-xl font-bold ${
+                negative
+                  ? "text-red-700"
+                  : "text-[#001F3F]"
+              }`}
+            >
+              {negative ? "-" : ""}
+              {money(
+                value,
+                currency,
+              )}
+            </span>
+
+            <span className="text-xs font-semibold text-slate-400">
+              {currency}
+            </span>
+          </div>
+        ),
+      )}
+    </div>
+  );
+}
+
+function EmptyValue({
+  text,
+}: {
+  text: string;
+}) {
+  return (
+    <p className="text-sm text-slate-400">
+      {text}
+    </p>
   );
 }

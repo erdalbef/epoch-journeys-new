@@ -1,16 +1,27 @@
 import Link from "next/link";
-import { notFound, redirect } from "next/navigation";
-import { getServerSession } from "next-auth";
+import {
+  notFound,
+  redirect,
+} from "next/navigation";
+import {
+  getServerSession,
+} from "next-auth";
+
 import {
   BookingStatus,
+  PaymentRecordStatus,
   PaymentStatus,
+  RefundStatus,
 } from "@prisma/client";
 
 import { db } from "@/lib/db";
-import { authOptions } from "@/lib/authOptions";
+import {
+  authOptions,
+} from "@/lib/authOptions";
 
 import BookingDetailClient from "@/components/bookings/BookingDetailClient";
 import AddPaymentForm from "@/components/admin/bookings/AddPaymentForm";
+import RefundForm from "@/components/admin/bookings/RefundForm";
 import ActionButton from "@/components/shared/button/ActionButton";
 
 type PageProps = {
@@ -20,18 +31,27 @@ type PageProps = {
 };
 
 function formatCurrency(
-  value: number | null | undefined,
+  value:
+    | number
+    | null
+    | undefined,
   currency = "EUR",
 ) {
-  return new Intl.NumberFormat("en-US", {
-    style: "currency",
-    currency,
-    maximumFractionDigits: 2,
-  }).format(value ?? 0);
+  return new Intl.NumberFormat(
+    "en-US",
+    {
+      style: "currency",
+      currency,
+      maximumFractionDigits: 2,
+    },
+  ).format(value ?? 0);
 }
 
 function formatDate(
-  value?: Date | string | null,
+  value?:
+    | Date
+    | string
+    | null,
 ) {
   if (!value) {
     return "-";
@@ -42,7 +62,11 @@ function formatDate(
       ? value
       : new Date(value);
 
-  if (Number.isNaN(date.getTime())) {
+  if (
+    Number.isNaN(
+      date.getTime(),
+    )
+  ) {
     return "-";
   }
 
@@ -54,6 +78,17 @@ function formatDate(
       year: "numeric",
     },
   );
+}
+
+function formatEnumLabel(
+  value: string,
+) {
+  return value
+    .replaceAll("_", " ")
+    .toLowerCase()
+    .replace(/\b\w/g, (letter) =>
+      letter.toUpperCase(),
+    );
 }
 
 function getStatusBadgeClass(
@@ -101,6 +136,27 @@ function getPaymentBadgeClass(
   }
 }
 
+function getRefundBadgeClass(
+  status: RefundStatus,
+) {
+  switch (status) {
+    case "PAID":
+      return "bg-green-100 text-green-800";
+
+    case "APPROVED":
+      return "bg-blue-100 text-blue-800";
+
+    case "PENDING":
+      return "bg-amber-100 text-amber-800";
+
+    case "CANCELLED":
+      return "bg-slate-200 text-slate-700";
+
+    default:
+      return "bg-gray-100 text-gray-800";
+  }
+}
+
 function getOperationBadgeClass(
   status?: string | null,
 ) {
@@ -138,7 +194,10 @@ function getFinancialStatus({
     return "UNPAID";
   }
 
-  if (amountPaid < totalPrice) {
+  if (
+    amountPaid <
+    totalPrice
+  ) {
     if (
       paymentDueDate &&
       paymentDueDate < now
@@ -198,7 +257,8 @@ function Section({
   children,
 }: {
   title: string;
-  children: React.ReactNode;
+  children:
+    React.ReactNode;
 }) {
   return (
     <section className="rounded-2xl border bg-white p-6 shadow-sm">
@@ -216,7 +276,8 @@ function DataRow({
   value,
 }: {
   label: string;
-  value: React.ReactNode;
+  value:
+    React.ReactNode;
 }) {
   return (
     <div className="grid grid-cols-1 gap-1 border-b py-3 last:border-b-0 md:grid-cols-[220px_1fr]">
@@ -241,89 +302,155 @@ export default async function AdminBookingDetailPage({
 
   if (
     !session?.user ||
-    session.user.role !== "ADMIN"
+    session.user.role !==
+      "ADMIN"
   ) {
-    redirect("/admin-login");
+    redirect(
+      "/admin-login",
+    );
   }
 
   const { id } =
     await params;
 
-  const [booking, bankAccounts] =
-    await Promise.all([
-      db.booking.findUnique({
-        where: {
-          id,
+  const [
+    booking,
+    bankAccounts,
+  ] = await Promise.all([
+    db.booking.findUnique({
+      where: {
+        id,
+      },
+
+      include: {
+        quote: {
+          select: {
+            id: true,
+            quoteNumber: true,
+            status: true,
+          },
         },
 
-        include: {
-          quote: {
-            select: {
-              id: true,
-              quoteNumber: true,
-              status: true,
+        user: {
+          select: {
+            id: true,
+            fullName: true,
+            email: true,
+          },
+        },
+
+        departureDate: {
+          select: {
+            id: true,
+            date: true,
+            season: true,
+            status: true,
+          },
+        },
+
+        tour: {
+          select: {
+            id: true,
+            title: true,
+          },
+        },
+
+        operationControl:
+          true,
+
+        passengers: {
+          orderBy: [
+            {
+              isLeadPassenger:
+                "desc",
             },
+            {
+              lastName:
+                "asc",
+            },
+            {
+              firstName:
+                "asc",
+            },
+          ],
+        },
+
+        payments: {
+          where: {
+            status:
+              PaymentRecordStatus.RECEIVED,
           },
 
-          user: {
-            select: {
-              id: true,
-              fullName: true,
-              email: true,
+          orderBy: [
+            {
+              paidAt: "desc",
             },
+            {
+              createdAt:
+                "desc",
+            },
+          ],
+
+          select: {
+            id: true,
+            amount: true,
+            currency: true,
+            reference: true,
+            paidAt: true,
+            createdAt: true,
+          },
+        },
+
+        refunds: {
+          orderBy: {
+            createdAt:
+              "desc",
           },
 
-          departureDate: {
-            select: {
-              id: true,
-              date: true,
-              season: true,
-              status: true,
-            },
-          },
-
-          tour: {
-            select: {
-              id: true,
-              title: true,
-            },
-          },
-
-          operationControl: true,
-
-          passengers: {
-            orderBy: [
-              {
-                isLeadPassenger:
-                  "desc",
+          include: {
+            payment: {
+              select: {
+                id: true,
+                amount: true,
+                reference: true,
               },
-              {
-                lastName: "asc",
+            },
+
+            bankAccount: {
+              select: {
+                id: true,
+                name: true,
+                currency: true,
               },
-              {
-                firstName: "asc",
+            },
+
+            createdBy: {
+              select: {
+                fullName: true,
+                email: true,
               },
-            ],
+            },
           },
         },
-      }),
+      },
+    }),
 
-      db.bankAccount.findMany({
-        where: {
-          isActive: true,
-        },
+    db.bankAccount.findMany({
+      where: {
+        isActive: true,
+      },
 
-        orderBy: {
-          name: "asc",
-        },
+      orderBy: {
+        name: "asc",
+      },
 
-        select: {
-          id: true,
-          name: true,
-          currency: true,
-        },
-      }),
-    ]);
+      select: {
+        id: true,
+        name: true,
+        currency: true,
+      },
+    }),
+  ]);
 
   if (!booking) {
     notFound();
@@ -346,11 +473,71 @@ export default async function AdminBookingDetailPage({
     });
 
   const operationStatus =
-    booking.operationControl?.status ||
+    booking.operationControl
+      ?.status ||
     "PENDING";
+
+  /*
+   * APPROVED and PAID refunds
+   * reserve/reduce the remaining
+   * refundable amount.
+   *
+   * Cancelled refunds do not.
+   */
+  const committedRefundAmount =
+    booking.refunds
+      .filter(
+        (refund) =>
+          refund.status ===
+            RefundStatus.APPROVED ||
+          refund.status ===
+            RefundStatus.PAID,
+      )
+      .reduce(
+        (sum, refund) =>
+          sum +
+          Number(
+            refund.amount,
+          ),
+        0,
+      );
+
+  const paidRefundAmount =
+    booking.refunds
+      .filter(
+        (refund) =>
+          refund.status ===
+          RefundStatus.PAID,
+      )
+      .reduce(
+        (sum, refund) =>
+          sum +
+          Number(
+            refund.amount,
+          ),
+        0,
+      );
+
+  const refundableAmount =
+    Math.max(
+      0,
+      booking.amountPaid -
+        committedRefundAmount,
+    );
+
+  const netCashReceived =
+    Math.max(
+      0,
+      booking.amountPaid -
+        paidRefundAmount,
+    );
 
   return (
     <div className="mx-auto max-w-7xl space-y-6 p-8">
+      {/* ========================================== */}
+      {/* HEADER */}
+      {/* ========================================== */}
+
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
           <p className="text-sm font-medium text-gray-500">
@@ -358,12 +545,15 @@ export default async function AdminBookingDetailPage({
           </p>
 
           <h1 className="text-3xl font-bold text-gray-900">
-            {booking.bookingReference}
+            {
+              booking.bookingReference
+            }
           </h1>
 
           <p className="mt-2 text-sm text-gray-600">
             {booking.tourTitleSnapshot ||
-              booking.tour?.title ||
+              booking.tour
+                ?.title ||
               "Tour not set"}
           </p>
 
@@ -374,7 +564,9 @@ export default async function AdminBookingDetailPage({
               )}`}
             >
               Booking:{" "}
-              {booking.status}
+              {
+                booking.status
+              }
             </span>
 
             <span
@@ -383,7 +575,9 @@ export default async function AdminBookingDetailPage({
               )}`}
             >
               Operation:{" "}
-              {operationStatus}
+              {
+                operationStatus
+              }
             </span>
           </div>
         </div>
@@ -413,20 +607,30 @@ export default async function AdminBookingDetailPage({
         </div>
       </div>
 
-      <div className="grid grid-cols-1 gap-4 md:grid-cols-6">
+      {/* ========================================== */}
+      {/* TOP CARDS */}
+      {/* ========================================== */}
+
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-4 xl:grid-cols-8">
         <InfoCard
           label="Status"
-          value={booking.status}
+          value={
+            booking.status
+          }
         />
 
         <InfoCard
           label="Operation"
-          value={operationStatus}
+          value={
+            operationStatus
+          }
         />
 
         <InfoCard
           label="Payment"
-          value={booking.paymentStatus}
+          value={
+            booking.paymentStatus
+          }
         />
 
         <InfoCard
@@ -441,7 +645,8 @@ export default async function AdminBookingDetailPage({
           label="Departure"
           value={formatDate(
             booking.departureDateSnapshot ||
-              booking.departureDate
+              booking
+                .departureDate
                 ?.date,
           )}
         />
@@ -453,7 +658,27 @@ export default async function AdminBookingDetailPage({
             booking.currency,
           )}
         />
+
+        <InfoCard
+          label="Refunded"
+          value={formatCurrency(
+            paidRefundAmount,
+            booking.currency,
+          )}
+        />
+
+        <InfoCard
+          label="Net Cash"
+          value={formatCurrency(
+            netCashReceived,
+            booking.currency,
+          )}
+        />
       </div>
+
+      {/* ========================================== */}
+      {/* BOOKING CONTROLS */}
+      {/* ========================================== */}
 
       <BookingDetailClient
         booking={{
@@ -482,7 +707,15 @@ export default async function AdminBookingDetailPage({
         }}
       />
 
+      {/* ========================================== */}
+      {/* MAIN GRID */}
+      {/* ========================================== */}
+
       <div className="grid grid-cols-1 gap-6 xl:grid-cols-3">
+        {/* ======================================== */}
+        {/* LEFT COLUMN */}
+        {/* ======================================== */}
+
         <div className="space-y-6 xl:col-span-2">
           <Section title="Booking Overview">
             <DataRow
@@ -509,7 +742,9 @@ export default async function AdminBookingDetailPage({
                     booking.status,
                   )}`}
                 >
-                  {booking.status}
+                  {
+                    booking.status
+                  }
                 </span>
               }
             />
@@ -522,7 +757,9 @@ export default async function AdminBookingDetailPage({
                     operationStatus,
                   )}`}
                 >
-                  {operationStatus}
+                  {
+                    operationStatus
+                  }
                 </span>
               }
             />
@@ -550,7 +787,9 @@ export default async function AdminBookingDetailPage({
                     financialStatus,
                   )}`}
                 >
-                  {financialStatus}
+                  {
+                    financialStatus
+                  }
                 </span>
               }
             />
@@ -586,7 +825,8 @@ export default async function AdminBookingDetailPage({
                   >
                     Quote #
                     {
-                      booking.quote
+                      booking
+                        .quote
                         .quoteNumber
                     }
                   </Link>
@@ -669,7 +909,8 @@ export default async function AdminBookingDetailPage({
 
                     <div className="text-xs text-gray-500">
                       {booking.user
-                        .email || "-"}
+                        .email ||
+                        "-"}
                     </div>
                   </div>
                 ) : (
@@ -684,7 +925,8 @@ export default async function AdminBookingDetailPage({
               label="Tour"
               value={
                 booking.tourTitleSnapshot ||
-                booking.tour?.title ||
+                booking.tour
+                  ?.title ||
                 "-"
               }
             />
@@ -733,7 +975,8 @@ export default async function AdminBookingDetailPage({
               value={
                 booking
                   .departureDate
-                  ?.status || "-"
+                  ?.status ||
+                "-"
               }
             />
 
@@ -807,21 +1050,24 @@ export default async function AdminBookingDetailPage({
             <DataRow
               label="Adults"
               value={String(
-                booking.adults ?? 0,
+                booking.adults ??
+                  0,
               )}
             />
 
             <DataRow
               label="Children"
               value={String(
-                booking.children ?? 0,
+                booking.children ??
+                  0,
               )}
             />
 
             <DataRow
               label="Infants"
               value={String(
-                booking.infants ?? 0,
+                booking.infants ??
+                  0,
               )}
             />
 
@@ -844,7 +1090,8 @@ export default async function AdminBookingDetailPage({
             <DataRow
               label="Twin Rooms"
               value={String(
-                booking.twinRooms ?? 0,
+                booking.twinRooms ??
+                  0,
               )}
             />
 
@@ -898,8 +1145,8 @@ export default async function AdminBookingDetailPage({
               } completed`}
             />
 
-            {booking.passengers.length >
-            0 ? (
+            {booking.passengers
+              .length > 0 ? (
               <div className="mt-4 overflow-hidden rounded-xl border">
                 <div className="grid grid-cols-[1fr_140px_120px] bg-slate-50 px-4 py-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
                   <span>
@@ -917,7 +1164,9 @@ export default async function AdminBookingDetailPage({
 
                 <div className="divide-y">
                   {booking.passengers.map(
-                    (passenger) => (
+                    (
+                      passenger,
+                    ) => (
                       <div
                         key={
                           passenger.id
@@ -956,9 +1205,9 @@ export default async function AdminBookingDetailPage({
               </div>
             ) : (
               <p className="mt-4 rounded-xl bg-amber-50 p-4 text-sm text-amber-800">
-                Passenger details
-                have not been
-                entered yet.
+                Passenger
+                details have not
+                been entered yet.
               </p>
             )}
           </Section>
@@ -992,6 +1241,10 @@ export default async function AdminBookingDetailPage({
             />
           </Section>
         </div>
+
+        {/* ======================================== */}
+        {/* RIGHT COLUMN / FINANCE */}
+        {/* ======================================== */}
 
         <div className="space-y-6">
           <Section title="Financial Summary">
@@ -1036,11 +1289,56 @@ export default async function AdminBookingDetailPage({
             />
 
             <DataRow
-              label="Amount Paid"
+              label="Gross Customer Payments"
               value={formatCurrency(
                 booking.amountPaid,
                 booking.currency,
               )}
+            />
+
+            <DataRow
+              label="Paid Refunds"
+              value={
+                <span className="font-semibold text-red-700">
+                  -
+                  {formatCurrency(
+                    paidRefundAmount,
+                    booking.currency,
+                  )}
+                </span>
+              }
+            />
+
+            <DataRow
+              label="Net Cash Received"
+              value={
+                <span className="font-bold text-[#001F3F]">
+                  {formatCurrency(
+                    netCashReceived,
+                    booking.currency,
+                  )}
+                </span>
+              }
+            />
+
+            <DataRow
+              label="Committed Refunds"
+              value={formatCurrency(
+                committedRefundAmount,
+                booking.currency,
+              )}
+            />
+
+            <DataRow
+              label="Refundable Balance"
+              value={
+                <span className="font-semibold text-[#8B0000]">
+                  {formatCurrency(
+                    refundableAmount,
+                    booking.currency,
+                  )}
+                </span>
+              }
             />
 
             <DataRow
@@ -1060,19 +1358,234 @@ export default async function AdminBookingDetailPage({
             />
           </Section>
 
+          {/* ====================================== */}
+          {/* ADD CUSTOMER PAYMENT */}
+          {/* ====================================== */}
+
           <AddPaymentForm
-            bookingId={booking.id}
+            bookingId={
+              booking.id
+            }
             defaultCurrency={
               booking.currency ||
               "EUR"
             }
             disabled={
-              booking.amountDue <= 0
+              booking.amountDue <=
+              0
             }
             bankAccounts={
               bankAccounts
             }
           />
+
+          {/* ====================================== */}
+          {/* REFUND FORM */}
+          {/* ====================================== */}
+
+          <RefundForm
+            bookingId={
+              booking.id
+            }
+            currency={
+              booking.currency ||
+              "EUR"
+            }
+            amountPaid={
+              booking.amountPaid
+            }
+            refundableAmount={
+              refundableAmount
+            }
+            payments={booking.payments.map(
+              (payment) => ({
+                id:
+                  payment.id,
+
+                amount:
+                  payment.amount,
+
+                currency:
+                  payment.currency,
+
+                reference:
+                  payment.reference,
+
+                paidAt:
+                  payment.paidAt
+                    ? payment.paidAt.toISOString()
+                    : null,
+
+                createdAt:
+                  payment.createdAt.toISOString(),
+              }),
+            )}
+            bankAccounts={
+              bankAccounts
+            }
+          />
+
+          {/* ====================================== */}
+          {/* REFUND HISTORY */}
+          {/* ====================================== */}
+
+          <Section title="Refund History">
+            {booking.refunds
+              .length === 0 ? (
+              <div className="rounded-xl bg-slate-50 p-4">
+                <p className="text-sm text-slate-500">
+                  No refunds
+                  recorded for this
+                  booking.
+                </p>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {booking.refunds.map(
+                  (refund) => (
+                    <div
+                      key={
+                        refund.id
+                      }
+                      className="rounded-xl border border-slate-200 p-4"
+                    >
+                      <div className="flex flex-wrap items-start justify-between gap-3">
+                        <div>
+                          <p className="text-lg font-bold text-slate-950">
+                            {formatCurrency(
+                              Number(
+                                refund.amount,
+                              ),
+                              refund.currency,
+                            )}
+                          </p>
+
+                          <p className="mt-1 text-xs text-slate-500">
+                            {formatDate(
+                              refund.refundDate ||
+                                refund.createdAt,
+                            )}
+                          </p>
+                        </div>
+
+                        <span
+                          className={`rounded-full px-2.5 py-1 text-xs font-semibold ${getRefundBadgeClass(
+                            refund.status,
+                          )}`}
+                        >
+                          {formatEnumLabel(
+                            refund.status,
+                          )}
+                        </span>
+                      </div>
+
+                      <div className="mt-3 space-y-1 text-xs text-slate-600">
+                        <p>
+                          <strong>
+                            Reason:
+                          </strong>{" "}
+                          {formatEnumLabel(
+                            refund.reason,
+                          )}
+                        </p>
+
+                        {refund.reasonDetails ? (
+                          <p>
+                            <strong>
+                              Details:
+                            </strong>{" "}
+                            {
+                              refund.reasonDetails
+                            }
+                          </p>
+                        ) : null}
+
+                        <p>
+                          <strong>
+                            Account:
+                          </strong>{" "}
+                          {
+                            refund.bankAccount
+                              .name
+                          }
+                          {" · "}
+                          {
+                            refund.bankAccount
+                              .currency
+                          }
+                        </p>
+
+                        {refund.method ? (
+                          <p>
+                            <strong>
+                              Method:
+                            </strong>{" "}
+                            {formatEnumLabel(
+                              refund.method,
+                            )}
+                          </p>
+                        ) : null}
+
+                        {refund.reference ? (
+                          <p>
+                            <strong>
+                              Reference:
+                            </strong>{" "}
+                            {
+                              refund.reference
+                            }
+                          </p>
+                        ) : null}
+
+                        {refund.payment ? (
+                          <p>
+                            <strong>
+                              Original payment:
+                            </strong>{" "}
+                            {formatCurrency(
+                              refund.payment
+                                .amount,
+                              refund.currency,
+                            )}
+                            {refund.payment
+                              .reference
+                              ? ` · ${refund.payment.reference}`
+                              : ""}
+                          </p>
+                        ) : null}
+
+                        <p>
+                          <strong>
+                            Recorded by:
+                          </strong>{" "}
+                          {refund.createdBy
+                            ?.fullName ||
+                            refund.createdBy
+                              ?.email ||
+                            "Admin"}
+                        </p>
+
+                        {refund.notes ? (
+                          <p className="pt-1">
+                            <strong>
+                              Notes:
+                            </strong>{" "}
+                            {
+                              refund.notes
+                            }
+                          </p>
+                        ) : null}
+                      </div>
+                    </div>
+                  ),
+                )}
+              </div>
+            )}
+          </Section>
+
+          {/* ====================================== */}
+          {/* QUICK LINKS */}
+          {/* ====================================== */}
 
           <Section title="Quick Links">
             <div className="space-y-3">
