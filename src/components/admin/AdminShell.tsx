@@ -111,27 +111,40 @@ const navSections: NavSection[] = [
     ],
   },
   {
-    label: "Finance",
-    items: [
-      { label: "Finance Center", href: "/admin/finance", icon: CircleDollarSign },
-      { label: "Payments", href: "/admin/payments", icon: CreditCard },
-      {
-        label: "Expenses",
-        href: "/admin/finance/expenses",
-        icon: ReceiptText,
-      },
-      {
-        label: "Supplier Payables",
-        href: "/admin/supplier-payables",
-        icon: HandCoins,
-      },
-      {
-        label: "Bank Accounts",
-        href: "/admin/finance/bank-accounts",
-        icon: WalletCards,
-      },
-    ],
-  },
+  label: "Finance",
+  items: [
+    {
+      label: "Finance Center",
+      href: "/admin/finance",
+      icon: CircleDollarSign,
+    },
+    {
+      label: "Payments",
+      href: "/admin/payments",
+      icon: CreditCard,
+    },
+    {
+      label: "Expenses",
+      href: "/admin/finance/expenses",
+      icon: ReceiptText,
+    },
+    {
+      label: "Supplier Payables",
+      href: "/admin/supplier-payables",
+      icon: HandCoins,
+    },
+    {
+      label: "Bank Accounts",
+      href: "/admin/finance/bank-accounts",
+      icon: WalletCards,
+    },
+    {
+      label: "Documents",
+      href: "/admin/finance/documents",
+      icon: FileText,
+    },
+  ],
+},
   {
     label: "Service",
     items: [
