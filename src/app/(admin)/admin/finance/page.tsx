@@ -645,6 +645,11 @@ export default async function AdminFinancePage() {
             href="/admin/finance/expenses"
             label="Expenses"
           />
+
+          <FinanceLink
+            href="/admin/finance/documents"
+            label="Documents"
+          />
         </div>
       </div>
 
@@ -831,6 +836,67 @@ export default async function AdminFinancePage() {
           />
         </MetricCard>
       </div>
+
+      {/* ================================================== */}
+      {/* FINANCE DOCUMENTS */}
+      {/* ================================================== */}
+
+      <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+          <div>
+            <p className="text-xs font-bold uppercase tracking-[0.16em] text-[#8B0000]">
+              Document Management
+            </p>
+
+            <h2 className="mt-1 text-lg font-bold text-[#001F3F]">
+              Finance Documents
+            </h2>
+
+            <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-500">
+              Securely manage
+              supplier invoices,
+              expense receipts,
+              payment proofs, refund
+              documents, bank
+              statements, transfer
+              confirmations, tax
+              documents and other
+              finance records stored
+              privately on the
+              server.
+            </p>
+          </div>
+
+          <Link
+            href="/admin/finance/documents"
+            className="inline-flex w-fit items-center justify-center rounded-xl bg-[#001F3F] px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-[#002b57]"
+          >
+            Open Document Center
+          </Link>
+        </div>
+
+        <div className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          <DocumentFeature
+            title="Invoices & Receipts"
+            description="Supplier invoices, expense invoices and receipts."
+          />
+
+          <DocumentFeature
+            title="Payment Proofs"
+            description="Supplier payments, customer payments and refunds."
+          />
+
+          <DocumentFeature
+            title="Bank Documents"
+            description="Statements, transfers and supporting bank records."
+          />
+
+          <DocumentFeature
+            title="Tax & Agreements"
+            description="Tax records, contracts, agreements and credit notes."
+          />
+        </div>
+      </section>
 
       {/* ================================================== */}
       {/* MONTH-TO-DATE CASH FLOW */}
@@ -1410,6 +1476,26 @@ function MetricCard({
         {children}
       </div>
     </section>
+  );
+}
+
+function DocumentFeature({
+  title,
+  description,
+}: {
+  title: string;
+  description: string;
+}) {
+  return (
+    <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+      <p className="text-sm font-semibold text-slate-900">
+        {title}
+      </p>
+
+      <p className="mt-1 text-xs leading-5 text-slate-500">
+        {description}
+      </p>
+    </div>
   );
 }
 

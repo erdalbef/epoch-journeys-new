@@ -60,6 +60,8 @@ model User {
 
   refundsCreated Refund[] @relation("RefundCreatedBy")
 
+  financeDocumentsUploaded FinanceDocument[] @relation("FinanceDocumentUploadedBy")
+
   @@index([role])
   @@index([approved])
   @@index([status])
@@ -118,6 +120,8 @@ model Tour {
 
   bankTransactions BankTransaction[]
 
+  financeDocuments FinanceDocument[]
+
   @@index([category])
   @@index([featured])
   @@index([isPublished])
@@ -167,6 +171,8 @@ model DepartureDate {
   supplierPayables SupplierPayable[]
 
   bankTransactions BankTransaction[]
+
+  financeDocuments FinanceDocument[]
 
   @@index([tourId])
   @@index([date])
@@ -315,6 +321,8 @@ model Booking {
   bankTransactions BankTransaction[]
 
   refunds Refund[]
+
+  financeDocuments FinanceDocument[]
 
   @@index([userId])
   @@index([tourId])
@@ -938,6 +946,8 @@ model Expense {
 
   bankTransactions BankTransaction[]
 
+  documents FinanceDocument[]
+
   @@index([category])
   @@index([costType])
   @@index([expenseItem])
@@ -1477,6 +1487,8 @@ model Supplier {
   payables         SupplierPayable[]
   expenses         Expense[]
 
+  financeDocuments FinanceDocument[]
+
   @@index([name])
   @@index([type])
   @@index([status])
@@ -1621,6 +1633,68 @@ model SupplierContract {
 }
 
 // ============================================================
+// FINANCE DOCUMENT MANAGEMENT
+// ============================================================
+
+model FinanceDocument {
+  id String @id @default(cuid())
+
+  type        FinanceDocumentType
+  title       String
+  description String?
+
+  originalFileName String
+  storedFileName   String
+  storagePath      String
+  mimeType         String
+  fileSize         Int
+
+  documentDate    DateTime?
+  referenceNumber String?
+  notes           String?
+
+  expenseId                String?
+  supplierPayableId        String?
+  supplierPayablePaymentId String?
+  refundId                 String?
+  bankTransactionId        String?
+  bookingId                String?
+  tourId                   String?
+  departureDateId          String?
+  supplierId               String?
+
+  uploadedById String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  expense                Expense?                @relation(fields: [expenseId], references: [id], onDelete: Cascade)
+  supplierPayable        SupplierPayable?        @relation(fields: [supplierPayableId], references: [id], onDelete: Cascade)
+  supplierPayablePayment SupplierPayablePayment? @relation(fields: [supplierPayablePaymentId], references: [id], onDelete: Cascade)
+  refund                 Refund?                 @relation(fields: [refundId], references: [id], onDelete: Cascade)
+  bankTransaction        BankTransaction?        @relation(fields: [bankTransactionId], references: [id], onDelete: Cascade)
+  booking                Booking?                @relation(fields: [bookingId], references: [id], onDelete: SetNull)
+  tour                   Tour?                   @relation(fields: [tourId], references: [id], onDelete: SetNull)
+  departureDate          DepartureDate?          @relation(fields: [departureDateId], references: [id], onDelete: SetNull)
+  supplier               Supplier?               @relation(fields: [supplierId], references: [id], onDelete: SetNull)
+  uploadedBy             User?                   @relation("FinanceDocumentUploadedBy", fields: [uploadedById], references: [id], onDelete: SetNull)
+
+  @@index([type])
+  @@index([expenseId])
+  @@index([supplierPayableId])
+  @@index([supplierPayablePaymentId])
+  @@index([refundId])
+  @@index([bankTransactionId])
+  @@index([bookingId])
+  @@index([tourId])
+  @@index([departureDateId])
+  @@index([supplierId])
+  @@index([uploadedById])
+  @@index([documentDate])
+  @@index([createdAt])
+}
+
+// ============================================================
 // CUSTOMER REFUNDS
 // ============================================================
 
@@ -1661,6 +1735,8 @@ model Refund {
   createdBy User? @relation("RefundCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
 
   bankTransactions BankTransaction[]
+
+  documents FinanceDocument[]
 
   @@index([bookingId])
   @@index([paymentId])
@@ -1725,6 +1801,8 @@ model BankTransaction {
 
   reversalOf BankTransaction? @relation("BankTransactionReversal", fields: [reversalOfId], references: [id], onDelete: Restrict)
   reversedBy BankTransaction? @relation("BankTransactionReversal")
+
+  documents FinanceDocument[]
 
   @@index([bankAccountId])
   @@index([createdById])
@@ -1809,6 +1887,8 @@ model SupplierPayable {
 
   payments SupplierPayablePayment[]
 
+  documents FinanceDocument[]
+
   @@index([supplierId])
   @@index([serviceId])
   @@index([rateId])
@@ -1850,6 +1930,8 @@ model SupplierPayablePayment {
   recordedBy  User?           @relation("SupplierPaymentRecordedBy", fields: [recordedById], references: [id], onDelete: SetNull)
 
   bankTransactions BankTransaction[]
+
+  documents FinanceDocument[]
 
   @@index([payableId])
   @@index([bankAccountId])
@@ -2159,5 +2241,23 @@ enum RefundReason {
   PRICE_ADJUSTMENT
   DUPLICATE_PAYMENT
   GOODWILL
+  OTHER
+}
+
+enum FinanceDocumentType {
+  EXPENSE_RECEIPT
+  EXPENSE_INVOICE
+  SUPPLIER_INVOICE
+  SUPPLIER_CREDIT_NOTE
+  SUPPLIER_PAYMENT_PROOF
+  CUSTOMER_PAYMENT_PROOF
+  CUSTOMER_REFUND_PROOF
+  BANK_STATEMENT
+  BANK_TRANSFER_PROOF
+  TAX_DOCUMENT
+  CONTRACT
+  AGREEMENT
+  CREDIT_NOTE
+  INVOICE
   OTHER
 }
