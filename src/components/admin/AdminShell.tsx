@@ -173,6 +173,11 @@ const navSections: NavSection[] = [
         href: "/admin/finance/documents",
         icon: FileText,
       },
+      {
+        label: "Sales Documents",
+        href: "/admin/finance/sales-documents",
+        icon: ReceiptText,
+      },
     ],
   },
   {

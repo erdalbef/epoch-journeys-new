@@ -750,6 +750,16 @@ export default async function AdminFinancePage() {
           />
 
           <FinanceLink
+            href="/admin/finance/reports/management-summary"
+            label="Management Summary"
+          />
+
+          <FinanceLink
+            href="/admin/finance/reports"
+            label="Finance Reports"
+          />
+
+          <FinanceLink
             href="/admin/supplier-payables"
             label="Supplier Payables"
           />
@@ -772,6 +782,11 @@ export default async function AdminFinancePage() {
           <FinanceLink
             href="/admin/finance/documents"
             label="Documents"
+          />
+
+          <FinanceLink
+            href="/admin/finance/sales-documents"
+            label="Sales Documents"
           />
         </div>
       </div>

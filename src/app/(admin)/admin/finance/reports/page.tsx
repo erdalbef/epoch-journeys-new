@@ -69,12 +69,30 @@ export default async function FinanceReportsPage() {
 
         <ReportCard
           title="Cash & Bank Report"
-          description="Account balances, cash movement, transfers, statement position, and reconciliation status."
+          description="Account positions, posted inflows and outflows, bank movements, statement status, reconciliation control, and CSV export."
+          href="/admin/finance/reports/cash-bank"
+          ready
         />
 
         <ReportCard
           title="Refund Report"
-          description="Pending, approved, paid, and cancelled customer refunds with booking and payment references."
+          description="Pending, approved, paid, and cancelled customer refunds with booking, payment, bank, reason, and CSV detail."
+          href="/admin/finance/reports/refunds"
+          ready
+        />
+
+        <ReportCard
+          title="Tour / Departure P&L"
+          description="Recognized booking revenue, commissions, supplier commitments, direct costs, refunds, gross profit, margin, cash position, and departure drill-down."
+          href="/admin/finance/profitability"
+          ready
+        />
+
+        <ReportCard
+          title="Management Summary"
+          description="Executive view of revenue, receivables, supplier commitments, direct costs, overhead, refunds, cash flow, and finance control alerts."
+          href="/admin/finance/reports/management-summary"
+          ready
         />
       </div>
     </div>
