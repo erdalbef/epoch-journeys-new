@@ -18,33 +18,59 @@ import {
 import { authOptions } from "@/lib/authOptions";
 import { db } from "@/lib/db";
 
-type CurrencyMap = Record<string, number>;
+type CurrencyMap = Record<
+  string,
+  number
+>;
 
-function money(value: number, currency: string) {
-  return new Intl.NumberFormat("en-GB", {
-    style: "currency",
-    currency,
-    maximumFractionDigits: 2,
-  }).format(value);
+function money(
+  value: number,
+  currency: string,
+) {
+  try {
+    return new Intl.NumberFormat(
+      "en-GB",
+      {
+        style: "currency",
+        currency,
+        maximumFractionDigits: 2,
+      },
+    ).format(value);
+  } catch {
+    return `${currency} ${value.toFixed(
+      2,
+    )}`;
+  }
 }
 
-function formatDate(value: Date | null | undefined) {
+function formatDate(
+  value: Date | null | undefined,
+) {
   if (!value) {
     return "-";
   }
 
-  return value.toLocaleDateString("en-GB", {
-    day: "2-digit",
-    month: "short",
-    year: "numeric",
-  });
+  return value.toLocaleDateString(
+    "en-GB",
+    {
+      day: "2-digit",
+      month: "short",
+      year: "numeric",
+    },
+  );
 }
 
-function enumLabel(value: string) {
+function enumLabel(
+  value: string,
+) {
   return value
     .replaceAll("_", " ")
     .toLowerCase()
-    .replace(/\b\w/g, (letter) => letter.toUpperCase());
+    .replace(
+      /\b\w/g,
+      (letter) =>
+        letter.toUpperCase(),
+    );
 }
 
 function addCurrency(
@@ -52,10 +78,20 @@ function addCurrency(
   currency: string,
   amount: number,
 ) {
-  totals[currency] = (totals[currency] ?? 0) + amount;
+  const normalized =
+    currency
+      .trim()
+      .toUpperCase() ||
+    "EUR";
+
+  totals[normalized] =
+    (totals[normalized] ??
+      0) + amount;
 }
 
-function getTransactionBadge(type: BankTransactionType) {
+function getTransactionBadge(
+  type: BankTransactionType,
+) {
   switch (type) {
     case BankTransactionType.CUSTOMER_RECEIPT:
       return "bg-emerald-100 text-emerald-800";
@@ -79,15 +115,25 @@ function getTransactionBadge(type: BankTransactionType) {
     case BankTransactionType.ADJUSTMENT:
       return "bg-slate-200 text-slate-800";
 
+    case BankTransactionType.OPENING_BALANCE:
+      return "bg-cyan-100 text-cyan-800";
+
     default:
       return "bg-slate-100 text-slate-700";
   }
 }
 
 export default async function AdminFinancePage() {
-  const session = await getServerSession(authOptions);
+  const session =
+    await getServerSession(
+      authOptions,
+    );
 
-  if (!session?.user || session.user.role !== Role.ADMIN) {
+  if (
+    !session?.user ||
+    session.user.role !==
+      Role.ADMIN
+  ) {
     redirect("/admin-login");
   }
 
@@ -112,9 +158,9 @@ export default async function AdminFinancePage() {
     pendingExpenseApprovals,
     pendingRefundCount,
   ] = await Promise.all([
-    // --------------------------------------------------------
+    // ========================================================
     // BANK ACCOUNTS
-    // --------------------------------------------------------
+    // ========================================================
 
     db.bankAccount.findMany({
       where: {
@@ -135,20 +181,31 @@ export default async function AdminFinancePage() {
         name: true,
         currency: true,
         openingBalance: true,
-        currentBalance: true,
         notes: true,
       },
     }),
 
-    // --------------------------------------------------------
+    // ========================================================
     // LEDGER MOVEMENT PER BANK ACCOUNT
-    // --------------------------------------------------------
+    //
+    // OPENING_BALANCE transactions are excluded because
+    // BankAccount.openingBalance is already used below.
+    // ========================================================
 
     db.bankTransaction.groupBy({
-      by: ["bankAccountId", "direction"],
+      by: [
+        "bankAccountId",
+        "direction",
+      ],
 
       where: {
-        status: BankTransactionStatus.POSTED,
+        status:
+          BankTransactionStatus.POSTED,
+
+        type: {
+          not:
+            BankTransactionType.OPENING_BALANCE,
+        },
       },
 
       _sum: {
@@ -156,18 +213,21 @@ export default async function AdminFinancePage() {
       },
     }),
 
-    // --------------------------------------------------------
+    // ========================================================
     // MONTH-TO-DATE EXTERNAL CASH FLOW
     //
-    // Transfers are intentionally excluded.
-    // Opening balance is intentionally excluded.
-    // --------------------------------------------------------
+    // Internal transfers and opening balances are excluded.
+    // ========================================================
 
     db.bankTransaction.groupBy({
-      by: ["currency", "direction"],
+      by: [
+        "currency",
+        "direction",
+      ],
 
       where: {
-        status: BankTransactionStatus.POSTED,
+        status:
+          BankTransactionStatus.POSTED,
 
         transactionDate: {
           gte: monthStart,
@@ -187,17 +247,19 @@ export default async function AdminFinancePage() {
       },
     }),
 
-    // --------------------------------------------------------
+    // ========================================================
     // RECENT LEDGER
-    // --------------------------------------------------------
+    // ========================================================
 
     db.bankTransaction.findMany({
       where: {
-        status: BankTransactionStatus.POSTED,
+        status:
+          BankTransactionStatus.POSTED,
       },
 
       orderBy: {
-        transactionDate: "desc",
+        transactionDate:
+          "desc",
       },
 
       take: 15,
@@ -222,8 +284,10 @@ export default async function AdminFinancePage() {
         booking: {
           select: {
             id: true,
-            bookingReference: true,
-            bookingDisplayCode: true,
+            bookingReference:
+              true,
+            bookingDisplayCode:
+              true,
           },
         },
 
@@ -236,9 +300,11 @@ export default async function AdminFinancePage() {
       },
     }),
 
-    // --------------------------------------------------------
+    // ========================================================
     // SUPPLIER LIABILITIES
-    // --------------------------------------------------------
+    //
+    // Only approved, outstanding supplier obligations.
+    // ========================================================
 
     db.supplierPayable.groupBy({
       by: ["currency"],
@@ -265,17 +331,22 @@ export default async function AdminFinancePage() {
       },
     }),
 
-    // --------------------------------------------------------
+    // ========================================================
     // CUSTOMER RECEIVABLES
-    // --------------------------------------------------------
+    //
+    // IMPORTANT:
+    // Only CONFIRMED bookings represent recognized customer
+    // receivables.
+    //
+    // PENDING, ON_REQUEST and WAITLIST remain pipeline.
+    // ========================================================
 
     db.booking.groupBy({
       by: ["currency"],
 
       where: {
-        status: {
-          not: BookingStatus.CANCELLED,
-        },
+        status:
+          BookingStatus.CONFIRMED,
 
         amountDue: {
           gt: 0,
@@ -291,12 +362,18 @@ export default async function AdminFinancePage() {
       },
     }),
 
-    // --------------------------------------------------------
-    // PENDING / APPROVED REFUNDS
-    // --------------------------------------------------------
+    // ========================================================
+    // REFUND COMMITMENTS
+    //
+    // PENDING + APPROVED refunds represent amounts that may
+    // still require customer settlement.
+    // ========================================================
 
     db.refund.groupBy({
-      by: ["currency", "status"],
+      by: [
+        "currency",
+        "status",
+      ],
 
       where: {
         status: {
@@ -312,12 +389,18 @@ export default async function AdminFinancePage() {
       },
     }),
 
-    // --------------------------------------------------------
-    // PAID EXPENSES
-    // --------------------------------------------------------
+    // ========================================================
+    // PAID DIRECT / OVERHEAD EXPENSES
+    //
+    // This section is deliberately payment-oriented.
+    // Recognized profitability uses approved costs elsewhere.
+    // ========================================================
 
     db.expense.groupBy({
-      by: ["currency", "costType"],
+      by: [
+        "currency",
+        "costType",
+      ],
 
       where: {
         approvalStatus:
@@ -332,9 +415,9 @@ export default async function AdminFinancePage() {
       },
     }),
 
-    // --------------------------------------------------------
-    // ALERT COUNTS
-    // --------------------------------------------------------
+    // ========================================================
+    // OVERDUE PAYABLE ALERT
+    // ========================================================
 
     db.supplierPayable.count({
       where: {
@@ -355,6 +438,10 @@ export default async function AdminFinancePage() {
       },
     }),
 
+    // ========================================================
+    // PENDING EXPENSE APPROVALS
+    // ========================================================
+
     db.expense.count({
       where: {
         approvalStatus:
@@ -362,9 +449,14 @@ export default async function AdminFinancePage() {
       },
     }),
 
+    // ========================================================
+    // PENDING REFUNDS
+    // ========================================================
+
     db.refund.count({
       where: {
-        status: RefundStatus.PENDING,
+        status:
+          RefundStatus.PENDING,
       },
     }),
   ]);
@@ -373,27 +465,41 @@ export default async function AdminFinancePage() {
   // BANK BALANCES
   // ========================================================
 
-  const ledgerMovementByAccount = new Map<
-    string,
-    {
-      incoming: number;
-      outgoing: number;
-    }
-  >();
+  const ledgerMovementByAccount =
+    new Map<
+      string,
+      {
+        incoming: number;
+        outgoing: number;
+      }
+    >();
 
-  for (const row of ledgerByAccount) {
+  for (
+    const row of ledgerByAccount
+  ) {
     const current =
-      ledgerMovementByAccount.get(row.bankAccountId) ?? {
+      ledgerMovementByAccount.get(
+        row.bankAccountId,
+      ) ?? {
         incoming: 0,
         outgoing: 0,
       };
 
-    const amount = Number(row._sum.amount ?? 0);
+    const amount =
+      Number(
+        row._sum.amount ??
+          0,
+      );
 
-    if (row.direction === BankTransactionDirection.IN) {
-      current.incoming += amount;
+    if (
+      row.direction ===
+      BankTransactionDirection.IN
+    ) {
+      current.incoming +=
+        amount;
     } else {
-      current.outgoing += amount;
+      current.outgoing +=
+        amount;
     }
 
     ledgerMovementByAccount.set(
@@ -402,29 +508,52 @@ export default async function AdminFinancePage() {
     );
   }
 
-  const accountPositions = bankAccounts.map((account) => {
-    const movement =
-      ledgerMovementByAccount.get(account.id) ?? {
-        incoming: 0,
-        outgoing: 0,
-      };
+  const accountPositions =
+    bankAccounts.map(
+      (account) => {
+        const movement =
+          ledgerMovementByAccount.get(
+            account.id,
+          ) ?? {
+            incoming: 0,
+            outgoing: 0,
+          };
 
-    const ledgerBalance =
-      account.openingBalance +
-      movement.incoming -
-      movement.outgoing;
+        /*
+         * Source of truth:
+         *
+         * Opening Balance
+         * + posted IN transactions
+         * - posted OUT transactions
+         *
+         * OPENING_BALANCE ledger entries were excluded
+         * from movement above to prevent double-counting.
+         */
+        const ledgerBalance =
+          account.openingBalance +
+          movement.incoming -
+          movement.outgoing;
 
-    return {
-      ...account,
-      ledgerIn: movement.incoming,
-      ledgerOut: movement.outgoing,
-      ledgerBalance,
-    };
-  });
+        return {
+          ...account,
 
-  const bankTotals: CurrencyMap = {};
+          ledgerIn:
+            movement.incoming,
 
-  for (const account of accountPositions) {
+          ledgerOut:
+            movement.outgoing,
+
+          ledgerBalance,
+        };
+      },
+    );
+
+  const bankTotals:
+    CurrencyMap = {};
+
+  for (
+    const account of accountPositions
+  ) {
     addCurrency(
       bankTotals,
       account.currency,
@@ -436,57 +565,108 @@ export default async function AdminFinancePage() {
   // MONTH CASH FLOW
   // ========================================================
 
-  const cashIn: CurrencyMap = {};
-  const cashOut: CurrencyMap = {};
+  const cashIn:
+    CurrencyMap = {};
 
-  for (const row of monthCashRows) {
-    const amount = Number(row._sum.amount ?? 0);
+  const cashOut:
+    CurrencyMap = {};
 
-    if (row.direction === BankTransactionDirection.IN) {
-      addCurrency(cashIn, row.currency, amount);
+  for (
+    const row of monthCashRows
+  ) {
+    const amount =
+      Number(
+        row._sum.amount ??
+          0,
+      );
+
+    if (
+      row.direction ===
+      BankTransactionDirection.IN
+    ) {
+      addCurrency(
+        cashIn,
+        row.currency,
+        amount,
+      );
     } else {
-      addCurrency(cashOut, row.currency, amount);
+      addCurrency(
+        cashOut,
+        row.currency,
+        amount,
+      );
     }
   }
 
-  const cashCurrencies = Array.from(
-    new Set([
-      ...Object.keys(cashIn),
-      ...Object.keys(cashOut),
-    ]),
-  ).sort();
+  const cashCurrencies =
+    Array.from(
+      new Set([
+        ...Object.keys(
+          cashIn,
+        ),
+        ...Object.keys(
+          cashOut,
+        ),
+      ]),
+    ).sort();
 
   // ========================================================
   // SUPPLIER LIABILITIES
   // ========================================================
 
-  const supplierLiabilities = payableSummary.map((row) => ({
-    currency: row.currency,
-    amount: Number(row._sum.balance ?? 0),
-    count: row._count._all,
-  }));
+  const supplierLiabilities =
+    payableSummary.map(
+      (row) => ({
+        currency:
+          row.currency,
+
+        amount:
+          Number(
+            row._sum.balance ??
+              0,
+          ),
+
+        count:
+          row._count._all,
+      }),
+    );
 
   // ========================================================
   // CUSTOMER RECEIVABLES
   // ========================================================
 
-  const receivables = receivableSummary.map((row) => ({
-    currency: row.currency,
-    amount: row._sum.amountDue ?? 0,
-    count: row._count._all,
-  }));
+  const receivables =
+    receivableSummary.map(
+      (row) => ({
+        currency:
+          row.currency,
+
+        amount:
+          row._sum.amountDue ??
+          0,
+
+        count:
+          row._count._all,
+      }),
+    );
 
   // ========================================================
   // REFUND COMMITMENTS
   // ========================================================
 
-  const refundCommitments: CurrencyMap = {};
+  const refundCommitments:
+    CurrencyMap = {};
 
-  for (const row of pendingRefundSummary) {
+  for (
+    const row of pendingRefundSummary
+  ) {
     addCurrency(
       refundCommitments,
       row.currency,
-      Number(row._sum.amount ?? 0),
+      Number(
+        row._sum.amount ??
+          0,
+      ),
     );
   }
 
@@ -494,13 +674,23 @@ export default async function AdminFinancePage() {
   // PAID EXPENSES
   // ========================================================
 
-  const directTourCosts: CurrencyMap = {};
-  const overheadCosts: CurrencyMap = {};
+  const directTourCosts:
+    CurrencyMap = {};
 
-  for (const row of paidExpenseSummary) {
-    const amount = row._sum.amount ?? 0;
+  const overheadCosts:
+    CurrencyMap = {};
 
-    if (row.costType === "DIRECT_TOUR_COST") {
+  for (
+    const row of paidExpenseSummary
+  ) {
+    const amount =
+      row._sum.amount ??
+      0;
+
+    if (
+      row.costType ===
+      "DIRECT_TOUR_COST"
+    ) {
       addCurrency(
         directTourCosts,
         row.currency,
@@ -532,17 +722,26 @@ export default async function AdminFinancePage() {
           </h1>
 
           <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-500">
-            Consolidated cash, receivables, supplier
-            liabilities, expenses, refunds and bank-ledger
-            activity.
+            Consolidated bank
+            positions, confirmed
+            customer receivables,
+            approved supplier
+            liabilities, expenses,
+            refunds and posted Bank
+            Ledger activity.
           </p>
         </div>
 
         <div className="flex flex-wrap gap-2">
           <FinanceLink
             href="/admin/finance/expenses/create"
-            label="+ Add Expense"
+            label="+ Add Direct Expense"
             primary
+          />
+
+          <FinanceLink
+            href="/admin/finance/expenses"
+            label="Finance Entries"
           />
 
           <FinanceLink
@@ -561,8 +760,13 @@ export default async function AdminFinancePage() {
           />
 
           <FinanceLink
-            href="/admin/finance/expenses"
-            label="Expenses"
+            href="/admin/finance/bank-statements"
+            label="Bank Statements"
+          />
+
+          <FinanceLink
+            href="/admin/finance/reconciliation"
+            label="Bank Reconciliation"
           />
 
           <FinanceLink
@@ -576,42 +780,68 @@ export default async function AdminFinancePage() {
       {/* ALERTS */}
       {/* ================================================== */}
 
-      {(overduePayablesCount > 0 ||
-        pendingExpenseApprovals > 0 ||
-        pendingRefundCount > 0) && (
+      {(overduePayablesCount >
+        0 ||
+        pendingExpenseApprovals >
+          0 ||
+        pendingRefundCount >
+          0) && (
         <section className="rounded-2xl border border-amber-200 bg-amber-50 p-5">
           <div className="flex flex-wrap items-center justify-between gap-4">
             <div>
               <h2 className="font-bold text-amber-950">
-                Finance attention required
+                Finance attention
+                required
               </h2>
 
               <p className="mt-1 text-sm text-amber-800">
-                There are finance items requiring review or
-                action.
+                There are finance
+                items requiring review
+                or action.
               </p>
             </div>
 
             <div className="flex flex-wrap gap-2 text-xs font-semibold">
-              {overduePayablesCount > 0 && (
+              {overduePayablesCount >
+                0 && (
                 <span className="rounded-full bg-red-100 px-3 py-1.5 text-red-800">
-                  {overduePayablesCount} overdue supplier
+                  {
+                    overduePayablesCount
+                  }{" "}
+                  overdue supplier
                   payable
-                  {overduePayablesCount === 1 ? "" : "s"}
+                  {overduePayablesCount ===
+                  1
+                    ? ""
+                    : "s"}
                 </span>
               )}
 
-              {pendingExpenseApprovals > 0 && (
+              {pendingExpenseApprovals >
+                0 && (
                 <span className="rounded-full bg-amber-100 px-3 py-1.5 text-amber-900">
-                  {pendingExpenseApprovals} expense approval
-                  {pendingExpenseApprovals === 1 ? "" : "s"}
+                  {
+                    pendingExpenseApprovals
+                  }{" "}
+                  expense approval
+                  {pendingExpenseApprovals ===
+                  1
+                    ? ""
+                    : "s"}
                 </span>
               )}
 
-              {pendingRefundCount > 0 && (
+              {pendingRefundCount >
+                0 && (
                 <span className="rounded-full bg-blue-100 px-3 py-1.5 text-blue-800">
-                  {pendingRefundCount} pending refund
-                  {pendingRefundCount === 1 ? "" : "s"}
+                  {
+                    pendingRefundCount
+                  }{" "}
+                  pending refund
+                  {pendingRefundCount ===
+                  1
+                    ? ""
+                    : "s"}
                 </span>
               )}
             </div>
@@ -626,35 +856,51 @@ export default async function AdminFinancePage() {
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <MetricCard
           title="Bank Position"
-          description="Calculated from opening balances + posted ledger movements."
+          description="Opening balances plus posted ledger movements."
         >
           <CurrencyValues
-            totals={bankTotals}
+            totals={
+              bankTotals
+            }
             empty="No active accounts"
           />
         </MetricCard>
 
         <MetricCard
           title="Supplier Liabilities"
-          description="Approved supplier payables still outstanding."
+          description="Outstanding balances on approved supplier payables."
         >
-          {supplierLiabilities.length > 0 ? (
-            <div className="space-y-1">
-              {supplierLiabilities.map((item) => (
-                <div
-                  key={item.currency}
-                  className="flex items-end justify-between gap-3"
-                >
-                  <span className="text-xl font-bold text-amber-700">
-                    {money(item.amount, item.currency)}
-                  </span>
+          {supplierLiabilities.length >
+          0 ? (
+            <div className="space-y-1.5">
+              {supplierLiabilities.map(
+                (item) => (
+                  <div
+                    key={
+                      item.currency
+                    }
+                    className="flex items-end justify-between gap-3"
+                  >
+                    <span className="text-xl font-bold text-amber-700">
+                      {money(
+                        item.amount,
+                        item.currency,
+                      )}
+                    </span>
 
-                  <span className="text-xs text-slate-500">
-                    {item.count} payable
-                    {item.count === 1 ? "" : "s"}
-                  </span>
-                </div>
-              ))}
+                    <span className="text-xs text-slate-500">
+                      {
+                        item.count
+                      }{" "}
+                      payable
+                      {item.count ===
+                      1
+                        ? ""
+                        : "s"}
+                    </span>
+                  </div>
+                ),
+              )}
             </div>
           ) : (
             <EmptyValue text="No outstanding approved payables" />
@@ -663,42 +909,120 @@ export default async function AdminFinancePage() {
 
         <MetricCard
           title="Customer Receivables"
-          description="Outstanding amounts currently shown on open bookings."
+          description="Outstanding balances on confirmed bookings only."
         >
-          {receivables.length > 0 ? (
-            <div className="space-y-1">
-              {receivables.map((item) => (
-                <div
-                  key={item.currency}
-                  className="flex items-end justify-between gap-3"
-                >
-                  <span className="text-xl font-bold text-[#001F3F]">
-                    {money(item.amount, item.currency)}
-                  </span>
+          {receivables.length >
+          0 ? (
+            <div className="space-y-1.5">
+              {receivables.map(
+                (item) => (
+                  <div
+                    key={
+                      item.currency
+                    }
+                    className="flex items-end justify-between gap-3"
+                  >
+                    <span className="text-xl font-bold text-[#001F3F]">
+                      {money(
+                        item.amount,
+                        item.currency,
+                      )}
+                    </span>
 
-                  <span className="text-xs text-slate-500">
-                    {item.count} booking
-                    {item.count === 1 ? "" : "s"}
-                  </span>
-                </div>
-              ))}
+                    <span className="text-xs text-slate-500">
+                      {
+                        item.count
+                      }{" "}
+                      confirmed booking
+                      {item.count ===
+                      1
+                        ? ""
+                        : "s"}
+                    </span>
+                  </div>
+                ),
+              )}
             </div>
           ) : (
-            <EmptyValue text="No booking receivables" />
+            <EmptyValue text="No confirmed booking receivables" />
           )}
         </MetricCard>
 
         <MetricCard
           title="Refund Commitments"
-          description="Pending and approved customer refunds not yet excluded from booking receipts."
+          description="Pending and approved customer refunds awaiting final settlement."
         >
           <CurrencyValues
-            totals={refundCommitments}
+            totals={
+              refundCommitments
+            }
             empty="No refund commitments"
             negative
           />
         </MetricCard>
       </div>
+
+      {/* ================================================== */}
+      {/* ACCOUNTING ARCHITECTURE */}
+      {/* ================================================== */}
+
+      <section className="overflow-hidden rounded-2xl border border-blue-100 bg-blue-50">
+        <div className="grid lg:grid-cols-3">
+          <div className="border-b border-blue-100 p-5 lg:border-b-0 lg:border-r">
+            <p className="text-xs font-bold uppercase tracking-[0.16em] text-blue-700">
+              Receivables
+            </p>
+
+            <p className="mt-2 font-semibold text-blue-950">
+              Confirmed Booking
+            </p>
+
+            <p className="mt-1 text-xs leading-5 text-blue-800">
+              Customer deposits and
+              installments reduce the
+              booking balance. They do
+              not create additional
+              revenue.
+            </p>
+          </div>
+
+          <div className="border-b border-blue-100 p-5 lg:border-b-0 lg:border-r">
+            <p className="text-xs font-bold uppercase tracking-[0.16em] text-blue-700">
+              Payables
+            </p>
+
+            <p className="mt-2 font-semibold text-blue-950">
+              Approved Supplier
+              Liability
+            </p>
+
+            <p className="mt-1 text-xs leading-5 text-blue-800">
+              Supplier deposits and
+              installments reduce the
+              liability. They do not
+              create another expense.
+            </p>
+          </div>
+
+          <div className="p-5">
+            <p className="text-xs font-bold uppercase tracking-[0.16em] text-blue-700">
+              Cash
+            </p>
+
+            <p className="mt-2 font-semibold text-blue-950">
+              Posted Bank Ledger
+            </p>
+
+            <p className="mt-1 text-xs leading-5 text-blue-800">
+              Actual receipts and
+              payments affect cash
+              independently from
+              revenue and cost
+              recognition.
+            </p>
+          </div>
+        </div>
+      </section>
 
       {/* ================================================== */}
       {/* TOUR & DEPARTURE PROFITABILITY */}
@@ -718,36 +1042,39 @@ export default async function AdminFinancePage() {
             </div>
 
             <h2 className="mt-4 text-2xl font-bold text-[#001F3F]">
-              Tour & Departure Profitability
+              Tour & Departure
+              Profitability
             </h2>
 
             <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-600">
-              See the financial performance of each tour and
-              departure using booking revenue, supplier
-              costs, direct tour expenses and operational
-              financial records already captured throughout
-              the system.
+              Analyze confirmed booking
+              revenue against approved
+              supplier commitments,
+              supplier credits, approved
+              direct tour costs and
+              applicable customer
+              refunds.
             </p>
 
             <div className="mt-6 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
               <ProfitabilityFeature
                 label="Revenue"
-                description="Booking revenue by tour and departure."
+                description="Confirmed booking revenue by tour and departure."
               />
 
               <ProfitabilityFeature
                 label="Supplier Costs"
-                description="Approved supplier costs allocated to operations."
+                description="Approved supplier costs net of supplier credits."
               />
 
               <ProfitabilityFeature
                 label="Direct Costs"
-                description="Direct tour expenses separated from overhead."
+                description="Approved direct tour operating expenses."
               />
 
               <ProfitabilityFeature
                 label="Gross Profit"
-                description="Revenue less supplier and direct tour costs."
+                description="Revenue less recognized operating costs and applicable refunds."
               />
             </div>
 
@@ -760,8 +1087,10 @@ export default async function AdminFinancePage() {
               </Link>
 
               <p className="text-xs leading-5 text-slate-500">
-                Analyze performance from the tour level down
-                to individual departures.
+                Analyze performance
+                from the tour level
+                down to individual
+                departures.
               </p>
             </div>
           </div>
@@ -774,17 +1103,22 @@ export default async function AdminFinancePage() {
 
               <div className="mt-5 space-y-3">
                 <ProfitFormulaRow
-                  label="Booking Revenue"
+                  label="Confirmed Net Revenue"
                   symbol="+"
                 />
 
                 <ProfitFormulaRow
-                  label="Supplier Costs"
+                  label="Approved Supplier Costs"
                   symbol="−"
                 />
 
                 <ProfitFormulaRow
-                  label="Direct Tour Expenses"
+                  label="Approved Direct Tour Costs"
+                  symbol="−"
+                />
+
+                <ProfitFormulaRow
+                  label="Revenue-Reducing Refunds"
                   symbol="−"
                 />
 
@@ -803,10 +1137,12 @@ export default async function AdminFinancePage() {
             </div>
 
             <p className="mt-8 text-xs leading-5 text-slate-300">
-              Company overhead remains separate so
-              operational tour profitability can be
-              evaluated without distorting individual
-              departure performance.
+              Customer receipts,
+              supplier payments and
+              expense payments are
+              settlement activity and
+              are not counted again in
+              profitability.
             </p>
           </div>
         </div>
@@ -828,10 +1164,14 @@ export default async function AdminFinancePage() {
             </h2>
 
             <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-500">
-              Securely manage supplier invoices, expense
-              receipts, payment proofs, refund documents,
-              bank statements, transfer confirmations, tax
-              documents and other finance records.
+              Securely manage supplier
+              invoices, expense
+              receipts, payment proofs,
+              customer refund proofs,
+              bank statements, transfer
+              confirmations, tax
+              documents and other
+              finance records.
             </p>
           </div>
 
@@ -851,7 +1191,7 @@ export default async function AdminFinancePage() {
 
           <DocumentFeature
             title="Payment Proofs"
-            description="Supplier payments, customer payments and refunds."
+            description="Supplier payments, customer payments and refund proofs."
           />
 
           <DocumentFeature
@@ -874,84 +1214,118 @@ export default async function AdminFinancePage() {
         <div className="mb-5 flex flex-wrap items-start justify-between gap-3">
           <div>
             <h2 className="text-lg font-bold text-[#001F3F]">
-              Month-to-Date Cash Flow
+              Month-to-Date Cash
+              Flow
             </h2>
 
             <p className="mt-1 text-sm text-slate-500">
-              External posted cash movements only. Internal
-              bank transfers are excluded.
+              External posted cash
+              movements only. Internal
+              bank transfers and
+              opening balances are
+              excluded.
             </p>
           </div>
 
           <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-600">
-            {monthStart.toLocaleDateString("en-GB", {
-              month: "long",
-              year: "numeric",
-            })}
+            {monthStart.toLocaleDateString(
+              "en-GB",
+              {
+                month: "long",
+                year: "numeric",
+              },
+            )}
           </span>
         </div>
 
-        {cashCurrencies.length === 0 ? (
+        {cashCurrencies.length ===
+        0 ? (
           <EmptyValue text="No posted cash activity this month" />
         ) : (
           <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-            {cashCurrencies.map((currency) => {
-              const incoming = cashIn[currency] ?? 0;
-              const outgoing = cashOut[currency] ?? 0;
-              const net = incoming - outgoing;
+            {cashCurrencies.map(
+              (currency) => {
+                const incoming =
+                  cashIn[
+                    currency
+                  ] ?? 0;
 
-              return (
-                <div
-                  key={currency}
-                  className="rounded-2xl border border-slate-200 bg-slate-50 p-5"
-                >
-                  <div className="flex items-center justify-between">
-                    <p className="font-bold text-slate-900">
-                      {currency}
-                    </p>
+                const outgoing =
+                  cashOut[
+                    currency
+                  ] ?? 0;
 
-                    <span
-                      className={`rounded-full px-2.5 py-1 text-xs font-semibold ${
-                        net >= 0
-                          ? "bg-emerald-100 text-emerald-800"
-                          : "bg-red-100 text-red-800"
-                      }`}
-                    >
-                      Net {net >= 0 ? "+" : ""}
-                      {money(net, currency)}
-                    </span>
-                  </div>
+                const net =
+                  incoming -
+                  outgoing;
 
-                  <div className="mt-4 grid grid-cols-2 gap-3">
-                    <div>
-                      <p className="text-xs text-slate-500">
-                        Cash In
+                return (
+                  <div
+                    key={
+                      currency
+                    }
+                    className="rounded-2xl border border-slate-200 bg-slate-50 p-5"
+                  >
+                    <div className="flex items-center justify-between gap-3">
+                      <p className="font-bold text-slate-900">
+                        {currency}
                       </p>
 
-                      <p className="mt-1 font-bold text-emerald-700">
-                        {money(incoming, currency)}
-                      </p>
+                      <span
+                        className={`rounded-full px-2.5 py-1 text-xs font-semibold ${
+                          net >= 0
+                            ? "bg-emerald-100 text-emerald-800"
+                            : "bg-red-100 text-red-800"
+                        }`}
+                      >
+                        Net{" "}
+                        {net >= 0
+                          ? "+"
+                          : ""}
+                        {money(
+                          net,
+                          currency,
+                        )}
+                      </span>
                     </div>
 
-                    <div>
-                      <p className="text-xs text-slate-500">
-                        Cash Out
-                      </p>
+                    <div className="mt-4 grid grid-cols-2 gap-3">
+                      <div>
+                        <p className="text-xs text-slate-500">
+                          Cash In
+                        </p>
 
-                      <p className="mt-1 font-bold text-red-700">
-                        {money(outgoing, currency)}
-                      </p>
+                        <p className="mt-1 font-bold text-emerald-700">
+                          {money(
+                            incoming,
+                            currency,
+                          )}
+                        </p>
+                      </div>
+
+                      <div>
+                        <p className="text-xs text-slate-500">
+                          Cash Out
+                        </p>
+
+                        <p className="mt-1 font-bold text-red-700">
+                          {money(
+                            outgoing,
+                            currency,
+                          )}
+                        </p>
+                      </div>
                     </div>
                   </div>
-                </div>
-              );
-            })}
+                );
+              },
+            )}
           </div>
         )}
       </section>
 
       {/* ================================================== */}
-      {/* COSTS */}
+      {/* PAID COSTS */}
       {/* ================================================== */}
 
       <div className="grid gap-6 xl:grid-cols-2">
@@ -962,24 +1336,28 @@ export default async function AdminFinancePage() {
             </h2>
 
             <p className="mt-1 text-sm text-slate-500">
-              Paid Expense records classified as Direct Tour
-              Cost.
+              Cash-settled Expense
+              records classified as
+              Direct Tour Cost.
             </p>
           </div>
 
           <div className="mt-5">
             <CurrencyValues
-              totals={directTourCosts}
+              totals={
+                directTourCosts
+              }
               empty="No paid direct tour expenses"
               negative
             />
           </div>
 
           <p className="mt-4 text-xs leading-5 text-slate-500">
-            Supplier Payables remain separate from this
-            figure. Tour profitability combines supplier
-            costs and direct expenses in the profitability
-            module.
+            This is a payment-oriented
+            view. Profitability uses
+            approved direct costs
+            regardless of whether they
+            have already been paid.
           </p>
         </section>
 
@@ -990,18 +1368,29 @@ export default async function AdminFinancePage() {
             </h2>
 
             <p className="mt-1 text-sm text-slate-500">
-              Administration, marketing, IT, office, staff
-              and other company overhead expenses.
+              Cash-settled
+              administration,
+              marketing, IT, office,
+              staff and other company
+              overhead expenses.
             </p>
           </div>
 
           <div className="mt-5">
             <CurrencyValues
-              totals={overheadCosts}
+              totals={
+                overheadCosts
+              }
               empty="No paid overhead expenses"
               negative
             />
           </div>
+
+          <p className="mt-4 text-xs leading-5 text-slate-500">
+            Company overhead remains
+            separate from individual
+            tour profitability.
+          </p>
         </section>
       </div>
 
@@ -1017,7 +1406,9 @@ export default async function AdminFinancePage() {
             </h2>
 
             <p className="mt-1 text-sm text-slate-500">
-              Ledger-calculated balances by account.
+              Ledger-calculated
+              balances by active
+              account.
             </p>
           </div>
 
@@ -1029,7 +1420,8 @@ export default async function AdminFinancePage() {
           </Link>
         </div>
 
-        {accountPositions.length === 0 ? (
+        {accountPositions.length ===
+        0 ? (
           <EmptyValue text="No active bank or cash accounts" />
         ) : (
           <div className="overflow-x-auto">
@@ -1063,56 +1455,66 @@ export default async function AdminFinancePage() {
               </thead>
 
               <tbody className="divide-y divide-slate-100">
-                {accountPositions.map((account) => (
-                  <tr
-                    key={account.id}
-                    className="hover:bg-slate-50"
-                  >
-                    <td className="px-4 py-3">
-                      <p className="font-semibold text-slate-900">
-                        {account.name}
-                      </p>
-
-                      {account.notes ? (
-                        <p className="mt-0.5 text-xs text-slate-500">
-                          {account.notes}
+                {accountPositions.map(
+                  (account) => (
+                    <tr
+                      key={
+                        account.id
+                      }
+                      className="hover:bg-slate-50"
+                    >
+                      <td className="px-4 py-3">
+                        <p className="font-semibold text-slate-900">
+                          {
+                            account.name
+                          }
                         </p>
-                      ) : null}
-                    </td>
 
-                    <td className="px-4 py-3 text-slate-600">
-                      {account.currency}
-                    </td>
+                        {account.notes ? (
+                          <p className="mt-0.5 text-xs text-slate-500">
+                            {
+                              account.notes
+                            }
+                          </p>
+                        ) : null}
+                      </td>
 
-                    <td className="px-4 py-3 text-right text-slate-600">
-                      {money(
-                        account.openingBalance,
-                        account.currency,
-                      )}
-                    </td>
+                      <td className="px-4 py-3 text-slate-600">
+                        {
+                          account.currency
+                        }
+                      </td>
 
-                    <td className="px-4 py-3 text-right font-medium text-emerald-700">
-                      {money(
-                        account.ledgerIn,
-                        account.currency,
-                      )}
-                    </td>
+                      <td className="px-4 py-3 text-right text-slate-600">
+                        {money(
+                          account.openingBalance,
+                          account.currency,
+                        )}
+                      </td>
 
-                    <td className="px-4 py-3 text-right font-medium text-red-700">
-                      {money(
-                        account.ledgerOut,
-                        account.currency,
-                      )}
-                    </td>
+                      <td className="px-4 py-3 text-right font-medium text-emerald-700">
+                        {money(
+                          account.ledgerIn,
+                          account.currency,
+                        )}
+                      </td>
 
-                    <td className="px-4 py-3 text-right text-base font-bold text-[#001F3F]">
-                      {money(
-                        account.ledgerBalance,
-                        account.currency,
-                      )}
-                    </td>
-                  </tr>
-                ))}
+                      <td className="px-4 py-3 text-right font-medium text-red-700">
+                        {money(
+                          account.ledgerOut,
+                          account.currency,
+                        )}
+                      </td>
+
+                      <td className="px-4 py-3 text-right text-base font-bold text-[#001F3F]">
+                        {money(
+                          account.ledgerBalance,
+                          account.currency,
+                        )}
+                      </td>
+                    </tr>
+                  ),
+                )}
               </tbody>
             </table>
           </div>
@@ -1120,12 +1522,18 @@ export default async function AdminFinancePage() {
 
         <div className="mt-4 rounded-xl border border-blue-100 bg-blue-50 p-4">
           <p className="text-xs leading-5 text-blue-800">
-            <strong>Ledger Balance</strong> is calculated
-            from Opening Balance + posted IN transactions −
-            posted OUT transactions. The legacy{" "}
-            <code>currentBalance</code> field is
-            intentionally not used as the finance source of
-            truth.
+            <strong>
+              Ledger Balance
+            </strong>{" "}
+            is calculated from Bank
+            Account Opening Balance +
+            posted IN transactions −
+            posted OUT transactions.
+            Opening-balance ledger
+            transactions are excluded
+            from the movement totals so
+            the starting balance is not
+            counted twice.
           </p>
         </div>
       </section>
@@ -1141,12 +1549,16 @@ export default async function AdminFinancePage() {
           </h2>
 
           <p className="mt-1 text-sm text-slate-500">
-            Latest posted customer receipts, supplier
-            payments, expenses, refunds and transfers.
+            Latest posted customer
+            receipts, supplier
+            payments, expenses,
+            refunds, transfers and
+            adjustments.
           </p>
         </div>
 
-        {recentTransactions.length === 0 ? (
+        {recentTransactions.length ===
+        0 ? (
           <EmptyValue text="No Bank Ledger transactions yet" />
         ) : (
           <div className="overflow-x-auto">
@@ -1180,86 +1592,106 @@ export default async function AdminFinancePage() {
               </thead>
 
               <tbody className="divide-y divide-slate-100">
-                {recentTransactions.map((transaction) => {
-                  const incoming =
-                    transaction.direction ===
-                    BankTransactionDirection.IN;
+                {recentTransactions.map(
+                  (
+                    transaction,
+                  ) => {
+                    const incoming =
+                      transaction.direction ===
+                      BankTransactionDirection.IN;
 
-                  return (
-                    <tr
-                      key={transaction.id}
-                      className="hover:bg-slate-50"
-                    >
-                      <td className="whitespace-nowrap px-4 py-3 text-slate-600">
-                        {formatDate(
-                          transaction.transactionDate,
-                        )}
-                      </td>
-
-                      <td className="px-4 py-3">
-                        <span
-                          className={`inline-flex rounded-full px-2.5 py-1 text-xs font-semibold ${getTransactionBadge(
-                            transaction.type,
-                          )}`}
-                        >
-                          {enumLabel(transaction.type)}
-                        </span>
-                      </td>
-
-                      <td className="px-4 py-3 font-medium text-slate-900">
-                        {transaction.bankAccount.name}
-                      </td>
-
-                      <td className="max-w-[280px] px-4 py-3">
-                        <p className="truncate text-slate-800">
-                          {transaction.description || "-"}
-                        </p>
-
-                        {transaction.reference ? (
-                          <p className="mt-0.5 text-xs text-slate-500">
-                            Ref: {transaction.reference}
-                          </p>
-                        ) : null}
-                      </td>
-
-                      <td className="px-4 py-3">
-                        {transaction.booking ? (
-                          <Link
-                            href={`/admin/bookings/${transaction.booking.id}`}
-                            className="font-medium text-blue-700 hover:underline"
-                          >
-                            {transaction.booking
-                              .bookingDisplayCode ||
-                              transaction.booking
-                                .bookingReference}
-                          </Link>
-                        ) : transaction.tour ? (
-                          <span className="text-slate-700">
-                            {transaction.tour.title}
-                          </span>
-                        ) : (
-                          <span className="text-slate-400">
-                            -
-                          </span>
-                        )}
-                      </td>
-
-                      <td
-                        className={`whitespace-nowrap px-4 py-3 text-right font-bold ${
-                          incoming
-                            ? "text-emerald-700"
-                            : "text-red-700"
-                        }`}
+                    return (
+                      <tr
+                        key={
+                          transaction.id
+                        }
+                        className="hover:bg-slate-50"
                       >
-                        {incoming ? "+" : "-"}
-                        {money(
-                          Number(transaction.amount),
-                          transaction.currency,
-                        )}
-                      </td>
-                    </tr>
-                  );
-                })}
+                        <td className="whitespace-nowrap px-4 py-3 text-slate-600">
+                          {formatDate(
+                            transaction.transactionDate,
+                          )}
+                        </td>
+
+                        <td className="px-4 py-3">
+                          <span
+                            className={`inline-flex rounded-full px-2.5 py-1 text-xs font-semibold ${getTransactionBadge(
+                              transaction.type,
+                            )}`}
+                          >
+                            {enumLabel(
+                              transaction.type,
+                            )}
+                          </span>
+                        </td>
+
+                        <td className="px-4 py-3 font-medium text-slate-900">
+                          {
+                            transaction.bankAccount
+                              .name
+                          }
+                        </td>
+
+                        <td className="max-w-[280px] px-4 py-3">
+                          <p className="truncate text-slate-800">
+                            {transaction.description ||
+                              "-"}
+                          </p>
+
+                          {transaction.reference ? (
+                            <p className="mt-0.5 text-xs text-slate-500">
+                              Ref:{" "}
+                              {
+                                transaction.reference
+                              }
+                            </p>
+                          ) : null}
+                        </td>
+
+                        <td className="px-4 py-3">
+                          {transaction.booking ? (
+                            <Link
+                              href={`/admin/bookings/${transaction.booking.id}`}
+                              className="font-medium text-blue-700 hover:underline"
+                            >
+                              {transaction.booking.bookingDisplayCode ||
+                                transaction.booking.bookingReference}
+                            </Link>
+                          ) : transaction.tour ? (
+                            <span className="text-slate-700">
+                              {
+                                transaction.tour
+                                  .title
+                              }
+                            </span>
+                          ) : (
+                            <span className="text-slate-400">
+                              -
+                            </span>
+                          )}
+                        </td>
+
+                        <td
+                          className={`whitespace-nowrap px-4 py-3 text-right font-bold ${
+                            incoming
+                              ? "text-emerald-700"
+                              : "text-red-700"
+                          }`}
+                        >
+                          {incoming
+                            ? "+"
+                            : "-"}
+                          {money(
+                            Number(
+                              transaction.amount,
+                            ),
+                            transaction.currency,
+                          )}
+                        </td>
+                      </tr>
+                    );
+                  },
+                )}
               </tbody>
             </table>
           </div>
@@ -1391,38 +1823,62 @@ function CurrencyValues({
   empty: string;
   negative?: boolean;
 }) {
-  const entries = Object.entries(totals).sort(
-    ([currencyA], [currencyB]) =>
-      currencyA.localeCompare(currencyB),
-  );
+  const entries =
+    Object.entries(
+      totals,
+    ).sort(
+      (
+        [currencyA],
+        [currencyB],
+      ) =>
+        currencyA.localeCompare(
+          currencyB,
+        ),
+    );
 
-  if (entries.length === 0) {
-    return <EmptyValue text={empty} />;
+  if (
+    entries.length === 0
+  ) {
+    return (
+      <EmptyValue
+        text={empty}
+      />
+    );
   }
 
   return (
     <div className="space-y-1.5">
-      {entries.map(([currency, value]) => (
-        <div
-          key={currency}
-          className="flex items-baseline justify-between gap-3"
-        >
-          <span
-            className={`text-xl font-bold ${
-              negative
-                ? "text-red-700"
-                : "text-[#001F3F]"
-            }`}
+      {entries.map(
+        ([
+          currency,
+          value,
+        ]) => (
+          <div
+            key={currency}
+            className="flex items-baseline justify-between gap-3"
           >
-            {negative ? "-" : ""}
-            {money(value, currency)}
-          </span>
+            <span
+              className={`text-xl font-bold ${
+                negative
+                  ? "text-red-700"
+                  : "text-[#001F3F]"
+              }`}
+            >
+              {negative
+                ? "-"
+                : ""}
+              {money(
+                value,
+                currency,
+              )}
+            </span>
 
-          <span className="text-xs font-semibold text-slate-400">
-            {currency}
-          </span>
-        </div>
-      ))}
+            <span className="text-xs font-semibold text-slate-400">
+              {currency}
+            </span>
+          </div>
+        ),
+      )}
     </div>
   );
 }

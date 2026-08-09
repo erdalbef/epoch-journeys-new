@@ -7,6 +7,11 @@ import {
   RefundReason,
   RefundStatus,
 } from "@prisma/client";
+import {
+  FileText,
+  Upload,
+  X,
+} from "lucide-react";
 import { toast } from "sonner";
 
 type PaymentOption = {
@@ -33,15 +38,28 @@ type Props = {
   bankAccounts: BankAccountOption[];
 };
 
+const MAX_FILE_SIZE =
+  10 * 1024 * 1024;
+
+const ALLOWED_FILE_TYPES = [
+  "application/pdf",
+  "image/jpeg",
+  "image/png",
+  "image/webp",
+];
+
 function formatMoney(
   value: number,
   currency: string,
 ) {
-  return new Intl.NumberFormat("en-GB", {
-    style: "currency",
-    currency,
-    maximumFractionDigits: 2,
-  }).format(value);
+  return new Intl.NumberFormat(
+    "en-GB",
+    {
+      style: "currency",
+      currency,
+      maximumFractionDigits: 2,
+    },
+  ).format(value);
 }
 
 function formatDate(
@@ -53,15 +71,22 @@ function formatDate(
 
   const date = new Date(value);
 
-  if (Number.isNaN(date.getTime())) {
+  if (
+    Number.isNaN(
+      date.getTime(),
+    )
+  ) {
     return "Invalid date";
   }
 
-  return date.toLocaleDateString("en-GB", {
-    day: "2-digit",
-    month: "short",
-    year: "numeric",
-  });
+  return date.toLocaleDateString(
+    "en-GB",
+    {
+      day: "2-digit",
+      month: "short",
+      year: "numeric",
+    },
+  );
 }
 
 function formatEnumLabel(
@@ -70,22 +95,31 @@ function formatEnumLabel(
   return value
     .replaceAll("_", " ")
     .toLowerCase()
-    .replace(/\b\w/g, (letter) =>
-      letter.toUpperCase(),
+    .replace(
+      /\b\w/g,
+      (letter) =>
+        letter.toUpperCase(),
     );
 }
 
 const refundReasons =
-  Object.values(RefundReason);
+  Object.values(
+    RefundReason,
+  );
 
 const refundStatuses =
-  Object.values(RefundStatus).filter(
+  Object.values(
+    RefundStatus,
+  ).filter(
     (status) =>
-      status !== RefundStatus.CANCELLED,
+      status !==
+      RefundStatus.CANCELLED,
   );
 
 const paymentMethods =
-  Object.values(PaymentMethod);
+  Object.values(
+    PaymentMethod,
+  );
 
 export default function RefundForm({
   bookingId,
@@ -97,21 +131,29 @@ export default function RefundForm({
 }: Props) {
   const router = useRouter();
 
-  const [paymentId, setPaymentId] =
-    useState("");
+  const [
+    paymentId,
+    setPaymentId,
+  ] = useState("");
 
-  const [amount, setAmount] =
-    useState("");
+  const [
+    amount,
+    setAmount,
+  ] = useState("");
 
-  const [status, setStatus] =
-    useState<RefundStatus>(
-      RefundStatus.PENDING,
-    );
+  const [
+    status,
+    setStatus,
+  ] = useState<RefundStatus>(
+    RefundStatus.PENDING,
+  );
 
-  const [reason, setReason] =
-    useState<RefundReason>(
-      RefundReason.OTHER,
-    );
+  const [
+    reason,
+    setReason,
+  ] = useState<RefundReason>(
+    RefundReason.OTHER,
+  );
 
   const [
     reasonDetails,
@@ -123,22 +165,39 @@ export default function RefundForm({
     setBankAccountId,
   ] = useState("");
 
-  const [method, setMethod] =
-    useState<PaymentMethod>(
-      PaymentMethod.BANK_TRANSFER,
-    );
+  const [
+    method,
+    setMethod,
+  ] = useState<PaymentMethod>(
+    PaymentMethod.BANK_TRANSFER,
+  );
 
-  const [refundDate, setRefundDate] =
-    useState("");
+  const [
+    refundDate,
+    setRefundDate,
+  ] = useState("");
 
-  const [reference, setReference] =
-    useState("");
+  const [
+    reference,
+    setReference,
+  ] = useState("");
 
-  const [notes, setNotes] =
-    useState("");
+  const [
+    notes,
+    setNotes,
+  ] = useState("");
 
-  const [submitting, setSubmitting] =
-    useState(false);
+  const [
+    refundProof,
+    setRefundProof,
+  ] = useState<File | null>(
+    null,
+  );
+
+  const [
+    submitting,
+    setSubmitting,
+  ] = useState(false);
 
   const matchingBankAccounts =
     useMemo(
@@ -148,13 +207,17 @@ export default function RefundForm({
             account.currency ===
             currency,
         ),
-      [bankAccounts, currency],
+      [
+        bankAccounts,
+        currency,
+      ],
     );
 
   const selectedPayment =
     payments.find(
       (payment) =>
-        payment.id === paymentId,
+        payment.id ===
+        paymentId,
     );
 
   const amountNumber =
@@ -164,10 +227,46 @@ export default function RefundForm({
     Math.max(
       0,
       refundableAmount -
-        (Number.isFinite(amountNumber)
+        (Number.isFinite(
+          amountNumber,
+        )
           ? amountNumber
           : 0),
     );
+
+  function handleRefundProof(
+    file: File | null,
+  ) {
+    if (!file) {
+      setRefundProof(null);
+      return;
+    }
+
+    if (
+      !ALLOWED_FILE_TYPES.includes(
+        file.type,
+      )
+    ) {
+      toast.error(
+        "Only PDF, JPG, PNG and WEBP files are allowed.",
+      );
+
+      return;
+    }
+
+    if (
+      file.size >
+      MAX_FILE_SIZE
+    ) {
+      toast.error(
+        "Refund proof must be smaller than 10 MB.",
+      );
+
+      return;
+    }
+
+    setRefundProof(file);
+  }
 
   async function handleSubmit(
     event: React.FormEvent<HTMLFormElement>,
@@ -175,12 +274,15 @@ export default function RefundForm({
     event.preventDefault();
 
     if (
-      !Number.isFinite(amountNumber) ||
+      !Number.isFinite(
+        amountNumber,
+      ) ||
       amountNumber <= 0
     ) {
       toast.error(
         "Refund amount must be greater than zero.",
       );
+
       return;
     }
 
@@ -194,6 +296,7 @@ export default function RefundForm({
           currency,
         )}.`,
       );
+
       return;
     }
 
@@ -201,84 +304,140 @@ export default function RefundForm({
       toast.error(
         "Please select the bank or cash account for this refund.",
       );
+
       return;
     }
 
     if (
-      status === RefundStatus.PAID &&
+      status ===
+        RefundStatus.PAID &&
       !method
     ) {
       toast.error(
         "Payment method is required for a paid refund.",
       );
+
       return;
     }
 
     setSubmitting(true);
 
-    try {
-      const response = await fetch(
-        "/api/admin/refunds",
-        {
-          method: "POST",
+    const formData =
+      new FormData();
 
-          headers: {
-            "Content-Type":
-              "application/json",
-          },
+    formData.set(
+      "bookingId",
+      bookingId,
+    );
 
-          body: JSON.stringify({
-            bookingId,
-
-            paymentId:
-              paymentId || null,
-
-            bankAccountId,
-
-            amount:
-              amountNumber,
-
-            currency,
-
-            status,
-
-            method:
-              status ===
-              RefundStatus.PAID
-                ? method
-                : null,
-
-            reason,
-
-            reasonDetails:
-              reasonDetails.trim() ||
-              null,
-
-            refundDate:
-              refundDate || null,
-
-            reference:
-              reference.trim() ||
-              null,
-
-            notes:
-              notes.trim() || null,
-          }),
-        },
+    if (paymentId) {
+      formData.set(
+        "paymentId",
+        paymentId,
       );
+    }
+
+    formData.set(
+      "bankAccountId",
+      bankAccountId,
+    );
+
+    formData.set(
+      "amount",
+      String(amountNumber),
+    );
+
+    formData.set(
+      "currency",
+      currency,
+    );
+
+    formData.set(
+      "status",
+      status,
+    );
+
+    if (
+      status ===
+      RefundStatus.PAID
+    ) {
+      formData.set(
+        "method",
+        method,
+      );
+    }
+
+    formData.set(
+      "reason",
+      reason,
+    );
+
+    if (
+      reasonDetails.trim()
+    ) {
+      formData.set(
+        "reasonDetails",
+        reasonDetails.trim(),
+      );
+    }
+
+    if (refundDate) {
+      formData.set(
+        "refundDate",
+        refundDate,
+      );
+    }
+
+    if (reference.trim()) {
+      formData.set(
+        "reference",
+        reference.trim(),
+      );
+    }
+
+    if (notes.trim()) {
+      formData.set(
+        "notes",
+        notes.trim(),
+      );
+    }
+
+    if (refundProof) {
+      formData.set(
+        "refundProof",
+        refundProof,
+      );
+    }
+
+    try {
+      const response =
+        await fetch(
+          "/api/admin/refunds",
+          {
+            method:
+              "POST",
+            body:
+              formData,
+          },
+        );
 
       const data =
-        (await response.json()) as {
+        (await response
+          .json()
+          .catch(() => null)) as {
           success?: boolean;
           error?: string;
-        };
+          financeDocument?: {
+            id: string;
+          } | null;
+        } | null;
 
       if (
         !response.ok ||
-        !data.success
+        !data?.success
       ) {
         throw new Error(
-          data.error ||
+          data?.error ||
             "Failed to create refund.",
         );
       }
@@ -288,30 +447,40 @@ export default function RefundForm({
         RefundStatus.PAID
       ) {
         toast.success(
-          "Refund recorded and posted to the Bank Ledger.",
+          refundProof
+            ? "Refund recorded, posted to the Bank Ledger, and proof saved in Finance Documents."
+            : "Refund recorded and posted to the Bank Ledger.",
         );
       } else {
         toast.success(
-          "Refund record created successfully.",
+          refundProof
+            ? "Refund record created and supporting document saved in Finance Documents."
+            : "Refund record created successfully.",
         );
       }
 
       setPaymentId("");
       setAmount("");
+
       setStatus(
         RefundStatus.PENDING,
       );
+
       setReason(
         RefundReason.OTHER,
       );
+
       setReasonDetails("");
       setBankAccountId("");
+
       setMethod(
         PaymentMethod.BANK_TRANSFER,
       );
+
       setRefundDate("");
       setReference("");
       setNotes("");
+      setRefundProof(null);
 
       router.refresh();
     } catch (error) {
@@ -334,18 +503,20 @@ export default function RefundForm({
 
         <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50 p-4">
           <p className="text-sm text-slate-600">
-            No customer payment has
-            been received for this
-            booking, so there is
-            currently nothing to
-            refund.
+            No customer payment
+            has been received for
+            this booking, so there
+            is currently nothing
+            to refund.
           </p>
         </div>
       </section>
     );
   }
 
-  if (refundableAmount <= 0) {
+  if (
+    refundableAmount <= 0
+  ) {
     return (
       <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
         <h2 className="text-lg font-semibold text-slate-900">
@@ -375,10 +546,11 @@ export default function RefundForm({
         </h2>
 
         <p className="mt-1 text-sm text-slate-500">
-          Create a partial or full
-          customer refund while
-          preserving the original
-          payment history.
+          Create a partial or
+          full customer refund
+          while preserving the
+          original payment
+          history.
         </p>
       </div>
 
@@ -410,11 +582,17 @@ export default function RefundForm({
       </div>
 
       <form
-        onSubmit={handleSubmit}
+        onSubmit={
+          handleSubmit
+        }
         className="mt-5 space-y-5"
       >
         <div>
-          <label className={labelClass}>
+          <label
+            className={
+              labelClass
+            }
+          >
             Original Payment
           </label>
 
@@ -422,20 +600,28 @@ export default function RefundForm({
             value={paymentId}
             onChange={(event) =>
               setPaymentId(
-                event.target.value,
+                event.target
+                  .value,
               )
             }
-            className={inputClass}
+            className={
+              inputClass
+            }
           >
             <option value="">
-              General booking refund
+              General booking
+              refund
             </option>
 
             {payments.map(
               (payment) => (
                 <option
-                  key={payment.id}
-                  value={payment.id}
+                  key={
+                    payment.id
+                  }
+                  value={
+                    payment.id
+                  }
                 >
                   {formatMoney(
                     payment.amount,
@@ -466,40 +652,54 @@ export default function RefundForm({
             </p>
           ) : (
             <p className="mt-1.5 text-xs text-slate-500">
-              Optional. Leave blank
-              when the refund applies
-              generally to the
-              booking rather than one
-              specific receipt.
+              Optional. Leave
+              blank when the refund
+              applies generally to
+              the booking rather
+              than one specific
+              receipt.
             </p>
           )}
         </div>
 
         <div className="grid gap-4 md:grid-cols-2">
           <div>
-            <label className={labelClass}>
+            <label
+              className={
+                labelClass
+              }
+            >
               Refund Amount *
             </label>
 
             <input
               type="number"
               min="0.01"
-              max={refundableAmount}
+              max={
+                refundableAmount
+              }
               step="0.01"
               required
               value={amount}
               onChange={(event) =>
                 setAmount(
-                  event.target.value,
+                  event.target
+                    .value,
                 )
               }
-              className={inputClass}
+              className={
+                inputClass
+              }
               placeholder="0.00"
             />
           </div>
 
           <div>
-            <label className={labelClass}>
+            <label
+              className={
+                labelClass
+              }
+            >
               Currency
             </label>
 
@@ -511,7 +711,11 @@ export default function RefundForm({
           </div>
 
           <div>
-            <label className={labelClass}>
+            <label
+              className={
+                labelClass
+              }
+            >
               Refund Reason *
             </label>
 
@@ -523,7 +727,9 @@ export default function RefundForm({
                     .value as RefundReason,
                 )
               }
-              className={inputClass}
+              className={
+                inputClass
+              }
             >
               {refundReasons.map(
                 (item) => (
@@ -541,7 +747,11 @@ export default function RefundForm({
           </div>
 
           <div>
-            <label className={labelClass}>
+            <label
+              className={
+                labelClass
+              }
+            >
               Refund Status *
             </label>
 
@@ -553,7 +763,9 @@ export default function RefundForm({
                     .value as RefundStatus,
                 )
               }
-              className={inputClass}
+              className={
+                inputClass
+              }
             >
               {refundStatuses.map(
                 (item) => (
@@ -571,19 +783,29 @@ export default function RefundForm({
           </div>
 
           <div>
-            <label className={labelClass}>
-              Bank / Cash Account *
+            <label
+              className={
+                labelClass
+              }
+            >
+              Bank / Cash
+              Account *
             </label>
 
             <select
-              value={bankAccountId}
+              value={
+                bankAccountId
+              }
               onChange={(event) =>
                 setBankAccountId(
-                  event.target.value,
+                  event.target
+                    .value,
                 )
               }
               required
-              className={inputClass}
+              className={
+                inputClass
+              }
             >
               <option value="">
                 Select account...
@@ -592,12 +814,20 @@ export default function RefundForm({
               {matchingBankAccounts.map(
                 (account) => (
                   <option
-                    key={account.id}
-                    value={account.id}
+                    key={
+                      account.id
+                    }
+                    value={
+                      account.id
+                    }
                   >
-                    {account.name}
+                    {
+                      account.name
+                    }
                     {" · "}
-                    {account.currency}
+                    {
+                      account.currency
+                    }
                   </option>
                 ),
               )}
@@ -606,15 +836,20 @@ export default function RefundForm({
             {matchingBankAccounts.length ===
               0 && (
               <p className="mt-1.5 text-xs text-amber-700">
-                No active {currency}
-                bank/cash account is
+                No active{" "}
+                {currency} bank/cash
+                account is
                 available.
               </p>
             )}
           </div>
 
           <div>
-            <label className={labelClass}>
+            <label
+              className={
+                labelClass
+              }
+            >
               Payment Method
             </label>
 
@@ -630,7 +865,9 @@ export default function RefundForm({
                 status !==
                 RefundStatus.PAID
               }
-              className={inputClass}
+              className={
+                inputClass
+              }
             >
               {paymentMethods.map(
                 (item) => (
@@ -657,7 +894,11 @@ export default function RefundForm({
           </div>
 
           <div>
-            <label className={labelClass}>
+            <label
+              className={
+                labelClass
+              }
+            >
               Refund Date
             </label>
 
@@ -666,15 +907,22 @@ export default function RefundForm({
               value={refundDate}
               onChange={(event) =>
                 setRefundDate(
-                  event.target.value,
+                  event.target
+                    .value,
                 )
               }
-              className={inputClass}
+              className={
+                inputClass
+              }
             />
           </div>
 
           <div>
-            <label className={labelClass}>
+            <label
+              className={
+                labelClass
+              }
+            >
               Reference
             </label>
 
@@ -682,35 +930,51 @@ export default function RefundForm({
               value={reference}
               onChange={(event) =>
                 setReference(
-                  event.target.value,
+                  event.target
+                    .value,
                 )
               }
-              className={inputClass}
+              className={
+                inputClass
+              }
               placeholder="Bank transfer / refund reference"
             />
           </div>
         </div>
 
         <div>
-          <label className={labelClass}>
+          <label
+            className={
+              labelClass
+            }
+          >
             Reason Details
           </label>
 
           <textarea
             rows={3}
-            value={reasonDetails}
+            value={
+              reasonDetails
+            }
             onChange={(event) =>
               setReasonDetails(
-                event.target.value,
+                event.target
+                  .value,
               )
             }
-            className={textareaClass}
+            className={
+              textareaClass
+            }
             placeholder="Explain the reason for the refund..."
           />
         </div>
 
         <div>
-          <label className={labelClass}>
+          <label
+            className={
+              labelClass
+            }
+          >
             Internal Notes
           </label>
 
@@ -719,12 +983,104 @@ export default function RefundForm({
             value={notes}
             onChange={(event) =>
               setNotes(
-                event.target.value,
+                event.target
+                  .value,
               )
             }
-            className={textareaClass}
+            className={
+              textareaClass
+            }
             placeholder="Internal refund notes..."
           />
+        </div>
+
+        {/* ============================================= */}
+        {/* REFUND PROOF */}
+        {/* ============================================= */}
+
+        <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+          <div className="flex items-start gap-3">
+            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-white text-[#8B0000] shadow-sm">
+              <FileText className="h-4 w-4" />
+            </div>
+
+            <div>
+              <p className="text-sm font-bold text-slate-900">
+                Refund Proof
+              </p>
+
+              <p className="mt-1 text-xs leading-5 text-slate-500">
+                Optional. Upload a
+                bank confirmation,
+                credit note, refund
+                receipt or other
+                supporting document.
+                It will also appear
+                in Finance Documents.
+              </p>
+            </div>
+          </div>
+
+          {!refundProof ? (
+            <label className="mt-4 flex cursor-pointer flex-col items-center justify-center rounded-xl border-2 border-dashed border-slate-300 bg-white p-5 text-center transition hover:border-[#001F3F]/40">
+              <Upload className="h-5 w-5 text-slate-400" />
+
+              <span className="mt-2 text-sm font-semibold text-slate-700">
+                Select refund
+                document
+              </span>
+
+              <span className="mt-1 text-xs text-slate-500">
+                PDF, JPG, PNG or
+                WEBP · Maximum 10 MB
+              </span>
+
+              <input
+                type="file"
+                accept=".pdf,.jpg,.jpeg,.png,.webp,application/pdf,image/jpeg,image/png,image/webp"
+                onChange={(event) =>
+                  handleRefundProof(
+                    event.target
+                      .files?.[0] ??
+                      null,
+                  )
+                }
+                className="sr-only"
+              />
+            </label>
+          ) : (
+            <div className="mt-4 flex items-center justify-between gap-4 rounded-xl border border-slate-200 bg-white p-4">
+              <div className="min-w-0">
+                <p className="truncate text-sm font-semibold text-slate-900">
+                  {
+                    refundProof.name
+                  }
+                </p>
+
+                <p className="mt-1 text-xs text-slate-500">
+                  {(
+                    refundProof.size /
+                    1024 /
+                    1024
+                  ).toFixed(2)}{" "}
+                  MB
+                </p>
+              </div>
+
+              <button
+                type="button"
+                onClick={() =>
+                  setRefundProof(
+                    null,
+                  )
+                }
+                className="inline-flex h-9 w-9 items-center justify-center rounded-lg text-slate-400 transition hover:bg-red-50 hover:text-[#8B0000]"
+                title="Remove file"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+          )}
         </div>
 
         {status ===
@@ -735,8 +1091,8 @@ export default function RefundForm({
             </p>
 
             <p className="mt-1 text-xs leading-5 text-amber-800">
-              Saving this refund as
-              Paid creates a
+              Saving this refund
+              as Paid creates a
               <strong>
                 {" "}
                 REFUND / OUT

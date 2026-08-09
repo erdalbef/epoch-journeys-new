@@ -2,12 +2,23 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { FileText, Upload, X } from "lucide-react";
+import { toast } from "sonner";
 
 type BankAccount = {
   id: string;
   name: string;
   currency: string;
 };
+
+const MAX_FILE_SIZE = 10 * 1024 * 1024;
+
+const ALLOWED_FILE_TYPES = [
+  "application/pdf",
+  "image/jpeg",
+  "image/png",
+  "image/webp",
+];
 
 export default function SupplierPayableActions({
   payableId,
@@ -27,71 +38,173 @@ export default function SupplierPayableActions({
   const router = useRouter();
 
   const [loading, setLoading] = useState(false);
-  const [amount, setAmount] = useState(balance > 0 ? balance.toFixed(2) : "");
+  const [amount, setAmount] = useState(
+    balance > 0 ? balance.toFixed(2) : "",
+  );
   const [bankAccountId, setBankAccountId] = useState("");
   const [method, setMethod] = useState("BANK_TRANSFER");
   const [reference, setReference] = useState("");
+  const [notes, setNotes] = useState("");
+  const [paymentProof, setPaymentProof] = useState<File | null>(
+    null,
+  );
 
-  async function changeApproval(action: "submit" | "approve" | "reject" | "cancel") {
+  async function changeApproval(
+    action: "submit" | "approve" | "reject" | "cancel",
+  ) {
     setLoading(true);
 
     try {
-      const response = await fetch(`/api/admin/supplier-payables/${payableId}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action }),
-      });
+      const response = await fetch(
+        `/api/admin/supplier-payables/${payableId}`,
+        {
+          method: "PATCH",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ action }),
+        },
+      );
 
-      const data = (await response.json()) as { error?: string };
+      const data = (await response.json()) as {
+        error?: string;
+      };
 
-      if (!response.ok) throw new Error(data.error || "Update failed.");
+      if (!response.ok) {
+        throw new Error(data.error || "Update failed.");
+      }
 
       router.refresh();
     } catch (error) {
-      alert(error instanceof Error ? error.message : "Update failed.");
+      toast.error(
+        error instanceof Error ? error.message : "Update failed.",
+      );
     } finally {
       setLoading(false);
     }
   }
 
-  async function recordPayment(event: React.FormEvent) {
+  function handlePaymentProof(file: File | null) {
+    if (!file) {
+      setPaymentProof(null);
+      return;
+    }
+
+    if (!ALLOWED_FILE_TYPES.includes(file.type)) {
+      toast.error(
+        "Only PDF, JPG, PNG and WEBP files are allowed.",
+      );
+      return;
+    }
+
+    if (file.size > MAX_FILE_SIZE) {
+      toast.error(
+        "Payment proof must be smaller than 10 MB.",
+      );
+      return;
+    }
+
+    setPaymentProof(file);
+  }
+
+  async function recordPayment(
+    event: React.FormEvent<HTMLFormElement>,
+  ) {
     event.preventDefault();
+
+    if (loading) {
+      return;
+    }
+
+    const numericAmount = Number(amount);
+
+    if (!Number.isFinite(numericAmount) || numericAmount <= 0) {
+      toast.error("Payment amount must be greater than zero.");
+      return;
+    }
+
+    if (numericAmount > balance) {
+      toast.error(
+        "Payment cannot exceed the outstanding balance.",
+      );
+      return;
+    }
+
+    if (!bankAccountId) {
+      toast.error("Please select the bank or cash account.");
+      return;
+    }
+
     setLoading(true);
+
+    const formData = new FormData();
+
+    formData.set("amount", String(numericAmount));
+    formData.set("bankAccountId", bankAccountId);
+    formData.set("method", method);
+
+    if (reference.trim()) {
+      formData.set("reference", reference.trim());
+    }
+
+    if (notes.trim()) {
+      formData.set("notes", notes.trim());
+    }
+
+    if (paymentProof) {
+      formData.set("paymentProof", paymentProof);
+    }
 
     try {
       const response = await fetch(
         `/api/admin/supplier-payables/${payableId}/payments`,
         {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            amount: Number(amount),
-            bankAccountId: bankAccountId || null,
-            method,
-            reference: reference.trim() || null,
-          }),
+          body: formData,
         },
       );
 
-      const data = (await response.json()) as { error?: string };
+      const data = (await response
+        .json()
+        .catch(() => null)) as {
+        success?: boolean;
+        error?: string;
+      } | null;
 
-      if (!response.ok) throw new Error(data.error || "Payment failed.");
+      if (!response.ok || !data?.success) {
+        throw new Error(data?.error || "Payment failed.");
+      }
+
+      toast.success(
+        paymentProof
+          ? "Supplier payment recorded and proof saved in Finance Documents."
+          : "Supplier payment recorded successfully.",
+      );
 
       setReference("");
+      setNotes("");
+      setPaymentProof(null);
+
       router.refresh();
     } catch (error) {
-      alert(error instanceof Error ? error.message : "Payment failed.");
+      toast.error(
+        error instanceof Error ? error.message : "Payment failed.",
+      );
     } finally {
       setLoading(false);
     }
   }
 
   return (
-    <div className="space-y-5">
+    <div className="space-y-6">
       <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-        <h2 className="font-bold text-slate-950">Approval controls</h2>
+        <h2 className="font-bold text-slate-950">
+          Approval controls
+        </h2>
+
         <p className="mt-1 text-sm text-slate-500">
-          A payable must be approved before supplier payments can be recorded.
+          A payable must be approved before supplier payments can be
+          recorded.
         </p>
 
         <div className="mt-4 flex flex-wrap gap-2">
@@ -111,6 +224,7 @@ export default function SupplierPayableActions({
                 label="Approve"
                 primary
               />
+
               <Button
                 disabled={loading}
                 onClick={() => changeApproval("reject")}
@@ -119,7 +233,9 @@ export default function SupplierPayableActions({
             </>
           )}
 
-          {!["CANCELLED", "REJECTED"].includes(approvalStatus) &&
+          {!["CANCELLED", "REJECTED"].includes(
+            approvalStatus,
+          ) &&
             paymentStatus !== "PAID" && (
               <Button
                 disabled={loading}
@@ -139,18 +255,23 @@ export default function SupplierPayableActions({
             onSubmit={recordPayment}
             className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm"
           >
-            <h2 className="font-bold text-slate-950">Record supplier payment</h2>
-            <p className="mt-1 text-sm text-slate-500">
-              Partial payments are supported. Current balance: {currency}{" "}
-              {balance.toFixed(2)}. Recording the payment also posts the matching
-              cash-out entry to the Bank Ledger.
+            <h2 className="font-bold text-slate-950">
+              Record supplier payment
+            </h2>
+
+            <p className="mt-1 text-sm leading-6 text-slate-500">
+              Partial payments are supported. Current balance:{" "}
+              <strong>
+                {currency} {balance.toFixed(2)}
+              </strong>
+              . Recording the payment also posts the matching cash-out
+              entry to the Bank Ledger.
             </p>
 
-            <div className="mt-4 grid gap-3">
+            <div className="mt-5 grid gap-4">
               <label>
-                <span className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500">
-                  Amount
-                </span>
+                <span className={labelClass}>Amount</span>
+
                 <input
                   type="number"
                   min="0.01"
@@ -158,41 +279,52 @@ export default function SupplierPayableActions({
                   step="0.01"
                   required
                   value={amount}
-                  onChange={(event) => setAmount(event.target.value)}
-                  className="h-10 w-full rounded-xl border border-slate-200 px-3 text-sm"
+                  onChange={(event) =>
+                    setAmount(event.target.value)
+                  }
+                  className={inputClass}
                 />
               </label>
 
               <label>
-                <span className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500">
-                  Method
-                </span>
+                <span className={labelClass}>Method</span>
+
                 <select
                   value={method}
-                  onChange={(event) => setMethod(event.target.value)}
-                  className="h-10 w-full rounded-xl border border-slate-200 px-3 text-sm"
+                  onChange={(event) =>
+                    setMethod(event.target.value)
+                  }
+                  className={inputClass}
                 >
-                  {["BANK_TRANSFER", "STRIPE", "PAYPAL", "CASH", "OTHER"].map(
-                    (item) => (
-                      <option key={item} value={item}>
-                        {item.replaceAll("_", " ")}
-                      </option>
-                    ),
-                  )}
+                  {[
+                    "BANK_TRANSFER",
+                    "STRIPE",
+                    "PAYPAL",
+                    "CASH",
+                    "OTHER",
+                  ].map((item) => (
+                    <option key={item} value={item}>
+                      {item.replaceAll("_", " ")}
+                    </option>
+                  ))}
                 </select>
               </label>
 
               <label>
-                <span className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500">
-                  Bank account
-                </span>
+                <span className={labelClass}>Bank account</span>
+
                 <select
                   required
                   value={bankAccountId}
-                  onChange={(event) => setBankAccountId(event.target.value)}
-                  className="h-10 w-full rounded-xl border border-slate-200 px-3 text-sm"
+                  onChange={(event) =>
+                    setBankAccountId(event.target.value)
+                  }
+                  className={inputClass}
                 >
-                  <option value="">Select bank / cash account...</option>
+                  <option value="">
+                    Select bank / cash account...
+                  </option>
+
                   {bankAccounts.map((account) => (
                     <option key={account.id} value={account.id}>
                       {account.name} · {account.currency}
@@ -202,21 +334,101 @@ export default function SupplierPayableActions({
               </label>
 
               <label>
-                <span className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500">
-                  Reference
-                </span>
+                <span className={labelClass}>Reference</span>
+
                 <input
                   value={reference}
-                  onChange={(event) => setReference(event.target.value)}
-                  className="h-10 w-full rounded-xl border border-slate-200 px-3 text-sm"
+                  onChange={(event) =>
+                    setReference(event.target.value)
+                  }
+                  className={inputClass}
                   placeholder="Bank transfer reference..."
+                />
+              </label>
+
+              <label>
+                <span className={labelClass}>Notes</span>
+
+                <textarea
+                  value={notes}
+                  onChange={(event) => setNotes(event.target.value)}
+                  rows={3}
+                  className={textareaClass}
+                  placeholder="Optional payment notes..."
                 />
               </label>
             </div>
 
+            <div className="mt-5 rounded-2xl border border-slate-200 bg-slate-50 p-4">
+              <div className="flex items-start gap-3">
+                <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-white text-[#8B0000]">
+                  <FileText className="h-4 w-4" />
+                </div>
+
+                <div>
+                  <p className="text-sm font-bold text-slate-900">
+                    Payment proof
+                  </p>
+
+                  <p className="mt-1 text-xs leading-5 text-slate-500">
+                    Optional. Upload a bank transfer confirmation,
+                    receipt or other payment proof. It will also appear
+                    in Finance Documents.
+                  </p>
+                </div>
+              </div>
+
+              {!paymentProof ? (
+                <label className="mt-4 flex cursor-pointer flex-col items-center justify-center rounded-xl border-2 border-dashed border-slate-300 bg-white p-5 text-center hover:border-[#001F3F]/40">
+                  <Upload className="h-5 w-5 text-slate-400" />
+
+                  <span className="mt-2 text-sm font-semibold text-slate-700">
+                    Select payment proof
+                  </span>
+
+                  <span className="mt-1 text-xs text-slate-500">
+                    PDF, JPG, PNG or WEBP · Maximum 10 MB
+                  </span>
+
+                  <input
+                    type="file"
+                    accept=".pdf,.jpg,.jpeg,.png,.webp,application/pdf,image/jpeg,image/png,image/webp"
+                    onChange={(event) =>
+                      handlePaymentProof(
+                        event.target.files?.[0] ?? null,
+                      )
+                    }
+                    className="sr-only"
+                  />
+                </label>
+              ) : (
+                <div className="mt-4 flex items-center justify-between gap-4 rounded-xl border border-slate-200 bg-white p-4">
+                  <div className="min-w-0">
+                    <p className="truncate text-sm font-semibold text-slate-900">
+                      {paymentProof.name}
+                    </p>
+
+                    <p className="mt-1 text-xs text-slate-500">
+                      {(paymentProof.size / 1024 / 1024).toFixed(2)}{" "}
+                      MB
+                    </p>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => setPaymentProof(null)}
+                    className="inline-flex h-9 w-9 items-center justify-center rounded-lg text-slate-400 hover:bg-red-50 hover:text-[#8B0000]"
+                  >
+                    <X className="h-4 w-4" />
+                  </button>
+                </div>
+              )}
+            </div>
+
             <button
+              type="submit"
               disabled={loading}
-              className="mt-4 rounded-xl bg-[#8B0000] px-5 py-2.5 text-sm font-semibold text-white disabled:opacity-50"
+              className="mt-5 rounded-xl bg-[#8B0000] px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-[#760000] disabled:opacity-50"
             >
               {loading ? "Recording..." : "Record Payment"}
             </button>
@@ -256,3 +468,12 @@ function Button({
     </button>
   );
 }
+
+const labelClass =
+  "mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500";
+
+const inputClass =
+  "h-10 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm outline-none transition focus:border-[#001F3F]/40";
+
+const textareaClass =
+  "w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm outline-none transition focus:border-[#001F3F]/40";

@@ -1,0 +1,8 @@
+Add this FinanceLink to your current Finance Center navigation:
+
+<FinanceLink
+  href="/admin/finance/reports"
+  label="Reports"
+/>
+
+Recommended placement: near Profitability / Documents.

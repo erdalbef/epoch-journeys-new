@@ -1,22 +1,54 @@
 import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
+import { revalidatePath } from "next/cache";
 
 import {
+  FinanceDocumentType,
   PaymentMethod,
   RefundReason,
   RefundStatus,
   Role,
 } from "@prisma/client";
 
+import { del, put } from "@vercel/blob";
+
 import { authOptions } from "@/lib/authOptions";
 import { db } from "@/lib/db";
+
+const MAX_FILE_SIZE =
+  10 * 1024 * 1024;
+
+const ALLOWED_FILE_TYPES =
+  new Set([
+    "application/pdf",
+    "image/jpeg",
+    "image/png",
+    "image/webp",
+  ]);
+
+function stringValue(
+  value: FormDataEntryValue | null,
+) {
+  if (
+    typeof value !== "string"
+  ) {
+    return null;
+  }
+
+  const trimmed =
+    value.trim();
+
+  return trimmed || null;
+}
 
 function isValidPaymentMethod(
   value: string,
 ): value is PaymentMethod {
   return Object.values(
     PaymentMethod,
-  ).includes(value as PaymentMethod);
+  ).includes(
+    value as PaymentMethod,
+  );
 }
 
 function isValidRefundReason(
@@ -24,7 +56,9 @@ function isValidRefundReason(
 ): value is RefundReason {
   return Object.values(
     RefundReason,
-  ).includes(value as RefundReason);
+  ).includes(
+    value as RefundReason,
+  );
 }
 
 function isValidRefundStatus(
@@ -32,13 +66,37 @@ function isValidRefundStatus(
 ): value is RefundStatus {
   return Object.values(
     RefundStatus,
-  ).includes(value as RefundStatus);
+  ).includes(
+    value as RefundStatus,
+  );
+}
+
+function sanitizeFileName(
+  fileName: string,
+) {
+  return fileName
+    .normalize("NFKD")
+    .replace(/\s+/g, "-")
+    .replace(
+      /[^a-zA-Z0-9._-]/g,
+      "",
+    )
+    .replace(/-+/g, "-")
+    .slice(0, 150);
 }
 
 export async function POST(
   request: Request,
 ) {
+  let uploadedBlobUrl:
+    | string
+    | null = null;
+
   try {
+    // ======================================================
+    // AUTHORIZATION
+    // ======================================================
+
     const session =
       await getServerSession(
         authOptions,
@@ -46,11 +104,13 @@ export async function POST(
 
     if (
       !session?.user?.id ||
-      session.user.role !== Role.ADMIN
+      session.user.role !==
+        Role.ADMIN
     ) {
       return NextResponse.json(
         {
-          error: "Unauthorized",
+          error:
+            "Unauthorized",
         },
         {
           status: 401,
@@ -58,92 +118,106 @@ export async function POST(
       );
     }
 
-    const body =
-      (await request.json()) as {
-        bookingId?: string;
-        paymentId?: string | null;
+    // ======================================================
+    // FORM DATA
+    // ======================================================
 
-        bankAccountId?: string;
-
-        amount?: number;
-        currency?: string;
-
-        status?: string;
-
-        method?: string | null;
-
-        reason?: string;
-        reasonDetails?: string | null;
-
-        refundDate?: string | null;
-
-        reference?: string | null;
-        notes?: string | null;
-      };
+    const formData =
+      await request.formData();
 
     const bookingId =
-      body.bookingId?.trim();
+      stringValue(
+        formData.get(
+          "bookingId",
+        ),
+      );
 
     const paymentId =
-      body.paymentId?.trim() ||
-      null;
+      stringValue(
+        formData.get(
+          "paymentId",
+        ),
+      );
 
     const bankAccountId =
-      body.bankAccountId?.trim();
+      stringValue(
+        formData.get(
+          "bankAccountId",
+        ),
+      );
 
-    const amount =
-      Number(body.amount);
+    const amountRaw =
+      stringValue(
+        formData.get(
+          "amount",
+        ),
+      );
 
     const currency =
-      body.currency
-        ?.trim()
-        .toUpperCase() ||
+      stringValue(
+        formData.get(
+          "currency",
+        ),
+      )?.toUpperCase() ||
       "EUR";
 
-    const status =
-      body.status &&
-      isValidRefundStatus(
-        body.status,
-      )
-        ? body.status
-        : RefundStatus.PENDING;
+    const statusRaw =
+      stringValue(
+        formData.get(
+          "status",
+        ),
+      );
 
-    const reason =
-      body.reason &&
-      isValidRefundReason(
-        body.reason,
-      )
-        ? body.reason
-        : RefundReason.OTHER;
+    const methodRaw =
+      stringValue(
+        formData.get(
+          "method",
+        ),
+      );
 
-    const method =
-      body.method &&
-      isValidPaymentMethod(
-        body.method,
-      )
-        ? body.method
-        : null;
+    const reasonRaw =
+      stringValue(
+        formData.get(
+          "reason",
+        ),
+      );
 
     const reasonDetails =
-      body.reasonDetails
-        ?.trim() ||
-      null;
+      stringValue(
+        formData.get(
+          "reasonDetails",
+        ),
+      );
+
+    const refundDateRaw =
+      stringValue(
+        formData.get(
+          "refundDate",
+        ),
+      );
 
     const reference =
-      body.reference
-        ?.trim() ||
-      null;
+      stringValue(
+        formData.get(
+          "reference",
+        ),
+      );
 
     const notes =
-      body.notes?.trim() ||
-      null;
+      stringValue(
+        formData.get(
+          "notes",
+        ),
+      );
 
-    const refundDate =
-      body.refundDate
-        ? new Date(
-            body.refundDate,
-          )
-        : null;
+    const refundProof =
+      formData.get(
+        "refundProof",
+      );
+
+    // ======================================================
+    // BASIC VALIDATION
+    // ======================================================
 
     if (!bookingId) {
       return NextResponse.json(
@@ -157,11 +231,11 @@ export async function POST(
       );
     }
 
-    if (!bankAccountId) {
+    if (!amountRaw) {
       return NextResponse.json(
         {
           error:
-            "Bank or cash account is required.",
+            "Refund amount is required.",
         },
         {
           status: 400,
@@ -169,8 +243,13 @@ export async function POST(
       );
     }
 
+    const amount =
+      Number(amountRaw);
+
     if (
-      !Number.isFinite(amount) ||
+      !Number.isFinite(
+        amount,
+      ) ||
       amount <= 0
     ) {
       return NextResponse.json(
@@ -184,16 +263,43 @@ export async function POST(
       );
     }
 
-    if (
-      refundDate &&
-      Number.isNaN(
-        refundDate.getTime(),
+    const status =
+      statusRaw &&
+      isValidRefundStatus(
+        statusRaw,
       )
+        ? statusRaw
+        : RefundStatus.PENDING;
+
+    const reason =
+      reasonRaw &&
+      isValidRefundReason(
+        reasonRaw,
+      )
+        ? reasonRaw
+        : RefundReason.OTHER;
+
+    const method =
+      methodRaw &&
+      isValidPaymentMethod(
+        methodRaw,
+      )
+        ? methodRaw
+        : null;
+
+    // ======================================================
+    // PAID REFUND REQUIREMENTS
+    // ======================================================
+
+    if (
+      status ===
+        RefundStatus.PAID &&
+      !bankAccountId
     ) {
       return NextResponse.json(
         {
           error:
-            "Invalid refund date.",
+            "Bank or cash account is required when the refund is paid.",
         },
         {
           status: 400,
@@ -201,26 +307,86 @@ export async function POST(
       );
     }
 
+    if (
+      status ===
+        RefundStatus.PAID &&
+      !method
+    ) {
+      return NextResponse.json(
+        {
+          error:
+            "Payment method is required when the refund is paid.",
+        },
+        {
+          status: 400,
+        },
+      );
+    }
+
+    // ======================================================
+    // REFUND DATE
+    // ======================================================
+
+    let refundDate:
+      | Date
+      | null = null;
+
+    if (refundDateRaw) {
+      refundDate =
+        new Date(
+          `${refundDateRaw}T12:00:00.000Z`,
+        );
+
+      if (
+        Number.isNaN(
+          refundDate.getTime(),
+        )
+      ) {
+        return NextResponse.json(
+          {
+            error:
+              "Invalid refund date.",
+          },
+          {
+            status: 400,
+          },
+        );
+      }
+    }
+
+    // ======================================================
+    // BOOKING
+    // ======================================================
+
     const booking =
-      await db.booking.findUnique({
-        where: {
-          id: bookingId,
+      await db.booking.findUnique(
+        {
+          where: {
+            id: bookingId,
+          },
+
+          select: {
+            id: true,
+
+            bookingReference:
+              true,
+
+            bookingDisplayCode:
+              true,
+
+            currency: true,
+            amountPaid: true,
+
+            tourId: true,
+
+            departureDateId:
+              true,
+
+            tourTitleSnapshot:
+              true,
+          },
         },
-
-        select: {
-          id: true,
-          bookingReference: true,
-          bookingDisplayCode: true,
-          currency: true,
-
-          amountPaid: true,
-
-          tourId: true,
-          departureDateId: true,
-
-          tourTitleSnapshot: true,
-        },
-      });
+      );
 
     if (!booking) {
       return NextResponse.json(
@@ -249,63 +415,71 @@ export async function POST(
       );
     }
 
-    const bankAccount =
-      await db.bankAccount.findUnique(
-        {
-          where: {
-            id:
-              bankAccountId,
-          },
-
-          select: {
-            id: true,
-            currency: true,
-            isActive: true,
-          },
-        },
-      );
+    // ======================================================
+    // BANK ACCOUNT
+    //
+    // Only PAID refunds require an account because only
+    // PAID refunds create actual cash movement.
+    // ======================================================
 
     if (
-      !bankAccount ||
-      !bankAccount.isActive
+      status ===
+        RefundStatus.PAID &&
+      bankAccountId
     ) {
-      return NextResponse.json(
-        {
-          error:
-            "Selected bank account is not available.",
-        },
-        {
-          status: 400,
-        },
-      );
+      const bankAccount =
+        await db.bankAccount.findUnique(
+          {
+            where: {
+              id:
+                bankAccountId,
+            },
+
+            select: {
+              id: true,
+              currency: true,
+              isActive: true,
+            },
+          },
+        );
+
+      if (
+        !bankAccount ||
+        !bankAccount.isActive
+      ) {
+        return NextResponse.json(
+          {
+            error:
+              "Selected bank account is not available.",
+          },
+          {
+            status: 400,
+          },
+        );
+      }
+
+      if (
+        bankAccount.currency !==
+        currency
+      ) {
+        return NextResponse.json(
+          {
+            error:
+              "Bank account currency must match the refund currency.",
+          },
+          {
+            status: 400,
+          },
+        );
+      }
     }
 
-    if (
-      bankAccount.currency !==
-      currency
-    ) {
-      return NextResponse.json(
-        {
-          error:
-            "Bank account currency must match the refund currency.",
-        },
-        {
-          status: 400,
-        },
-      );
-    }
-
-    let originalPayment:
-      | {
-          id: string;
-          amount: number;
-          currency: string;
-          status: string;
-        }
-      | null = null;
+    // ======================================================
+    // ORIGINAL PAYMENT
+    // ======================================================
 
     if (paymentId) {
-      originalPayment =
+      const originalPayment =
         await db.payment.findFirst(
           {
             where: {
@@ -315,14 +489,14 @@ export async function POST(
 
             select: {
               id: true,
-              amount: true,
               currency: true,
-              status: true,
             },
           },
         );
 
-      if (!originalPayment) {
+      if (
+        !originalPayment
+      ) {
         return NextResponse.json(
           {
             error:
@@ -350,40 +524,60 @@ export async function POST(
       }
     }
 
-    const existingRefunds =
-      await db.refund.aggregate({
-        where: {
-          bookingId,
+    // ======================================================
+    // REFUNDABLE BALANCE
+    //
+    // APPROVED and PAID refunds reserve the refundable
+    // balance.
+    //
+    // PENDING does not reserve money yet.
+    // ======================================================
 
-          status: {
-            in: [
-              RefundStatus.APPROVED,
-              RefundStatus.PAID,
-            ],
+    const existingRefunds =
+      await db.refund.aggregate(
+        {
+          where: {
+            bookingId,
+
+            status: {
+              in: [
+                RefundStatus.APPROVED,
+                RefundStatus.PAID,
+              ],
+            },
+          },
+
+          _sum: {
+            amount: true,
           },
         },
+      );
 
-        _sum: {
-          amount: true,
-        },
-      });
-
-    const alreadyRefunded =
+    const alreadyReserved =
       Number(
-        existingRefunds._sum
-          .amount ?? 0,
+        existingRefunds
+          ._sum.amount ?? 0,
       );
 
     const refundableAmount =
       Math.max(
         0,
         booking.amountPaid -
-          alreadyRefunded,
+          alreadyReserved,
       );
 
+    /*
+     * PENDING refunds do not reserve the refundable
+     * balance yet.
+     *
+     * APPROVED and PAID refunds must fit inside the
+     * currently available refundable amount.
+     */
     if (
+      status !==
+        RefundStatus.PENDING &&
       amount >
-      refundableAmount
+        refundableAmount
     ) {
       return NextResponse.json(
         {
@@ -398,15 +592,22 @@ export async function POST(
       );
     }
 
+    /*
+     * A pending request should still never exceed the
+     * gross customer money received.
+     */
     if (
       status ===
-        RefundStatus.PAID &&
-      !method
+        RefundStatus.PENDING &&
+      amount >
+        booking.amountPaid
     ) {
       return NextResponse.json(
         {
           error:
-            "Payment method is required when the refund is paid.",
+            `Pending refund cannot exceed customer payments received. Maximum is ${currency} ${booking.amountPaid.toFixed(
+              2,
+            )}.`,
         },
         {
           status: 400,
@@ -421,48 +622,171 @@ export async function POST(
           new Date()
         : refundDate;
 
+    // ======================================================
+    // REFUND PROOF VALIDATION
+    // ======================================================
+
+    let blob:
+      | Awaited<
+          ReturnType<
+            typeof put
+          >
+        >
+      | null = null;
+
+    let originalFileName:
+      | string
+      | null = null;
+
+    let storedFileName:
+      | string
+      | null = null;
+
+    if (
+      refundProof &&
+      typeof refundProof !==
+        "string" &&
+      refundProof.size > 0
+    ) {
+      if (
+        !ALLOWED_FILE_TYPES.has(
+          refundProof.type,
+        )
+      ) {
+        return NextResponse.json(
+          {
+            error:
+              "Only PDF, JPG, PNG and WEBP refund documents are allowed.",
+          },
+          {
+            status: 400,
+          },
+        );
+      }
+
+      if (
+        refundProof.size >
+        MAX_FILE_SIZE
+      ) {
+        return NextResponse.json(
+          {
+            error:
+              "Refund proof must be smaller than 10 MB.",
+          },
+          {
+            status: 400,
+          },
+        );
+      }
+
+      originalFileName =
+        refundProof.name ||
+        "refund-proof";
+
+      const safeFileName =
+        sanitizeFileName(
+          originalFileName,
+        ) ||
+        "refund-proof";
+
+      blob = await put(
+        `finance/refunds/${Date.now()}-${safeFileName}`,
+        refundProof,
+        {
+          access:
+            "private",
+
+          addRandomSuffix:
+            true,
+
+          contentType:
+            refundProof.type ||
+            "application/octet-stream",
+        },
+      );
+
+      uploadedBlobUrl =
+        blob.url;
+
+      storedFileName =
+        blob.pathname
+          .split("/")
+          .pop() ||
+        safeFileName;
+    }
+
+    // ======================================================
+    // DATABASE TRANSACTION
+    // ======================================================
+
     const result =
       await db.$transaction(
         async (tx) => {
+          // ------------------------------------------------
+          // REFUND
+          // ------------------------------------------------
+
           const refund =
-            await tx.refund.create({
-              data: {
-                bookingId,
+            await tx.refund.create(
+              {
+                data: {
+                  bookingId,
 
-                paymentId,
+                  paymentId,
 
-                bankAccountId,
+                  /*
+                   * Only a paid refund needs to be attached
+                   * to the account from which money left.
+                   */
+                  bankAccountId:
+                    status ===
+                      RefundStatus.PAID
+                      ? bankAccountId
+                      : null,
 
-                createdById:
-                  session.user.id,
+                  createdById:
+                    session.user.id,
 
-                amount,
+                  amount,
 
-                currency,
+                  currency,
 
-                status,
+                  status,
 
-                method,
+                  method:
+                    status ===
+                      RefundStatus.PAID
+                      ? method
+                      : null,
 
-                reason,
+                  reason,
 
-                reasonDetails,
+                  reasonDetails,
 
-                refundDate:
-                  effectiveRefundDate,
+                  refundDate:
+                    effectiveRefundDate,
 
-                reference,
+                  reference,
 
-                notes,
+                  notes,
+                },
               },
-            });
+            );
 
-          let ledgerTransaction =
-            null;
+          // ------------------------------------------------
+          // BANK LEDGER
+          // ------------------------------------------------
+
+          let ledgerTransaction:
+            | {
+                id: string;
+              }
+            | null = null;
 
           if (
             status ===
-            RefundStatus.PAID
+              RefundStatus.PAID &&
+            bankAccountId
           ) {
             ledgerTransaction =
               await tx.bankTransaction.create(
@@ -510,8 +834,7 @@ export async function POST(
                     bookingId:
                       booking.id,
 
-                    paymentId:
-                      paymentId,
+                    paymentId,
 
                     tourId:
                       booking.tourId,
@@ -523,12 +846,134 @@ export async function POST(
               );
           }
 
+          // ------------------------------------------------
+          // FINANCE DOCUMENT
+          // ------------------------------------------------
+
+          let financeDocument:
+            | {
+                id: string;
+              }
+            | null = null;
+
+          if (
+            blob &&
+            originalFileName &&
+            storedFileName &&
+            refundProof &&
+            typeof refundProof !==
+              "string"
+          ) {
+            financeDocument =
+              await tx.financeDocument.create(
+                {
+                  data: {
+                    type:
+                      FinanceDocumentType.CUSTOMER_REFUND_PROOF,
+
+                    title:
+                      reference
+                        ? `Refund Proof – ${reference}`
+                        : `Refund Proof – ${
+                            booking.bookingDisplayCode ||
+                            booking.bookingReference
+                          }`,
+
+                    description:
+                      reasonDetails ||
+                      notes ||
+                      `Refund supporting document for ${
+                        booking.bookingDisplayCode ||
+                        booking.bookingReference
+                      }`,
+
+                    originalFileName,
+
+                    storedFileName,
+
+                    storagePath:
+                      blob.pathname,
+
+                    mimeType:
+                      refundProof.type ||
+                      "application/octet-stream",
+
+                    fileSize:
+                      refundProof.size,
+
+                    documentDate:
+                      effectiveRefundDate ??
+                      new Date(),
+
+                    referenceNumber:
+                      reference,
+
+                    refundId:
+                      refund.id,
+
+                    bankTransactionId:
+                      ledgerTransaction?.id ??
+                      null,
+
+                    bookingId:
+                      booking.id,
+
+                    tourId:
+                      booking.tourId,
+
+                    departureDateId:
+                      booking.departureDateId,
+
+                    uploadedById:
+                      session.user.id,
+                  },
+                },
+              );
+          }
+
           return {
             refund,
             ledgerTransaction,
+            financeDocument,
           };
         },
       );
+
+    // ======================================================
+    // REVALIDATION
+    // ======================================================
+
+    revalidatePath(
+      `/admin/bookings/${bookingId}`,
+    );
+
+    revalidatePath(
+      "/admin/bookings",
+    );
+
+    revalidatePath(
+      "/admin/finance",
+    );
+
+    revalidatePath(
+      "/admin/finance/refunds",
+    );
+
+    revalidatePath(
+      "/admin/finance/bank-accounts",
+    );
+
+    revalidatePath(
+      "/admin/finance/documents",
+    );
+
+    revalidatePath(
+      "/admin/finance/profitability",
+    );
+
+    // ======================================================
+    // RESPONSE
+    // ======================================================
 
     return NextResponse.json(
       {
@@ -540,21 +985,46 @@ export async function POST(
         ledgerTransaction:
           result.ledgerTransaction,
 
+        financeDocument:
+          result.financeDocument,
+
         refundableAmountBeforeRefund:
           refundableAmount,
 
         refundableAmountAfterRefund:
-          Math.max(
-            0,
-            refundableAmount -
-              amount,
-          ),
+          status ===
+          RefundStatus.PENDING
+            ? refundableAmount
+            : Math.max(
+                0,
+                refundableAmount -
+                  amount,
+              ),
       },
       {
         status: 201,
       },
     );
   } catch (error) {
+    // ======================================================
+    // CLEAN UP ORPHANED BLOB
+    // ======================================================
+
+    if (uploadedBlobUrl) {
+      try {
+        await del(
+          uploadedBlobUrl,
+        );
+      } catch (
+        cleanupError
+      ) {
+        console.error(
+          "REFUND_PROOF_BLOB_CLEANUP_ERROR",
+          cleanupError,
+        );
+      }
+    }
+
     console.error(
       "CREATE_REFUND_ERROR",
       error,

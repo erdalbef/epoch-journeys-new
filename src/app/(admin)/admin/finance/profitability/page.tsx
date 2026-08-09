@@ -10,6 +10,7 @@ import {
   ExpenseApprovalStatus,
   ExpenseCostType,
   ExpensePaymentStatus,
+  RefundReason,
   RefundStatus,
   Role,
   SupplierPayableApprovalStatus,
@@ -49,7 +50,8 @@ type CurrencyMetrics = {
   directCosts: number;
   directCostsPaid: number;
 
-  refundsCommitted: number;
+  revenueReducingRefunds: number;
+  cashOnlyRefunds: number;
 
   cashReceived: number;
   cashPaid: number;
@@ -87,7 +89,6 @@ type DepartureProfitabilityRow = {
   season: string;
 
   capacity: number;
-  bookedSeats: number;
 
   bookedPax: number;
   bookingCount: number;
@@ -115,7 +116,8 @@ function createEmptyMetrics(): CurrencyMetrics {
     directCosts: 0,
     directCostsPaid: 0,
 
-    refundsCommitted: 0,
+    revenueReducingRefunds: 0,
+    cashOnlyRefunds: 0,
 
     cashReceived: 0,
     cashPaid: 0,
@@ -152,14 +154,61 @@ function getCurrencyMetrics(
   return metrics[normalized];
 }
 
+/*
+ * Refund accounting:
+ *
+ * These refunds represent a reduction in
+ * the economic value/revenue of the tour.
+ */
+function refundReducesRevenue(
+  reason: RefundReason,
+) {
+  switch (reason) {
+    case RefundReason.BOOKING_CANCELLATION:
+    case RefundReason.PARTIAL_CANCELLATION:
+    case RefundReason.SERVICE_NOT_PROVIDED:
+    case RefundReason.PRICE_ADJUSTMENT:
+    case RefundReason.GOODWILL:
+      return true;
+
+    /*
+     * These are cash corrections.
+     *
+     * They should reduce cash but should
+     * NOT reduce tour revenue/profit again.
+     */
+    case RefundReason.OVERPAYMENT:
+    case RefundReason.DUPLICATE_PAYMENT:
+      return false;
+
+    /*
+     * OTHER is treated conservatively as a
+     * revenue reduction until classified
+     * more specifically.
+     */
+    case RefundReason.OTHER:
+    default:
+      return true;
+  }
+}
+
 function finalizeMetrics(
   metric: CurrencyMetrics,
 ) {
+  /*
+   * PROFIT
+   *
+   * Revenue and costs are recognized once.
+   *
+   * Supplier payments, customer receipts
+   * and other cash movements do not enter
+   * the profit calculation again.
+   */
   metric.grossProfit =
     metric.netRevenue -
     metric.supplierCommitted -
     metric.directCosts -
-    metric.refundsCommitted;
+    metric.revenueReducingRefunds;
 
   metric.margin =
     metric.netRevenue > 0
@@ -168,6 +217,11 @@ function finalizeMetrics(
         100
       : null;
 
+  /*
+   * CASH
+   *
+   * Actual posted cash movement only.
+   */
   metric.cashPosition =
     metric.cashReceived -
     metric.cashPaid;
@@ -201,8 +255,11 @@ function addMetrics(
   target.directCostsPaid +=
     source.directCostsPaid;
 
-  target.refundsCommitted +=
-    source.refundsCommitted;
+  target.revenueReducingRefunds +=
+    source.revenueReducingRefunds;
+
+  target.cashOnlyRefunds +=
+    source.cashOnlyRefunds;
 
   target.cashReceived +=
     source.cashReceived;
@@ -469,7 +526,6 @@ export default async function ProfitabilityPage({
         status: true,
         season: true,
         capacity: true,
-        bookedSeats: true,
 
         tour: {
           select: {
@@ -479,12 +535,19 @@ export default async function ProfitabilityPage({
           },
         },
 
+        /*
+         * PROFITABILITY REVENUE RULE
+         *
+         * Only CONFIRMED bookings are recognized
+         * as tour revenue / receivables.
+         *
+         * PENDING, ON_REQUEST, WAITLIST and
+         * CANCELLED remain operational pipeline.
+         */
         bookings: {
           where: {
-            status: {
-              not:
-                BookingStatus.CANCELLED,
-            },
+            status:
+              BookingStatus.CONFIRMED,
           },
 
           select: {
@@ -516,6 +579,7 @@ export default async function ProfitabilityPage({
 
           select: {
             approvedAmount: true,
+            creditAmount: true,
             amountPaid: true,
             balance: true,
             currency: true,
@@ -561,9 +625,18 @@ export default async function ProfitabilityPage({
 
   // ==========================================================
   // REFUNDS
-  // Refund belongs to Booking, so map refunds to departure.
   // ==========================================================
 
+  /*
+   * Refunds are separate accounting records.
+   *
+   * Only refunds attached to CONFIRMED bookings
+   * are relevant here because only CONFIRMED
+   * bookings contribute revenue above.
+   *
+   * If a booking becomes CANCELLED, its revenue
+   * is already excluded completely.
+   */
   const refunds =
     await db.refund.findMany({
       where: {
@@ -573,11 +646,18 @@ export default async function ProfitabilityPage({
             RefundStatus.PAID,
           ],
         },
+
+        booking: {
+          status:
+            BookingStatus.CONFIRMED,
+        },
       },
 
       select: {
         amount: true,
         currency: true,
+        reason: true,
+        status: true,
 
         booking: {
           select: {
@@ -593,6 +673,7 @@ export default async function ProfitabilityPage({
       {
         amount: number;
         currency: string;
+        reason: RefundReason;
       }[]
     >();
 
@@ -612,6 +693,9 @@ export default async function ProfitabilityPage({
 
       currency:
         refund.currency,
+
+      reason:
+        refund.reason,
     });
 
     refundsByDeparture.set(
@@ -633,7 +717,7 @@ export default async function ProfitabilityPage({
         let bookedPax = 0;
 
         // ------------------------------------------------------
-        // BOOKING REVENUE
+        // CONFIRMED BOOKING REVENUE
         // ------------------------------------------------------
 
         for (
@@ -655,6 +739,10 @@ export default async function ProfitabilityPage({
           metric.commission +=
             booking.commissionAmount;
 
+          /*
+           * netAmount is the recognized booking
+           * revenue after agent commission.
+           */
           metric.netRevenue +=
             booking.netAmount;
 
@@ -663,7 +751,7 @@ export default async function ProfitabilityPage({
         }
 
         // ------------------------------------------------------
-        // SUPPLIER COMMITMENTS
+        // APPROVED SUPPLIER COMMITMENTS
         // ------------------------------------------------------
 
         for (
@@ -675,10 +763,34 @@ export default async function ProfitabilityPage({
               payable.currency,
             );
 
-          metric.supplierCommitted +=
+          /*
+           * Credit notes reduce the actual
+           * recognized supplier commitment.
+           *
+           * Example:
+           * Approved = €3,000
+           * Credit   = €500
+           * Cost     = €2,500
+           */
+          const approved =
             Number(
               payable.approvedAmount,
             );
+
+          const credit =
+            Number(
+              payable.creditAmount,
+            );
+
+          const committed =
+            Math.max(
+              approved -
+                credit,
+              0,
+            );
+
+          metric.supplierCommitted +=
+            committed;
 
           metric.supplierPaid +=
             Number(
@@ -692,7 +804,7 @@ export default async function ProfitabilityPage({
         }
 
         // ------------------------------------------------------
-        // DIRECT TOUR EXPENSES
+        // APPROVED DIRECT TOUR EXPENSES
         // ------------------------------------------------------
 
         for (
@@ -704,9 +816,17 @@ export default async function ProfitabilityPage({
               expense.currency,
             );
 
+          /*
+           * Expense is recognized once when
+           * approved.
+           */
           metric.directCosts +=
             expense.amount;
 
+          /*
+           * Payment status is tracked separately
+           * as settlement information.
+           */
           if (
             expense.paymentStatus ===
             ExpensePaymentStatus.PAID
@@ -734,8 +854,29 @@ export default async function ProfitabilityPage({
               refund.currency,
             );
 
-          metric.refundsCommitted +=
-            refund.amount;
+          if (
+            refundReducesRevenue(
+              refund.reason,
+            )
+          ) {
+            /*
+             * Genuine revenue reduction:
+             * cancellation, service failure,
+             * price adjustment, etc.
+             */
+            metric.revenueReducingRefunds +=
+              refund.amount;
+          } else {
+            /*
+             * Overpayment / duplicate payment:
+             * cash correction only.
+             *
+             * It does not reduce recognized
+             * tour revenue.
+             */
+            metric.cashOnlyRefunds +=
+              refund.amount;
+          }
         }
 
         // ------------------------------------------------------
@@ -756,6 +897,9 @@ export default async function ProfitabilityPage({
               transaction.amount,
             );
 
+          /*
+           * CUSTOMER RECEIPTS
+           */
           if (
             transaction.type ===
               BankTransactionType.CUSTOMER_RECEIPT &&
@@ -766,6 +910,9 @@ export default async function ProfitabilityPage({
               amount;
           }
 
+          /*
+           * TOUR CASH OUTFLOWS
+           */
           if (
             transaction.direction ===
               BankTransactionDirection.OUT &&
@@ -820,9 +967,6 @@ export default async function ProfitabilityPage({
 
           capacity:
             departure.capacity,
-
-          bookedSeats:
-            departure.bookedSeats,
 
           bookedPax,
 
@@ -1068,6 +1212,7 @@ export default async function ProfitabilityPage({
       };
 
     tour.departureCount += 1;
+
     tour.pax +=
       row.bookedPax;
 
@@ -1122,9 +1267,7 @@ export default async function ProfitabilityPage({
 
   return (
     <div className="mx-auto max-w-[1750px] space-y-6 p-4 sm:p-6 lg:p-8">
-      {/* ==================================================== */}
       {/* HEADER */}
-      {/* ==================================================== */}
 
       <div className="flex flex-col gap-5 xl:flex-row xl:items-end xl:justify-between">
         <div>
@@ -1138,15 +1281,14 @@ export default async function ProfitabilityPage({
           </h1>
 
           <p className="mt-2 max-w-4xl text-sm leading-6 text-slate-500">
-            Monitor the true
-            financial performance of
-            every operated group using
-            net booking revenue,
-            committed supplier costs,
-            direct operating costs,
+            Monitor true financial
+            performance using confirmed
+            booking revenue, approved
+            supplier commitments,
+            approved direct tour costs,
+            applicable revenue-reducing
             refunds, receivables and
-            actual posted cash
-            movement.
+            actual posted cash movement.
           </p>
         </div>
 
@@ -1169,33 +1311,33 @@ export default async function ProfitabilityPage({
             href="/admin/finance/expenses"
             className={secondaryButton}
           >
-            Direct Expenses
+            Finance Entries
           </Link>
         </div>
       </div>
 
-      {/* ==================================================== */}
       {/* ACCOUNTING PRINCIPLE */}
-      {/* ==================================================== */}
 
       <section className="overflow-hidden rounded-2xl border border-blue-100 bg-blue-50">
         <div className="grid lg:grid-cols-2">
           <div className="border-b border-blue-100 p-5 lg:border-b-0 lg:border-r">
             <p className="text-xs font-bold uppercase tracking-[0.16em] text-blue-700">
-              Profitability View
+              Profitability
             </p>
 
             <p className="mt-2 font-semibold text-blue-950">
-              Net Revenue − Supplier
-              Commitments − Direct
-              Tour Costs − Refunds
+              Confirmed Net Revenue −
+              Approved Supplier Costs −
+              Approved Direct Costs −
+              Revenue-Reducing Refunds
             </p>
 
             <p className="mt-1 text-xs leading-5 text-blue-800">
-              Costs affect profit when
-              they become approved
-              commitments, even if
-              payment happens later.
+              Payments are settlements,
+              not additional revenue or
+              expense. Supplier credits
+              reduce committed supplier
+              cost.
             </p>
           </div>
 
@@ -1205,26 +1347,22 @@ export default async function ProfitabilityPage({
             </p>
 
             <p className="mt-2 font-semibold text-blue-950">
-              Posted Customer Receipts
-              − Posted Tour Cash
-              Outflows
+              Posted Customer Receipts −
+              Posted Supplier, Expense &
+              Refund Outflows
             </p>
 
             <p className="mt-1 text-xs leading-5 text-blue-800">
-              Cash is kept separate
-              from profit so unpaid
-              customer balances and
-              unpaid supplier
-              liabilities remain
-              visible.
+              Cash remains separate from
+              profitability so unpaid
+              receivables and supplier
+              liabilities stay visible.
             </p>
           </div>
         </div>
       </section>
 
-      {/* ==================================================== */}
       {/* FILTERS */}
-      {/* ==================================================== */}
 
       <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
         <form
@@ -1295,16 +1433,10 @@ export default async function ProfitabilityPage({
                 {availableCurrencies.map(
                   (currency) => (
                     <option
-                      key={
-                        currency
-                      }
-                      value={
-                        currency
-                      }
+                      key={currency}
+                      value={currency}
                     >
-                      {
-                        currency
-                      }
+                      {currency}
                     </option>
                   ),
                 )}
@@ -1436,9 +1568,7 @@ export default async function ProfitabilityPage({
         </form>
       </section>
 
-      {/* ==================================================== */}
       {/* MANAGEMENT CARDS */}
-      {/* ==================================================== */}
 
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
         <TopMetric
@@ -1450,15 +1580,15 @@ export default async function ProfitabilityPage({
         />
 
         <TopMetric
-          label="Bookings"
+          label="Confirmed Bookings"
           value={String(
             totalBookings,
           )}
-          detail="Active bookings"
+          detail="Revenue-bearing bookings"
         />
 
         <TopMetric
-          label="Booked Pax"
+          label="Confirmed Pax"
           value={String(
             totalPax,
           )}
@@ -1484,9 +1614,7 @@ export default async function ProfitabilityPage({
         />
       </div>
 
-      {/* ==================================================== */}
-      {/* EXECUTIVE FINANCIAL SUMMARY */}
-      {/* ==================================================== */}
+      {/* EXECUTIVE SUMMARY */}
 
       <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
         <div className="mb-5">
@@ -1527,14 +1655,11 @@ export default async function ProfitabilityPage({
                   <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
                     <div>
                       <p className="text-xs font-bold uppercase tracking-[0.14em] text-slate-400">
-                        Reporting
-                        Currency
+                        Reporting Currency
                       </p>
 
                       <h3 className="text-xl font-bold text-[#001F3F]">
-                        {
-                          currency
-                        }
+                        {currency}
                       </h3>
                     </div>
 
@@ -1590,9 +1715,9 @@ export default async function ProfitabilityPage({
                     />
 
                     <FinancialMetric
-                      label="Refunds"
+                      label="Revenue-Reducing Refunds"
                       value={money(
-                        metric.refundsCommitted,
+                        metric.revenueReducingRefunds,
                         currency,
                       )}
                       negative
@@ -1627,7 +1752,7 @@ export default async function ProfitabilityPage({
                     />
                   </div>
 
-                  <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                  <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
                     <CashMetric
                       label="Cash Received"
                       value={money(
@@ -1661,6 +1786,14 @@ export default async function ProfitabilityPage({
                         currency,
                       )}
                     />
+
+                    <CashMetric
+                      label="Cash-Only Refunds"
+                      value={money(
+                        metric.cashOnlyRefunds,
+                        currency,
+                      )}
+                    />
                   </div>
                 </div>
               ),
@@ -1669,9 +1802,7 @@ export default async function ProfitabilityPage({
         )}
       </section>
 
-      {/* ==================================================== */}
-      {/* ATTENTION STRIP */}
-      {/* ==================================================== */}
+      {/* ATTENTION */}
 
       {attentionCount > 0 && (
         <section className="rounded-2xl border border-amber-200 bg-amber-50 p-5">
@@ -1683,9 +1814,7 @@ export default async function ProfitabilityPage({
               </p>
 
               <p className="mt-1 text-sm text-amber-800">
-                {
-                  attentionCount
-                }{" "}
+                {attentionCount}{" "}
                 departure
                 {attentionCount ===
                 1
@@ -1705,9 +1834,7 @@ export default async function ProfitabilityPage({
         </section>
       )}
 
-      {/* ==================================================== */}
       {/* DEPARTURE TABLE */}
-      {/* ==================================================== */}
 
       <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
         <div className="border-b border-slate-200 p-5 sm:p-6">
@@ -1718,16 +1845,14 @@ export default async function ProfitabilityPage({
               </p>
 
               <h2 className="mt-1 text-xl font-bold text-[#001F3F]">
-                Departure
-                Profitability
+                Departure Profitability
               </h2>
 
               <p className="mt-1 text-sm text-slate-500">
                 Every departure is
                 measured independently
-                so a weak group cannot
-                disappear inside a
-                profitable tour.
+                using confirmed revenue
+                and approved costs.
               </p>
             </div>
 
@@ -1809,17 +1934,13 @@ export default async function ProfitabilityPage({
                           className="group block max-w-[320px]"
                         >
                           <p className="font-bold text-slate-950 transition group-hover:text-[#8B0000]">
-                            {
-                              row.tourTitle
-                            }
+                            {row.tourTitle}
                           </p>
 
                           <div className="mt-1 flex flex-wrap gap-2 text-xs text-slate-500">
                             {row.tourCode && (
                               <span>
-                                {
-                                  row.tourCode
-                                }
+                                {row.tourCode}
                               </span>
                             )}
 
@@ -1843,13 +1964,8 @@ export default async function ProfitabilityPage({
                               </span>
 
                               <span>
-                                {
-                                  row.bookedPax
-                                }
-                                /
-                                {
-                                  row.capacity
-                                }
+                                {row.bookedPax}/
+                                {row.capacity}
                               </span>
                             </div>
 
@@ -1870,15 +1986,11 @@ export default async function ProfitabilityPage({
 
                       <td className="px-4 py-5 text-center">
                         <p className="text-lg font-bold text-[#001F3F]">
-                          {
-                            row.bookedPax
-                          }
+                          {row.bookedPax}
                         </p>
 
                         <p className="text-[10px] text-slate-400">
-                          {
-                            row.bookingCount
-                          }{" "}
+                          {row.bookingCount}{" "}
                           booking
                           {row.bookingCount ===
                           1
@@ -1906,7 +2018,7 @@ export default async function ProfitabilityPage({
 
                       <CurrencyCell
                         row={row}
-                        field="refundsCommitted"
+                        field="revenueReducingRefunds"
                         negative
                       />
 
@@ -1923,11 +2035,9 @@ export default async function ProfitabilityPage({
                               currency,
                             ) => {
                               const margin =
-                                row
-                                  .metrics[
+                                row.metrics[
                                   currency
-                                ]
-                                  .margin;
+                                ].margin;
 
                               return (
                                 <p
@@ -1989,9 +2099,7 @@ export default async function ProfitabilityPage({
         )}
       </section>
 
-      {/* ==================================================== */}
       {/* TOUR PORTFOLIO */}
-      {/* ==================================================== */}
 
       <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
         <div className="mb-5">
@@ -2025,28 +2133,21 @@ export default async function ProfitabilityPage({
                 >
                   <div>
                     <p className="font-bold text-slate-950">
-                      {
-                        tour.title
-                      }
+                      {tour.title}
                     </p>
 
                     <p className="mt-1 text-xs text-slate-500">
                       {tour.tourCode
                         ? `${tour.tourCode} · `
                         : ""}
-                      {
-                        tour.departureCount
-                      }{" "}
+                      {tour.departureCount}{" "}
                       departure
                       {tour.departureCount ===
                       1
                         ? ""
                         : "s"}
                       {" · "}
-                      {
-                        tour.pax
-                      }{" "}
-                      pax
+                      {tour.pax} pax
                     </p>
                   </div>
 
@@ -2066,9 +2167,7 @@ export default async function ProfitabilityPage({
                         >
                           <div className="flex items-center justify-between">
                             <span className="text-xs font-bold text-slate-500">
-                              {
-                                currency
-                              }
+                              {currency}
                             </span>
 
                             <MarginBadge
@@ -2092,7 +2191,7 @@ export default async function ProfitabilityPage({
                               value={money(
                                 metric.supplierCommitted +
                                   metric.directCosts +
-                                  metric.refundsCommitted,
+                                  metric.revenueReducingRefunds,
                                 currency,
                               )}
                             />
@@ -2124,14 +2223,11 @@ export default async function ProfitabilityPage({
         )}
       </section>
 
-      {/* ==================================================== */}
       {/* HEALTH GUIDE */}
-      {/* ==================================================== */}
 
       <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
         <h2 className="text-sm font-bold text-[#001F3F]">
-          Profitability Health
-          Guide
+          Profitability Health Guide
         </h2>
 
         <div className="mt-4 flex flex-wrap gap-2">
@@ -2176,8 +2272,7 @@ export default async function ProfitabilityPage({
           Health categories are
           management indicators only.
           They do not alter accounting
-          records or transaction
-          status.
+          records or transaction status.
         </p>
       </section>
     </div>
@@ -2238,9 +2333,7 @@ function CurrencyCell({
 
               return (
                 <div
-                  key={
-                    currency
-                  }
+                  key={currency}
                   className="whitespace-nowrap"
                 >
                   <p
@@ -2265,9 +2358,7 @@ function CurrencyCell({
                     .length >
                     1 && (
                     <p className="text-[10px] font-semibold text-slate-400">
-                      {
-                        currency
-                      }
+                      {currency}
                     </p>
                   )}
                 </div>

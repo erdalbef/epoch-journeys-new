@@ -31,6 +31,7 @@ export default async function FinanceDocumentsPage() {
     tours,
     departures,
     suppliers,
+    bankAccounts,
     bankTransactions,
   ] = await Promise.all([
     db.financeDocument.findMany({
@@ -99,11 +100,27 @@ export default async function FinanceDocumentsPage() {
           },
         },
 
+        bankAccount: {
+          select: {
+            id: true,
+            name: true,
+            currency: true,
+          },
+        },
+
         bankTransaction: {
           select: {
             id: true,
             description: true,
             reference: true,
+
+            bankAccount: {
+              select: {
+                id: true,
+                name: true,
+                currency: true,
+              },
+            },
           },
         },
 
@@ -282,6 +299,28 @@ export default async function FinanceDocumentsPage() {
       },
     }),
 
+    db.bankAccount.findMany({
+      where: {
+        isActive: true,
+      },
+
+      orderBy: [
+        {
+          currency: "asc",
+        },
+        {
+          name: "asc",
+        },
+      ],
+
+      select: {
+        id: true,
+        name: true,
+        currency: true,
+        currentBalance: true,
+      },
+    }),
+
     db.bankTransaction.findMany({
       orderBy: {
         transactionDate: "desc",
@@ -295,6 +334,14 @@ export default async function FinanceDocumentsPage() {
         reference: true,
         description: true,
         transactionDate: true,
+        bankAccountId: true,
+
+        bankAccount: {
+          select: {
+            name: true,
+            currency: true,
+          },
+        },
       },
     }),
   ]);
@@ -377,6 +424,7 @@ export default async function FinanceDocumentsPage() {
         }),
       )}
       suppliers={suppliers}
+      bankAccounts={bankAccounts}
       bankTransactions={bankTransactions.map(
         (transaction) => ({
           ...transaction,

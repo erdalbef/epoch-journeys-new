@@ -55,10 +55,22 @@ type DocumentRecord = {
     };
   } | null;
 
+  bankAccount: {
+    id: string;
+    name: string;
+    currency: string;
+  } | null;
+
   bankTransaction: {
     id: string;
     description: string | null;
     reference: string | null;
+
+    bankAccount: {
+      id: string;
+      name: string;
+      currency: string;
+    };
   } | null;
 
   booking: {
@@ -157,12 +169,26 @@ type SupplierOption = {
   type: string;
 };
 
+type BankAccountOption = {
+  id: string;
+  name: string;
+  currency: string;
+  currentBalance: number;
+};
+
 type BankTransactionOption = {
   id: string;
   type: string;
   reference: string | null;
   description: string | null;
   transactionDate: string;
+
+  bankAccountId: string;
+
+  bankAccount: {
+    name: string;
+    currency: string;
+  };
 };
 
 type Props = {
@@ -187,6 +213,8 @@ type Props = {
   departures: DepartureOption[];
 
   suppliers: SupplierOption[];
+
+  bankAccounts: BankAccountOption[];
 
   bankTransactions:
     BankTransactionOption[];
@@ -255,6 +283,25 @@ function formatFileSize(
   )} MB`;
 }
 
+function formatMoney(
+  amount: number,
+  currency: string,
+) {
+  try {
+    return new Intl.NumberFormat(
+      "en-GB",
+      {
+        style: "currency",
+        currency,
+      },
+    ).format(amount);
+  } catch {
+    return `${currency} ${amount.toFixed(
+      2,
+    )}`;
+  }
+}
+
 function relatedRecordLabel(
   document: DocumentRecord,
 ) {
@@ -292,7 +339,14 @@ function relatedRecordLabel(
       document.bankTransaction
         .reference ||
       "Ledger Entry"
+    } · ${
+      document.bankTransaction
+        .bankAccount.name
     }`;
+  }
+
+  if (document.bankAccount) {
+    return `Bank Account: ${document.bankAccount.name} · ${document.bankAccount.currency}`;
   }
 
   if (document.booking) {
@@ -335,6 +389,7 @@ export default function FinanceDocumentManager({
   tours,
   departures,
   suppliers,
+  bankAccounts,
   bankTransactions,
 }: Props) {
   const router =
@@ -399,6 +454,11 @@ export default function FinanceDocumentManager({
     useState("");
 
   const [
+    bankAccountId,
+    setBankAccountId,
+  ] = useState("");
+
+  const [
     bankTransactionId,
     setBankTransactionId,
   ] = useState("");
@@ -449,6 +509,12 @@ export default function FinanceDocumentManager({
             document.referenceNumber,
             document.description,
             document.notes,
+            document.bankAccount
+              ?.name,
+            document.bankAccount
+              ?.currency,
+            document.bankTransaction
+              ?.bankAccount.name,
             relatedRecordLabel(
               document,
             ),
@@ -472,6 +538,36 @@ export default function FinanceDocumentManager({
       typeFilter,
     ]);
 
+  const availableBankTransactions =
+    useMemo(() => {
+      if (!bankAccountId) {
+        return bankTransactions;
+      }
+
+      return bankTransactions.filter(
+        (transaction) =>
+          transaction.bankAccountId ===
+          bankAccountId,
+      );
+    }, [
+      bankAccountId,
+      bankTransactions,
+    ]);
+
+  const selectedBankAccount =
+    useMemo(
+      () =>
+        bankAccounts.find(
+          (account) =>
+            account.id ===
+            bankAccountId,
+        ) || null,
+      [
+        bankAccountId,
+        bankAccounts,
+      ],
+    );
+
   function clearRelationFields() {
     setExpenseId("");
     setSupplierPayableId("");
@@ -479,11 +575,55 @@ export default function FinanceDocumentManager({
       "",
     );
     setRefundId("");
+    setBankAccountId("");
     setBankTransactionId("");
     setBookingId("");
     setTourId("");
     setDepartureDateId("");
     setSupplierId("");
+  }
+
+  function handleBankAccountChange(
+    value: string,
+  ) {
+    setBankAccountId(value);
+
+    if (!bankTransactionId) {
+      return;
+    }
+
+    const selectedTransaction =
+      bankTransactions.find(
+        (transaction) =>
+          transaction.id ===
+          bankTransactionId,
+      );
+
+    if (
+      value &&
+      selectedTransaction &&
+      selectedTransaction.bankAccountId !==
+        value
+    ) {
+      setBankTransactionId("");
+    }
+  }
+
+  function handleDocumentTypeChange(
+    value: string,
+  ) {
+    setDocumentType(value);
+
+    /*
+     * Bank statements belong to an account,
+     * not to an individual ledger entry.
+     */
+    if (
+      value ===
+      "BANK_STATEMENT"
+    ) {
+      setBankTransactionId("");
+    }
   }
 
   async function handleUpload(
@@ -501,6 +641,17 @@ export default function FinanceDocumentManager({
     if (!title.trim()) {
       toast.error(
         "Document title is required.",
+      );
+      return;
+    }
+
+    if (
+      documentType ===
+        "BANK_STATEMENT" &&
+      !bankAccountId
+    ) {
+      toast.error(
+        "Please select the bank account for this bank statement.",
       );
       return;
     }
@@ -584,6 +735,13 @@ export default function FinanceDocumentManager({
       formData.set(
         "refundId",
         refundId,
+      );
+    }
+
+    if (bankAccountId) {
+      formData.set(
+        "bankAccountId",
+        bankAccountId,
       );
     }
 
@@ -693,7 +851,7 @@ export default function FinanceDocumentManager({
   ) {
     const confirmed =
       window.confirm(
-        "Delete this finance document? The stored file will also be removed from the server.",
+        "Delete this finance document? The stored file will also be permanently removed from private Blob storage.",
       );
 
     if (!confirmed) {
@@ -762,8 +920,8 @@ export default function FinanceDocumentManager({
             receipts, payment proofs,
             bank statements, refund
             documentation and other
-            finance records on the
-            private server.
+            finance records in private
+            Vercel Blob storage.
           </p>
         </div>
 
@@ -784,9 +942,11 @@ export default function FinanceDocumentManager({
           </h2>
 
           <p className="mt-1 text-sm text-slate-500">
-            Files are stored privately
-            under the server&apos;s
-            finance storage directory.
+            Files are stored securely
+            in private Vercel Blob
+            storage and may be linked
+            to the appropriate finance
+            or operational record.
           </p>
         </div>
 
@@ -803,7 +963,7 @@ export default function FinanceDocumentManager({
                 onChange={(
                   event,
                 ) =>
-                  setDocumentType(
+                  handleDocumentTypeChange(
                     event.target
                       .value,
                   )
@@ -842,7 +1002,7 @@ export default function FinanceDocumentManager({
                   )
                 }
                 required
-                placeholder="Example: Hotel invoice – Rome group"
+                placeholder="Example: July bank statement"
                 className={
                   inputClass
                 }
@@ -928,11 +1088,15 @@ export default function FinanceDocumentManager({
             </h3>
 
             <p className="mt-1 text-xs text-slate-500">
-              Optional. A document may
-              be linked to the relevant
-              expense, supplier payable,
-              booking, tour or other
-              record.
+              Link the document to
+              its source record where
+              applicable. Bank
+              statements should be
+              linked to a Bank Account;
+              transaction-specific
+              banking proofs may also
+              be linked to a Bank
+              Transaction.
             </p>
 
             <div className="mt-4 grid gap-5 md:grid-cols-2 xl:grid-cols-3">
@@ -1119,6 +1283,151 @@ export default function FinanceDocumentManager({
                 </select>
               </Field>
 
+              {/* BANK ACCOUNT */}
+
+              <Field
+                label={
+                  documentType ===
+                  "BANK_STATEMENT"
+                    ? "Bank Account *"
+                    : "Bank Account"
+                }
+              >
+                <select
+                  value={
+                    bankAccountId
+                  }
+                  onChange={(
+                    event,
+                  ) =>
+                    handleBankAccountChange(
+                      event.target
+                        .value,
+                    )
+                  }
+                  required={
+                    documentType ===
+                    "BANK_STATEMENT"
+                  }
+                  className={
+                    inputClass
+                  }
+                >
+                  <option value="">
+                    {documentType ===
+                    "BANK_STATEMENT"
+                      ? "Select bank account..."
+                      : "Not linked"}
+                  </option>
+
+                  {bankAccounts.map(
+                    (account) => (
+                      <option
+                        key={
+                          account.id
+                        }
+                        value={
+                          account.id
+                        }
+                      >
+                        {
+                          account.name
+                        }
+                        {" · "}
+                        {
+                          account.currency
+                        }
+                      </option>
+                    ),
+                  )}
+                </select>
+
+                {selectedBankAccount ? (
+                  <p className="mt-1.5 text-xs text-slate-500">
+                    Current recorded
+                    balance:{" "}
+                    {formatMoney(
+                      selectedBankAccount.currentBalance,
+                      selectedBankAccount.currency,
+                    )}
+                  </p>
+                ) : null}
+              </Field>
+
+              {/* BANK TRANSACTION */}
+
+              <Field label="Bank Transaction">
+                <select
+                  value={
+                    bankTransactionId
+                  }
+                  onChange={(
+                    event,
+                  ) =>
+                    setBankTransactionId(
+                      event.target
+                        .value,
+                    )
+                  }
+                  disabled={
+                    documentType ===
+                    "BANK_STATEMENT"
+                  }
+                  className={
+                    inputClass
+                  }
+                >
+                  <option value="">
+                    {documentType ===
+                    "BANK_STATEMENT"
+                      ? "Not applicable to bank statements"
+                      : "Not linked"}
+                  </option>
+
+                  {availableBankTransactions.map(
+                    (
+                      transaction,
+                    ) => (
+                      <option
+                        key={
+                          transaction.id
+                        }
+                        value={
+                          transaction.id
+                        }
+                      >
+                        {
+                          transaction
+                            .bankAccount
+                            .name
+                        }
+                        {" · "}
+                        {enumLabel(
+                          transaction.type,
+                        )}
+                        {" · "}
+                        {transaction.description ||
+                          transaction.reference ||
+                          formatDate(
+                            transaction.transactionDate,
+                          )}
+                      </option>
+                    ),
+                  )}
+                </select>
+
+                {bankAccountId &&
+                documentType !==
+                  "BANK_STATEMENT" ? (
+                  <p className="mt-1.5 text-xs text-slate-500">
+                    Showing
+                    transactions for
+                    the selected bank
+                    account only.
+                  </p>
+                ) : null}
+              </Field>
+
               <Field label="Booking">
                 <select
                   value={
@@ -1291,54 +1600,6 @@ export default function FinanceDocumentManager({
                         {enumLabel(
                           supplier.type,
                         )}
-                      </option>
-                    ),
-                  )}
-                </select>
-              </Field>
-
-              <Field label="Bank Transaction">
-                <select
-                  value={
-                    bankTransactionId
-                  }
-                  onChange={(
-                    event,
-                  ) =>
-                    setBankTransactionId(
-                      event.target
-                        .value,
-                    )
-                  }
-                  className={
-                    inputClass
-                  }
-                >
-                  <option value="">
-                    Not linked
-                  </option>
-
-                  {bankTransactions.map(
-                    (
-                      transaction,
-                    ) => (
-                      <option
-                        key={
-                          transaction.id
-                        }
-                        value={
-                          transaction.id
-                        }
-                      >
-                        {enumLabel(
-                          transaction.type,
-                        )}
-                        {" · "}
-                        {transaction.description ||
-                          transaction.reference ||
-                          formatDate(
-                            transaction.transactionDate,
-                          )}
                       </option>
                     ),
                   )}
@@ -1643,7 +1904,7 @@ function Field({
 }
 
 const inputClass =
-  "h-11 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm text-slate-900 outline-none transition focus:border-[#8B0000] focus:ring-4 focus:ring-red-50";
+  "h-11 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm text-slate-900 outline-none transition focus:border-[#8B0000] focus:ring-4 focus:ring-red-50 disabled:cursor-not-allowed disabled:bg-slate-50 disabled:text-slate-400";
 
 const textareaClass =
   "w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-900 outline-none transition focus:border-[#8B0000] focus:ring-4 focus:ring-red-50";

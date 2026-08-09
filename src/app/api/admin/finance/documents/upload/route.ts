@@ -21,9 +21,7 @@ const ALLOWED_MIME_TYPES = new Set([
   "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
 ]);
 
-function cleanString(
-  value: FormDataEntryValue | null,
-) {
+function cleanString(value: FormDataEntryValue | null) {
   if (typeof value !== "string") {
     return "";
   }
@@ -31,33 +29,23 @@ function cleanString(
   return value.trim();
 }
 
-function parseDate(
-  value: FormDataEntryValue | null,
-) {
+function parseDate(value: FormDataEntryValue | null) {
   const raw = cleanString(value);
 
   if (!raw) {
     return null;
   }
 
-  const date = new Date(
-    `${raw}T12:00:00.000Z`,
-  );
+  const date = new Date(`${raw}T12:00:00.000Z`);
 
-  if (
-    Number.isNaN(
-      date.getTime(),
-    )
-  ) {
+  if (Number.isNaN(date.getTime())) {
     return null;
   }
 
   return date;
 }
 
-function sanitizeBaseName(
-  name: string,
-) {
+function sanitizeBaseName(name: string) {
   return name
     .normalize("NFKD")
     .replace(/[^\w.-]+/g, "-")
@@ -66,12 +54,8 @@ function sanitizeBaseName(
     .slice(0, 120);
 }
 
-function extensionFromName(
-  fileName: string,
-) {
-  const ext = path
-    .extname(fileName)
-    .toLowerCase();
+function extensionFromName(fileName: string) {
+  const ext = path.extname(fileName).toLowerCase();
 
   if (!ext) {
     return "";
@@ -80,9 +64,7 @@ function extensionFromName(
   return ext.slice(0, 12);
 }
 
-function buildStorageFolder(
-  type: FinanceDocumentType,
-) {
+function buildStorageFolder(type: FinanceDocumentType) {
   switch (type) {
     case FinanceDocumentType.EXPENSE_RECEIPT:
     case FinanceDocumentType.EXPENSE_INVOICE:
@@ -124,6 +106,7 @@ async function validateLinkedRecords({
   supplierPayableId,
   supplierPayablePaymentId,
   refundId,
+  bankAccountId,
   bankTransactionId,
   bookingId,
   tourId,
@@ -134,6 +117,7 @@ async function validateLinkedRecords({
   supplierPayableId: string | null;
   supplierPayablePaymentId: string | null;
   refundId: string | null;
+  bankAccountId: string | null;
   bankTransactionId: string | null;
   bookingId: string | null;
   tourId: string | null;
@@ -172,15 +156,12 @@ async function validateLinkedRecords({
     );
   }
 
-  if (
-    supplierPayablePaymentId
-  ) {
+  if (supplierPayablePaymentId) {
     checks.push(
       db.supplierPayablePayment
         .findUnique({
           where: {
-            id:
-              supplierPayablePaymentId,
+            id: supplierPayablePaymentId,
           },
           select: {
             id: true,
@@ -196,6 +177,21 @@ async function validateLinkedRecords({
         .findUnique({
           where: {
             id: refundId,
+          },
+          select: {
+            id: true,
+          },
+        })
+        .then(Boolean),
+    );
+  }
+
+  if (bankAccountId) {
+    checks.push(
+      db.bankAccount
+        .findUnique({
+          where: {
+            id: bankAccountId,
           },
           select: {
             id: true,
@@ -284,29 +280,20 @@ async function validateLinkedRecords({
     return true;
   }
 
-  const results =
-    await Promise.all(checks);
+  const results = await Promise.all(checks);
 
   return results.every(Boolean);
 }
 
-export async function POST(
-  request: Request,
-) {
-  let uploadedBlobUrl:
-    | string
-    | null = null;
+export async function POST(request: Request) {
+  let uploadedBlobUrl: string | null = null;
 
   try {
-    const session =
-      await getServerSession(
-        authOptions,
-      );
+    const session = await getServerSession(authOptions);
 
     if (
       !session?.user?.id ||
-      session.user.role !==
-        Role.ADMIN
+      session.user.role !== Role.ADMIN
     ) {
       return NextResponse.json(
         {
@@ -318,20 +305,14 @@ export async function POST(
       );
     }
 
-    const formData =
-      await request.formData();
+    const formData = await request.formData();
 
-    const file =
-      formData.get("file");
+    const file = formData.get("file");
 
-    if (
-      !file ||
-      typeof file === "string"
-    ) {
+    if (!file || typeof file === "string") {
       return NextResponse.json(
         {
-          error:
-            "A document file is required.",
+          error: "A document file is required.",
         },
         {
           status: 400,
@@ -342,8 +323,7 @@ export async function POST(
     if (file.size <= 0) {
       return NextResponse.json(
         {
-          error:
-            "Uploaded file is empty.",
+          error: "Uploaded file is empty.",
         },
         {
           status: 400,
@@ -351,14 +331,10 @@ export async function POST(
       );
     }
 
-    if (
-      file.size >
-      MAX_FILE_SIZE
-    ) {
+    if (file.size > MAX_FILE_SIZE) {
       return NextResponse.json(
         {
-          error:
-            "File must be smaller than 20 MB.",
+          error: "File must be smaller than 20 MB.",
         },
         {
           status: 400,
@@ -366,11 +342,7 @@ export async function POST(
       );
     }
 
-    if (
-      !ALLOWED_MIME_TYPES.has(
-        file.type,
-      )
-    ) {
+    if (!ALLOWED_MIME_TYPES.has(file.type)) {
       return NextResponse.json(
         {
           error:
@@ -382,22 +354,18 @@ export async function POST(
       );
     }
 
-    const typeRaw =
-      cleanString(
-        formData.get("type"),
-      );
+    const typeRaw = cleanString(
+      formData.get("type"),
+    );
 
     if (
-      !Object.values(
-        FinanceDocumentType,
-      ).includes(
+      !Object.values(FinanceDocumentType).includes(
         typeRaw as FinanceDocumentType,
       )
     ) {
       return NextResponse.json(
         {
-          error:
-            "Invalid finance document type.",
+          error: "Invalid finance document type.",
         },
         {
           status: 400,
@@ -408,16 +376,14 @@ export async function POST(
     const type =
       typeRaw as FinanceDocumentType;
 
-    const title =
-      cleanString(
-        formData.get("title"),
-      );
+    const title = cleanString(
+      formData.get("title"),
+    );
 
     if (!title) {
       return NextResponse.json(
         {
-          error:
-            "Document title is required.",
+          error: "Document title is required.",
         },
         {
           status: 400,
@@ -427,42 +393,30 @@ export async function POST(
 
     const description =
       cleanString(
-        formData.get(
-          "description",
-        ),
+        formData.get("description"),
       ) || null;
 
-    const documentDate =
-      parseDate(
-        formData.get(
-          "documentDate",
-        ),
-      );
+    const documentDate = parseDate(
+      formData.get("documentDate"),
+    );
 
     const referenceNumber =
       cleanString(
-        formData.get(
-          "referenceNumber",
-        ),
+        formData.get("referenceNumber"),
       ) || null;
 
     const notes =
-      cleanString(
-        formData.get("notes"),
-      ) || null;
+      cleanString(formData.get("notes")) ||
+      null;
 
     const expenseId =
       cleanString(
-        formData.get(
-          "expenseId",
-        ),
+        formData.get("expenseId"),
       ) || null;
 
     const supplierPayableId =
       cleanString(
-        formData.get(
-          "supplierPayableId",
-        ),
+        formData.get("supplierPayableId"),
       ) || null;
 
     const supplierPayablePaymentId =
@@ -474,52 +428,79 @@ export async function POST(
 
     const refundId =
       cleanString(
-        formData.get(
-          "refundId",
-        ),
+        formData.get("refundId"),
       ) || null;
 
+    /*
+     * Bank statements belong primarily to
+     * a bank account.
+     */
+    const bankAccountId =
+      cleanString(
+        formData.get("bankAccountId"),
+      ) || null;
+
+    /*
+     * Transaction-specific banking proof
+     * can additionally point to a specific
+     * BankTransaction.
+     */
     const bankTransactionId =
       cleanString(
-        formData.get(
-          "bankTransactionId",
-        ),
+        formData.get("bankTransactionId"),
       ) || null;
 
     const bookingId =
       cleanString(
-        formData.get(
-          "bookingId",
-        ),
+        formData.get("bookingId"),
       ) || null;
 
     const tourId =
       cleanString(
-        formData.get(
-          "tourId",
-        ),
+        formData.get("tourId"),
       ) || null;
 
     const departureDateId =
       cleanString(
-        formData.get(
-          "departureDateId",
-        ),
+        formData.get("departureDateId"),
       ) || null;
 
     const supplierId =
       cleanString(
-        formData.get(
-          "supplierId",
-        ),
+        formData.get("supplierId"),
       ) || null;
 
+    /*
+     * A BANK_STATEMENT should be attached
+     * to a Bank Account.
+     */
+    if (
+      type ===
+        FinanceDocumentType.BANK_STATEMENT &&
+      !bankAccountId
+    ) {
+      return NextResponse.json(
+        {
+          error:
+            "Please select the bank account for this bank statement.",
+        },
+        {
+          status: 400,
+        },
+      );
+    }
+
+    /*
+     * Validate all selected relations before
+     * uploading the Blob.
+     */
     const linksAreValid =
       await validateLinkedRecords({
         expenseId,
         supplierPayableId,
         supplierPayablePaymentId,
         refundId,
+        bankAccountId,
         bankTransactionId,
         bookingId,
         tourId,
@@ -539,6 +520,40 @@ export async function POST(
       );
     }
 
+    /*
+     * If both a Bank Account and a Bank
+     * Transaction are selected, make sure
+     * the transaction belongs to that
+     * account.
+     */
+    if (
+      bankAccountId &&
+      bankTransactionId
+    ) {
+      const bankTransaction =
+        await db.bankTransaction.findFirst({
+          where: {
+            id: bankTransactionId,
+            bankAccountId,
+          },
+          select: {
+            id: true,
+          },
+        });
+
+      if (!bankTransaction) {
+        return NextResponse.json(
+          {
+            error:
+              "The selected bank transaction does not belong to the selected bank account.",
+          },
+          {
+            status: 400,
+          },
+        );
+      }
+    }
+
     const folder =
       buildStorageFolder(type);
 
@@ -554,9 +569,7 @@ export async function POST(
       sanitizeBaseName(
         path.basename(
           originalFileName,
-          path.extname(
-            originalFileName,
-          ),
+          path.extname(originalFileName),
         ),
       ) || "document";
 
@@ -564,40 +577,33 @@ export async function POST(
       `${Date.now()}-${crypto.randomUUID()}-${baseName}${extension}`;
 
     /*
-     * Private Blob pathname.
+     * Private Vercel Blob pathname.
      *
      * Example:
-     * finance/expenses/1234-uuid-hotel-invoice.pdf
+     * finance/banking/1234-uuid-statement.pdf
      */
     const blobPathname =
       `finance/${folder}/${storedFileName}`;
 
-    const blob =
-      await put(
-        blobPathname,
-        file,
-        {
-          access: "private",
+    const blob = await put(
+      blobPathname,
+      file,
+      {
+        access: "private",
 
-          contentType:
-            file.type ||
-            "application/octet-stream",
+        contentType:
+          file.type ||
+          "application/octet-stream",
 
-          addRandomSuffix:
-            false,
-        },
-      );
+        addRandomSuffix: false,
+      },
+    );
 
-    uploadedBlobUrl =
-      blob.url;
+    uploadedBlobUrl = blob.url;
 
     /*
-     * For Blob storage we store the
-     * pathname rather than a filesystem
-     * path.
-     *
-     * Example:
-     * finance/expenses/123-file.pdf
+     * Store the Vercel Blob pathname rather
+     * than a local filesystem path.
      */
     const document =
       await db.financeDocument.create({
@@ -607,7 +613,6 @@ export async function POST(
           description,
 
           originalFileName,
-
           storedFileName,
 
           storagePath:
@@ -617,8 +622,7 @@ export async function POST(
             file.type ||
             "application/octet-stream",
 
-          fileSize:
-            file.size,
+          fileSize: file.size,
 
           documentDate,
           referenceNumber,
@@ -628,7 +632,10 @@ export async function POST(
           supplierPayableId,
           supplierPayablePaymentId,
           refundId,
+
+          bankAccountId,
           bankTransactionId,
+
           bookingId,
           tourId,
           departureDateId,
@@ -644,14 +651,9 @@ export async function POST(
         success: true,
 
         document: {
-          id:
-            document.id,
-
-          type:
-            document.type,
-
-          title:
-            document.title,
+          id: document.id,
+          type: document.type,
+          title: document.title,
 
           originalFileName:
             document.originalFileName,
@@ -668,6 +670,12 @@ export async function POST(
           referenceNumber:
             document.referenceNumber,
 
+          bankAccountId:
+            document.bankAccountId,
+
+          bankTransactionId:
+            document.bankTransactionId,
+
           createdAt:
             document.createdAt,
         },
@@ -678,13 +686,10 @@ export async function POST(
     );
   } catch (error) {
     /*
-     * We will add Blob cleanup during the
-     * delete-route conversion immediately
-     * after this route.
-     *
-     * For now, log the uploaded URL if the
-     * Blob write succeeded but the database
-     * insert failed.
+     * If Blob upload succeeded but the
+     * database insert failed, log the Blob
+     * so it can be identified and cleaned
+     * up.
      */
     if (uploadedBlobUrl) {
       console.error(

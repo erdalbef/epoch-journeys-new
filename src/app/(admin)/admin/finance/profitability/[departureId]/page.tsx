@@ -1,5 +1,8 @@
 import Link from "next/link";
-import { notFound, redirect } from "next/navigation";
+import {
+  notFound,
+  redirect,
+} from "next/navigation";
 import { getServerSession } from "next-auth";
 
 import {
@@ -10,6 +13,7 @@ import {
   ExpenseApprovalStatus,
   ExpenseCostType,
   ExpensePaymentStatus,
+  RefundReason,
   RefundStatus,
   Role,
   SupplierPayableApprovalStatus,
@@ -41,7 +45,8 @@ type CurrencySummary = {
   directCosts: number;
   directCostsPaid: number;
 
-  refunds: number;
+  revenueReducingRefunds: number;
+  cashOnlyRefunds: number;
 
   cashReceived: number;
   cashPaid: number;
@@ -54,11 +59,10 @@ type CurrencySummary = {
   cashPosition: number;
 };
 
-type CurrencyMap =
-  Record<
-    string,
-    CurrencySummary
-  >;
+type CurrencyMap = Record<
+  string,
+  CurrencySummary
+>;
 
 // ============================================================
 // HELPERS
@@ -77,7 +81,8 @@ function createSummary(): CurrencySummary {
     directCosts: 0,
     directCostsPaid: 0,
 
-    refunds: 0,
+    revenueReducingRefunds: 0,
+    cashOnlyRefunds: 0,
 
     cashReceived: 0,
     cashPaid: 0,
@@ -109,14 +114,39 @@ function getSummary(
   return map[normalized];
 }
 
+function refundReducesRevenue(
+  reason: RefundReason,
+) {
+  switch (reason) {
+    case RefundReason.OVERPAYMENT:
+    case RefundReason.DUPLICATE_PAYMENT:
+      return false;
+
+    case RefundReason.BOOKING_CANCELLATION:
+    case RefundReason.PARTIAL_CANCELLATION:
+    case RefundReason.SERVICE_NOT_PROVIDED:
+    case RefundReason.PRICE_ADJUSTMENT:
+    case RefundReason.GOODWILL:
+    case RefundReason.OTHER:
+    default:
+      return true;
+  }
+}
+
 function finalizeSummary(
   summary: CurrencySummary,
 ) {
+  /*
+   * PROFITABILITY
+   *
+   * Revenue and costs are recognized once.
+   * Payments are settlement activity only.
+   */
   summary.grossProfit =
     summary.netRevenue -
     summary.supplierCommitted -
     summary.directCosts -
-    summary.refunds;
+    summary.revenueReducingRefunds;
 
   summary.margin =
     summary.netRevenue > 0
@@ -125,6 +155,11 @@ function finalizeSummary(
         100
       : null;
 
+  /*
+   * CASH POSITION
+   *
+   * Actual posted bank movement only.
+   */
   summary.cashPosition =
     summary.cashReceived -
     summary.cashPaid;
@@ -216,6 +251,26 @@ function marginClass(
   return "bg-red-100 text-red-800";
 }
 
+function refundImpactLabel(
+  reason: RefundReason,
+) {
+  return refundReducesRevenue(
+    reason,
+  )
+    ? "Revenue Reduction"
+    : "Cash Correction";
+}
+
+function refundImpactClass(
+  reason: RefundReason,
+) {
+  return refundReducesRevenue(
+    reason,
+  )
+    ? "bg-red-100 text-red-700"
+    : "bg-blue-100 text-blue-700";
+}
+
 // ============================================================
 // PAGE
 // ============================================================
@@ -243,8 +298,7 @@ export default async function DepartureProfitabilityPage({
   const departure =
     await db.departureDate.findUnique({
       where: {
-        id:
-          departureId,
+        id: departureId,
       },
 
       select: {
@@ -266,12 +320,14 @@ export default async function DepartureProfitabilityPage({
           },
         },
 
+        /*
+         * Only confirmed bookings are
+         * recognized as actual tour revenue.
+         */
         bookings: {
           where: {
-            status: {
-              not:
-                BookingStatus.CANCELLED,
-            },
+            status:
+              BookingStatus.CONFIRMED,
           },
 
           orderBy: {
@@ -300,6 +356,7 @@ export default async function DepartureProfitabilityPage({
 
             agencyNameSnapshot: true,
             agentNameSnapshot: true,
+            customerName: true,
             groupName: true,
             groupLeaderName: true,
 
@@ -308,6 +365,10 @@ export default async function DepartureProfitabilityPage({
           },
         },
 
+        /*
+         * Supplier payables represent
+         * committed costs once approved.
+         */
         supplierPayables: {
           where: {
             approvalStatus:
@@ -335,6 +396,7 @@ export default async function DepartureProfitabilityPage({
             supplierInvoiceNumber: true,
 
             approvedAmount: true,
+            creditAmount: true,
             amountPaid: true,
             balance: true,
 
@@ -355,6 +417,10 @@ export default async function DepartureProfitabilityPage({
           },
         },
 
+        /*
+         * Only approved direct tour costs
+         * participate in profitability.
+         */
         expenses: {
           where: {
             costType:
@@ -397,6 +463,10 @@ export default async function DepartureProfitabilityPage({
           },
         },
 
+        /*
+         * Posted Bank Ledger entries are
+         * the actual cash layer.
+         */
         bankTransactions: {
           where: {
             status:
@@ -454,12 +524,23 @@ export default async function DepartureProfitabilityPage({
   // REFUNDS
   // ==========================================================
 
+  /*
+   * Only refunds related to confirmed
+   * bookings are included here.
+   *
+   * If a booking is CANCELLED, its
+   * revenue is already excluded from
+   * this profitability report.
+   */
   const refunds =
     await db.refund.findMany({
       where: {
         booking: {
           departureDateId:
             departure.id,
+
+          status:
+            BookingStatus.CONFIRMED,
         },
 
         status: {
@@ -506,6 +587,10 @@ export default async function DepartureProfitabilityPage({
 
   let bookedPax = 0;
 
+  // ----------------------------------------------------------
+  // CONFIRMED BOOKING REVENUE
+  // ----------------------------------------------------------
+
   for (
     const booking of departure.bookings
   ) {
@@ -525,12 +610,23 @@ export default async function DepartureProfitabilityPage({
     summary.commission +=
       booking.commissionAmount;
 
+    /*
+     * Booking.netAmount is the revenue
+     * basis after agent commission.
+     */
     summary.netRevenue +=
       booking.netAmount;
 
+    /*
+     * Outstanding customer balance.
+     */
     summary.receivables +=
       booking.amountDue;
   }
+
+  // ----------------------------------------------------------
+  // APPROVED SUPPLIER COMMITMENTS
+  // ----------------------------------------------------------
 
   for (
     const payable of departure.supplierPayables
@@ -541,10 +637,29 @@ export default async function DepartureProfitabilityPage({
         payable.currency,
       );
 
-    summary.supplierCommitted +=
+    const approved =
       Number(
         payable.approvedAmount,
       );
+
+    const credit =
+      Number(
+        payable.creditAmount,
+      );
+
+    /*
+     * Supplier credit notes reduce the
+     * economic supplier cost.
+     */
+    const committed =
+      Math.max(
+        approved -
+          credit,
+        0,
+      );
+
+    summary.supplierCommitted +=
+      committed;
 
     summary.supplierPaid +=
       Number(
@@ -557,6 +672,10 @@ export default async function DepartureProfitabilityPage({
       );
   }
 
+  // ----------------------------------------------------------
+  // DIRECT TOUR EXPENSES
+  // ----------------------------------------------------------
+
   for (
     const expense of departure.expenses
   ) {
@@ -566,9 +685,17 @@ export default async function DepartureProfitabilityPage({
         expense.currency,
       );
 
+    /*
+     * Approved direct expense is
+     * recognized once as a cost.
+     */
     summary.directCosts +=
       expense.amount;
 
+    /*
+     * Payment is settlement information,
+     * not another expense.
+     */
     if (
       expense.paymentStatus ===
       ExpensePaymentStatus.PAID
@@ -577,6 +704,10 @@ export default async function DepartureProfitabilityPage({
         expense.amount;
     }
   }
+
+  // ----------------------------------------------------------
+  // REFUND ACCOUNTING
+  // ----------------------------------------------------------
 
   for (
     const refund of refunds
@@ -587,11 +718,35 @@ export default async function DepartureProfitabilityPage({
         refund.currency,
       );
 
-    summary.refunds +=
+    const amount =
       Number(
         refund.amount,
       );
+
+    if (
+      refundReducesRevenue(
+        refund.reason,
+      )
+    ) {
+      /*
+       * Cancellation / service / price
+       * refunds reduce profitability.
+       */
+      summary.revenueReducingRefunds +=
+        amount;
+    } else {
+      /*
+       * Overpayment and duplicate-payment
+       * refunds are cash corrections only.
+       */
+      summary.cashOnlyRefunds +=
+        amount;
+    }
   }
+
+  // ----------------------------------------------------------
+  // ACTUAL CASH
+  // ----------------------------------------------------------
 
   for (
     const transaction of departure.bankTransactions
@@ -663,7 +818,10 @@ export default async function DepartureProfitabilityPage({
 
         currency: string;
 
+        approved: number;
+        credits: number;
         committed: number;
+
         paid: number;
         outstanding: number;
 
@@ -696,16 +854,37 @@ export default async function DepartureProfitabilityPage({
 
         currency,
 
+        approved: 0,
+        credits: 0,
         committed: 0,
+
         paid: 0,
         outstanding: 0,
 
         payableCount: 0,
       };
 
-    existing.committed +=
+    const approved =
       Number(
         payable.approvedAmount,
+      );
+
+    const credit =
+      Number(
+        payable.creditAmount,
+      );
+
+    existing.approved +=
+      approved;
+
+    existing.credits +=
+      credit;
+
+    existing.committed +=
+      Math.max(
+        approved -
+          credit,
+        0,
       );
 
     existing.paid +=
@@ -823,8 +1002,7 @@ export default async function DepartureProfitabilityPage({
         <div>
           <div className="flex flex-wrap items-center gap-2">
             <p className="text-xs font-bold uppercase tracking-[0.2em] text-[#8B0000]">
-              Departure
-              Profitability
+              Departure Profitability
             </p>
 
             <span className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-semibold text-slate-600">
@@ -835,9 +1013,7 @@ export default async function DepartureProfitabilityPage({
           </div>
 
           <h1 className="mt-2 text-3xl font-bold tracking-tight text-[#001F3F]">
-            {
-              departure.tour.title
-            }
+            {departure.tour.title}
           </h1>
 
           <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-sm text-slate-500">
@@ -895,8 +1071,62 @@ export default async function DepartureProfitabilityPage({
           >
             Finance Center
           </Link>
+
+          <Link
+            href="/admin/finance/expenses"
+            className={secondaryButton}
+          >
+            Finance Entries
+          </Link>
         </div>
       </div>
+
+      {/* ==================================================== */}
+      {/* ACCOUNTING PRINCIPLE */}
+      {/* ==================================================== */}
+
+      <section className="overflow-hidden rounded-2xl border border-blue-100 bg-blue-50">
+        <div className="grid lg:grid-cols-2">
+          <div className="border-b border-blue-100 p-5 lg:border-b-0 lg:border-r">
+            <p className="text-xs font-bold uppercase tracking-[0.16em] text-blue-700">
+              Profitability
+            </p>
+
+            <p className="mt-2 font-semibold text-blue-950">
+              Confirmed Net Revenue −
+              Approved Supplier Costs −
+              Approved Direct Costs −
+              Revenue-Reducing Refunds
+            </p>
+
+            <p className="mt-1 text-xs leading-5 text-blue-800">
+              Customer and supplier
+              payments are settlement
+              activity and are not counted
+              again as revenue or cost.
+            </p>
+          </div>
+
+          <div className="p-5">
+            <p className="text-xs font-bold uppercase tracking-[0.16em] text-blue-700">
+              Cash Position
+            </p>
+
+            <p className="mt-2 font-semibold text-blue-950">
+              Posted Customer Receipts −
+              Posted Supplier, Expense &
+              Refund Outflows
+            </p>
+
+            <p className="mt-1 text-xs leading-5 text-blue-800">
+              Cash performance remains
+              separate from economic
+              profitability and outstanding
+              working-capital balances.
+            </p>
+          </div>
+        </div>
+      </section>
 
       {/* ==================================================== */}
       {/* OPERATING SNAPSHOT */}
@@ -904,11 +1134,11 @@ export default async function DepartureProfitabilityPage({
 
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <TopCard
-          label="Booked Pax"
+          label="Confirmed Pax"
           value={String(
             bookedPax,
           )}
-          detail={`${departure.bookings.length} active booking${
+          detail={`${departure.bookings.length} confirmed booking${
             departure.bookings.length ===
             1
               ? ""
@@ -965,7 +1195,7 @@ export default async function DepartureProfitabilityPage({
       {/* ==================================================== */}
 
       {currencies.length === 0 ? (
-        <EmptyState text="No financial activity exists for this departure yet." />
+        <EmptyState text="No recognized financial activity exists for this departure yet." />
       ) : (
         <div className="space-y-6">
           {currencies.map(
@@ -978,7 +1208,7 @@ export default async function DepartureProfitabilityPage({
               const costTotal =
                 summary.supplierCommitted +
                 summary.directCosts +
-                summary.refunds;
+                summary.revenueReducingRefunds;
 
               const profitPerPax =
                 bookedPax > 0
@@ -994,22 +1224,17 @@ export default async function DepartureProfitabilityPage({
 
               return (
                 <section
-                  key={
-                    currency
-                  }
+                  key={currency}
                   className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm"
                 >
                   <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 bg-slate-50 p-5">
                     <div>
                       <p className="text-xs font-bold uppercase tracking-[0.16em] text-slate-400">
-                        Reporting
-                        Currency
+                        Reporting Currency
                       </p>
 
                       <h2 className="text-xl font-bold text-[#001F3F]">
-                        {
-                          currency
-                        }
+                        {currency}
                       </h2>
                     </div>
 
@@ -1083,9 +1308,9 @@ export default async function DepartureProfitabilityPage({
                         />
 
                         <FinanceLine
-                          label="Refunds"
+                          label="Revenue-Reducing Refunds"
                           value={`-${money(
-                            summary.refunds,
+                            summary.revenueReducingRefunds,
                             currency,
                           )}`}
                           negative
@@ -1116,8 +1341,7 @@ export default async function DepartureProfitabilityPage({
 
                     <div className="p-5">
                       <p className="text-xs font-bold uppercase tracking-[0.16em] text-blue-700">
-                        Cash & Working
-                        Capital
+                        Cash & Working Capital
                       </p>
 
                       <div className="mt-4 space-y-3">
@@ -1173,6 +1397,17 @@ export default async function DepartureProfitabilityPage({
                             currency,
                           )}
                         />
+
+                        {summary.cashOnlyRefunds >
+                          0 && (
+                          <FinanceLine
+                            label="Cash-Only Refund Corrections"
+                            value={money(
+                              summary.cashOnlyRefunds,
+                              currency,
+                            )}
+                          />
+                        )}
 
                         <Divider />
 
@@ -1231,13 +1466,13 @@ export default async function DepartureProfitabilityPage({
       <section className={sectionClass}>
         <SectionHeader
           eyebrow="Revenue Detail"
-          title="Bookings"
-          description="Booking-level sales, commission, net revenue, collections and outstanding customer balances."
+          title="Confirmed Bookings"
+          description="Only confirmed bookings contribute to recognized tour revenue and profitability."
         />
 
         {departure.bookings.length ===
         0 ? (
-          <EmptyState text="No active bookings exist for this departure." />
+          <EmptyState text="No confirmed bookings exist for this departure." />
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full min-w-[1100px] text-left text-sm">
@@ -1274,6 +1509,10 @@ export default async function DepartureProfitabilityPage({
                   <th className="px-4 py-3 text-right">
                     Due
                   </th>
+
+                  <th className="px-4 py-3">
+                    Payment Status
+                  </th>
                 </tr>
               </thead>
 
@@ -1281,9 +1520,7 @@ export default async function DepartureProfitabilityPage({
                 {departure.bookings.map(
                   (booking) => (
                     <tr
-                      key={
-                        booking.id
-                      }
+                      key={booking.id}
                       className="hover:bg-slate-50"
                     >
                       <td className="px-4 py-4">
@@ -1306,6 +1543,7 @@ export default async function DepartureProfitabilityPage({
                         <p className="font-medium text-slate-800">
                           {booking.groupName ||
                             booking.agencyNameSnapshot ||
+                            booking.customerName ||
                             booking.agentNameSnapshot ||
                             "Direct / Client"}
                         </p>
@@ -1360,6 +1598,14 @@ export default async function DepartureProfitabilityPage({
                           booking.currency,
                         )}
                       </td>
+
+                      <td className="px-4 py-4">
+                        <span className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-semibold text-slate-700">
+                          {enumLabel(
+                            booking.paymentStatus,
+                          )}
+                        </span>
+                      </td>
                     </tr>
                   ),
                 )}
@@ -1377,7 +1623,7 @@ export default async function DepartureProfitabilityPage({
         <SectionHeader
           eyebrow="Committed Cost"
           title="Supplier Cost Breakdown"
-          description="Approved supplier commitments grouped by supplier. Outstanding balances remain visible even when payment has not yet been made."
+          description="Approved supplier commitments net of supplier credits, grouped by supplier."
         />
 
         {suppliers.length ===
@@ -1385,7 +1631,7 @@ export default async function DepartureProfitabilityPage({
           <EmptyState text="No approved supplier costs are recorded for this departure." />
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[900px] text-left text-sm">
+            <table className="w-full min-w-[1050px] text-left text-sm">
               <thead className={tableHeadClass}>
                 <tr>
                   <th className="px-4 py-3">
@@ -1401,7 +1647,15 @@ export default async function DepartureProfitabilityPage({
                   </th>
 
                   <th className="px-4 py-3 text-right">
-                    Committed
+                    Approved
+                  </th>
+
+                  <th className="px-4 py-3 text-right">
+                    Credits
+                  </th>
+
+                  <th className="px-4 py-3 text-right">
+                    Net Cost
                   </th>
 
                   <th className="px-4 py-3 text-right">
@@ -1418,15 +1672,11 @@ export default async function DepartureProfitabilityPage({
                 {suppliers.map(
                   (supplier) => (
                     <tr
-                      key={
-                        supplier.key
-                      }
+                      key={supplier.key}
                       className="hover:bg-slate-50"
                     >
                       <td className="px-4 py-4 font-semibold text-slate-900">
-                        {
-                          supplier.name
-                        }
+                        {supplier.name}
                       </td>
 
                       <td className="px-4 py-4 text-slate-600">
@@ -1441,7 +1691,27 @@ export default async function DepartureProfitabilityPage({
                         }
                       </td>
 
-                      <td className="px-4 py-4 text-right font-semibold text-slate-900">
+                      <td className="px-4 py-4 text-right text-slate-700">
+                        {money(
+                          supplier.approved,
+                          supplier.currency,
+                        )}
+                      </td>
+
+                      <td className="px-4 py-4 text-right text-blue-700">
+                        {supplier.credits >
+                        0
+                          ? `-${money(
+                              supplier.credits,
+                              supplier.currency,
+                            )}`
+                          : money(
+                              0,
+                              supplier.currency,
+                            )}
+                      </td>
+
+                      <td className="px-4 py-4 text-right font-bold text-slate-900">
                         {money(
                           supplier.committed,
                           supplier.currency,
@@ -1478,7 +1748,7 @@ export default async function DepartureProfitabilityPage({
         <SectionHeader
           eyebrow="Accounts Payable"
           title="Supplier Payables"
-          description="Individual approved supplier invoices and operating commitments assigned to this departure."
+          description="Individual approved supplier liabilities. Credits reduce the recognized supplier cost; payments reduce the remaining balance."
         />
 
         {departure
@@ -1487,7 +1757,7 @@ export default async function DepartureProfitabilityPage({
           <EmptyState text="No supplier payables exist for this departure." />
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[1200px] text-left text-sm">
+            <table className="w-full min-w-[1350px] text-left text-sm">
               <thead className={tableHeadClass}>
                 <tr>
                   <th className="px-4 py-3">
@@ -1511,6 +1781,14 @@ export default async function DepartureProfitabilityPage({
                   </th>
 
                   <th className="px-4 py-3 text-right">
+                    Credit
+                  </th>
+
+                  <th className="px-4 py-3 text-right">
+                    Net Cost
+                  </th>
+
+                  <th className="px-4 py-3 text-right">
                     Paid
                   </th>
 
@@ -1521,84 +1799,129 @@ export default async function DepartureProfitabilityPage({
                   <th className="px-4 py-3">
                     Status
                   </th>
+
+                  <th className="px-4 py-3 text-right">
+                    Action
+                  </th>
                 </tr>
               </thead>
 
               <tbody className="divide-y divide-slate-100">
                 {departure.supplierPayables.map(
-                  (payable) => (
-                    <tr
-                      key={
-                        payable.id
-                      }
-                      className="hover:bg-slate-50"
-                    >
-                      <td className="px-4 py-4">
-                        <p className="font-semibold text-slate-900">
-                          {
-                            payable.supplierNameSnapshot
-                          }
-                        </p>
+                  (payable) => {
+                    const approved =
+                      Number(
+                        payable.approvedAmount,
+                      );
 
-                        <p className="mt-1 text-xs text-slate-400">
-                          {
-                            payable.title
-                          }
-                        </p>
-                      </td>
+                    const credit =
+                      Number(
+                        payable.creditAmount,
+                      );
 
-                      <td className="px-4 py-4 text-slate-600">
-                        {payable.serviceNameSnapshot ||
-                          "-"}
-                      </td>
+                    const netCost =
+                      Math.max(
+                        approved -
+                          credit,
+                        0,
+                      );
 
-                      <td className="px-4 py-4 text-slate-600">
-                        {payable.supplierInvoiceNumber ||
-                          "-"}
-                      </td>
+                    return (
+                      <tr
+                        key={payable.id}
+                        className="hover:bg-slate-50"
+                      >
+                        <td className="px-4 py-4">
+                          <p className="font-semibold text-slate-900">
+                            {
+                              payable.supplierNameSnapshot
+                            }
+                          </p>
 
-                      <td className="px-4 py-4 whitespace-nowrap text-slate-600">
-                        {formatDate(
-                          payable.dueDate,
-                        )}
-                      </td>
+                          <p className="mt-1 text-xs text-slate-400">
+                            {payable.title}
+                          </p>
+                        </td>
 
-                      <td className="px-4 py-4 text-right font-semibold">
-                        {money(
-                          Number(
-                            payable.approvedAmount,
-                          ),
-                          payable.currency,
-                        )}
-                      </td>
+                        <td className="px-4 py-4 text-slate-600">
+                          {payable.serviceNameSnapshot ||
+                            "-"}
+                        </td>
 
-                      <td className="px-4 py-4 text-right text-emerald-700">
-                        {money(
-                          Number(
-                            payable.amountPaid,
-                          ),
-                          payable.currency,
-                        )}
-                      </td>
+                        <td className="px-4 py-4 text-slate-600">
+                          {payable.supplierInvoiceNumber ||
+                            "-"}
+                        </td>
 
-                      <td className="px-4 py-4 text-right font-semibold text-amber-700">
-                        {money(
-                          Number(
-                            payable.balance,
-                          ),
-                          payable.currency,
-                        )}
-                      </td>
-
-                      <td className="px-4 py-4">
-                        <span className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-semibold text-slate-700">
-                          {enumLabel(
-                            payable.paymentStatus,
+                        <td className="whitespace-nowrap px-4 py-4 text-slate-600">
+                          {formatDate(
+                            payable.dueDate,
                           )}
-                        </span>
-                      </td>
-                    </tr>
-                  ),
+                        </td>
+
+                        <td className="px-4 py-4 text-right text-slate-700">
+                          {money(
+                            approved,
+                            payable.currency,
+                          )}
+                        </td>
+
+                        <td className="px-4 py-4 text-right text-blue-700">
+                          {credit > 0
+                            ? `-${money(
+                                credit,
+                                payable.currency,
+                              )}`
+                            : money(
+                                0,
+                                payable.currency,
+                              )}
+                        </td>
+
+                        <td className="px-4 py-4 text-right font-bold text-slate-900">
+                          {money(
+                            netCost,
+                            payable.currency,
+                          )}
+                        </td>
+
+                        <td className="px-4 py-4 text-right text-emerald-700">
+                          {money(
+                            Number(
+                              payable.amountPaid,
+                            ),
+                            payable.currency,
+                          )}
+                        </td>
+
+                        <td className="px-4 py-4 text-right font-semibold text-amber-700">
+                          {money(
+                            Number(
+                              payable.balance,
+                            ),
+                            payable.currency,
+                          )}
+                        </td>
+
+                        <td className="px-4 py-4">
+                          <span className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-semibold text-slate-700">
+                            {enumLabel(
+                              payable.paymentStatus,
+                            )}
+                          </span>
+                        </td>
+
+                        <td className="whitespace-nowrap px-4 py-4 text-right">
+                          <Link
+                            href={`/admin/supplier-payables/${payable.id}`}
+                            className="text-xs font-semibold text-blue-600 hover:underline"
+                          >
+                            View →
+                          </Link>
+                        </td>
+                      </tr>
+                    );
+                  },
                 )}
               </tbody>
             </table>
@@ -1614,7 +1937,7 @@ export default async function DepartureProfitabilityPage({
         <SectionHeader
           eyebrow="Operating Cost"
           title="Direct Tour Cost Breakdown"
-          description="Operational expenses grouped into the detailed cost categories used by Epoch Journeys."
+          description="Approved direct operating expenses grouped by detailed expense classification."
         />
 
         {expenseItems.length ===
@@ -1625,23 +1948,17 @@ export default async function DepartureProfitabilityPage({
             {expenseItems.map(
               (item) => (
                 <div
-                  key={
-                    item.key
-                  }
+                  key={item.key}
                   className="rounded-xl border border-slate-200 bg-slate-50 p-4"
                 >
                   <div className="flex items-start justify-between gap-4">
                     <div>
                       <p className="font-semibold text-slate-900">
-                        {
-                          item.label
-                        }
+                        {item.label}
                       </p>
 
                       <p className="mt-1 text-xs text-slate-500">
-                        {
-                          item.count
-                        }{" "}
+                        {item.count}{" "}
                         expense
                         {item.count ===
                         1
@@ -1685,15 +2002,15 @@ export default async function DepartureProfitabilityPage({
         <SectionHeader
           eyebrow="Expense Ledger"
           title="Direct Expenses"
-          description="Hotel, guide, tour manager, transportation, meals, Mass arrangements, tickets, staff and other direct operating costs."
+          description="Approved direct operating costs linked to this departure. Payment status is shown separately from recognized cost."
         />
 
         {departure.expenses.length ===
         0 ? (
-          <EmptyState text="No direct expenses exist for this departure." />
+          <EmptyState text="No approved direct expenses exist for this departure." />
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[1100px] text-left text-sm">
+            <table className="w-full min-w-[1150px] text-left text-sm">
               <thead className={tableHeadClass}>
                 <tr>
                   <th className="px-4 py-3">
@@ -1713,11 +2030,15 @@ export default async function DepartureProfitabilityPage({
                   </th>
 
                   <th className="px-4 py-3">
-                    Status
+                    Payment Status
                   </th>
 
                   <th className="px-4 py-3 text-right">
-                    Amount
+                    Recognized Cost
+                  </th>
+
+                  <th className="px-4 py-3 text-right">
+                    Action
                   </th>
                 </tr>
               </thead>
@@ -1726,12 +2047,10 @@ export default async function DepartureProfitabilityPage({
                 {departure.expenses.map(
                   (expense) => (
                     <tr
-                      key={
-                        expense.id
-                      }
+                      key={expense.id}
                       className="hover:bg-slate-50"
                     >
-                      <td className="px-4 py-4 whitespace-nowrap text-slate-600">
+                      <td className="whitespace-nowrap px-4 py-4 text-slate-600">
                         {formatDate(
                           expense.expenseDate,
                         )}
@@ -1746,9 +2065,7 @@ export default async function DepartureProfitabilityPage({
                         </p>
 
                         <p className="mt-1 text-xs text-slate-400">
-                          {
-                            expense.title
-                          }
+                          {expense.title}
                         </p>
                       </td>
 
@@ -1777,6 +2094,15 @@ export default async function DepartureProfitabilityPage({
                           expense.currency,
                         )}
                       </td>
+
+                      <td className="whitespace-nowrap px-4 py-4 text-right">
+                        <Link
+                          href={`/admin/finance/expenses/${expense.id}/edit`}
+                          className="text-xs font-semibold text-blue-600 hover:underline"
+                        >
+                          View →
+                        </Link>
+                      </td>
                     </tr>
                   ),
                 )}
@@ -1792,17 +2118,17 @@ export default async function DepartureProfitabilityPage({
 
       <section className={sectionClass}>
         <SectionHeader
-          eyebrow="Revenue Adjustment"
+          eyebrow="Customer Adjustments"
           title="Refunds"
-          description="Approved and paid customer refunds affecting this departure's profitability."
+          description="Refunds are classified according to economic impact. Cancellation, service, price and goodwill refunds reduce profitability; overpayment and duplicate-payment refunds are cash corrections only."
         />
 
         {refunds.length ===
         0 ? (
-          <EmptyState text="No approved or paid refunds exist for this departure." />
+          <EmptyState text="No approved or paid refunds for confirmed bookings exist on this departure." />
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[850px] text-left text-sm">
+            <table className="w-full min-w-[1050px] text-left text-sm">
               <thead className={tableHeadClass}>
                 <tr>
                   <th className="px-4 py-3">
@@ -1814,11 +2140,19 @@ export default async function DepartureProfitabilityPage({
                   </th>
 
                   <th className="px-4 py-3">
+                    Impact
+                  </th>
+
+                  <th className="px-4 py-3">
                     Date
                   </th>
 
                   <th className="px-4 py-3">
                     Status
+                  </th>
+
+                  <th className="px-4 py-3">
+                    Reference
                   </th>
 
                   <th className="px-4 py-3 text-right">
@@ -1831,9 +2165,8 @@ export default async function DepartureProfitabilityPage({
                 {refunds.map(
                   (refund) => (
                     <tr
-                      key={
-                        refund.id
-                      }
+                      key={refund.id}
+                      className="hover:bg-slate-50"
                     >
                       <td className="px-4 py-4">
                         <Link
@@ -1853,7 +2186,7 @@ export default async function DepartureProfitabilityPage({
                         </p>
 
                         {refund.reasonDetails && (
-                          <p className="mt-1 text-xs text-slate-500">
+                          <p className="mt-1 max-w-[260px] text-xs text-slate-500">
                             {
                               refund.reasonDetails
                             }
@@ -1861,7 +2194,19 @@ export default async function DepartureProfitabilityPage({
                         )}
                       </td>
 
-                      <td className="px-4 py-4 text-slate-600">
+                      <td className="px-4 py-4">
+                        <span
+                          className={`inline-flex rounded-full px-2.5 py-1 text-xs font-semibold ${refundImpactClass(
+                            refund.reason,
+                          )}`}
+                        >
+                          {refundImpactLabel(
+                            refund.reason,
+                          )}
+                        </span>
+                      </td>
+
+                      <td className="whitespace-nowrap px-4 py-4 text-slate-600">
                         {formatDate(
                           refund.refundDate,
                         )}
@@ -1873,7 +2218,20 @@ export default async function DepartureProfitabilityPage({
                         )}
                       </td>
 
-                      <td className="px-4 py-4 text-right font-bold text-red-700">
+                      <td className="px-4 py-4 text-slate-600">
+                        {refund.reference ||
+                          "-"}
+                      </td>
+
+                      <td
+                        className={`px-4 py-4 text-right font-bold ${
+                          refundReducesRevenue(
+                            refund.reason,
+                          )
+                            ? "text-red-700"
+                            : "text-blue-700"
+                        }`}
+                      >
                         -
                         {money(
                           Number(
@@ -1899,7 +2257,7 @@ export default async function DepartureProfitabilityPage({
         <SectionHeader
           eyebrow="Actual Cash"
           title="Departure Bank Ledger"
-          description="Posted cash receipts and cash outflows directly linked to this departure."
+          description="Posted customer receipts and cash outflows directly linked to this departure. These movements affect cash but are not counted again as revenue or expense."
         />
 
         {departure
@@ -1946,11 +2304,10 @@ export default async function DepartureProfitabilityPage({
 
                     return (
                       <tr
-                        key={
-                          transaction.id
-                        }
+                        key={transaction.id}
+                        className="hover:bg-slate-50"
                       >
-                        <td className="px-4 py-4 whitespace-nowrap text-slate-600">
+                        <td className="whitespace-nowrap px-4 py-4 text-slate-600">
                           {formatDate(
                             transaction.transactionDate,
                           )}
@@ -2039,15 +2396,11 @@ export default async function DepartureProfitabilityPage({
             {departure.financeDocuments.map(
               (document) => (
                 <div
-                  key={
-                    document.id
-                  }
+                  key={document.id}
                   className="rounded-xl border border-slate-200 bg-slate-50 p-4"
                 >
                   <p className="font-semibold text-slate-900">
-                    {
-                      document.title
-                    }
+                    {document.title}
                   </p>
 
                   <p className="mt-1 text-xs text-slate-500">
@@ -2060,6 +2413,13 @@ export default async function DepartureProfitabilityPage({
                     {
                       document.originalFileName
                     }
+                  </p>
+
+                  <p className="mt-1 text-[11px] text-slate-400">
+                    Uploaded{" "}
+                    {formatDate(
+                      document.createdAt,
+                    )}
                   </p>
 
                   <a

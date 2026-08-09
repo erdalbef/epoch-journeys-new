@@ -1,0 +1,2 @@
+ALTER TABLE "Refund"
+ALTER COLUMN "bankAccountId" DROP NOT NULL;

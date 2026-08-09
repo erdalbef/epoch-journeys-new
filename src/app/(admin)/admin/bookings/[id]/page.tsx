@@ -1492,28 +1492,15 @@ export default async function AdminBookingDetailPage({
                         {refund.reasonDetails ? (
                           <p>
                             <strong>
-                              Details:
+                              Bank / Cash Account:
                             </strong>{" "}
-                            {
-                              refund.reasonDetails
-                            }
+                            {refund.bankAccount
+                              ? `${refund.bankAccount.name} · ${refund.bankAccount.currency}`
+                              : refund.status === RefundStatus.PAID
+                                ? "Not available"
+                                : "Not required until paid"}
                           </p>
                         ) : null}
-
-                        <p>
-                          <strong>
-                            Account:
-                          </strong>{" "}
-                          {
-                            refund.bankAccount
-                              .name
-                          }
-                          {" · "}
-                          {
-                            refund.bankAccount
-                              .currency
-                          }
-                        </p>
 
                         {refund.method ? (
                           <p>
