@@ -1,0 +1,128 @@
+import { NextResponse } from "next/server";
+import { getServerSession } from "next-auth";
+import { Role } from "@prisma/client";
+
+import { authOptions } from "@/lib/authOptions";
+import { db } from "@/lib/db";
+
+type RouteContext = {
+  params: Promise<{
+    id: string;
+  }>;
+};
+
+export async function DELETE(
+  _request: Request,
+  context: RouteContext,
+) {
+  try {
+    const session =
+      await getServerSession(authOptions);
+
+    if (
+      !session?.user ||
+      session.user.role !== Role.ADMIN
+    ) {
+      return NextResponse.json(
+        {
+          error: "Unauthorized",
+        },
+        {
+          status: 401,
+        },
+      );
+    }
+
+    const { id } = await context.params;
+
+    const agent = await db.user.findUnique({
+      where: {
+        id,
+      },
+      select: {
+        id: true,
+        email: true,
+        role: true,
+      },
+    });
+
+    if (!agent) {
+      return NextResponse.json(
+        {
+          error: "Partner not found.",
+        },
+        {
+          status: 404,
+        },
+      );
+    }
+
+    if (agent.role !== Role.AGENT) {
+      return NextResponse.json(
+        {
+          error:
+            "Only partner accounts can be deleted from this page.",
+        },
+        {
+          status: 400,
+        },
+      );
+    }
+
+    /*
+     * IMPORTANT:
+     * Your Booking -> User relation uses the partner/user account.
+     *
+     * We explicitly prevent deletion when bookings exist so
+     * historical booking and finance data cannot be removed
+     * accidentally.
+     */
+    const bookingCount = await db.booking.count({
+      where: {
+        userId: id,
+      },
+    });
+
+    if (bookingCount > 0) {
+      return NextResponse.json(
+        {
+          error:
+            `This partner has ${bookingCount} booking${
+              bookingCount === 1 ? "" : "s"
+            } and cannot be deleted. ` +
+            "Use Unapprove instead so the historical records remain intact.",
+        },
+        {
+          status: 409,
+        },
+      );
+    }
+
+    await db.user.delete({
+      where: {
+        id,
+      },
+    });
+
+    return NextResponse.json({
+      success: true,
+    });
+  } catch (error) {
+    console.error(
+      "DELETE_AGENT_ERROR",
+      error,
+    );
+
+    return NextResponse.json(
+      {
+        error:
+          error instanceof Error
+            ? error.message
+            : "Failed to delete partner.",
+      },
+      {
+        status: 500,
+      },
+    );
+  }
+}

@@ -13,94 +13,96 @@ import {
   SALES_DOCUMENT_DEFAULTS,
 } from "@/lib/sales-documents";
 
-type CreateSalesDocumentItemInput = {
+type ItemInput = {
   description: string;
   quantity: number;
   unitPrice: number;
-  taxRate?: number | null;
+  taxRate?: number;
 };
 
-type CreateSalesDocumentBody = {
+type SalesDocumentInput = {
   type: SalesDocumentType;
   bookingId?: string | null;
-  dueDate?: string | null;
-
+  billToProfileKey?: string | null;
+  saveBillingProfile?: boolean;
   recipientName: string;
   recipientCompany?: string | null;
   recipientEmail?: string | null;
+  recipientEmailSecondary?: string | null;
   recipientAddress?: string | null;
   recipientCity?: string | null;
   recipientPostalCode?: string | null;
   recipientCountry?: string | null;
   recipientTaxNumber?: string | null;
   recipientVatNumber?: string | null;
-
-  serviceDescriptionEn?: string | null;
-  serviceDescriptionBg?: string | null;
-  vatEn?: string | null;
-  vatBg?: string | null;
-  paymentEn?: string | null;
-  paymentBg?: string | null;
-  notes?: string | null;
-
-  items: CreateSalesDocumentItemInput[];
+  dueDate?: string | null;
+  amountPaid?: number;
+  serviceDescriptionEn?: string;
+  serviceDescriptionBg?: string;
+  vatEn?: string;
+  vatBg?: string;
+  paymentEn?: string;
+  paymentBg?: string;
+  additionalNotes?: string | null;
+  items: ItemInput[];
 };
 
-type CalculatedItem = {
-  description: string;
-  quantity: number;
-  unitPrice: number;
-  discountAmount: number;
-  taxType: FinanceTaxType;
-  taxRate: number | null;
-  taxAmount: number;
-  netAmount: number;
-  grossAmount: number;
-  sortOrder: number;
-};
+function clean(value: unknown) {
+  const text = typeof value === "string" ? value.trim() : "";
+  return text || null;
+}
 
-function optionalText(value: string | null | undefined) {
-  const text = value?.trim();
-  return text ? text : null;
+async function saveBillingProfile(body: SalesDocumentInput) {
+  if (!body.saveBillingProfile || !body.billToProfileKey) return;
+
+  const [kind, id] = body.billToProfileKey.split(":");
+  if (!id) return;
+
+  const data = {
+    billingContactName: clean(body.recipientName),
+    billingCompanyName: clean(body.recipientCompany),
+    billingAddress: clean(body.recipientAddress),
+    billingCity: clean(body.recipientCity),
+    billingPostalCode: clean(body.recipientPostalCode),
+    billingCountry: clean(body.recipientCountry),
+    billingTaxNumber: clean(body.recipientTaxNumber),
+    billingVatNumber: clean(body.recipientVatNumber),
+    billingEmail: clean(body.recipientEmail),
+    billingEmailSecondary: clean(body.recipientEmailSecondary),
+  };
+
+  if (kind === "USER") {
+    await db.user.update({ where: { id }, data });
+  } else if (kind === "PARTNER") {
+    await db.partnerCompany.update({ where: { id }, data });
+  }
 }
 
 export async function POST(request: Request) {
   const session = await getServerSession(authOptions);
 
   if (!session?.user || session.user.role !== Role.ADMIN) {
-    return NextResponse.json(
-      { error: "Unauthorized" },
-      { status: 401 },
-    );
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
   try {
-    const body = (await request.json()) as CreateSalesDocumentBody;
-
-    const validDocumentType = Object.values(
-      SalesDocumentType,
-    ).includes(body.type);
+    const body = (await request.json()) as SalesDocumentInput;
 
     if (
-      !validDocumentType ||
+      !Object.values(SalesDocumentType).includes(body.type) ||
       !body.recipientName?.trim() ||
       !Array.isArray(body.items) ||
       body.items.length === 0
     ) {
       return NextResponse.json(
-        {
-          error:
-            "Document type, recipient and at least one item are required.",
-        },
+        { error: "Document type, recipient and at least one item are required." },
         { status: 400 },
       );
     }
 
     const booking = body.bookingId
       ? await db.booking.findUnique({
-          where: {
-            id: body.bookingId,
-          },
+          where: { id: body.bookingId },
           select: {
             bookingReference: true,
             tourTitleSnapshot: true,
@@ -112,180 +114,112 @@ export async function POST(request: Request) {
         })
       : null;
 
-    const items: CalculatedItem[] = body.items.map(
-      (item, index) => {
-        const quantity = Number(item.quantity);
-        const unitPrice = Number(item.unitPrice);
-        const taxRate = Number(item.taxRate ?? 0);
+    const items = body.items.map((item, index) => {
+      const quantity = Number(item.quantity);
+      const unitPrice = Number(item.unitPrice);
+      const taxRate = Number(item.taxRate || 0);
 
-        if (
-          !Number.isFinite(quantity) ||
-          quantity <= 0 ||
-          !Number.isFinite(unitPrice) ||
-          unitPrice < 0 ||
-          !Number.isFinite(taxRate) ||
-          taxRate < 0
-        ) {
-          throw new Error("Invalid sales document line item.");
-        }
+      if (
+        !Number.isFinite(quantity) ||
+        quantity < 0 ||
+        !Number.isFinite(unitPrice) ||
+        unitPrice < 0 ||
+        !Number.isFinite(taxRate) ||
+        taxRate < 0
+      ) {
+        throw new Error("Invalid line-item amount.");
+      }
 
-        const taxType =
-          taxRate > 0
-            ? FinanceTaxType.VAT
-            : FinanceTaxType.NONE;
+      const taxType = taxRate > 0 ? FinanceTaxType.VAT : FinanceTaxType.NONE;
+      const calculated = calculateLine({
+        quantity,
+        unitPrice,
+        taxRate,
+        taxType,
+      });
 
-        const calculated = calculateLine({
-          quantity,
-          unitPrice,
-          taxRate,
-          taxType,
-        });
+      return {
+        description: String(item.description || "Service").trim() || "Service",
+        quantity,
+        unitPrice,
+        discountAmount: 0,
+        taxType,
+        taxRate: taxRate || null,
+        taxAmount: calculated.taxAmount,
+        netAmount: calculated.netAmount,
+        grossAmount: calculated.grossAmount,
+        sortOrder: index,
+      };
+    });
 
-        return {
-          description:
-            item.description?.trim() || "Service",
-          quantity,
-          unitPrice,
-          discountAmount: 0,
-          taxType,
-          taxRate: taxRate > 0 ? taxRate : null,
-          taxAmount: calculated.taxAmount,
-          netAmount: calculated.netAmount,
-          grossAmount: calculated.grossAmount,
-          sortOrder: index,
-        };
-      },
-    );
+    const subtotal = items.reduce((sum, item) => sum + item.netAmount, 0);
+    const taxTotal = items.reduce((sum, item) => sum + item.taxAmount, 0);
+    const totalAmount = items.reduce((sum, item) => sum + item.grossAmount, 0);
 
-    const subtotal = items.reduce(
-      (sum: number, item: CalculatedItem) =>
-        sum + item.netAmount,
-      0,
-    );
+    const manualAmountPaid = Number(body.amountPaid || 0);
+    const amountPaid = booking
+      ? booking.amountPaid
+      : Number.isFinite(manualAmountPaid)
+        ? Math.max(0, manualAmountPaid)
+        : 0;
 
-    const taxTotal = items.reduce(
-      (sum: number, item: CalculatedItem) =>
-        sum + item.taxAmount,
-      0,
-    );
+    await saveBillingProfile(body);
 
-    const totalAmount = items.reduce(
-      (sum: number, item: CalculatedItem) =>
-        sum + item.grossAmount,
-      0,
-    );
-
-    const amountPaid = booking?.amountPaid ?? 0;
-
-    const serviceDescriptionEn =
-      optionalText(body.serviceDescriptionEn) ?? "";
-
-    const serviceDescriptionBg =
-      optionalText(body.serviceDescriptionBg) ?? "";
-
-    const vatEn =
-      optionalText(body.vatEn) ??
-      SALES_DOCUMENT_DEFAULTS.vatEn;
-
-    const vatBg =
-      optionalText(body.vatBg) ??
-      SALES_DOCUMENT_DEFAULTS.vatBg;
-
-    const paymentEn =
-      optionalText(body.paymentEn) ??
-      SALES_DOCUMENT_DEFAULTS.paymentEn;
-
-    const paymentBg =
-      optionalText(body.paymentBg) ??
-      SALES_DOCUMENT_DEFAULTS.paymentBg;
-
-    const notes = [
-      optionalText(body.notes),
-      `PAYMENT_EN:${paymentEn}`,
-      `PAYMENT_BG:${paymentBg}`,
-    ]
-      .filter((value): value is string => Boolean(value))
-      .join("\n\n");
-
-    const document = await db.salesDocument.create({
+    const doc = await db.salesDocument.create({
       data: {
         type: body.type,
         bookingId: body.bookingId || null,
         createdById: session.user.id,
-
         currency: booking?.currency || "EUR",
-
-        dueDate: body.dueDate
-          ? new Date(`${body.dueDate}T12:00:00.000Z`)
-          : null,
-
+        dueDate: body.dueDate ? new Date(`${body.dueDate}T12:00:00Z`) : null,
         subtotal,
-        discountTotal: 0,
         taxTotal,
         totalAmount,
         amountPaid,
         balance: Math.max(0, totalAmount - amountPaid),
 
         recipientName: body.recipientName.trim(),
-        recipientCompany: optionalText(
-          body.recipientCompany,
-        ),
-        recipientEmail: optionalText(body.recipientEmail),
-        recipientAddress: optionalText(body.recipientAddress),
-        recipientCity: optionalText(body.recipientCity),
-        recipientPostalCode: optionalText(
-          body.recipientPostalCode,
-        ),
-        recipientCountry: optionalText(
-          body.recipientCountry,
-        ),
-        recipientTaxNumber: optionalText(
-          body.recipientTaxNumber,
-        ),
-        recipientVatNumber: optionalText(
-          body.recipientVatNumber,
-        ),
+        recipientCompany: clean(body.recipientCompany),
+        recipientEmail: clean(body.recipientEmail),
+        recipientEmailSecondary: clean(body.recipientEmailSecondary),
+        recipientAddress: clean(body.recipientAddress),
+        recipientCity: clean(body.recipientCity),
+        recipientPostalCode: clean(body.recipientPostalCode),
+        recipientCountry: clean(body.recipientCountry),
+        recipientTaxNumber: clean(body.recipientTaxNumber),
+        recipientVatNumber: clean(body.recipientVatNumber),
 
         issuerName: SALES_DOCUMENT_DEFAULTS.issuerName,
-        issuerLegalName:
-          SALES_DOCUMENT_DEFAULTS.issuerLegalName,
-        issuerAddress:
-          SALES_DOCUMENT_DEFAULTS.issuerAddress,
-        issuerCountry:
-          SALES_DOCUMENT_DEFAULTS.issuerCountry,
-        issuerVatNumber:
-          SALES_DOCUMENT_DEFAULTS.issuerVatNumber,
+        issuerLegalName: SALES_DOCUMENT_DEFAULTS.issuerLegalName,
+        issuerAddress: SALES_DOCUMENT_DEFAULTS.issuerAddress,
+        issuerCountry: SALES_DOCUMENT_DEFAULTS.issuerCountry,
+        issuerVatNumber: SALES_DOCUMENT_DEFAULTS.issuerVatNumber,
 
         bankName: SALES_DOCUMENT_DEFAULTS.bankName,
-        bankAccountName:
-          SALES_DOCUMENT_DEFAULTS.bankAccountName,
+        bankAccountName: SALES_DOCUMENT_DEFAULTS.bankAccountName,
         iban: SALES_DOCUMENT_DEFAULTS.iban,
         swiftBic: SALES_DOCUMENT_DEFAULTS.swiftBic,
 
-        bookingReferenceSnapshot:
-          booking?.bookingReference || null,
-        tourTitleSnapshot:
-          booking?.tourTitleSnapshot || null,
-        departureDateSnapshot:
-          booking?.departureDateSnapshot || null,
+        bookingReferenceSnapshot: booking?.bookingReference || null,
+        tourTitleSnapshot: booking?.tourTitleSnapshot || null,
+        departureDateSnapshot: booking?.departureDateSnapshot || null,
         groupNameSnapshot: booking?.groupName || null,
 
-        paymentTerms: `${serviceDescriptionEn}\n---BG---\n${serviceDescriptionBg}`,
-        footerNotes: `${vatEn}\n---BG---\n${vatBg}`,
-        notes,
+        paymentTerms: `${body.serviceDescriptionEn || ""}\n---BG---\n${body.serviceDescriptionBg || ""}`,
+        footerNotes: `${body.vatEn || ""}\n---BG---\n${body.vatBg || ""}`,
+        notes: [
+          clean(body.additionalNotes),
+          `PAYMENT_EN:${body.paymentEn || SALES_DOCUMENT_DEFAULTS.paymentEn}`,
+          `PAYMENT_BG:${body.paymentBg || SALES_DOCUMENT_DEFAULTS.paymentBg}`,
+        ]
+          .filter(Boolean)
+          .join("\n\n"),
 
-        items: {
-          create: items,
-        },
-      },
-      select: {
-        id: true,
+        items: { create: items },
       },
     });
 
-    return NextResponse.json({
-      id: document.id,
-    });
+    return NextResponse.json({ id: doc.id });
   } catch (error) {
     console.error("CREATE_SALES_DOCUMENT_ERROR", error);
 
