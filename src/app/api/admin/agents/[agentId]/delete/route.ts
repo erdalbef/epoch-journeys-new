@@ -7,17 +7,16 @@ import { db } from "@/lib/db";
 
 type RouteContext = {
   params: Promise<{
-    id: string;
+    id?: string;
   }>;
 };
 
 export async function DELETE(
-  _request: Request,
+  request: Request,
   context: RouteContext,
 ) {
   try {
-    const session =
-      await getServerSession(authOptions);
+    const session = await getServerSession(authOptions);
 
     if (
       !session?.user ||
@@ -33,11 +32,76 @@ export async function DELETE(
       );
     }
 
-    const { id } = await context.params;
+    /*
+     * First try the normal Next.js dynamic route parameter.
+     */
+    const params = await context.params;
+
+    let agentId = params?.id?.trim();
+
+    /*
+     * Defensive fallback:
+     *
+     * Expected URL:
+     * /api/admin/agents/AGENT_ID/delete
+     */
+    if (!agentId) {
+      const url = new URL(request.url);
+
+      const parts = url.pathname
+        .split("/")
+        .filter(Boolean);
+
+      const agentsIndex = parts.indexOf("agents");
+
+      if (
+        agentsIndex >= 0 &&
+        parts.length > agentsIndex + 1
+      ) {
+        agentId = parts[agentsIndex + 1];
+      }
+    }
+
+    /*
+     * Never allow Prisma to receive:
+     *
+     * id: undefined
+     */
+    if (
+      !agentId ||
+      agentId === "undefined" ||
+      agentId === "null"
+    ) {
+      console.error(
+        "DELETE_AGENT_MISSING_ID",
+        {
+          url: request.url,
+          params,
+        },
+      );
+
+      return NextResponse.json(
+        {
+          error:
+            "Partner ID is missing. The delete request could not identify which partner to remove.",
+        },
+        {
+          status: 400,
+        },
+      );
+    }
+
+    console.log(
+      "DELETE_AGENT_REQUEST",
+      {
+        agentId,
+        url: request.url,
+      },
+    );
 
     const agent = await db.user.findUnique({
       where: {
-        id,
+        id: agentId,
       },
       select: {
         id: true,
@@ -70,16 +134,11 @@ export async function DELETE(
     }
 
     /*
-     * IMPORTANT:
-     * Your Booking -> User relation uses the partner/user account.
-     *
-     * We explicitly prevent deletion when bookings exist so
-     * historical booking and finance data cannot be removed
-     * accidentally.
+     * Protect historical bookings.
      */
     const bookingCount = await db.booking.count({
       where: {
-        userId: id,
+        userId: agentId,
       },
     });
 
@@ -90,7 +149,7 @@ export async function DELETE(
             `This partner has ${bookingCount} booking${
               bookingCount === 1 ? "" : "s"
             } and cannot be deleted. ` +
-            "Use Unapprove instead so the historical records remain intact.",
+            "Delete the test bookings first, or use Unapprove for a real partner.",
         },
         {
           status: 409,
@@ -98,14 +157,18 @@ export async function DELETE(
       );
     }
 
+    /*
+     * Delete only when no protected booking history exists.
+     */
     await db.user.delete({
       where: {
-        id,
+        id: agentId,
       },
     });
 
     return NextResponse.json({
       success: true,
+      message: `${agent.email} was permanently deleted.`,
     });
   } catch (error) {
     console.error(

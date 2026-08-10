@@ -22,6 +22,7 @@ import {
 import BookingDetailClient from "@/components/bookings/BookingDetailClient";
 import AddPaymentForm from "@/components/admin/bookings/AddPaymentForm";
 import RefundForm from "@/components/admin/bookings/RefundForm";
+import DeleteTestPaymentButton from "@/components/admin/bookings/DeleteTestPaymentButton";
 import ActionButton from "@/components/shared/button/ActionButton";
 
 type PageProps = {
@@ -86,8 +87,10 @@ function formatEnumLabel(
   return value
     .replaceAll("_", " ")
     .toLowerCase()
-    .replace(/\b\w/g, (letter) =>
-      letter.toUpperCase(),
+    .replace(
+      /\b\w/g,
+      (letter) =>
+        letter.toUpperCase(),
     );
 }
 
@@ -477,13 +480,6 @@ export default async function AdminBookingDetailPage({
       ?.status ||
     "PENDING";
 
-  /*
-   * APPROVED and PAID refunds
-   * reserve/reduce the remaining
-   * refundable amount.
-   *
-   * Cancelled refunds do not.
-   */
   const committedRefundAmount =
     booking.refunds
       .filter(
@@ -1380,6 +1376,96 @@ export default async function AdminBookingDetailPage({
           />
 
           {/* ====================================== */}
+          {/* PAYMENT HISTORY */}
+          {/* ====================================== */}
+
+          <Section title="Payment History">
+            {booking.payments
+              .length === 0 ? (
+              <div className="rounded-xl bg-slate-50 p-4">
+                <p className="text-sm text-slate-500">
+                  No received
+                  payments recorded
+                  for this booking.
+                </p>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {booking.payments.map(
+                  (payment) => (
+                    <div
+                      key={
+                        payment.id
+                      }
+                      className="rounded-xl border border-slate-200 p-4"
+                    >
+                      <div className="flex flex-wrap items-start justify-between gap-4">
+                        <div>
+                          <p className="text-lg font-bold text-[#001F3F]">
+                            {formatCurrency(
+                              payment.amount,
+                              payment.currency,
+                            )}
+                          </p>
+
+                          <p className="mt-1 text-xs text-slate-500">
+                            Received:{" "}
+                            {formatDate(
+                              payment.paidAt ||
+                                payment.createdAt,
+                            )}
+                          </p>
+
+                          {payment.reference ? (
+                            <p className="mt-1 text-xs text-slate-600">
+                              Reference:{" "}
+                              {
+                                payment.reference
+                              }
+                            </p>
+                          ) : null}
+                        </div>
+
+                        <DeleteTestPaymentButton
+                          bookingId={
+                            booking.id
+                          }
+                          paymentId={
+                            payment.id
+                          }
+                          amount={
+                            payment.amount
+                          }
+                          currency={
+                            payment.currency
+                          }
+                          reference={
+                            payment.reference
+                          }
+                        />
+                      </div>
+                    </div>
+                  ),
+                )}
+              </div>
+            )}
+
+            <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs leading-5 text-amber-800">
+              <strong>
+                Delete Test Payment
+              </strong>{" "}
+              is only for cleaning
+              development/test
+              records. Real received
+              payments should remain
+              in the accounting
+              history and be corrected
+              through refunds or
+              reversals.
+            </div>
+          </Section>
+
+          {/* ====================================== */}
           {/* REFUND FORM */}
           {/* ====================================== */}
 
@@ -1492,7 +1578,8 @@ export default async function AdminBookingDetailPage({
                         {refund.reasonDetails ? (
                           <p>
                             <strong>
-                              Bank / Cash Account:
+                              Bank / Cash
+                              Account:
                             </strong>{" "}
                             {refund.bankAccount
                               ? `${refund.bankAccount.name} · ${refund.bankAccount.currency}`

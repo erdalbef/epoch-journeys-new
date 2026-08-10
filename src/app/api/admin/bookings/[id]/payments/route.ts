@@ -19,17 +19,15 @@ type RouteContext = {
 function isValidPaymentMethod(
   value: string,
 ): value is PaymentMethod {
-  return Object.values(
-    PaymentMethod,
-  ).includes(value as PaymentMethod);
+  return Object.values(PaymentMethod).includes(
+    value as PaymentMethod,
+  );
 }
 
 function isValidPaymentRecordStatus(
   value: string,
 ): value is PaymentRecordStatus {
-  return Object.values(
-    PaymentRecordStatus,
-  ).includes(
+  return Object.values(PaymentRecordStatus).includes(
     value as PaymentRecordStatus,
   );
 }
@@ -39,10 +37,7 @@ export async function POST(
   context: RouteContext,
 ) {
   try {
-    const session =
-      await getServerSession(
-        authOptions,
-      );
+    const session = await getServerSession(authOptions);
 
     if (
       !session?.user ||
@@ -58,31 +53,29 @@ export async function POST(
       );
     }
 
-    const { id: bookingId } =
-      await context.params;
+    const { id: bookingId } = await context.params;
 
-    const booking =
-      await db.booking.findUnique({
-        where: {
-          id: bookingId,
-        },
-        select: {
-          id: true,
-          bookingReference: true,
-          bookingDisplayCode: true,
+    const booking = await db.booking.findUnique({
+      where: {
+        id: bookingId,
+      },
 
-          tourId: true,
-          departureDateId: true,
+      select: {
+        id: true,
+        bookingReference: true,
+        bookingDisplayCode: true,
 
-          tourTitleSnapshot: true,
-        },
-      });
+        tourId: true,
+        departureDateId: true,
+
+        tourTitleSnapshot: true,
+      },
+    });
 
     if (!booking) {
       return NextResponse.json(
         {
-          error:
-            "Booking not found.",
+          error: "Booking not found.",
         },
         {
           status: 404,
@@ -90,19 +83,18 @@ export async function POST(
       );
     }
 
-    const body =
-      (await request.json()) as {
-        amount?: number;
-        currency?: string;
-        method?: string;
-        status?: string;
+    const body = (await request.json()) as {
+      amount?: number;
+      currency?: string;
+      method?: string;
+      status?: string;
 
-        bankAccountId?: string | null;
+      bankAccountId?: string | null;
 
-        reference?: string;
-        notes?: string;
-        paidAt?: string | null;
-      };
+      reference?: string;
+      notes?: string;
+      paidAt?: string | null;
+    };
 
     const amount =
       typeof body.amount === "number"
@@ -125,8 +117,7 @@ export async function POST(
     }
 
     const currency =
-      typeof body.currency ===
-        "string" &&
+      typeof body.currency === "string" &&
       body.currency.trim()
         ? body.currency
             .trim()
@@ -135,9 +126,7 @@ export async function POST(
 
     if (
       !body.method ||
-      !isValidPaymentMethod(
-        body.method,
-      )
+      !isValidPaymentMethod(body.method)
     ) {
       return NextResponse.json(
         {
@@ -152,24 +141,19 @@ export async function POST(
 
     const paymentStatus =
       body.status &&
-      isValidPaymentRecordStatus(
-        body.status,
-      )
+      isValidPaymentRecordStatus(body.status)
         ? body.status
         : PaymentRecordStatus.RECEIVED;
 
     const paidAt =
-      typeof body.paidAt ===
-        "string" &&
+      typeof body.paidAt === "string" &&
       body.paidAt.trim()
         ? new Date(body.paidAt)
         : null;
 
     if (
       paidAt &&
-      Number.isNaN(
-        paidAt.getTime(),
-      )
+      Number.isNaN(paidAt.getTime())
     ) {
       return NextResponse.json(
         {
@@ -183,15 +167,13 @@ export async function POST(
     }
 
     const reference =
-      typeof body.reference ===
-        "string" &&
+      typeof body.reference === "string" &&
       body.reference.trim()
         ? body.reference.trim()
         : null;
 
     const notes =
-      typeof body.notes ===
-        "string" &&
+      typeof body.notes === "string" &&
       body.notes.trim()
         ? body.notes.trim()
         : null;
@@ -212,9 +194,7 @@ export async function POST(
       paymentStatus ===
       PaymentRecordStatus.RECEIVED
     ) {
-      if (
-        !body.bankAccountId
-      ) {
+      if (!body.bankAccountId) {
         return NextResponse.json(
           {
             error:
@@ -227,20 +207,18 @@ export async function POST(
       }
 
       const bankAccount =
-        await db.bankAccount.findUnique(
-          {
-            where: {
-              id:
-                body.bankAccountId,
-            },
-            select: {
-              id: true,
-              name: true,
-              currency: true,
-              isActive: true,
-            },
+        await db.bankAccount.findUnique({
+          where: {
+            id: body.bankAccountId,
           },
-        );
+
+          select: {
+            id: true,
+            name: true,
+            currency: true,
+            isActive: true,
+          },
+        });
 
       if (
         !bankAccount ||
@@ -329,57 +307,55 @@ export async function POST(
             bankAccountId
           ) {
             ledgerTransaction =
-              await tx.bankTransaction.create(
-                {
-                  data: {
-                    bankAccountId,
+              await tx.bankTransaction.create({
+                data: {
+                  bankAccountId,
 
-                    createdById:
-                      session.user.id,
+                  createdById:
+                    session.user.id,
 
-                    type:
-                      "CUSTOMER_RECEIPT",
+                  type:
+                    "CUSTOMER_RECEIPT",
 
-                    direction:
-                      "IN",
+                  direction:
+                    "IN",
 
-                    status:
-                      "POSTED",
+                  status:
+                    "POSTED",
 
-                    amount,
+                  amount,
 
-                    currency,
+                  currency,
 
-                    transactionDate:
-                      paidAt ??
-                      new Date(),
+                  transactionDate:
+                    paidAt ??
+                    new Date(),
 
-                    reference,
+                  reference,
 
-                    description:
-                      `Customer payment — ${
-                        booking.bookingDisplayCode ||
-                        booking.bookingReference
-                      } — ${
-                        booking.tourTitleSnapshot
-                      }`,
+                  description:
+                    `Customer payment — ${
+                      booking.bookingDisplayCode ||
+                      booking.bookingReference
+                    } — ${
+                      booking.tourTitleSnapshot
+                    }`,
 
-                    notes,
+                  notes,
 
-                    bookingId:
-                      booking.id,
+                  bookingId:
+                    booking.id,
 
-                    paymentId:
-                      payment.id,
+                  paymentId:
+                    payment.id,
 
-                    tourId:
-                      booking.tourId,
+                  tourId:
+                    booking.tourId,
 
-                    departureDateId:
-                      booking.departureDateId,
-                  },
+                  departureDateId:
+                    booking.departureDateId,
                 },
-              );
+              });
           }
 
           return {
@@ -390,8 +366,8 @@ export async function POST(
       );
 
     /*
-     * Keep the existing booking-payment
-     * summary logic.
+     * Keep booking payment totals/status
+     * synchronized with the Payment table.
      */
     const summary =
       await recalculateBookingPayment(

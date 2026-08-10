@@ -2,6 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { useState } from "react";
+import { toast } from "sonner";
 
 type Props = {
   bookingId: string;
@@ -19,28 +20,68 @@ export default function DeleteBookingButton({
     const confirmed = window.confirm(
       `Are you sure you want to delete booking ${
         bookingReference || bookingId
-      }? This cannot be undone.`
+      }?\n\nThis cannot be undone.`,
     );
 
-    if (!confirmed) return;
+    if (!confirmed) {
+      return;
+    }
 
     setLoading(true);
 
     try {
-      const res = await fetch(`/api/admin/bookings/${bookingId}`, {
-        method: "DELETE",
-      });
+      const res = await fetch(
+        `/api/admin/bookings/${bookingId}`,
+        {
+          method: "DELETE",
+        },
+      );
 
-      const data: { ok?: boolean; error?: string } = await res.json();
+      const data = (await res.json()) as {
+        success?: boolean;
+        message?: string;
+        error?: string;
+        blockers?: {
+          payments?: number;
+          expenses?: number;
+          financeEntries?: number;
+          supplierPayables?: number;
+          bankTransactions?: number;
+          refunds?: number;
+          financeDocuments?: number;
+          salesDocuments?: number;
+          partnerPayout?: boolean;
+        };
+      };
 
       if (!res.ok) {
-        throw new Error(data.error ?? "Failed to delete booking.");
+        throw new Error(
+          data.error || "Failed to delete booking.",
+        );
       }
+
+      toast.success(
+        data.message || "Booking deleted successfully.",
+      );
 
       router.refresh();
     } catch (error) {
-      console.error(error);
-      alert("Something went wrong while deleting the booking.");
+      const message =
+        error instanceof Error
+          ? error.message
+          : "Failed to delete booking.";
+
+      console.error("DELETE_BOOKING_CLIENT_ERROR", error);
+
+      toast.error(message, {
+        duration: 10000,
+      });
+
+      /*
+       * Also show a browser alert because the blocker message
+       * can contain several lines and is important during test cleanup.
+       */
+      window.alert(message);
     } finally {
       setLoading(false);
     }
@@ -51,7 +92,7 @@ export default function DeleteBookingButton({
       type="button"
       onClick={handleDelete}
       disabled={loading}
-      className="rounded-md bg-red-600 px-3 py-2 text-sm font-medium text-white hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-60"
+      className="rounded border border-red-200 bg-white px-3 py-1.5 text-xs font-medium text-red-700 transition hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-50"
     >
       {loading ? "Removing..." : "Remove"}
     </button>
