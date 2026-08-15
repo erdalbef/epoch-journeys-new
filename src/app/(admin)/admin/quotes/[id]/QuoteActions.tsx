@@ -45,14 +45,20 @@ export default function QuoteActions({ quote }: Props) {
 
   const isConverted = quote.status === "CONVERTED";
   const isCancelled = quote.status === "CANCELLED";
+  const isApproved = Boolean(quote.approvedAt);
 
-  async function parseResponse(res: Response): Promise<BasicResponse> {
-    const contentType = res.headers.get("content-type") ?? "";
+  async function parseResponse(
+    res: Response
+  ): Promise<BasicResponse> {
+    const contentType =
+      res.headers.get("content-type") ?? "";
 
     if (!contentType.includes("application/json")) {
       const text = await res.text();
+
       throw new Error(
-        text || `Server returned non-JSON response (${res.status}).`
+        text ||
+          `Server returned non-JSON response (${res.status}).`
       );
     }
 
@@ -61,40 +67,66 @@ export default function QuoteActions({ quote }: Props) {
 
   async function handleGenerate(
     url: string,
-    field: "pdfUrl" | "clientPdfUrl" | "agentClientPdfUrl"
+    field:
+      | "pdfUrl"
+      | "clientPdfUrl"
+      | "agentClientPdfUrl"
   ) {
     setLoading(true);
 
     try {
-      const res = await fetch(url, { method: "POST" });
+      const res = await fetch(url, {
+        method: "POST",
+      });
 
-      const contentType = res.headers.get("content-type") ?? "";
+      const contentType =
+        res.headers.get("content-type") ?? "";
+
       let data: GenerateResponse = {};
 
-      if (contentType.includes("application/json")) {
-        data = (await res.json()) as GenerateResponse;
+      if (
+        contentType.includes("application/json")
+      ) {
+        data =
+          (await res.json()) as GenerateResponse;
       } else {
         const text = await res.text();
+
         throw new Error(
-          text || `Server returned non-JSON response (${res.status}).`
+          text ||
+            `Server returned non-JSON response (${res.status}).`
         );
       }
 
       if (!res.ok || !data.ok) {
-        throw new Error(data.error || "Failed to generate PDF.");
+        throw new Error(
+          data.error || "Failed to generate PDF."
+        );
       }
 
-      const generatedUrl = data.quote?.[field];
+      const generatedUrl =
+        data.quote?.[field];
 
       if (!generatedUrl) {
-        throw new Error("PDF was generated, but the file URL was not returned.");
+        throw new Error(
+          "PDF was generated, but the file URL was not returned."
+        );
       }
 
       window.open(generatedUrl, "_blank");
+
       router.refresh();
     } catch (err) {
-      console.error("PDF generation error:", err);
-      alert(err instanceof Error ? err.message : "Error generating PDF.");
+      console.error(
+        "PDF generation error:",
+        err
+      );
+
+      alert(
+        err instanceof Error
+          ? err.message
+          : "Error generating PDF."
+      );
     } finally {
       setLoading(false);
     }
@@ -104,31 +136,58 @@ export default function QuoteActions({ quote }: Props) {
     setLoading(true);
 
     try {
-      const res = await fetch(`/api/quotes/${quote.id}/duplicate`, {
-        method: "POST",
-      });
+      const res = await fetch(
+        `/api/quotes/${quote.id}/duplicate`,
+        {
+          method: "POST",
+        }
+      );
 
       const data = await parseResponse(res);
 
-      if (!res.ok || !data.ok || !data.quote?.id) {
-        throw new Error(data.error || "Failed to duplicate quote.");
+      if (
+        !res.ok ||
+        !data.ok ||
+        !data.quote?.id
+      ) {
+        throw new Error(
+          data.error ||
+            "Failed to duplicate quote."
+        );
       }
 
-      router.push(`/admin/quotes/${data.quote.id}`);
+      router.push(
+        `/admin/quotes/${data.quote.id}`
+      );
+
       router.refresh();
     } catch (err) {
-      console.error("Duplicate quote error:", err);
-      alert(err instanceof Error ? err.message : "Failed to duplicate quote.");
+      console.error(
+        "Duplicate quote error:",
+        err
+      );
+
+      alert(
+        err instanceof Error
+          ? err.message
+          : "Failed to duplicate quote."
+      );
     } finally {
       setLoading(false);
     }
   }
 
-  async function handleConvert() {
-    if (isConverted || isCancelled) return;
+  async function handleApprove() {
+    if (
+      isConverted ||
+      isCancelled ||
+      isApproved
+    ) {
+      return;
+    }
 
     const confirmed = window.confirm(
-      "Are you sure you want to convert this quote to a booking?"
+      "Mark this agency quote as approved? This confirms the commercial offer before booking conversion."
     );
 
     if (!confirmed) return;
@@ -136,23 +195,95 @@ export default function QuoteActions({ quote }: Props) {
     setLoading(true);
 
     try {
-      const res = await fetch(`/api/quotes/${quote.id}/convert-to-booking`, {
-        method: "POST",
-      });
+      const res = await fetch(
+        `/api/quotes/${quote.id}/status`,
+        {
+          method: "PATCH",
+
+          headers: {
+            "Content-Type":
+              "application/json",
+          },
+
+          body: JSON.stringify({
+            approve: true,
+          }),
+        }
+      );
 
       const data = await parseResponse(res);
 
       if (!res.ok || !data.ok) {
-        throw new Error(data.error || "Failed to convert quote to booking.");
+        throw new Error(
+          data.error ||
+            "Failed to approve quote."
+        );
+      }
+
+      router.refresh();
+    } catch (err) {
+      console.error(
+        "Quote approval error:",
+        err
+      );
+
+      alert(
+        err instanceof Error
+          ? err.message
+          : "Failed to approve quote."
+      );
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function handleConvert() {
+    if (
+      isConverted ||
+      isCancelled ||
+      !isApproved
+    ) {
+      return;
+    }
+
+    const confirmed = window.confirm(
+      "Are you sure you want to convert this approved quote to a booking?"
+    );
+
+    if (!confirmed) return;
+
+    setLoading(true);
+
+    try {
+      const res = await fetch(
+        `/api/quotes/${quote.id}/convert`,
+        {
+          method: "POST",
+        }
+      );
+
+      const data = await parseResponse(res);
+
+      if (!res.ok || !data.ok) {
+        throw new Error(
+          data.error ||
+            "Failed to convert quote to booking."
+        );
       }
 
       if (data.booking?.id) {
-        router.push(`/admin/bookings/${data.booking.id}`);
+        router.push(
+          `/admin/bookings/${data.booking.id}`
+        );
       } else {
         router.refresh();
       }
     } catch (err) {
-      console.error("Convert quote error:", err);
+      console.error(
+        "Convert quote error:",
+        err
+      );
+
       alert(
         err instanceof Error
           ? err.message
@@ -175,21 +306,36 @@ export default function QuoteActions({ quote }: Props) {
     setLoading(true);
 
     try {
-      const res = await fetch(`/api/quotes/${quote.id}`, {
-        method: "DELETE",
-      });
+      const res = await fetch(
+        `/api/quotes/${quote.id}`,
+        {
+          method: "DELETE",
+        }
+      );
 
       const data = await parseResponse(res);
 
       if (!res.ok || !data.ok) {
-        throw new Error(data.error || "Failed to delete quote.");
+        throw new Error(
+          data.error ||
+            "Failed to delete quote."
+        );
       }
 
       router.push("/admin/quotes");
+
       router.refresh();
     } catch (err) {
-      console.error("Delete quote error:", err);
-      alert(err instanceof Error ? err.message : "Failed to delete quote.");
+      console.error(
+        "Delete quote error:",
+        err
+      );
+
+      alert(
+        err instanceof Error
+          ? err.message
+          : "Failed to delete quote."
+      );
     } finally {
       setLoading(false);
     }
@@ -202,15 +348,25 @@ export default function QuoteActions({ quote }: Props) {
           <h2 className="text-lg font-semibold text-slate-900">
             Quote Actions
           </h2>
+
           <p className="text-sm text-slate-500">
-            Generate PDFs, send proposals, duplicate, convert, or delete this
-            quote.
+            Generate PDFs, send proposals,
+            approve, duplicate, convert, or
+            delete this quote.
           </p>
         </div>
 
-        <span className="w-fit rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-700">
-          Status: {quote.status}
-        </span>
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="w-fit rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-700">
+            Status: {quote.status}
+          </span>
+
+          {isApproved && (
+            <span className="w-fit rounded-full bg-emerald-100 px-3 py-1 text-xs font-semibold text-emerald-800">
+              Approved
+            </span>
+          )}
+        </div>
       </div>
 
       <div className="space-y-4">
@@ -223,12 +379,17 @@ export default function QuoteActions({ quote }: Props) {
             <button
               type="button"
               onClick={() =>
-                handleGenerate(`/api/quotes/${quote.id}/pdf`, "pdfUrl")
+                handleGenerate(
+                  `/api/quotes/${quote.id}/pdf`,
+                  "pdfUrl"
+                )
               }
               className="rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-50"
               disabled={loading}
             >
-              {loading ? "Working..." : "Internal PDF"}
+              {loading
+                ? "Working..."
+                : "Internal PDF"}
             </button>
 
             <button
@@ -242,7 +403,9 @@ export default function QuoteActions({ quote }: Props) {
               className="rounded-md bg-green-600 px-4 py-2 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-50"
               disabled={loading}
             >
-              {loading ? "Working..." : "Client PDF"}
+              {loading
+                ? "Working..."
+                : "Client PDF"}
             </button>
 
             <button
@@ -256,13 +419,20 @@ export default function QuoteActions({ quote }: Props) {
               className="rounded-md bg-purple-600 px-4 py-2 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-50"
               disabled={loading}
             >
-              {loading ? "Working..." : "Agent PDF"}
+              {loading
+                ? "Working..."
+                : "Agent PDF"}
             </button>
 
             {quote.pdfUrl && (
               <button
                 type="button"
-                onClick={() => window.open(quote.pdfUrl!, "_blank")}
+                onClick={() =>
+                  window.open(
+                    quote.pdfUrl!,
+                    "_blank"
+                  )
+                }
                 className="rounded-md border px-4 py-2 text-sm font-medium"
               >
                 View Internal
@@ -272,7 +442,12 @@ export default function QuoteActions({ quote }: Props) {
             {quote.clientPdfUrl && (
               <button
                 type="button"
-                onClick={() => window.open(quote.clientPdfUrl!, "_blank")}
+                onClick={() =>
+                  window.open(
+                    quote.clientPdfUrl!,
+                    "_blank"
+                  )
+                }
                 className="rounded-md border px-4 py-2 text-sm font-medium"
               >
                 View Client
@@ -282,7 +457,12 @@ export default function QuoteActions({ quote }: Props) {
             {quote.agentClientPdfUrl && (
               <button
                 type="button"
-                onClick={() => window.open(quote.agentClientPdfUrl!, "_blank")}
+                onClick={() =>
+                  window.open(
+                    quote.agentClientPdfUrl!,
+                    "_blank"
+                  )
+                }
                 className="rounded-md border px-4 py-2 text-sm font-medium"
               >
                 View Agent
@@ -300,19 +480,27 @@ export default function QuoteActions({ quote }: Props) {
             <SendClientQuoteButton
               quoteId={quote.id}
               mode="client"
-              disabled={loading || !quote.clientPdfUrl}
+              disabled={
+                loading ||
+                !quote.clientPdfUrl
+              }
             />
 
             <SendClientQuoteButton
               quoteId={quote.id}
               mode="agent"
-              disabled={loading || !quote.agentClientPdfUrl}
+              disabled={
+                loading ||
+                !quote.agentClientPdfUrl
+              }
             />
           </div>
 
-          {(!quote.clientPdfUrl || !quote.agentClientPdfUrl) && (
+          {(!quote.clientPdfUrl ||
+            !quote.agentClientPdfUrl) && (
             <p className="mt-2 text-xs text-slate-500">
-              Generate the related PDF before sending it by email.
+              Generate the related PDF before
+              sending it by email.
             </p>
           )}
         </div>
@@ -334,15 +522,47 @@ export default function QuoteActions({ quote }: Props) {
 
             <button
               type="button"
+              onClick={handleApprove}
+              disabled={
+                loading ||
+                isConverted ||
+                isCancelled ||
+                isApproved ||
+                quote.status !== "SENT"
+              }
+              className="rounded-md bg-amber-600 px-4 py-2 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-50"
+              title={
+                isApproved
+                  ? "This quote has already been approved."
+                  : quote.status !==
+                      "SENT"
+                    ? "Only a sent quote can be approved."
+                    : undefined
+              }
+            >
+              {isApproved
+                ? "Quote Approved"
+                : "Mark Approved"}
+            </button>
+
+            <button
+              type="button"
               onClick={handleConvert}
-              disabled={loading || isConverted || isCancelled}
+              disabled={
+                loading ||
+                isConverted ||
+                isCancelled ||
+                !isApproved
+              }
               className="rounded-md bg-emerald-700 px-4 py-2 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-50"
               title={
                 isConverted
                   ? "This quote has already been converted."
                   : isCancelled
-                  ? "Cancelled quotes cannot be converted."
-                  : undefined
+                    ? "Cancelled quotes cannot be converted."
+                    : !isApproved
+                      ? "Approve the quote before converting it."
+                      : undefined
               }
             >
               Convert Quote → Booking
@@ -351,10 +571,14 @@ export default function QuoteActions({ quote }: Props) {
             <button
               type="button"
               onClick={handleDelete}
-              disabled={loading || isConverted}
+              disabled={
+                loading || isConverted
+              }
               className="rounded-md bg-red-700 px-4 py-2 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-50"
               title={
-                isConverted ? "Converted quotes should not be deleted." : undefined
+                isConverted
+                  ? "Converted quotes should not be deleted."
+                  : undefined
               }
             >
               Delete

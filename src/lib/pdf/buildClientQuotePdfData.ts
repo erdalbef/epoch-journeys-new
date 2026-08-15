@@ -1,8 +1,11 @@
 type PaxPricingRow = {
   paxCount: number;
-  singlePrice: number;
-  doubleTwinPrice: number;
-  triplePrice: number;
+  calculatedSinglePrice?: number;
+  calculatedDoubleTwinPrice?: number;
+  calculatedTriplePrice?: number;
+  manualSinglePrice?: number;
+  manualDoubleTwinPrice?: number;
+  manualTriplePrice?: number;
 };
 
 type QuoteBuilderSummary = {
@@ -101,9 +104,11 @@ export function buildClientQuotePdfData(quote: QuoteWithRelations) {
 
     paxPricingRows: paxPricingRows.map((row) => ({
       paxCount: toNumber(row.paxCount),
-      singlePrice: toNumber(row.singlePrice),
-      doubleTwinPrice: toNumber(row.doubleTwinPrice),
-      triplePrice: toNumber(row.triplePrice),
+      // Agency-facing documents use ONLY admin-approved Final NET rates.
+      // Never fall back to calculated or seasonal/internal reference rates.
+      singlePrice: toNumber(row.manualSinglePrice),
+      doubleTwinPrice: toNumber(row.manualDoubleTwinPrice),
+      triplePrice: toNumber(row.manualTriplePrice),
     })),
   };
 }

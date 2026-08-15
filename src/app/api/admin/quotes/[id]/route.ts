@@ -45,39 +45,29 @@ type QuoteBuilderSummary = {
 };
 
 function isQuoteBuilderSummary(
-  value: unknown,
+  value: unknown
 ): value is QuoteBuilderSummary {
   return typeof value === "object" && value !== null;
 }
 
 export async function GET(
   _request: Request,
-  { params }: RouteContext,
+  { params }: RouteContext
 ) {
   try {
     const session = await getServerSession(authOptions);
 
-    if (
-      !session?.user ||
-      session.user.role !== "ADMIN"
-    ) {
+    if (!session?.user || session.user.role !== "ADMIN") {
       return NextResponse.json(
-        {
-          error: "Unauthorized",
-        },
-        {
-          status: 401,
-        },
+        { error: "Unauthorized" },
+        { status: 401 }
       );
     }
 
     const { id } = await params;
 
     const quote = await db.quote.findUnique({
-      where: {
-        id,
-      },
-
+      where: { id },
       include: {
         items: {
           orderBy: {
@@ -89,18 +79,12 @@ export async function GET(
 
     if (!quote) {
       return NextResponse.json(
-        {
-          error: "Quote not found",
-        },
-        {
-          status: 404,
-        },
+        { error: "Quote not found" },
+        { status: 404 }
       );
     }
 
-    const summary = isQuoteBuilderSummary(
-      quote.quoteBuilderSummary,
-    )
+    const summary = isQuoteBuilderSummary(quote.quoteBuilderSummary)
       ? quote.quoteBuilderSummary
       : null;
 
@@ -125,167 +109,29 @@ export async function GET(
       createdAt: quote.createdAt,
       updatedAt: quote.updatedAt,
 
-      paxPricingRows:
-        summary?.paxPricingRows ?? [],
+      paxPricingRows: summary?.paxPricingRows ?? [],
+      entranceRows: summary?.entranceRows ?? [],
+      tipRows: summary?.tipRows ?? [],
+      otherFixedRows: summary?.otherFixedRows ?? [],
 
-      entranceRows:
-        summary?.entranceRows ?? [],
-
-      tipRows:
-        summary?.tipRows ?? [],
-
-      otherFixedRows:
-        summary?.otherFixedRows ?? [],
-
-      items: quote.items.map(
-        (item) => ({
-          id: item.id,
-          title: item.title,
-          description: item.description,
-          quantity: item.quantity,
-          unitPrice: item.unitPrice,
-          total: item.total,
-          itemType: item.itemType,
-          optional: item.optional,
-          sortOrder: item.sortOrder,
-        }),
-      ),
+      items: quote.items.map((item) => ({
+        id: item.id,
+        title: item.title,
+        description: item.description,
+        quantity: item.quantity,
+        unitPrice: item.unitPrice,
+        total: item.total,
+        itemType: item.itemType,
+        optional: item.optional,
+        sortOrder: item.sortOrder,
+      })),
     });
   } catch (error) {
-    console.error(
-      "GET_ADMIN_QUOTE_ERROR",
-      error,
-    );
+    console.error("GET_ADMIN_QUOTE_ERROR", error);
 
     return NextResponse.json(
-      {
-        error:
-          "Failed to load quote",
-      },
-      {
-        status: 500,
-      },
-    );
-  }
-}
-
-export async function DELETE(
-  _request: Request,
-  { params }: RouteContext,
-) {
-  try {
-    const session = await getServerSession(authOptions);
-
-    if (
-      !session?.user ||
-      session.user.role !== "ADMIN"
-    ) {
-      return NextResponse.json(
-        {
-          error: "Unauthorized",
-        },
-        {
-          status: 401,
-        },
-      );
-    }
-
-    const { id } = await params;
-
-    if (!id) {
-      return NextResponse.json(
-        {
-          error:
-            "Quote ID is missing.",
-        },
-        {
-          status: 400,
-        },
-      );
-    }
-
-    const quote = await db.quote.findUnique({
-      where: {
-        id,
-      },
-
-      select: {
-        id: true,
-        quoteNumber: true,
-        quoteReference: true,
-        title: true,
-        status: true,
-      },
-    });
-
-    if (!quote) {
-      return NextResponse.json(
-        {
-          error:
-            "Quote not found.",
-        },
-        {
-          status: 404,
-        },
-      );
-    }
-
-    /*
-     * ADMIN TEST-DATA CLEANUP
-     *
-     * This allows fake/test quotes to be removed
-     * even when they are FINALIZED, SENT,
-     * CANCELLED, or CONVERTED.
-     *
-     * Real customer quotes should normally
-     * remain in the historical record.
-     */
-    await db.$transaction(
-      async (tx) => {
-        await tx.quoteItem.deleteMany({
-          where: {
-            quoteId: id,
-          },
-        });
-
-        await tx.quote.delete({
-          where: {
-            id,
-          },
-        });
-      },
-    );
-
-    const quoteLabel =
-      quote.quoteReference ||
-      (quote.quoteNumber
-        ? `Quote #${quote.quoteNumber}`
-        : null) ||
-      quote.title ||
-      quote.id;
-
-    return NextResponse.json({
-      success: true,
-
-      message:
-        `Test quote ${quoteLabel} was deleted.`,
-    });
-  } catch (error) {
-    console.error(
-      "DELETE_TEST_QUOTE_ERROR",
-      error,
-    );
-
-    return NextResponse.json(
-      {
-        error:
-          error instanceof Error
-            ? error.message
-            : "Failed to delete test quote.",
-      },
-      {
-        status: 500,
-      },
+      { error: "Failed to load quote" },
+      { status: 500 }
     );
   }
 }

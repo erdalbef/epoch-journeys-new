@@ -1,12 +1,20 @@
-import { Prisma, PricingType, RoomType } from "@prisma/client";
-import { db } from "@/lib/db";
 import { notFound, redirect } from "next/navigation";
-import TourForm from "@/components/admin/TourForm";
 import { mkdir, writeFile } from "fs/promises";
 import path from "path";
 
-function parseCommaSeparated(value: FormDataEntryValue | null): string[] {
-  if (!value || typeof value !== "string") return [];
+import { db } from "@/lib/db";
+import TourForm from "@/components/admin/TourForm";
+
+// ============================================================
+// PARSING HELPERS
+// ============================================================
+
+function parseCommaSeparated(
+  value: FormDataEntryValue | null,
+): string[] {
+  if (!value || typeof value !== "string") {
+    return [];
+  }
 
   return value
     .split(",")
@@ -14,175 +22,163 @@ function parseCommaSeparated(value: FormDataEntryValue | null): string[] {
     .filter(Boolean);
 }
 
-function parseOptionalString(value: FormDataEntryValue | null): string | null {
-  if (!value || typeof value !== "string") return null;
+function parseOptionalString(
+  value: FormDataEntryValue | null,
+): string | null {
+  if (!value || typeof value !== "string") {
+    return null;
+  }
 
   const trimmed = value.trim();
-  return trimmed ? trimmed : null;
+
+  return trimmed || null;
 }
 
-function isPricingType(value: string): value is PricingType {
-  return (
-    value === "FIXED_GROUP" ||
-    value === "GROUP_BASED" ||
-    value === "FIT_DYNAMIC" ||
-    value === "FIT_FIXED" ||
-    value === "FIT_TIERED"
-  );
-}
-
-function isRoomType(value: string): value is RoomType {
-  return (
-    value === "SINGLE" ||
-    value === "DOUBLE_TWIN" ||
-    value === "TRIPLE"
-  );
-}
-
-type PrivatePricing = Record<string, number>;
-
-function parsePrivatePricing(value: FormDataEntryValue | null): PrivatePricing {
-  if (!value || typeof value !== "string") return {};
-
-  try {
-    const parsed = JSON.parse(value) as Record<string, string>;
-    const result: PrivatePricing = {};
-
-    for (const key of Object.keys(parsed)) {
-      const num = Number(parsed[key]);
-      if (!Number.isNaN(num) && num > 0) {
-        result[key] = num;
-      }
-    }
-
-    return result;
-  } catch {
-    return {};
+function parseOptionalPositiveNumber(
+  value: FormDataEntryValue | null,
+): number | null {
+  if (
+    value === null ||
+    typeof value !== "string" ||
+    value.trim() === ""
+  ) {
+    return null;
   }
-}
 
-type ParsedPricingTier = {
-  label: string | null;
-  minPax: number | null;
-  maxPax: number | null;
-  roomType: RoomType | null;
-  pricePerPerson: number;
-  currency: string;
-  isActive: boolean;
-};
+  const parsed = Number(value);
 
-function parsePricingTiers(value: FormDataEntryValue | null): ParsedPricingTier[] {
-  if (!value || typeof value !== "string") return [];
-
-  try {
-    const parsed = JSON.parse(value) as Array<{
-      label?: string;
-      minPax?: number | string;
-      maxPax?: number | string;
-      roomType?: string;
-      pricePerPerson?: number | string;
-      currency?: string;
-      isActive?: boolean;
-    }>;
-
-    if (!Array.isArray(parsed)) return [];
-
-    const result: ParsedPricingTier[] = [];
-
-    for (const tier of parsed) {
-      const label =
-        typeof tier.label === "string" && tier.label.trim()
-          ? tier.label.trim()
-          : null;
-
-      const minPaxRaw =
-        tier.minPax === "" || tier.minPax === undefined || tier.minPax === null
-          ? null
-          : Number(tier.minPax);
-
-      const maxPaxRaw =
-        tier.maxPax === "" || tier.maxPax === undefined || tier.maxPax === null
-          ? null
-          : Number(tier.maxPax);
-
-      const priceRaw = Number(tier.pricePerPerson);
-
-      if (Number.isNaN(priceRaw) || priceRaw <= 0) {
-        continue;
-      }
-
-      const minPax =
-        minPaxRaw === null || Number.isNaN(minPaxRaw) ? null : minPaxRaw;
-
-      const maxPax =
-        maxPaxRaw === null || Number.isNaN(maxPaxRaw) ? null : maxPaxRaw;
-
-      const roomType =
-        typeof tier.roomType === "string" && isRoomType(tier.roomType)
-          ? tier.roomType
-          : null;
-
-      const currency =
-        typeof tier.currency === "string" && tier.currency.trim()
-          ? tier.currency.trim().toUpperCase()
-          : "EUR";
-
-      result.push({
-        label,
-        minPax,
-        maxPax,
-        roomType,
-        pricePerPerson: priceRaw,
-        currency,
-        isActive: tier.isActive ?? true,
-      });
-    }
-
-    return result;
-  } catch {
-    return [];
+  if (!Number.isFinite(parsed) || parsed < 0) {
+    return null;
   }
+
+  return parsed;
 }
 
-function sanitizeFileName(fileName: string): string {
+function parseOptionalPositiveInteger(
+  value: FormDataEntryValue | null,
+): number | null {
+  if (
+    value === null ||
+    typeof value !== "string" ||
+    value.trim() === ""
+  ) {
+    return null;
+  }
+
+  const parsed = Number(value);
+
+  if (!Number.isInteger(parsed) || parsed <= 0) {
+    return null;
+  }
+
+  return parsed;
+}
+
+function parseCurrency(
+  value: FormDataEntryValue | null,
+): string {
+  if (
+    typeof value !== "string" ||
+    !value.trim()
+  ) {
+    return "EUR";
+  }
+
+  return value.trim().toUpperCase();
+}
+
+function parseCheckbox(
+  formData: FormData,
+  name: string,
+): boolean {
+  return formData.get(name) === "on";
+}
+
+// ============================================================
+// FILE HELPERS
+// ============================================================
+
+function sanitizeFileName(
+  fileName: string,
+): string {
   return fileName
     .replace(/\s+/g, "-")
     .replace(/[^a-zA-Z0-9._-]/g, "");
 }
 
-async function saveFile(file: File | null, folder: string): Promise<string | null> {
-  if (!file || file.size === 0) return null;
+async function saveFile(
+  file: File | null,
+  folder: string,
+): Promise<string | null> {
+  if (!file || file.size === 0) {
+    return null;
+  }
 
-  const bytes = await file.arrayBuffer();
-  const buffer = Buffer.from(bytes);
+  const bytes =
+    await file.arrayBuffer();
 
-  const safeName = sanitizeFileName(file.name);
-  const fileName = `${Date.now()}-${safeName}`;
+  const buffer =
+    Buffer.from(bytes);
 
-  const directoryPath = path.join(process.cwd(), "public", folder);
-  await mkdir(directoryPath, { recursive: true });
+  const safeName =
+    sanitizeFileName(file.name);
 
-  const filePath = path.join(directoryPath, fileName);
-  await writeFile(filePath, buffer);
+  const fileName =
+    `${Date.now()}-${safeName}`;
+
+  const directoryPath =
+    path.join(
+      process.cwd(),
+      "public",
+      folder,
+    );
+
+  await mkdir(
+    directoryPath,
+    {
+      recursive: true,
+    },
+  );
+
+  const filePath =
+    path.join(
+      directoryPath,
+      fileName,
+    );
+
+  await writeFile(
+    filePath,
+    buffer,
+  );
 
   return `/${folder}/${fileName}`;
 }
 
+// ============================================================
+// PAGE TYPES
+// ============================================================
+
 type PageProps = {
-  params: Promise<{ id: string }>;
+  params: Promise<{
+    id: string;
+  }>;
 };
 
-export default async function EditTourPage({ params }: PageProps) {
+// ============================================================
+// PAGE
+// ============================================================
+
+export default async function EditTourPage({
+  params,
+}: PageProps) {
   const { id } = await params;
 
-  const tour = await db.tour.findUnique({
-    where: { id },
-    include: {
-      pricingTiers: {
-        orderBy: [{ minPax: "asc" }, { maxPax: "asc" }, { roomType: "asc" }],
+  const tour =
+    await db.tour.findUnique({
+      where: {
+        id,
       },
-    },
-  });
+    });
 
   if (!tour) {
     notFound();
@@ -190,63 +186,380 @@ export default async function EditTourPage({ params }: PageProps) {
 
   const safeTour = tour;
 
-  async function updateTour(formData: FormData) {
+  // ==========================================================
+  // UPDATE JOURNEY
+  // ==========================================================
+
+  async function updateTour(
+    formData: FormData,
+  ) {
     "use server";
 
-    const title = formData.get("title")?.toString().trim();
-    const category = formData.get("category")?.toString().trim();
-    const duration = Number(formData.get("duration"));
-    const pricingTypeRaw = formData.get("pricingType")?.toString().trim();
+    // --------------------------------------------------------
+    // REQUIRED CORE FIELDS
+    // --------------------------------------------------------
+
+    const title =
+      formData
+        .get("title")
+        ?.toString()
+        .trim();
+
+    const category =
+      formData
+        .get("category")
+        ?.toString()
+        .trim() ||
+      "Pilgrimage";
+
+    const duration =
+      Number(
+        formData.get("duration"),
+      );
 
     if (
       !title ||
-      !category ||
-      Number.isNaN(duration) ||
-      duration < 1 ||
-      !isPricingType(pricingTypeRaw || "")
+      !Number.isFinite(duration) ||
+      duration < 1
     ) {
       return;
     }
 
-    const pricingType = pricingTypeRaw as PricingType;
+    // --------------------------------------------------------
+    // JOURNEY IDENTITY
+    // --------------------------------------------------------
 
-    const destinations = parseCommaSeparated(formData.get("destinations"));
-    const subcategories = parseCommaSeparated(formData.get("subcategories"));
-    const tags = parseCommaSeparated(formData.get("tags"));
-    const highlights = parseCommaSeparated(formData.get("highlights"));
-    const inclusions = parseCommaSeparated(formData.get("inclusions"));
-    const exclusions = parseCommaSeparated(formData.get("exclusions"));
-    const accommodations = parseCommaSeparated(formData.get("accommodations"));
+    const subtitle =
+      parseOptionalString(
+        formData.get("subtitle"),
+      );
 
-    const privatePricing = parsePrivatePricing(formData.get("privatePricing"));
-    const hasPrivatePricing = Object.keys(privatePricing).length > 0;
+    const arrivalCity =
+      parseOptionalString(
+        formData.get("arrivalCity"),
+      );
 
-    const pricingTiers = parsePricingTiers(formData.get("pricingTiers"));
+    const departureCity =
+      parseOptionalString(
+        formData.get("departureCity"),
+      );
 
-    const mainImage = formData.get("mainImage") as File | null;
-    const image2 = formData.get("image2") as File | null;
-    const image3 = formData.get("image3") as File | null;
-    const image4 = formData.get("image4") as File | null;
-    const mapImage = formData.get("mapImage") as File | null;
-    const brochure = formData.get("brochure") as File | null;
+    const destinations =
+      parseCommaSeparated(
+        formData.get("destinations"),
+      );
 
-    const deleteMainImage = formData.get("deleteMainImage") === "true";
-    const deleteImage2 = formData.get("deleteImage2") === "true";
-    const deleteImage3 = formData.get("deleteImage3") === "true";
-    const deleteImage4 = formData.get("deleteImage4") === "true";
-    const deleteMapImage = formData.get("deleteMapImage") === "true";
-    const deleteBrochure = formData.get("deleteBrochure") === "true";
+    const subcategories =
+      parseCommaSeparated(
+        formData.get("subcategories"),
+      );
 
-    const newMainImageUrl = await saveFile(mainImage, "uploads/tours");
-    const newImageUrl2 = await saveFile(image2, "uploads/tours");
-    const newImageUrl3 = await saveFile(image3, "uploads/tours");
-    const newImageUrl4 = await saveFile(image4, "uploads/tours");
-    const newMapImageUrl = await saveFile(mapImage, "uploads/maps");
-    const newBrochureUrl = await saveFile(brochure, "uploads/brochures");
+    const tags =
+      parseCommaSeparated(
+        formData.get("tags"),
+      );
+
+    // --------------------------------------------------------
+    // STORYTELLING
+    // --------------------------------------------------------
+
+    const shortDescription =
+      parseOptionalString(
+        formData.get(
+          "shortDescription",
+        ),
+      );
+
+    const overview =
+      parseOptionalString(
+        formData.get("overview"),
+      );
+
+    const tourIntroduction =
+      parseOptionalString(
+        formData.get(
+          "tourIntroduction",
+        ),
+      );
+
+    const tourSignificance =
+      parseOptionalString(
+        formData.get(
+          "tourSignificance",
+        ),
+      );
+
+    const whyWeOfferThisTour =
+      parseOptionalString(
+        formData.get(
+          "whyWeOfferThisTour",
+        ),
+      );
+
+    const destinationBriefs =
+      parseOptionalString(
+        formData.get(
+          "destinationBriefs",
+        ),
+      );
+
+    // --------------------------------------------------------
+    // AGENT / SALES CONTENT
+    // --------------------------------------------------------
+
+    const highlights =
+      parseCommaSeparated(
+        formData.get("highlights"),
+      );
+
+    const idealFor =
+      parseCommaSeparated(
+        formData.get("idealFor"),
+      );
+
+    const agentSellingPoints =
+      parseCommaSeparated(
+        formData.get(
+          "agentSellingPoints",
+        ),
+      );
+
+    // --------------------------------------------------------
+    // JOURNEY CHARACTER
+    // --------------------------------------------------------
+
+    const walkingLevel =
+      parseOptionalString(
+        formData.get(
+          "walkingLevel",
+        ),
+      );
+
+    const pace =
+      parseOptionalString(
+        formData.get("pace"),
+      );
+
+    const massIncluded =
+      parseCheckbox(
+        formData,
+        "massIncluded",
+      );
+
+    // --------------------------------------------------------
+    // JOURNEY CONTENT
+    // --------------------------------------------------------
+
+    const inclusions =
+      parseCommaSeparated(
+        formData.get("inclusions"),
+      );
+
+    const exclusions =
+      parseCommaSeparated(
+        formData.get("exclusions"),
+      );
+
+    const accommodations =
+      parseCommaSeparated(
+        formData.get(
+          "accommodations",
+        ),
+      );
+
+    const hotelStandard =
+      parseOptionalString(
+        formData.get(
+          "hotelStandard",
+        ),
+      );
+
+    const mealPlan =
+      parseOptionalString(
+        formData.get("mealPlan"),
+      );
+
+    const transportationSummary =
+      parseOptionalString(
+        formData.get(
+          "transportationSummary",
+        ),
+      );
+
+    const overviewItinerary =
+      parseOptionalString(
+        formData.get(
+          "overviewItinerary",
+        ),
+      );
+
+    const itinerary =
+      parseOptionalString(
+        formData.get("itinerary"),
+      );
+
+    // --------------------------------------------------------
+    // COMMERCIAL REFERENCE
+    // --------------------------------------------------------
+
+    const startingPrice =
+      parseOptionalPositiveNumber(
+        formData.get(
+          "startingPrice",
+        ),
+      );
+
+    const currency =
+      parseCurrency(
+        formData.get("currency"),
+      );
+
+    const startingPriceBasis =
+      parseOptionalString(
+        formData.get(
+          "startingPriceBasis",
+        ),
+      ) || "DOUBLE_TWIN";
+
+    const referenceGroupSize =
+      parseOptionalPositiveInteger(
+        formData.get(
+          "referenceGroupSize",
+        ),
+      );
+
+    const singleSupplementFrom =
+      parseOptionalPositiveNumber(
+        formData.get(
+          "singleSupplementFrom",
+        ),
+      );
+
+    // --------------------------------------------------------
+    // NEW FILES
+    // --------------------------------------------------------
+
+    const mainImage =
+      formData.get(
+        "mainImage",
+      ) as File | null;
+
+    const image2 =
+      formData.get(
+        "image2",
+      ) as File | null;
+
+    const image3 =
+      formData.get(
+        "image3",
+      ) as File | null;
+
+    const image4 =
+      formData.get(
+        "image4",
+      ) as File | null;
+
+    const mapImage =
+      formData.get(
+        "mapImage",
+      ) as File | null;
+
+    const brochure =
+      formData.get(
+        "brochure",
+      ) as File | null;
+
+    // --------------------------------------------------------
+    // DELETE EXISTING FILE FLAGS
+    // --------------------------------------------------------
+
+    const deleteMainImage =
+      formData.get(
+        "deleteMainImage",
+      ) === "true";
+
+    const deleteImage2 =
+      formData.get(
+        "deleteImage2",
+      ) === "true";
+
+    const deleteImage3 =
+      formData.get(
+        "deleteImage3",
+      ) === "true";
+
+    const deleteImage4 =
+      formData.get(
+        "deleteImage4",
+      ) === "true";
+
+    const deleteMapImage =
+      formData.get(
+        "deleteMapImage",
+      ) === "true";
+
+    const deleteBrochure =
+      formData.get(
+        "deleteBrochure",
+      ) === "true";
+
+    // --------------------------------------------------------
+    // SAVE NEW FILES
+    // --------------------------------------------------------
+
+    const [
+      newMainImageUrl,
+      newImageUrl2,
+      newImageUrl3,
+      newImageUrl4,
+      newMapImageUrl,
+      newBrochureUrl,
+    ] = await Promise.all([
+      saveFile(
+        mainImage,
+        "uploads/tours",
+      ),
+
+      saveFile(
+        image2,
+        "uploads/tours",
+      ),
+
+      saveFile(
+        image3,
+        "uploads/tours",
+      ),
+
+      saveFile(
+        image4,
+        "uploads/tours",
+      ),
+
+      saveFile(
+        mapImage,
+        "uploads/maps",
+      ),
+
+      saveFile(
+        brochure,
+        "uploads/brochures",
+      ),
+    ]);
+
+    // --------------------------------------------------------
+    // UPDATE DATABASE
+    // --------------------------------------------------------
 
     await db.tour.update({
-      where: { id: safeTour.id },
+      where: {
+        id: safeTour.id,
+      },
+
       data: {
+        // --------------------------------------
+        // JOURNEY IDENTITY
+        // --------------------------------------
+
         title,
         category,
         subcategories,
@@ -254,90 +567,154 @@ export default async function EditTourPage({ params }: PageProps) {
         destinations,
         duration,
 
-        shortDescription: parseOptionalString(formData.get("shortDescription")),
-        overview: parseOptionalString(formData.get("overview")),
-        whyWeOfferThisTour: parseOptionalString(
-          formData.get("whyWeOfferThisTour")
-        ),
-        tourIntroduction: parseOptionalString(formData.get("tourIntroduction")),
-        tourSignificance: parseOptionalString(formData.get("tourSignificance")),
-        destinationBriefs: parseOptionalString(
-          formData.get("destinationBriefs")
-        ),
+        subtitle,
+        arrivalCity,
+        departureCity,
 
-        pricingType,
-        privatePricing: hasPrivatePricing
-          ? (privatePricing as Prisma.InputJsonValue)
-          : Prisma.JsonNull,
+        // --------------------------------------
+        // STORYTELLING
+        // --------------------------------------
+
+        shortDescription,
+        overview,
+        tourIntroduction,
+        tourSignificance,
+        whyWeOfferThisTour,
+        destinationBriefs,
+
+        // --------------------------------------
+        // AGENT / SALES CONTENT
+        // --------------------------------------
 
         highlights,
+        idealFor,
+        agentSellingPoints,
+
+        walkingLevel,
+        pace,
+        massIncluded,
+
+        // --------------------------------------
+        // JOURNEY CONTENT
+        // --------------------------------------
+
         inclusions,
         exclusions,
         accommodations,
 
-        overviewItinerary: parseOptionalString(
-          formData.get("overviewItinerary")
-        ),
-        itinerary: parseOptionalString(formData.get("itinerary")),
+        hotelStandard,
+        mealPlan,
+        transportationSummary,
 
-        mainImageUrl: deleteMainImage
-          ? null
-          : newMainImageUrl ?? safeTour.mainImageUrl,
-        imageUrl2: deleteImage2 ? null : newImageUrl2 ?? safeTour.imageUrl2,
-        imageUrl3: deleteImage3 ? null : newImageUrl3 ?? safeTour.imageUrl3,
-        imageUrl4: deleteImage4 ? null : newImageUrl4 ?? safeTour.imageUrl4,
-        mapImageUrl: deleteMapImage
-          ? null
-          : newMapImageUrl ?? safeTour.mapImageUrl,
-        brochureUrl: deleteBrochure
-          ? null
-          : newBrochureUrl ?? safeTour.brochureUrl,
+        overviewItinerary,
+        itinerary,
 
-        featured: formData.get("featured") === "on",
-        isPublished: formData.get("isPublished") === "on",
+        // --------------------------------------
+        // COMMERCIAL REFERENCE
+        // --------------------------------------
+
+        startingPrice,
+        currency,
+        startingPriceBasis,
+        referenceGroupSize,
+        singleSupplementFrom,
+
+        /*
+         * All Epoch pilgrimage journeys are
+         * operated as private requested groups.
+         *
+         * Final NET pricing is produced through
+         * quotation rather than fixed public
+         * departures.
+         */
+        pricingType:
+          "GROUP_BASED",
 
         requiresQuote:
-          pricingType === "GROUP_BASED" || pricingType === "FIT_DYNAMIC"
-            ? true
-            : formData.get("requiresQuote") === "on",
+          true,
+
+        // --------------------------------------
+        // MEDIA
+        // --------------------------------------
+
+        mainImageUrl:
+          deleteMainImage
+            ? null
+            : newMainImageUrl ??
+              safeTour.mainImageUrl,
+
+        imageUrl2:
+          deleteImage2
+            ? null
+            : newImageUrl2 ??
+              safeTour.imageUrl2,
+
+        imageUrl3:
+          deleteImage3
+            ? null
+            : newImageUrl3 ??
+              safeTour.imageUrl3,
+
+        imageUrl4:
+          deleteImage4
+            ? null
+            : newImageUrl4 ??
+              safeTour.imageUrl4,
+
+        mapImageUrl:
+          deleteMapImage
+            ? null
+            : newMapImageUrl ??
+              safeTour.mapImageUrl,
+
+        brochureUrl:
+          deleteBrochure
+            ? null
+            : newBrochureUrl ??
+              safeTour.brochureUrl,
+
+        // --------------------------------------
+        // PUBLISHING
+        // --------------------------------------
+
+        featured:
+          parseCheckbox(
+            formData,
+            "featured",
+          ),
+
+        isPublished:
+          parseCheckbox(
+            formData,
+            "isPublished",
+          ),
       },
     });
 
-    await db.pricingTier.deleteMany({
-      where: { tourId: safeTour.id },
-    });
-
-    if (pricingTiers.length > 0) {
-      await db.pricingTier.createMany({
-        data: pricingTiers.map((tier) => ({
-          tourId: safeTour.id,
-          label: tier.label,
-          minPax: tier.minPax,
-          maxPax: tier.maxPax,
-          roomType: tier.roomType,
-          pricePerPerson: tier.pricePerPerson,
-          currency: tier.currency,
-          isActive: tier.isActive,
-        })),
-      });
-    }
-
-    redirect("/admin/tours");
+    redirect(
+      `/admin/tours/${safeTour.id}`,
+    );
   }
 
-  const privatePricingValue =
-    safeTour.privatePricing &&
-    typeof safeTour.privatePricing === "object" &&
-    !Array.isArray(safeTour.privatePricing)
-      ? (safeTour.privatePricing as Record<string, number | string | null>)
-      : undefined;
+  // ==========================================================
+  // FORM
+  // ==========================================================
 
   return (
-    <div className="max-w-5xl space-y-6">
-      <div>
-        <h1 className="text-2xl font-semibold">Edit Tour</h1>
-        <p className="text-sm text-muted-foreground">
-          Update tour details, pricing, images, and publishing settings.
+    <div className="mx-auto max-w-6xl space-y-6">
+      <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+        <p className="text-xs font-bold uppercase tracking-[0.18em] text-[#8B0000]">
+          Journey Development
+        </p>
+
+        <h1 className="mt-2 text-3xl font-bold tracking-tight text-[#001F3F]">
+          Edit Journey
+        </h1>
+
+        <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-500">
+          Refine the pilgrimage story, agent-facing
+          content, commercial reference and journey
+          presentation.
         </p>
       </div>
 
@@ -345,46 +722,163 @@ export default async function EditTourPage({ params }: PageProps) {
         action={updateTour}
         mode="edit"
         initialValues={{
-          title: safeTour.title,
-          category: safeTour.category,
-          duration: safeTour.duration,
-          shortDescription: safeTour.shortDescription,
-          destinations: safeTour.destinations,
-          subcategories: safeTour.subcategories,
-          tags: safeTour.tags,
-          tourIntroduction: safeTour.tourIntroduction,
-          tourSignificance: safeTour.tourSignificance,
-          destinationBriefs: safeTour.destinationBriefs,
-          overview: safeTour.overview,
-          whyWeOfferThisTour: safeTour.whyWeOfferThisTour,
-          highlights: safeTour.highlights,
-          inclusions: safeTour.inclusions,
-          exclusions: safeTour.exclusions,
-          accommodations: safeTour.accommodations,
-          overviewItinerary: safeTour.overviewItinerary,
-          itinerary: safeTour.itinerary,
-          isPublished: safeTour.isPublished,
-          featured: safeTour.featured,
-          requiresQuote: safeTour.requiresQuote,
-          pricingType: safeTour.pricingType,
-          privatePricing: privatePricingValue,
-          pricingTiers: safeTour.pricingTiers.map((tier) => ({
-            label: tier.label,
-            minPax: tier.minPax,
-            maxPax: tier.maxPax,
-            roomType: tier.roomType,
-            pricePerPerson: tier.pricePerPerson,
-            currency: tier.currency,
-            isActive: tier.isActive,
-          })),
+          // ------------------------------------
+          // JOURNEY IDENTITY
+          // ------------------------------------
+
+          title:
+            safeTour.title,
+
+          subtitle:
+            safeTour.subtitle,
+
+          category:
+            safeTour.category,
+
+          duration:
+            safeTour.duration,
+
+          destinations:
+            safeTour.destinations,
+
+          arrivalCity:
+            safeTour.arrivalCity,
+
+          departureCity:
+            safeTour.departureCity,
+
+          subcategories:
+            safeTour.subcategories,
+
+          tags:
+            safeTour.tags,
+
+          // ------------------------------------
+          // STORYTELLING
+          // ------------------------------------
+
+          shortDescription:
+            safeTour.shortDescription,
+
+          overview:
+            safeTour.overview,
+
+          tourIntroduction:
+            safeTour.tourIntroduction,
+
+          tourSignificance:
+            safeTour.tourSignificance,
+
+          whyWeOfferThisTour:
+            safeTour.whyWeOfferThisTour,
+
+          destinationBriefs:
+            safeTour.destinationBriefs,
+
+          // ------------------------------------
+          // AGENT / SALES
+          // ------------------------------------
+
+          highlights:
+            safeTour.highlights,
+
+          idealFor:
+            safeTour.idealFor,
+
+          agentSellingPoints:
+            safeTour.agentSellingPoints,
+
+          // ------------------------------------
+          // JOURNEY CHARACTER
+          // ------------------------------------
+
+          walkingLevel:
+            safeTour.walkingLevel,
+
+          pace:
+            safeTour.pace,
+
+          massIncluded:
+            safeTour.massIncluded,
+
+          // ------------------------------------
+          // JOURNEY CONTENT
+          // ------------------------------------
+
+          inclusions:
+            safeTour.inclusions,
+
+          exclusions:
+            safeTour.exclusions,
+
+          accommodations:
+            safeTour.accommodations,
+
+          hotelStandard:
+            safeTour.hotelStandard,
+
+          mealPlan:
+            safeTour.mealPlan,
+
+          transportationSummary:
+            safeTour.transportationSummary,
+
+          overviewItinerary:
+            safeTour.overviewItinerary,
+
+          itinerary:
+            safeTour.itinerary,
+
+          // ------------------------------------
+          // COMMERCIAL REFERENCE
+          // ------------------------------------
+
+          startingPrice:
+            safeTour.startingPrice,
+
+          currency:
+            safeTour.currency,
+
+          startingPriceBasis:
+            safeTour.startingPriceBasis,
+
+          referenceGroupSize:
+            safeTour.referenceGroupSize,
+
+          singleSupplementFrom:
+            safeTour.singleSupplementFrom,
+
+          // ------------------------------------
+          // PUBLISHING
+          // ------------------------------------
+
+          isPublished:
+            safeTour.isPublished,
+
+          featured:
+            safeTour.featured,
+
+          requiresQuote:
+            true,
         }}
         initialImages={{
-          mainImageUrl: safeTour.mainImageUrl,
-          imageUrl2: safeTour.imageUrl2,
-          imageUrl3: safeTour.imageUrl3,
-          imageUrl4: safeTour.imageUrl4,
-          mapImageUrl: safeTour.mapImageUrl,
-          brochureUrl: safeTour.brochureUrl,
+          mainImageUrl:
+            safeTour.mainImageUrl,
+
+          imageUrl2:
+            safeTour.imageUrl2,
+
+          imageUrl3:
+            safeTour.imageUrl3,
+
+          imageUrl4:
+            safeTour.imageUrl4,
+
+          mapImageUrl:
+            safeTour.mapImageUrl,
+
+          brochureUrl:
+            safeTour.brochureUrl,
         }}
       />
     </div>

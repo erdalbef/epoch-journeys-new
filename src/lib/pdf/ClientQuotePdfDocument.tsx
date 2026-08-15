@@ -388,11 +388,11 @@ export default function ClientQuotePdfDocument(props: Props) {
         </View>
 
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Passenger Pricing</Text>
+          <Text style={styles.sectionTitle}>NET Group Rates</Text>
 
           <View style={styles.table}>
             <View style={styles.tableHeader}>
-              <Text style={[styles.tableHeaderCell, styles.colPax]}>Pax</Text>
+              <Text style={[styles.tableHeaderCell, styles.colPax]}>Paying Pax</Text>
               <Text style={[styles.tableHeaderCell, styles.colPrice]}>Single</Text>
               <Text style={[styles.tableHeaderCell, styles.colPrice]}>Double/Twin</Text>
               <Text style={[styles.tableHeaderCell, styles.colPrice]}>Triple</Text>

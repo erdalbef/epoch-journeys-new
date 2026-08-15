@@ -113,6 +113,7 @@ export async function POST(_: NextRequest, context: RouteContext) {
         id: true,
         status: true,
         recipientEmail: true,
+        quoteBuilderSummary: true,
       },
     })
 
@@ -133,6 +134,44 @@ export async function POST(_: NextRequest, context: RouteContext) {
     if (!existingQuote.recipientEmail?.trim()) {
       return NextResponse.json(
         { message: "Recipient email is required before finalizing." },
+        { status: 400 }
+      )
+    }
+
+    const summary =
+      existingQuote.quoteBuilderSummary &&
+      typeof existingQuote.quoteBuilderSummary === "object" &&
+      !Array.isArray(existingQuote.quoteBuilderSummary)
+        ? (existingQuote.quoteBuilderSummary as Record<string, unknown>)
+        : null
+
+    const pricingRows = Array.isArray(summary?.paxPricingRows)
+      ? summary.paxPricingRows
+      : []
+
+    if (pricingRows.length === 0) {
+      return NextResponse.json(
+        { message: "At least one NET group-rate tier is required before finalizing." },
+        { status: 400 }
+      )
+    }
+
+    const invalidTier = pricingRows.find((value) => {
+      if (!value || typeof value !== "object" || Array.isArray(value)) return true
+      const row = value as Record<string, unknown>
+      const paxCount = Number(row.paxCount ?? 0)
+      const single = Number(row.manualSinglePrice ?? 0)
+      const doubleTwin = Number(row.manualDoubleTwinPrice ?? 0)
+      const triple = Number(row.manualTriplePrice ?? 0)
+      return paxCount <= 0 || single <= 0 || doubleTwin <= 0 || triple <= 0
+    })
+
+    if (invalidTier) {
+      return NextResponse.json(
+        {
+          message:
+            "Every group-size tier must have approved Final NET Single, Double/Twin, and Triple rates before finalizing.",
+        },
         { status: 400 }
       )
     }

@@ -83,7 +83,7 @@ export async function DELETE(
               reconciliationId: true,
               reversalOfId: true,
 
-              reversedBy: {
+              reversals: {
                 select: {
                   id: true,
                 },
@@ -142,7 +142,7 @@ export async function DELETE(
             transaction.reconciliationId ||
               transaction.statementLine ||
               transaction.reversalOfId ||
-              transaction.reversedBy,
+              transaction.reversals,
           ),
       );
 

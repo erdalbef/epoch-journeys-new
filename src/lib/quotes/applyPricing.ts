@@ -18,15 +18,16 @@ function calculateOne(
     };
   }
 
-  const commissionRate = (agencyCommissionPercent ?? 0) / 100;
-  const markupRate = (epochMarkupPercent ?? 0) / 100;
-
-  const commissionAmount = round2(net * commissionRate);
-  const markupAmount = round2(net * markupRate);
-  const sellingPrice = round2(net + commissionAmount + markupAmount);
+  const markupRate = Math.max(epochMarkupPercent ?? 0, 0) / 100;
+  // B2B NET policy: agencyCommissionPercent is retained only for backward
+  // compatibility with older saved quotes. New quotes do not use commission.
+  void agencyCommissionPercent;
+  const sellingPrice = round2(net * (1 + markupRate));
+  const commissionAmount = 0;
+  const markupAmount = round2(sellingPrice - net);
 
   return {
-    net,
+    net: round2(net),
     commissionAmount,
     markupAmount,
     sellingPrice,

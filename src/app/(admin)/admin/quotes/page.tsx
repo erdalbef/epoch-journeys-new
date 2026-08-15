@@ -26,8 +26,9 @@ function StatusBadge({ status }: { status: QuoteStatus }) {
     DRAFT: "bg-slate-200 text-slate-700",
     FINALIZED: "bg-amber-100 text-amber-700",
     SENT: "bg-blue-100 text-blue-700",
+    ACCEPTED: "bg-emerald-100 text-emerald-700",
     CANCELLED: "bg-rose-100 text-rose-700",
-    CONVERTED: "bg-emerald-100 text-emerald-700",
+    CONVERTED: "bg-violet-100 text-violet-700",
   };
 
   return (
@@ -137,6 +138,7 @@ export default async function QuotesPage({ searchParams }: PageProps) {
               <option value="DRAFT">DRAFT</option>
               <option value="FINALIZED">FINALIZED</option>
               <option value="SENT">SENT</option>
+              <option value="ACCEPTED">ACCEPTED</option>
               <option value="CANCELLED">CANCELLED</option>
               <option value="CONVERTED">CONVERTED</option>
             </select>
@@ -235,7 +237,9 @@ export default async function QuotesPage({ searchParams }: PageProps) {
                     <StatusBadge status={quote.status} />
                   </td>
 
-                  <td className="p-3">{formatMoney(total, quote.currency)}</td>
+                  <td className="p-3">
+                    {formatMoney(total, quote.currency)}
+                  </td>
 
                   <td className="p-3">
                     {new Date(quote.createdAt).toLocaleDateString()}
@@ -271,6 +275,20 @@ export default async function QuotesPage({ searchParams }: PageProps) {
                       )}
 
                       {quote.status === "FINALIZED" && (
+                        <UpdateQuoteStatusButton
+                          quoteId={quote.id}
+                          currentStatus={quote.status}
+                        />
+                      )}
+
+                      {quote.status === "SENT" && (
+                        <UpdateQuoteStatusButton
+                          quoteId={quote.id}
+                          currentStatus={quote.status}
+                        />
+                      )}
+
+                      {quote.status === "ACCEPTED" && (
                         <UpdateQuoteStatusButton
                           quoteId={quote.id}
                           currentStatus={quote.status}

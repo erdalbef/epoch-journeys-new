@@ -33,7 +33,7 @@ export default function QuoteSummarySection({
     <section className="rounded-xl border bg-white p-5">
       <div className="mb-5">
         <h2 className="text-lg font-semibold">
-          Summary & Selling Price
+          Internal Cost & NET Rate Summary
         </h2>
         <p className="mt-1 text-sm text-slate-500">
           Reference occupancy: Double / Twin per person. Pre/post stays are optional add-ons and are not included in the main tour price.
@@ -96,20 +96,20 @@ export default function QuoteSummarySection({
         <div className="space-y-3 text-sm">
           <div className="rounded-lg border bg-slate-50 p-4">
             <div className="mb-2 font-medium">
-              Active Selling Price
+              Active NET Rate to Agency
             </div>
 
             <div className="flex justify-between">
               <span>Pricing Mode</span>
               <span>
                 {pricingMode === "MANUAL"
-                  ? "Manual Override"
+                  ? "Manual NET"
                   : "Calculated"}
               </span>
             </div>
 
             <div className="flex justify-between">
-              <span>Selling Price / Person</span>
+              <span>NET Rate / Paying Pax</span>
               <span>
                 {formatMoney(activeSellingPrice, currency)}
               </span>
@@ -136,8 +136,8 @@ export default function QuoteSummarySection({
           </div>
 
           <div className="rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
-            Main tour price is calculated on a Double / Twin per-person basis.
-            Single and triple prices should be shown separately in passenger
+            The agency NET rate is calculated on a Double / Twin per-paying-passenger basis.
+            Single and triple NET rates should be shown separately in group
             pricing. Pre/post stay prices should be optional per-person add-ons,
             not group totals.
           </div>

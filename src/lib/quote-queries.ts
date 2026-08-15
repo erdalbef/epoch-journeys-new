@@ -1,24 +1,70 @@
-import { db } from "@/lib/db"
+import { db } from "@/lib/db";
 
 export async function getToursForQuoteForm() {
-  return db.tour.findMany({
+  const tours = await db.tour.findMany({
     where: {
       requiresQuote: true,
     },
+
     orderBy: {
       title: "asc",
     },
+
     select: {
       id: true,
       title: true,
       category: true,
+
+      pricingTiers: {
+        where: {
+          isActive: true,
+        },
+
+        select: {
+          pricePerPerson: true,
+          currency: true,
+        },
+
+        orderBy: {
+          pricePerPerson: "asc",
+        },
+      },
     },
-  })
+  });
+
+  return tours.map((tour) => {
+    const referenceTier =
+      tour.pricingTiers[0] ?? null;
+
+    return {
+      id: tour.id,
+      title: tour.title,
+      category: tour.category,
+
+      /*
+       * Tour no longer stores startingPrice
+       * or currency directly.
+       *
+       * For the Quote form, we derive a
+       * reference starting price from the
+       * lowest active PricingTier.
+       */
+
+      startingPrice:
+        referenceTier?.pricePerPerson ?? null,
+
+      currency:
+        referenceTier?.currency ?? "EUR",
+    };
+  });
 }
 
 export async function getQuoteById(id: string) {
   return db.quote.findUnique({
-    where: { id },
+    where: {
+      id,
+    },
+
     include: {
       items: {
         orderBy: {
@@ -30,6 +76,7 @@ export async function getQuoteById(id: string) {
         orderBy: {
           createdAt: "desc",
         },
+
         include: {
           actor: {
             select: {
@@ -119,5 +166,5 @@ export async function getQuoteById(id: string) {
         },
       },
     },
-  })
+  });
 }

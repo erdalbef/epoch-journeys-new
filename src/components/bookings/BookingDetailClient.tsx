@@ -62,7 +62,7 @@ export default function BookingDetailClient({ booking }: Props) {
     try {
       setLoading(true);
 
-      const res = await fetch(`/api/admin/bookings/${booking.id}/update-status`, {
+      const res = await fetch(`/api/admin/bookings/${booking.id}`, {
         method: "PATCH",
         headers: {
           "Content-Type": "application/json",

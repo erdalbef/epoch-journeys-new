@@ -1,208 +1,112 @@
-import {
-  NextResponse,
-} from "next/server";
+import { NextResponse } from "next/server";
+import { getServerSession } from "next-auth";
+import { Role } from "@prisma/client";
 
-import {
-  getServerSession,
-} from "next-auth";
+import { authOptions } from "@/lib/authOptions";
+import { db } from "@/lib/db";
 
-import {
-  Role,
-} from "@prisma/client";
+type RouteContext = {
+  params: Promise<{
+    id: string;
+  }>;
+};
 
-import {
-  authOptions,
-} from "@/lib/authOptions";
-
-import {
-  db,
-} from "@/lib/db";
-
-function stringValue(
-  value:
-    | FormDataEntryValue
-    | null,
-) {
-  if (
-    typeof value !==
-    "string"
-  ) {
-    return null;
-  }
-
-  const trimmed =
-    value.trim();
-
-  return trimmed || null;
-}
-
-export async function POST(
-  request: Request,
-) {
+export async function PATCH(request: Request, context: RouteContext) {
   try {
-    const session =
-      await getServerSession(
-        authOptions,
-      );
+    const session = await getServerSession(authOptions);
 
-    if (
-      !session?.user?.id ||
-      session.user.role !==
-        Role.ADMIN
-    ) {
-      return NextResponse.json(
-        {
-          error:
-            "Unauthorized",
-        },
-        {
-          status: 401,
-        },
-      );
+    if (!session?.user || session.user.role !== Role.ADMIN) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const formData =
-      await request.formData();
+    const { id } = await context.params;
+    const formData = await request.formData();
 
-    const name =
-      stringValue(
-        formData.get(
-          "name",
-        ),
-      );
+    const setActiveOnly = String(formData.get("setActiveOnly") || "") === "true";
+    const isActive = formData.get("isActive") === "on" || setActiveOnly;
 
-    const currency =
-      (
-        stringValue(
-          formData.get(
-            "currency",
-          ),
-        ) || "EUR"
-      ).toUpperCase();
+    if (isActive) {
+      await db.bankAccount.updateMany({
+        where: {
+          isActive: true,
+          NOT: {
+            id,
+          },
+        },
+        data: {
+          isActive: false,
+        },
+      });
+    }
 
-    const openingBalance =
-      Number(
-        formData.get(
-          "openingBalance",
-        ) ?? 0,
-      );
+    if (setActiveOnly) {
+      await db.bankAccount.update({
+        where: { id },
+        data: { isActive: true },
+      });
 
-    const notes =
-      stringValue(
-        formData.get(
-          "notes",
-        ),
-      );
+      return NextResponse.json({ success: true });
+    }
 
-    const isActive =
-      formData.get(
-        "isActive",
-      ) === "on";
+    const name = String(formData.get("name") || "").trim();
+    const currency = String(formData.get("currency") || "EUR")
+      .trim()
+      .toUpperCase();
+    const openingBalance = Number(formData.get("openingBalance") || 0);
+    const currentBalance = Number(formData.get("currentBalance") || 0);
+    const notes = String(formData.get("notes") || "").trim();
 
     if (!name) {
       return NextResponse.json(
-        {
-          error:
-            "Account name is required.",
-        },
-        {
-          status: 400,
-        },
+        { error: "Account name is required." },
+        { status: 400 }
       );
     }
 
-    if (
-      currency.length !==
-      3
-    ) {
-      return NextResponse.json(
-        {
-          error:
-            "Currency must be a 3-letter code such as EUR, USD or GBP.",
-        },
-        {
-          status: 400,
-        },
-      );
-    }
-
-    if (
-      !Number.isFinite(
+    await db.bankAccount.update({
+      where: { id },
+      data: {
+        name,
+        currency,
         openingBalance,
-      )
-    ) {
-      return NextResponse.json(
-        {
-          error:
-            "Opening balance is invalid.",
-        },
-        {
-          status: 400,
-        },
-      );
+        currentBalance,
+        notes: notes || null,
+        isActive,
+      },
+    });
+
+    return NextResponse.json({ success: true });
+  } catch (error) {
+    console.error("UPDATE_BANK_ACCOUNT_ERROR", error);
+
+    return NextResponse.json(
+      { error: "Failed to update bank account." },
+      { status: 500 }
+    );
+  }
+}
+
+export async function DELETE(_request: Request, context: RouteContext) {
+  try {
+    const session = await getServerSession(authOptions);
+
+    if (!session?.user || session.user.role !== Role.ADMIN) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    /*
-     * Multiple accounts may be active.
-     *
-     * isActive means available for finance
-     * transactions, not "the one selected
-     * account".
-     */
+    const { id } = await context.params;
 
-    const account =
-      await db.bankAccount.create(
-        {
-          data: {
-            name,
+    await db.bankAccount.delete({
+      where: { id },
+    });
 
-            currency,
-
-            openingBalance,
-
-            /*
-             * Retain currentBalance for
-             * compatibility with the existing
-             * Prisma model.
-             *
-             * On creation it starts equal to
-             * the opening balance.
-             */
-            currentBalance:
-              openingBalance,
-
-            isActive,
-
-            notes,
-          },
-        },
-      );
-
-    return NextResponse.json(
-      {
-        success: true,
-        account,
-      },
-      {
-        status: 201,
-      },
-    );
+    return NextResponse.json({ success: true });
   } catch (error) {
-    console.error(
-      "CREATE_BANK_ACCOUNT_ERROR",
-      error,
-    );
+    console.error("DELETE_BANK_ACCOUNT_ERROR", error);
 
     return NextResponse.json(
-      {
-        error:
-          error instanceof Error
-            ? error.message
-            : "Failed to create bank account.",
-      },
-      {
-        status: 500,
-      },
+      { error: "Failed to delete bank account." },
+      { status: 500 }
     );
   }
 }

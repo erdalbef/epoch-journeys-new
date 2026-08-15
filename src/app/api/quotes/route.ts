@@ -1,6 +1,9 @@
 import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
-import { Prisma, QuotePurpose } from "@prisma/client";
+import {
+  Prisma,
+  QuotePurpose,
+} from "@prisma/client";
 
 import { authOptions } from "@/lib/authOptions";
 import { db } from "@/lib/db";
@@ -15,6 +18,14 @@ type GeneratedQuoteItemType =
   | "FEE"
   | "DISCOUNT"
   | "CUSTOM";
+
+type MarkupMode =
+  | "PERCENTAGE"
+  | "FIXED_PER_PERSON";
+
+type PricingMode =
+  | "CALCULATED"
+  | "MANUAL";
 
 type QuoteItemInput = {
   title: string;
@@ -31,11 +42,14 @@ type QuoteItemInput = {
 
 type QuotePayload = {
   templateId?: string | null;
+
   purpose?: string;
+
   tourId?: string | null;
   departureDateId?: string | null;
 
   title?: string;
+
   recipientName?: string;
   recipientEmail?: string;
 
@@ -46,22 +60,58 @@ type QuotePayload = {
 
   agentId?: string | null;
   agentCompany?: string | null;
-  commissionSource?: string | null;
+
+  pricingPolicy?: string | null;
 
   startDate?: string | null;
   endDate?: string | null;
 
+  /*
+   * Passenger structure
+   */
   totalPassengers?: number;
   freePassengers?: number;
   payingPassengers?: number;
 
-  agentCommissionPercent?: number;
+  /*
+   * Complimentary traveler structure
+   */
+  complimentarySetup?: Prisma.JsonObject;
+
+  groupLeaderAllowanceTotal?: number;
+
+  /*
+   * Pricing / markup
+   */
+  markupMode?: MarkupMode;
+
   epochMarkupPercent?: number;
+  epochMarkupPerPerson?: number;
 
-  pricingMode?: string;
+  /*
+   * Retained only for backward/API compatibility.
+   * Epoch currently uses B2B NET pricing rather
+   * than calculating agent commission.
+   */
+  agentCommissionPercent?: number;
 
+  pricingMode?: PricingMode;
+
+  /*
+   * Current quote-builder structures
+   */
   paxPricingRows?: Prisma.JsonArray;
+
   hotels?: Prisma.JsonArray;
+
+  fixedCostRows?: Prisma.JsonArray;
+
+  operationalCostRows?: Prisma.JsonArray;
+
+  /*
+   * Legacy structures retained so old quote
+   * payloads can still be handled if necessary.
+   */
   entranceRows?: Prisma.JsonArray;
   tipRows?: Prisma.JsonArray;
   otherFixedRows?: Prisma.JsonArray;
@@ -70,6 +120,9 @@ type QuotePayload = {
   guideRows?: Prisma.JsonArray;
   driverRows?: Prisma.JsonArray;
 
+  /*
+   * Client-facing offer
+   */
   clientDocumentTitle?: string;
 
   clientSinglePrice?: number;
@@ -89,161 +142,513 @@ type QuotePayload = {
   items?: QuoteItemInput[];
 };
 
-function toNumber(value: unknown): number {
-  if (typeof value === "number" && Number.isFinite(value)) {
+function toNumber(
+  value: unknown
+): number {
+  if (
+    typeof value === "number" &&
+    Number.isFinite(value)
+  ) {
     return value;
   }
 
-  if (typeof value === "string") {
-    const parsed = Number(value);
-    return Number.isFinite(parsed) ? parsed : 0;
+  if (
+    typeof value === "string"
+  ) {
+    const parsed =
+      Number(value);
+
+    return Number.isFinite(parsed)
+      ? parsed
+      : 0;
   }
 
   return 0;
 }
 
+function normalizeMarkupMode(
+  value: unknown
+): MarkupMode {
+  return value === "FIXED_PER_PERSON"
+    ? "FIXED_PER_PERSON"
+    : "PERCENTAGE";
+}
+
+function normalizePricingMode(
+  value: unknown
+): PricingMode {
+  return value === "MANUAL"
+    ? "MANUAL"
+    : "CALCULATED";
+}
+
+function normalizeJsonObject(
+  value: unknown
+): Prisma.JsonObject {
+  if (
+    value &&
+    typeof value === "object" &&
+    !Array.isArray(value)
+  ) {
+    return value as Prisma.JsonObject;
+  }
+
+  return {};
+}
+
+function normalizeJsonArray(
+  value: unknown
+): Prisma.JsonArray {
+  return Array.isArray(value)
+    ? (value as Prisma.JsonArray)
+    : [];
+}
+
 function generateQuoteNumber() {
   const now = new Date();
 
-  const month = String(now.getMonth() + 1).padStart(2, "0");
-  const day = String(now.getDate()).padStart(2, "0");
-  const random = Math.floor(Math.random() * 9000) + 1000;
+  const month =
+    String(
+      now.getMonth() + 1
+    ).padStart(2, "0");
 
-  return Number(`${month}${day}${random}`);
+  const day =
+    String(
+      now.getDate()
+    ).padStart(2, "0");
+
+  const random =
+    Math.floor(
+      Math.random() * 9000
+    ) + 1000;
+
+  return Number(
+    `${month}${day}${random}`
+  );
 }
 
-export async function POST(req: Request) {
+export async function POST(
+  req: Request
+) {
   try {
-    const session = await getServerSession(authOptions);
+    const session =
+      await getServerSession(
+        authOptions
+      );
 
-    if (!session?.user || session.user.role !== "ADMIN") {
+    if (
+      !session?.user ||
+      session.user.role !==
+        "ADMIN"
+    ) {
       return NextResponse.json(
         {
           ok: false,
-          error: "Unauthorized.",
+          error:
+            "Unauthorized.",
         },
-        { status: 401 }
+        {
+          status: 401,
+        }
       );
     }
 
-    const body = (await req.json()) as QuotePayload;
+    const body =
+      (await req.json()) as QuotePayload;
 
-    const currency = body.currency || "EUR";
-    const items = Array.isArray(body.items) ? body.items : [];
+    const currency =
+      body.currency || "EUR";
 
-    const totalAmount = items.reduce(
-      (sum, item) => sum + toNumber(item.total),
-      0
-    );
+    const items =
+      Array.isArray(body.items)
+        ? body.items
+        : [];
 
-    const quoteNumber = generateQuoteNumber();
+    const totalAmount =
+      items.reduce(
+        (
+          sum,
+          item
+        ) =>
+          sum +
+          toNumber(
+            item.total
+          ),
+        0
+      );
 
-    const quoteBuilderSummary: Prisma.JsonObject = {
-      startDate: body.startDate ?? null,
-      endDate: body.endDate ?? null,
+    const quoteNumber =
+      generateQuoteNumber();
 
-      totalPassengers: toNumber(body.totalPassengers),
-      freePassengers: toNumber(body.freePassengers),
-      payingPassengers: toNumber(body.payingPassengers),
+    const markupMode =
+      normalizeMarkupMode(
+        body.markupMode
+      );
 
-      agentCommissionPercent: toNumber(body.agentCommissionPercent),
-      epochMarkupPercent: toNumber(body.epochMarkupPercent),
+    const pricingMode =
+      normalizePricingMode(
+        body.pricingMode
+      );
 
-      pricingMode: body.pricingMode || "CALCULATED",
+    const epochMarkupPercent =
+      markupMode ===
+      "PERCENTAGE"
+        ? Math.max(
+            toNumber(
+              body.epochMarkupPercent
+            ),
+            0
+          )
+        : 0;
 
-      paxPricingRows: (body.paxPricingRows ?? []) as Prisma.JsonArray,
-      hotels: (body.hotels ?? []) as Prisma.JsonArray,
-      entranceRows: (body.entranceRows ?? []) as Prisma.JsonArray,
-      tipRows: (body.tipRows ?? []) as Prisma.JsonArray,
-      otherFixedRows: (body.otherFixedRows ?? []) as Prisma.JsonArray,
-      variableCostRows: (body.variableCostRows ?? []) as Prisma.JsonArray,
-      tourManagerRows: (body.tourManagerRows ?? []) as Prisma.JsonArray,
-      guideRows: (body.guideRows ?? []) as Prisma.JsonArray,
-      driverRows: (body.driverRows ?? []) as Prisma.JsonArray,
+    const epochMarkupPerPerson =
+      markupMode ===
+      "FIXED_PER_PERSON"
+        ? Math.max(
+            toNumber(
+              body.epochMarkupPerPerson
+            ),
+            0
+          )
+        : 0;
+
+    const totalPassengers =
+      Math.max(
+        Math.floor(
+          toNumber(
+            body.totalPassengers
+          )
+        ),
+        0
+      );
+
+    const freePassengers =
+      Math.max(
+        Math.floor(
+          toNumber(
+            body.freePassengers
+          )
+        ),
+        0
+      );
+
+    const payingPassengers =
+      Math.max(
+        Math.floor(
+          toNumber(
+            body.payingPassengers
+          )
+        ),
+        0
+      );
+
+    /*
+     * Everything needed to reopen and edit the
+     * quote builder is stored in this JSON object.
+     */
+    const quoteBuilderSummary:
+      Prisma.JsonObject = {
+      startDate:
+        body.startDate ??
+        null,
+
+      endDate:
+        body.endDate ??
+        null,
+
+      totalPassengers,
+
+      freePassengers,
+
+      payingPassengers,
+
+      complimentarySetup:
+        normalizeJsonObject(
+          body.complimentarySetup
+        ),
+
+      groupLeaderAllowanceTotal:
+        Math.max(
+          toNumber(
+            body.groupLeaderAllowanceTotal
+          ),
+          0
+        ),
+
+      /*
+       * New flexible Epoch markup system
+       */
+      markupMode,
+
+      epochMarkupPercent,
+
+      epochMarkupPerPerson,
+
+      /*
+       * Retained for compatibility only.
+       */
+      agentCommissionPercent:
+        0,
+
+      pricingMode,
+
+      pricingPolicy:
+        body.pricingPolicy ??
+        "B2B_NET_AGENT_MARKUP",
+
+      /*
+       * Current builder data
+       */
+      paxPricingRows:
+        normalizeJsonArray(
+          body.paxPricingRows
+        ),
+
+      hotels:
+        normalizeJsonArray(
+          body.hotels
+        ),
+
+      fixedCostRows:
+        normalizeJsonArray(
+          body.fixedCostRows
+        ),
+
+      operationalCostRows:
+        normalizeJsonArray(
+          body.operationalCostRows
+        ),
+
+      /*
+       * Legacy builder structures
+       */
+      entranceRows:
+        normalizeJsonArray(
+          body.entranceRows
+        ),
+
+      tipRows:
+        normalizeJsonArray(
+          body.tipRows
+        ),
+
+      otherFixedRows:
+        normalizeJsonArray(
+          body.otherFixedRows
+        ),
+
+      variableCostRows:
+        normalizeJsonArray(
+          body.variableCostRows
+        ),
+
+      tourManagerRows:
+        normalizeJsonArray(
+          body.tourManagerRows
+        ),
+
+      guideRows:
+        normalizeJsonArray(
+          body.guideRows
+        ),
+
+      driverRows:
+        normalizeJsonArray(
+          body.driverRows
+        ),
     };
 
-    const quote = await db.quote.create({
-      data: {
-        quoteNumber,
-        quoteReference: `Q-${quoteNumber}`,
+    const quote =
+      await db.quote.create({
+        data: {
+          quoteNumber,
 
-        templateId: body.templateId ?? null,
+          quoteReference:
+            `Q-${quoteNumber}`,
 
-        purpose:
-          body.purpose === "TOUR_SETUP"
-            ? QuotePurpose.TOUR_SETUP
-            : QuotePurpose.CUSTOM_REQUEST,
+          templateId:
+            body.templateId ??
+            null,
 
-        tourId: body.tourId || null,
-        departureDateId: body.departureDateId || null,
+          purpose:
+            body.purpose ===
+            "TOUR_SETUP"
+              ? QuotePurpose.TOUR_SETUP
+              : QuotePurpose.CUSTOM_REQUEST,
 
-        title: body.title || "Untitled Quote",
+          tourId:
+            body.tourId ||
+            null,
 
-        recipientName: body.recipientName || null,
-        recipientEmail: body.recipientEmail || null,
+          departureDateId:
+            body.departureDateId ||
+            null,
 
-        internalNotes: body.internalNotes || null,
-        termsAndNotes: body.termsAndNotes || null,
+          title:
+            body.title?.trim() ||
+            "Untitled Quote",
 
-        currency,
-        totalAmount,
+          recipientName:
+            body.recipientName?.trim() ||
+            null,
 
-        status: "DRAFT",
+          recipientEmail:
+            body.recipientEmail?.trim() ||
+            null,
 
-        quoteBuilderSummary,
+          internalNotes:
+            body.internalNotes?.trim() ||
+            null,
 
-        clientDocumentTitle: body.clientDocumentTitle || null,
+          termsAndNotes:
+            body.termsAndNotes?.trim() ||
+            null,
 
-        clientSinglePrice: toNumber(body.clientSinglePrice),
-        clientDoubleTwinPrice: toNumber(body.clientDoubleTwinPrice),
-        clientTriplePrice: toNumber(body.clientTriplePrice),
+          currency,
 
-        clientIncludes: body.clientIncludes || null,
-        clientExcludes: body.clientExcludes || null,
+          totalAmount,
 
-        paymentPolicy: body.paymentPolicy || null,
-        cancellationPolicy: body.cancellationPolicy || null,
+          status:
+            "DRAFT",
 
-        clientOfferNotes: body.clientOfferNotes || null,
+          quoteBuilderSummary,
 
-        validUntil: body.validUntil ? new Date(body.validUntil) : null,
+          clientDocumentTitle:
+            body.clientDocumentTitle?.trim() ||
+            null,
 
-        items: {
-          create: items.map((item, index) => ({
-            title: item.title,
-            description: item.description || null,
-            itemType: item.itemType,
-            optional: item.optional,
-            quantity: toNumber(item.quantity),
-            unitPrice: toNumber(item.unitPrice),
-            discountAmount: toNumber(item.discountAmount),
-            taxAmount: toNumber(item.taxAmount),
-            total: toNumber(item.total),
-            currency,
-            sortOrder: item.sortOrder ?? index,
-          })),
+          clientSinglePrice:
+            toNumber(
+              body.clientSinglePrice
+            ),
+
+          clientDoubleTwinPrice:
+            toNumber(
+              body.clientDoubleTwinPrice
+            ),
+
+          clientTriplePrice:
+            toNumber(
+              body.clientTriplePrice
+            ),
+
+          clientIncludes:
+            body.clientIncludes?.trim() ||
+            null,
+
+          clientExcludes:
+            body.clientExcludes?.trim() ||
+            null,
+
+          paymentPolicy:
+            body.paymentPolicy?.trim() ||
+            null,
+
+          cancellationPolicy:
+            body.cancellationPolicy?.trim() ||
+            null,
+
+          clientOfferNotes:
+            body.clientOfferNotes?.trim() ||
+            null,
+
+          validUntil:
+            body.validUntil
+              ? new Date(
+                  body.validUntil
+                )
+              : null,
+
+          items: {
+            create:
+              items.map(
+                (
+                  item,
+                  index
+                ) => ({
+                  title:
+                    item.title,
+
+                  description:
+                    item.description ||
+                    null,
+
+                  itemType:
+                    item.itemType,
+
+                  optional:
+                    item.optional,
+
+                  quantity:
+                    toNumber(
+                      item.quantity
+                    ),
+
+                  unitPrice:
+                    toNumber(
+                      item.unitPrice
+                    ),
+
+                  discountAmount:
+                    toNumber(
+                      item.discountAmount
+                    ),
+
+                  taxAmount:
+                    toNumber(
+                      item.taxAmount
+                    ),
+
+                  total:
+                    toNumber(
+                      item.total
+                    ),
+
+                  currency,
+
+                  sortOrder:
+                    item.sortOrder ??
+                    index,
+                })
+              ),
+          },
         },
-      },
 
-      select: {
-        id: true,
-      },
-    });
+        select: {
+          id: true,
+
+          quoteReference:
+            true,
+
+          quoteNumber:
+            true,
+        },
+      });
 
     return NextResponse.json({
       ok: true,
       quote,
     });
-  } catch (error) {
-    console.error("CREATE_QUOTE_ERROR", error);
+  } catch (
+    error
+  ) {
+    console.error(
+      "CREATE_QUOTE_ERROR",
+      error
+    );
 
     return NextResponse.json(
       {
         ok: false,
+
         error:
-          error instanceof Error ? error.message : "Failed to create quote.",
+          error instanceof Error
+            ? error.message
+            : "Failed to create quote.",
       },
-      { status: 500 }
+      {
+        status: 500,
+      }
     );
   }
 }

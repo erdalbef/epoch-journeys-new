@@ -1,16 +1,11 @@
 import type { Metadata } from "next";
-import { Geist } from "next/font/google";
-import { Analytics } from "@vercel/analytics/next";
-import { Toaster } from "sonner";
-
-import { cn } from "@/lib/utils";
-
 import "./globals.css";
+import { Geist } from "next/font/google";
+import { cn } from "@/lib/utils";
+import { Toaster } from "sonner";
+import { Analytics } from "@vercel/analytics/next";
 
-const geist = Geist({
-  subsets: ["latin"],
-  variable: "--font-sans",
-});
+const geist = Geist({ subsets: ["latin"], variable: "--font-sans" });
 
 export const metadata: Metadata = {
   title: "Epoch Journeys",
@@ -19,26 +14,17 @@ export const metadata: Metadata = {
 
 export default function RootLayout({
   children,
-}: Readonly<{
+}: {
   children: React.ReactNode;
-}>) {
+}) {
   return (
-    <html
-      lang="en"
-      className={cn(
-        "font-sans",
-        geist.variable,
-      )}
-    >
+    <html lang="en" className={cn("font-sans", geist.variable)}>
       <body>
         {children}
 
-        <Toaster
-          richColors
-          position="top-right"
-        />
-
-        <Analytics />
+        {/* ✅ TOAST SYSTEM */}
+        <Toaster richColors position="top-right" />
+         <Analytics />
       </body>
     </html>
   );

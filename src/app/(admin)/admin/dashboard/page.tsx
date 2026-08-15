@@ -24,7 +24,6 @@ import { OperationStatus } from "@prisma/client";
 
 import { authOptions } from "@/lib/authOptions";
 import { db } from "@/lib/db";
-import DashboardIntelligence from "./DashboardIntelligence";
 
 const money = (value: number, currency = "EUR") =>
   new Intl.NumberFormat("en-GB", {
@@ -65,10 +64,6 @@ export default async function AdminDashboardPage() {
     openSupport,
     upcomingDepartures,
     recentBookings,
-    trendBookings,
-    sentQuotes,
-    finalizedQuotes,
-    convertedQuotes,
   ] = await Promise.all([
     db.booking.aggregate({
       _count: { _all: true },
@@ -78,9 +73,9 @@ export default async function AdminDashboardPage() {
     db.booking.count({ where: { status: "PENDING" } }),
     db.booking.aggregate({ _sum: { numberOfGuests: true } }),
     db.payment.aggregate({
-      where: { status: "RECEIVED" },
+      where: {status: "RECEIVED" },
       _sum: { amount: true },
-    }),
+    }).catch(() => ({ _sum: { amount: null } })),
     db.expense.aggregate({
       where: { paymentStatus: "PENDING" },
       _sum: { baseAmount: true },
@@ -129,23 +124,6 @@ export default async function AdminDashboardPage() {
         createdAt: true,
       },
     }),
-    db.booking.findMany({
-      where: {
-        createdAt: {
-          gte: new Date(now.getFullYear(), now.getMonth() - 5, 1),
-        },
-      },
-      select: {
-        createdAt: true,
-        grossAmount: true,
-        amountPaid: true,
-        numberOfGuests: true,
-      },
-      orderBy: { createdAt: "asc" },
-    }),
-    db.quote.count({ where: { status: "SENT" } }),
-    db.quote.count({ where: { status: "FINALIZED" } }),
-    db.quote.count({ where: { status: "CONVERTED" } }),
   ]);
 
   const totalBookings = bookingSummary._count._all;
@@ -155,35 +133,6 @@ export default async function AdminDashboardPage() {
   const outstanding = Math.max((bookingSummary._sum.amountDue ?? 0), grossSales - bookingPaid, 0);
   const guests = totalGuests._sum.numberOfGuests ?? 0;
   const pendingExpenses = pendingExpenseSummary._sum.baseAmount ?? 0;
-
-  const monthKeys = Array.from({ length: 6 }, (_, index) => {
-    const date = new Date(now.getFullYear(), now.getMonth() - (5 - index), 1);
-    return {
-      key: `${date.getFullYear()}-${date.getMonth()}`,
-      label: new Intl.DateTimeFormat("en-GB", { month: "short" }).format(date),
-    };
-  });
-
-  const monthlyTrend = monthKeys.map(({ key, label }) => {
-    const items = trendBookings.filter(
-      (booking) => `${booking.createdAt.getFullYear()}-${booking.createdAt.getMonth()}` === key,
-    );
-
-    return {
-      month: label,
-      bookings: items.length,
-      travelers: items.reduce((sum, item) => sum + item.numberOfGuests, 0),
-      sales: items.reduce((sum, item) => sum + item.grossAmount, 0),
-      collected: items.reduce((sum, item) => sum + item.amountPaid, 0),
-    };
-  });
-
-  const quotePipeline = [
-    { name: "Draft", value: draftQuotes },
-    { name: "Finalized", value: finalizedQuotes },
-    { name: "Sent", value: sentQuotes },
-    { name: "Converted", value: convertedQuotes },
-  ];
 
   const priorities = [
     {
@@ -320,14 +269,6 @@ export default async function AdminDashboardPage() {
           <MiniStat label="Expenses awaiting payment" value={pendingExpenseSummary._count._all} icon={Banknote} />
         </div>
       </section>
-
-      <DashboardIntelligence
-        monthlyTrend={monthlyTrend}
-        quotePipeline={quotePipeline}
-        grossSales={grossSales}
-        collected={collected}
-        outstanding={outstanding}
-      />
 
       <div className="grid gap-6 xl:grid-cols-[1.15fr_.85fr]">
         <section className="rounded-2xl border border-slate-200 bg-white shadow-sm">

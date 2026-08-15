@@ -103,24 +103,8 @@ export async function POST(req: Request) {
 
     const netAmount = grossAmount - commissionAmount;
 
-    const booking = await db.$transaction(async (tx) => {
-      const reserved = await tx.departureDate.updateMany({
-        where: {
-          id: departureDate.id,
-          tourId: tour.id,
-          bookedSeats: { lte: departureDate.capacity - numberOfGuests },
-        },
-        data: {
-          bookedSeats: { increment: numberOfGuests },
-        },
-      });
-
-      if (reserved.count !== 1) {
-        throw new Error("NOT_ENOUGH_SEATS");
-      }
-
-      return tx.booking.create({
-        data: {
+    const booking = await db.booking.create({
+      data: {
         bookingReference: makeBookingReference(),
         userId,
         tourId: tour.id,
@@ -185,8 +169,7 @@ export async function POST(req: Request) {
         finalPax: null,
         groupLeaderName,
         groupName,
-        },
-      });
+      },
     });
 
     await db.customTourRequest.update({
@@ -202,14 +185,6 @@ export async function POST(req: Request) {
     );
   } catch (error) {
     console.error("CONVERT_REQUEST_TO_BOOKING_ERROR", error);
-
-    if (error instanceof Error && error.message === "NOT_ENOUGH_SEATS") {
-      return new NextResponse(
-        "Not enough seats are available for this departure.",
-        { status: 409 }
-      );
-    }
-
     return new NextResponse("Internal Server Error", { status: 500 });
   }
 }
