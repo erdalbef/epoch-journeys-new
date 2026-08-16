@@ -26,7 +26,7 @@ type Props = {
 
   currency: string;
 
-  onAddRow: () => void;
+  onAddRow: (row?: FixedCostRow) => void;
 
   onRemoveRow: (index: number) => void;
 
@@ -46,6 +46,7 @@ type Props = {
 
   toNumber: (value: unknown) => number;
 };
+
 const CATEGORY_OPTIONS: Array<{
   value: FixedCostCategory;
   label: string;
@@ -137,6 +138,20 @@ const QUICK_ADD_OPTIONS: Array<{
   },
 ];
 
+const ROW_BACKGROUNDS = [
+  "bg-amber-50/70",
+  "bg-emerald-50/60",
+  "bg-white",
+  "bg-blue-50/60",
+];
+
+const ROW_NUMBER_BACKGROUNDS = [
+  "bg-amber-100 text-amber-900",
+  "bg-emerald-100 text-emerald-900",
+  "bg-slate-100 text-slate-700",
+  "bg-blue-100 text-blue-900",
+];
+
 function getCategoryLabel(
   category: FixedCostCategory
 ) {
@@ -162,21 +177,12 @@ export default function FixedCostsSection({
     category: FixedCostCategory,
     label: string
   ) {
-    onAddRow();
-
-    /*
-     * onAddRow creates the new row in the parent.
-     * React state updates asynchronously, so we update
-     * the new row on the next event loop.
-     */
-    window.setTimeout(() => {
-      onUpdateRow(rows.length, {
-        category,
-        label,
-        quantity: 1,
-        unitCost: 0,
-      });
-    }, 0);
+    onAddRow({
+      category,
+      label,
+      quantity: 1,
+      unitCost: 0,
+    });
   }
 
   return (
@@ -277,9 +283,13 @@ export default function FixedCostsSection({
 
       {/* TABLE */}
       <div className="overflow-x-auto">
-        <table className="w-full min-w-[900px] text-sm">
+        <table className="w-full min-w-[980px] text-sm">
           <thead className="bg-slate-100">
             <tr className="border-b">
+              <th className="w-20 px-4 py-3 text-left font-semibold text-slate-700">
+                Row
+              </th>
+
               <th className="px-4 py-3 text-left font-semibold text-slate-700">
                 Service
               </th>
@@ -308,7 +318,7 @@ export default function FixedCostsSection({
             {rows.length === 0 ? (
               <tr>
                 <td
-                  colSpan={6}
+                  colSpan={7}
                   className="px-5 py-10 text-center"
                 >
                   <div className="text-sm font-medium text-slate-700">
@@ -322,132 +332,167 @@ export default function FixedCostsSection({
                 </td>
               </tr>
             ) : (
-              rows.map((row, index) => (
-                <tr
-                  key={index}
-                  className="border-b last:border-b-0 hover:bg-slate-50/70"
-                >
-                  {/* DESCRIPTION */}
-                  <td className="px-4 py-3">
-                    <input
-                      className="w-full rounded-md border border-slate-300 bg-white p-2 outline-none transition focus:border-[#001F3F]"
-                      value={row.label}
-                      onChange={(e) =>
-                        onUpdateRow(index, {
-                          label: e.target.value,
-                        })
-                      }
-                      placeholder="e.g. Ephesus entrance"
-                    />
-                  </td>
+              rows.map((row, index) => {
+                const colorIndex =
+                  index % ROW_BACKGROUNDS.length;
 
-                  {/* CATEGORY */}
-                  <td className="px-4 py-3">
-                    <select
-                      className="w-full rounded-md border border-slate-300 bg-white p-2 outline-none transition focus:border-[#001F3F]"
-                      value={row.category}
-                      onChange={(e) =>
-                        onUpdateRow(index, {
-                          category:
-                            e.target
-                              .value as FixedCostCategory,
-                        })
-                      }
-                    >
-                      {CATEGORY_OPTIONS.map(
-                        (option) => (
-                          <option
-                            key={option.value}
-                            value={option.value}
-                          >
-                            {option.label}
-                          </option>
-                        )
-                      )}
-                    </select>
-                  </td>
+                const rowBackground =
+                  ROW_BACKGROUNDS[colorIndex];
 
-                  {/* QTY */}
-                  <td className="w-28 px-4 py-3">
-                    <input
-                      type="number"
-                      min="0"
-                      step="1"
-                      className="w-full rounded-md border border-slate-300 bg-white p-2 text-right outline-none transition focus:border-[#001F3F]"
-                      value={row.quantity}
-                      onChange={(e) =>
-                        onUpdateRow(index, {
-                          quantity: toNumber(
-                            e.target.value
-                          ),
-                        })
-                      }
-                    />
-                  </td>
+                const numberBackground =
+                  ROW_NUMBER_BACKGROUNDS[colorIndex];
 
-                  {/* UNIT COST */}
-                  <td className="w-40 px-4 py-3">
-                    <div className="relative">
-                      <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs text-slate-400">
-                        {currency}
+                return (
+                  <tr
+                    key={index}
+                    className={`border-b transition last:border-b-0 ${rowBackground}`}
+                  >
+                    {/* ROW NUMBER */}
+                    <td className="px-4 py-3">
+                      <span
+                        className={`inline-flex min-w-10 items-center justify-center rounded-full px-2.5 py-1 text-xs font-bold ${numberBackground}`}
+                      >
+                        {index + 1}
                       </span>
+                    </td>
 
+                    {/* DESCRIPTION */}
+                    <td className="px-4 py-3">
+                      <input
+                        className="w-full rounded-md border border-slate-300 bg-white p-2 outline-none transition focus:border-[#001F3F]"
+                        value={row.label}
+                        onChange={(e) =>
+                          onUpdateRow(index, {
+                            label: e.target.value,
+                          })
+                        }
+                        placeholder="e.g. Ephesus entrance"
+                      />
+                    </td>
+
+                    {/* CATEGORY */}
+                    <td className="px-4 py-3">
+                      <select
+                        className="w-full rounded-md border border-slate-300 bg-white p-2 outline-none transition focus:border-[#001F3F]"
+                        value={row.category}
+                        onChange={(e) =>
+                          onUpdateRow(index, {
+                            category:
+                              e.target
+                                .value as FixedCostCategory,
+                          })
+                        }
+                      >
+                        {CATEGORY_OPTIONS.map(
+                          (option) => (
+                            <option
+                              key={option.value}
+                              value={option.value}
+                            >
+                              {option.label}
+                            </option>
+                          )
+                        )}
+                      </select>
+                    </td>
+
+                    {/* QTY */}
+                    <td className="w-28 px-4 py-3">
                       <input
                         type="number"
                         min="0"
-                        step="0.01"
-                        className="w-full rounded-md border border-slate-300 bg-white py-2 pl-12 pr-2 text-right outline-none transition focus:border-[#001F3F]"
-                        value={row.unitCost}
+                        step="1"
+                        className="w-full rounded-md border border-slate-300 bg-white p-2 text-right outline-none transition focus:border-[#001F3F]"
+                        value={row.quantity}
                         onChange={(e) =>
                           onUpdateRow(index, {
-                            unitCost: toNumber(
+                            quantity: toNumber(
                               e.target.value
                             ),
                           })
                         }
                       />
-                    </div>
-                  </td>
+                    </td>
 
-                  {/* TOTAL */}
-                  <td className="px-4 py-3 text-right">
-                    <div className="font-semibold text-[#001F3F]">
-                      {formatMoney(
-                        rowTotal(row),
-                        currency
-                      )}
-                    </div>
+                    {/* UNIT COST */}
+                    <td className="w-40 px-4 py-3">
+                      <div className="relative">
+                        <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs text-slate-400">
+                          {currency}
+                        </span>
 
-                    <div className="mt-1 text-[11px] text-slate-400">
-                      {getCategoryLabel(row.category)}
-                    </div>
-                  </td>
+                        <input
+                          type="number"
+                          min="0"
+                          step="0.01"
+                          className="w-full rounded-md border border-slate-300 bg-white py-2 pl-12 pr-2 text-right outline-none transition focus:border-[#001F3F]"
+                          value={row.unitCost}
+                          onChange={(e) =>
+                            onUpdateRow(index, {
+                              unitCost: toNumber(
+                                e.target.value
+                              ),
+                            })
+                          }
+                        />
+                      </div>
+                    </td>
 
-                  {/* REMOVE */}
-                  <td className="w-24 px-4 py-3 text-right">
-                    <button
-                      type="button"
-                      onClick={() =>
-                        onRemoveRow(index)
-                      }
-                      className="rounded-md px-2 py-1 text-xs font-medium text-red-600 transition hover:bg-red-50"
-                    >
-                      Remove
-                    </button>
-                  </td>
-                </tr>
-              ))
+                    {/* TOTAL */}
+                    <td className="px-4 py-3 text-right">
+                      <div className="font-semibold text-[#001F3F]">
+                        {formatMoney(
+                          rowTotal(row),
+                          currency
+                        )}
+                      </div>
+
+                      <div className="mt-1 text-[11px] text-slate-500">
+                        {getCategoryLabel(
+                          row.category
+                        )}
+                      </div>
+                    </td>
+
+                    {/* REMOVE */}
+                    <td className="w-24 px-4 py-3 text-right">
+                      <button
+                        type="button"
+                        onClick={() =>
+                          onRemoveRow(index)
+                        }
+                        className="rounded-md border border-red-200 bg-white px-2.5 py-1.5 text-xs font-medium text-red-600 transition hover:bg-red-50"
+                      >
+                        Remove
+                      </button>
+                    </td>
+                  </tr>
+                );
+              })
             )}
           </tbody>
         </table>
       </div>
 
-      {/* FOOTER */}
+      {/* ADD ROW DIRECTLY AFTER LIST */}
+      <div className="border-t bg-white px-5 py-4">
+        <div className="flex justify-center">
+          <button
+            type="button"
+            onClick={() => onAddRow()}
+            className="rounded-lg border-2 border-dashed border-[#001F3F]/30 bg-slate-50 px-8 py-3 text-sm font-semibold text-[#001F3F] transition hover:border-[#001F3F]/60 hover:bg-blue-50"
+          >
+            + Add Another Per-Person Cost
+          </button>
+        </div>
+      </div>
+
+      {/* TOTAL FOOTER */}
       <div className="border-t bg-slate-50 px-5 py-4">
-        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex items-center justify-between gap-4">
           <div>
             <div className="text-xs text-slate-500">
-              Total per-person services
+              Total Per-Person Services
             </div>
 
             <div className="text-lg font-bold text-[#001F3F]">
@@ -455,13 +500,11 @@ export default function FixedCostsSection({
             </div>
           </div>
 
-          <button
-            type="button"
-            onClick={onAddRow}
-            className="rounded-md border border-[#001F3F] bg-white px-4 py-2 text-sm font-medium text-[#001F3F] transition hover:bg-[#001F3F] hover:text-white"
-          >
-            + Add Custom Cost
-          </button>
+          <div className="text-right text-xs text-slate-500">
+            Included in the internal tour costing
+            <br />
+            for each applicable traveler.
+          </div>
         </div>
       </div>
     </section>

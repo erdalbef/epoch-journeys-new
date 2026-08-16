@@ -17,7 +17,14 @@ import TermsSelector from "@/components/quotes/TermsSelector";
 import RecipientSection from "@/components/quotes/create/RecipientSection";
 import GroupSetupSection from "@/components/quotes/create/GroupSetupSection";
 import HotelsSection from "@/components/quotes/create/HotelsSection";
-import OperationalCostsSection from "@/components/quotes/create/OperationalCostsSection";
+
+import OperationalCostsSection, {
+  type OperationalCostCategory,
+  type OperationalCostMode,
+  type OperationalCostRow,
+  type OperationalCostScope,
+  type OperationalPricingBasis,
+} from "@/components/quotes/create/OperationalCostsSection";
 
 import PricingControlsSection, {
   type MarkupMode,
@@ -100,22 +107,6 @@ type HotelRow = {
     | "POST";
 };
 
-type OperationalCostRow = {
-  label: string;
-
-  category:
-    | "BUS"
-    | "TOUR_GUIDE"
-    | "TOUR_MANAGER"
-    | "DRIVER"
-    | "FERRY"
-    | "TRANSFER"
-    | "OTHER";
-
-  dailyRate: number;
-  numberOfDays: number;
-};
-
 type GroupSetup = {
   totalPassengers: number;
   freePassengers: number;
@@ -188,6 +179,10 @@ type LegacyFixedCostRow = {
   unitCost?: number;
 };
 
+type SavedOperationalCostRow = Partial<OperationalCostRow> & {
+  totalCost?: number;
+};
+
 type QuoteBuilderSummary = {
   startDate?: string | null;
   endDate?: string | null;
@@ -214,7 +209,7 @@ type QuoteBuilderSummary = {
 
   fixedCostRows?: LegacyFixedCostRow[];
 
-  operationalCostRows?: OperationalCostRow[];
+  operationalCostRows?: SavedOperationalCostRow[];
 
   entranceRows?: LegacyEntranceRow[];
   tipRows?: LegacyTipRow[];
@@ -314,9 +309,11 @@ const DEFAULT_COMPLIMENTARY_SETUP:
 
     priestComplimentary: false,
     priestCount: 1,
+    priestComplimentaryBasis: "USES_FREE_PLACE",
 
     groupLeaderComplimentary: false,
     groupLeaderCount: 1,
+    groupLeaderComplimentaryBasis: "USES_FREE_PLACE",
 
     additionalFreePassengers: 0,
 
@@ -387,6 +384,79 @@ function normalizeFixedCostCategory(
   return "OTHER";
 }
 
+function isOperationalCategory(
+  value: unknown
+): value is OperationalCostCategory {
+  return (
+    value === "BUS" ||
+    value === "TOUR_GUIDE" ||
+    value === "TOUR_MANAGER" ||
+    value === "ASSISTANT" ||
+    value === "TRANSFERMAN" ||
+    value === "DRIVER" ||
+    value === "FERRY" ||
+    value === "TRANSFER" ||
+    value === "OTHER"
+  );
+}
+
+function normalizeOperationalCategory(
+  value: unknown
+): OperationalCostCategory {
+  return isOperationalCategory(value)
+    ? value
+    : "OTHER";
+}
+
+function normalizeOperationalScope(
+  value: unknown
+): OperationalCostScope {
+  if (
+    value === "PRE" ||
+    value === "POST"
+  ) {
+    return value;
+  }
+
+  return "CORE";
+}
+
+function normalizeOperationalCostMode(
+  value: unknown
+): OperationalCostMode {
+  return value === "TOTAL"
+    ? "TOTAL"
+    : "DAILY";
+}
+
+function normalizeOperationalPricingBasis(
+  value: unknown,
+  category: OperationalCostCategory
+): OperationalPricingBasis {
+  if (
+    value === "GROUP_TOTAL" ||
+    value === "PER_PERSON" ||
+    value === "PER_SERVICE" ||
+    value === "PER_VEHICLE"
+  ) {
+    return value;
+  }
+
+  if (category === "TRANSFER") {
+    return "PER_VEHICLE";
+  }
+
+  if (category === "TRANSFERMAN") {
+    return "PER_SERVICE";
+  }
+
+  if (category === "FERRY") {
+    return "PER_PERSON";
+  }
+
+  return "GROUP_TOTAL";
+}
+
 function createEmptyHotelRow():
   HotelRow {
   return {
@@ -413,10 +483,30 @@ function createEmptyFixedCostRow():
 function createEmptyOperationalCostRow():
   OperationalCostRow {
   return {
-    label: "Bus",
+    label: "Bus / Coach",
+
     category: "BUS",
+
+    scope: "CORE",
+
+    costMode: "TOTAL",
+
+    pricingBasis: "GROUP_TOTAL",
+
+    totalContractCost: 0,
+
     dailyRate: 0,
     numberOfDays: 1,
+
+    hotelPerNight: 0,
+    hotelNights: 0,
+
+    airfareTransport: 0,
+
+    mealsPerDay: 0,
+    mealDays: 0,
+
+    otherExpenses: 0,
   };
 }
 
@@ -445,12 +535,190 @@ function fixedCostRowTotal(
   );
 }
 
-function operationalCostRowTotal(
+function operationalServiceAmount(
+  row: OperationalCostRow
+) {
+  if (
+    row.costMode === "TOTAL"
+  ) {
+    return Math.max(
+      toNumber(
+        row.totalContractCost
+      ),
+      0
+    );
+  }
+
+  return (
+    Math.max(
+      toNumber(
+        row.dailyRate
+      ),
+      0
+    ) *
+    Math.max(
+      toNumber(
+        row.numberOfDays
+      ),
+      0
+    )
+  );
+}
+
+function operationalStaffExpenses(
+  row: OperationalCostRow
+) {
+  const hotel =
+    Math.max(
+      toNumber(
+        row.hotelPerNight
+      ),
+      0
+    ) *
+    Math.max(
+      toNumber(
+        row.hotelNights
+      ),
+      0
+    );
+
+  const airfareTransport =
+    Math.max(
+      toNumber(
+        row.airfareTransport
+      ),
+      0
+    );
+
+  const meals =
+    Math.max(
+      toNumber(
+        row.mealsPerDay
+      ),
+      0
+    ) *
+    Math.max(
+      toNumber(
+        row.mealDays
+      ),
+      0
+    );
+
+  const otherExpenses =
+    Math.max(
+      toNumber(
+        row.otherExpenses
+      ),
+      0
+    );
+
+  return (
+    hotel +
+    airfareTransport +
+    meals +
+    otherExpenses
+  );
+}
+
+function operationalQuotedAmount(
   row: OperationalCostRow
 ) {
   return (
-    toNumber(row.dailyRate) *
-    toNumber(row.numberOfDays)
+    operationalServiceAmount(
+      row
+    ) +
+    operationalStaffExpenses(
+      row
+    )
+  );
+}
+
+function operationalCoreActualTotal(
+  row: OperationalCostRow,
+  payingPassengers: number,
+  freePassengers: number
+) {
+  if (
+    row.scope !== "CORE"
+  ) {
+    return 0;
+  }
+
+  const serviceAmount =
+    operationalServiceAmount(
+      row
+    );
+
+  const staffExpenses =
+    operationalStaffExpenses(
+      row
+    );
+
+  const totalTravelers =
+    Math.max(
+      payingPassengers,
+      0
+    ) +
+    Math.max(
+      freePassengers,
+      0
+    );
+
+  /*
+   * PER_PERSON means the supplier charges
+   * each actual traveler.
+   *
+   * Example:
+   * Ferry €45 × 33 travelers.
+   *
+   * Staff expenses are group expenses and
+   * are therefore added once.
+   */
+  if (
+    row.pricingBasis ===
+    "PER_PERSON"
+  ) {
+    return (
+      serviceAmount *
+        totalTravelers +
+      staffExpenses
+    );
+  }
+
+  /*
+   * GROUP_TOTAL / PER_SERVICE / PER_VEHICLE
+   * are treated as the entered group/service amount.
+   *
+   * For CORE services the supplier's actual group cost
+   * is recovered from paying pilgrims.
+   */
+  return (
+    serviceAmount +
+    staffExpenses
+  );
+}
+
+function operationalDisplayTotal(
+  row: OperationalCostRow,
+  payingPassengers: number,
+  freePassengers: number
+) {
+  if (
+    row.scope === "CORE"
+  ) {
+    return operationalCoreActualTotal(
+      row,
+      payingPassengers,
+      freePassengers
+    );
+  }
+
+  /*
+   * PRE / POST services are optional standalone rates.
+   * Do not multiply them by the core group's passenger count.
+   */
+  return operationalQuotedAmount(
+    row
   );
 }
 
@@ -507,17 +775,48 @@ function calculateComplimentaryPassengers(
         )
       : 0;
 
-  const namedFree =
-    priestFree +
-    leaderFree;
+  const priestUsingPool =
+    setup.priestComplimentary &&
+    setup.priestComplimentaryBasis ===
+      "USES_FREE_PLACE"
+      ? priestFree
+      : 0;
 
-  const baseComplimentary =
-    setup.useFreePlaceRule
-      ? Math.max(
-          ratioFree,
-          namedFree
-        )
-      : namedFree;
+  const leaderUsingPool =
+    setup.groupLeaderComplimentary &&
+    setup.groupLeaderComplimentaryBasis ===
+      "USES_FREE_PLACE"
+      ? leaderFree
+      : 0;
+
+  const namedUsingPool =
+    priestUsingPool +
+    leaderUsingPool;
+
+  const priestAdditional =
+    setup.priestComplimentary &&
+    setup.priestComplimentaryBasis ===
+      "ADDITIONAL"
+      ? priestFree
+      : 0;
+
+  const leaderAdditional =
+    setup.groupLeaderComplimentary &&
+    setup.groupLeaderComplimentaryBasis ===
+      "ADDITIONAL"
+      ? leaderFree
+      : 0;
+
+  const namedAdditional =
+    priestAdditional +
+    leaderAdditional;
+
+  const poolOverflow =
+    Math.max(
+      namedUsingPool -
+        ratioFree,
+      0
+    );
 
   const additionalFree =
     Math.max(
@@ -527,19 +826,28 @@ function calculateComplimentaryPassengers(
       0
     );
 
+  const totalComplimentary =
+    ratioFree +
+    poolOverflow +
+    namedAdditional +
+    additionalFree;
+
   return {
     ratioFree,
-    priestFree,
-    leaderFree,
-    namedFree,
 
-    baseComplimentary,
+    priestFree,
+
+    leaderFree,
+
+    namedUsingPool,
+
+    namedAdditional,
+
+    poolOverflow,
 
     additionalFree,
 
-    totalComplimentary:
-      baseComplimentary +
-      additionalFree,
+    totalComplimentary,
   };
 }
 
@@ -657,14 +965,21 @@ function calculateSellingPricesForPax(
     );
 
   const operationalTotal =
-    args.operationalCostRows.reduce(
-      (sum, row) =>
-        sum +
-        operationalCostRowTotal(
-          row
-        ),
-      0
-    );
+    args.operationalCostRows
+      .filter(
+        (row) =>
+          row.scope === "CORE"
+      )
+      .reduce(
+        (sum, row) =>
+          sum +
+          operationalCoreActualTotal(
+            row,
+            payingPassengers,
+            freePassengers
+          ),
+        0
+      );
 
   const groupLeaderAllowanceTotal =
     calculateGroupLeaderAllowance(
@@ -803,6 +1118,98 @@ function legacyDriverTotal(
     meals +
     extras
   );
+}
+
+function normalizeSavedOperationalRow(
+  row: SavedOperationalCostRow
+): OperationalCostRow {
+  const category =
+    normalizeOperationalCategory(
+      row.category
+    );
+
+  const hasNewCostMode =
+    row.costMode === "TOTAL" ||
+    row.costMode === "DAILY";
+
+  /*
+   * Old quotations only had dailyRate / numberOfDays.
+   * Preserve those calculations by treating them as DAILY.
+   */
+  const costMode =
+    hasNewCostMode
+      ? normalizeOperationalCostMode(
+          row.costMode
+        )
+      : "DAILY";
+
+  return {
+    label:
+      typeof row.label ===
+      "string"
+        ? row.label
+        : "",
+
+    category,
+
+    scope:
+      normalizeOperationalScope(
+        row.scope
+      ),
+
+    costMode,
+
+    pricingBasis:
+      normalizeOperationalPricingBasis(
+        row.pricingBasis,
+        category
+      ),
+
+    totalContractCost:
+      toNumber(
+        row.totalContractCost
+      ),
+
+    dailyRate:
+      toNumber(
+        row.dailyRate
+      ),
+
+    numberOfDays:
+      toNumber(
+        row.numberOfDays
+      ) || 1,
+
+    hotelPerNight:
+      toNumber(
+        row.hotelPerNight
+      ),
+
+    hotelNights:
+      toNumber(
+        row.hotelNights
+      ),
+
+    airfareTransport:
+      toNumber(
+        row.airfareTransport
+      ),
+
+    mealsPerDay:
+      toNumber(
+        row.mealsPerDay
+      ),
+
+    mealDays:
+      toNumber(
+        row.mealDays
+      ),
+
+    otherExpenses:
+      toNumber(
+        row.otherExpenses
+      ),
+  };
 }
 
 export default function QuoteCreateForm({
@@ -1423,6 +1830,13 @@ export default function QuoteCreateForm({
             1
           ),
 
+        priestComplimentaryBasis:
+          summary.complimentarySetup
+            .priestComplimentaryBasis ===
+          "ADDITIONAL"
+            ? "ADDITIONAL"
+            : "USES_FREE_PLACE",
+
         groupLeaderCount:
           Math.max(
             toNumber(
@@ -1431,6 +1845,13 @@ export default function QuoteCreateForm({
             ) || 1,
             1
           ),
+
+        groupLeaderComplimentaryBasis:
+          summary.complimentarySetup
+            .groupLeaderComplimentaryBasis ===
+          "ADDITIONAL"
+            ? "ADDITIONAL"
+            : "USES_FREE_PLACE",
 
         additionalFreePassengers:
           Math.max(
@@ -1756,40 +2177,7 @@ export default function QuoteCreateForm({
     ) {
       setOperationalCostRows(
         summary.operationalCostRows.map(
-          (row) => ({
-            label:
-              row.label || "",
-
-            category:
-              row.category ||
-              "OTHER",
-
-            dailyRate:
-              toNumber(
-                "dailyRate" in row
-                  ? (
-                      row as {
-                        dailyRate?: unknown;
-                      }
-                    ).dailyRate
-                  : (
-                      row as unknown as {
-                        totalCost?: unknown;
-                      }
-                    ).totalCost
-              ),
-
-            numberOfDays:
-              toNumber(
-                "numberOfDays" in row
-                  ? (
-                      row as {
-                        numberOfDays?: unknown;
-                      }
-                    ).numberOfDays
-                  : 1
-              ) || 1,
-          })
+          normalizeSavedOperationalRow
         )
       );
     } else {
@@ -1809,20 +2197,32 @@ export default function QuoteCreateForm({
                 row.label
             )
             .map(
-              (row) => ({
+              (row): OperationalCostRow => ({
+                ...createEmptyOperationalCostRow(),
+
                 label:
                   row.label ||
                   "",
 
                 category:
-                  "OTHER" as const,
+                  "OTHER",
 
-                dailyRate:
+                scope:
+                  "CORE",
+
+                costMode:
+                  "TOTAL",
+
+                pricingBasis:
+                  row.costBasis ===
+                  "PER_PERSON"
+                    ? "PER_PERSON"
+                    : "GROUP_TOTAL",
+
+                totalContractCost:
                   toNumber(
                     row.totalCost
                   ),
-
-                numberOfDays: 1,
               })
             )
         );
@@ -1843,26 +2243,59 @@ export default function QuoteCreateForm({
                 ) > 0
             )
             .map(
-              (row) => ({
+              (row): OperationalCostRow => ({
+                ...createEmptyOperationalCostRow(),
+
                 label:
                   row.label ||
                   "Tour Manager",
 
                 category:
-                  "TOUR_MANAGER" as const,
+                  "TOUR_MANAGER",
+
+                scope:
+                  "CORE",
+
+                costMode:
+                  "DAILY",
+
+                pricingBasis:
+                  "GROUP_TOTAL",
 
                 dailyRate:
                   toNumber(
                     row.dailyRate
-                  ) ||
-                  legacyStaffTotal(
-                    row
                   ),
 
                 numberOfDays:
                   toNumber(
                     row.days
                   ) || 1,
+
+                hotelPerNight:
+                  toNumber(
+                    row.hotelSinglePerNight
+                  ),
+
+                hotelNights:
+                  toNumber(
+                    row.nights
+                  ),
+
+                mealsPerDay:
+                  toNumber(
+                    row.mealsPerDay
+                  ),
+
+                mealDays:
+                  toNumber(
+                    row.mealDays
+                  ),
+
+                otherExpenses:
+                  toNumber(
+                    row.extras
+                  ),
               })
             )
         );
@@ -1883,26 +2316,59 @@ export default function QuoteCreateForm({
                 ) > 0
             )
             .map(
-              (row) => ({
+              (row): OperationalCostRow => ({
+                ...createEmptyOperationalCostRow(),
+
                 label:
                   row.label ||
                   "Guide",
 
                 category:
-                  "TOUR_GUIDE" as const,
+                  "TOUR_GUIDE",
+
+                scope:
+                  "CORE",
+
+                costMode:
+                  "DAILY",
+
+                pricingBasis:
+                  "GROUP_TOTAL",
 
                 dailyRate:
                   toNumber(
                     row.dailyRate
-                  ) ||
-                  legacyStaffTotal(
-                    row
                   ),
 
                 numberOfDays:
                   toNumber(
                     row.days
                   ) || 1,
+
+                hotelPerNight:
+                  toNumber(
+                    row.hotelSinglePerNight
+                  ),
+
+                hotelNights:
+                  toNumber(
+                    row.nights
+                  ),
+
+                mealsPerDay:
+                  toNumber(
+                    row.mealsPerDay
+                  ),
+
+                mealDays:
+                  toNumber(
+                    row.mealDays
+                  ),
+
+                otherExpenses:
+                  toNumber(
+                    row.extras
+                  ),
               })
             )
         );
@@ -1923,20 +2389,52 @@ export default function QuoteCreateForm({
                 ) > 0
             )
             .map(
-              (row) => ({
+              (row): OperationalCostRow => ({
+                ...createEmptyOperationalCostRow(),
+
                 label:
                   row.label ||
                   "Driver",
 
                 category:
-                  "DRIVER" as const,
+                  "DRIVER",
 
-                dailyRate:
-                  legacyDriverTotal(
-                    row
+                scope:
+                  "CORE",
+
+                costMode:
+                  "TOTAL",
+
+                pricingBasis:
+                  "GROUP_TOTAL",
+
+                totalContractCost:
+                  0,
+
+                hotelPerNight:
+                  toNumber(
+                    row.hotelSinglePerNight
                   ),
 
-                numberOfDays: 1,
+                hotelNights:
+                  toNumber(
+                    row.nights
+                  ),
+
+                mealsPerDay:
+                  toNumber(
+                    row.mealsPerDay
+                  ),
+
+                mealDays:
+                  toNumber(
+                    row.mealDays
+                  ),
+
+                otherExpenses:
+                  toNumber(
+                    row.extras
+                  ),
               })
             )
         );
@@ -2041,6 +2539,88 @@ export default function QuoteCreateForm({
           0
         );
 
+      /*
+       * PRE / POST hotel rates remain standalone optional
+       * per-person add-ons and do not enter the core rate.
+       */
+      const preStaySinglePerPerson =
+        preHotels.reduce(
+          (sum, hotel) =>
+            sum +
+            toNumber(
+              hotel.singlePerPerson
+            ) *
+              toNumber(
+                hotel.nights
+              ),
+          0
+        );
+
+      const preStayDoubleTwinPerPerson =
+        preHotels.reduce(
+          (sum, hotel) =>
+            sum +
+            toNumber(
+              hotel.doubleTwinPerPerson
+            ) *
+              toNumber(
+                hotel.nights
+              ),
+          0
+        );
+
+      const preStayTriplePerPerson =
+        preHotels.reduce(
+          (sum, hotel) =>
+            sum +
+            toNumber(
+              hotel.triplePerPerson
+            ) *
+              toNumber(
+                hotel.nights
+              ),
+          0
+        );
+
+      const postStaySinglePerPerson =
+        postHotels.reduce(
+          (sum, hotel) =>
+            sum +
+            toNumber(
+              hotel.singlePerPerson
+            ) *
+              toNumber(
+                hotel.nights
+              ),
+          0
+        );
+
+      const postStayDoubleTwinPerPerson =
+        postHotels.reduce(
+          (sum, hotel) =>
+            sum +
+            toNumber(
+              hotel.doubleTwinPerPerson
+            ) *
+              toNumber(
+                hotel.nights
+              ),
+          0
+        );
+
+      const postStayTriplePerPerson =
+        postHotels.reduce(
+          (sum, hotel) =>
+            sum +
+            toNumber(
+              hotel.triplePerPerson
+            ) *
+              toNumber(
+                hotel.nights
+              ),
+          0
+        );
+
       const fixedCostsSectionTotal =
         fixedCostRows.reduce(
           (sum, row) =>
@@ -2055,37 +2635,39 @@ export default function QuoteCreateForm({
         fixedCostsSectionTotal;
 
       /*
-       * GROUP OPERATIONAL SERVICES
+       * CORE OPERATIONAL COSTS ONLY.
        *
-       * Bus, guide, tour manager, driver, ferry, transfer, etc.
-       *
-       * These are divided ONLY among paying pilgrims.
+       * PRE / POST operational services are not part
+       * of the main tour rate.
        */
       const baseOperationalTotal =
-        operationalCostRows.reduce(
-          (sum, row) =>
-            sum +
-            operationalCostRowTotal(
-              row
-            ),
-          0
-        );
+        operationalCostRows
+          .filter(
+            (row) =>
+              row.scope ===
+              "CORE"
+          )
+          .reduce(
+            (sum, row) =>
+              sum +
+              operationalCoreActualTotal(
+                row,
+                currentPayingPassengers,
+                freePassengers
+              ),
+            0
+          );
 
       const operationalCostsSectionTotal =
         baseOperationalTotal;
 
       const operationalPerPerson =
-        currentPayingPassengers > 0
+        currentPayingPassengers >
+        0
           ? baseOperationalTotal /
             currentPayingPassengers
           : 0;
 
-      /*
-       * GROUP LEADER ALLOWANCE
-       *
-       * Kept separate from Operational Costs visually,
-       * but still forms part of the real tour cost.
-       */
       const leaderAllowanceTotal =
         calculateGroupLeaderAllowance(
           currentPayingPassengers,
@@ -2093,46 +2675,48 @@ export default function QuoteCreateForm({
         );
 
       const leaderAllowancePerPayingPassenger =
-        currentPayingPassengers > 0
+        currentPayingPassengers >
+        0
           ? leaderAllowanceTotal /
             currentPayingPassengers
           : 0;
 
-      const preHotelTotal =
-        preHotels.reduce(
-          (sum, hotel) =>
-            sum +
-            toNumber(
-              hotel.doubleTwinPerPerson
-            ) *
-              toNumber(
-                hotel.nights
-              ) *
-              currentTotalTravelers,
-          0
-        );
-
-      const postHotelTotal =
-        postHotels.reduce(
-          (sum, hotel) =>
-            sum +
-            toNumber(
-              hotel.doubleTwinPerPerson
-            ) *
-              toNumber(
-                hotel.nights
-              ) *
-              currentTotalTravelers,
-          0
-        );
-
       /*
-       * NET cost before complimentary traveler allocation.
-       *
-       * This includes the Group Leader allowance because
-       * it is a genuine cost of the group, although we
-       * display it separately from operational services.
+       * PRE / POST optional operational services.
+       * These stay separate from core pricing.
        */
+      const preOperationalRows =
+        operationalCostRows.filter(
+          (row) =>
+            row.scope === "PRE"
+        );
+
+      const postOperationalRows =
+        operationalCostRows.filter(
+          (row) =>
+            row.scope === "POST"
+        );
+
+      const preOperationalOptionalTotal =
+        preOperationalRows.reduce(
+          (sum, row) =>
+            sum +
+            operationalQuotedAmount(
+              row
+            ),
+          0
+        );
+
+      const postOperationalOptionalTotal =
+        postOperationalRows.reduce(
+          (sum, row) =>
+            sum +
+            operationalQuotedAmount(
+              row
+            ),
+          0
+        );
+
       const doubleTwinNetCostBeforeFree =
         fixedDoubleTwinPerPerson +
         fixedCostPerPerson +
@@ -2140,14 +2724,11 @@ export default function QuoteCreateForm({
         leaderAllowancePerPayingPassenger;
 
       /*
-       * Complimentary travelers consume hotel and
-       * per-traveler services.
-       *
-       * Their costs are recovered from paying pilgrims.
+       * Complimentary traveler hotel + per-person services
+       * are recovered from paying pilgrims.
        *
        * Current complimentary hotel basis remains
-       * Double/Twin. We can refine priest single-room
-       * treatment later if required.
+       * Double/Twin.
        */
       const freeCostTotal =
         freePassengers *
@@ -2157,7 +2738,8 @@ export default function QuoteCreateForm({
         );
 
       const freeCostPerPayingPassenger =
-        currentPayingPassengers > 0
+        currentPayingPassengers >
+        0
           ? freeCostTotal /
             currentPayingPassengers
           : 0;
@@ -2213,6 +2795,18 @@ export default function QuoteCreateForm({
 
         fixedTriplePerPerson,
 
+        preStaySinglePerPerson,
+
+        preStayDoubleTwinPerPerson,
+
+        preStayTriplePerPerson,
+
+        postStaySinglePerPerson,
+
+        postStayDoubleTwinPerPerson,
+
+        postStayTriplePerPerson,
+
         fixedCostsSectionTotal,
 
         fixedCostPerPerson,
@@ -2228,9 +2822,9 @@ export default function QuoteCreateForm({
 
         leaderAllowancePerPayingPassenger,
 
-        preHotelTotal,
+        preOperationalOptionalTotal,
 
-        postHotelTotal,
+        postOperationalOptionalTotal,
 
         doubleTwinNetCostBeforeFree,
 
@@ -2463,21 +3057,14 @@ export default function QuoteCreateForm({
               ? item.discountAmount
               : 0;
 
-          const safeDays =
-            quantity > 0
-              ? quantity
-              : 1;
-
           const totalCost =
             quantity *
               unitPrice -
             discountAmount;
 
-          const dailyRate =
-            totalCost /
-            safeDays;
-
           return {
+            ...createEmptyOperationalCostRow(),
+
             label:
               item.title ||
               "Template Cost",
@@ -2485,10 +3072,20 @@ export default function QuoteCreateForm({
             category:
               "OTHER",
 
-            dailyRate,
+            scope:
+              "CORE",
 
-            numberOfDays:
-              safeDays,
+            costMode:
+              "TOTAL",
+
+            pricingBasis:
+              "GROUP_TOTAL",
+
+            totalContractCost:
+              Math.max(
+                totalCost,
+                0
+              ),
           };
         }
       );
@@ -2571,24 +3168,19 @@ export default function QuoteCreateForm({
     );
   }
 
-  function addFixedCostRow() {
-    setFixedCostRows(
-      (prev) => [
-        ...prev,
-
-        {
-          label: "",
-
-          category:
-            "OTHER",
-
-          quantity: 1,
-
-          unitCost: 0,
-        },
-      ]
-    );
-  }
+  function addFixedCostRow(
+    row?: FixedCostRow
+  ) {
+      setFixedCostRows((prev) => [
+      ...prev,
+      row ?? {
+      label: "",
+      category: "OTHER",
+      quantity: 1,
+      unitCost: 0,
+    },
+  ]);
+}
 
   function removeFixedCostRow(
     index: number
@@ -2632,16 +3224,7 @@ export default function QuoteCreateForm({
       (prev) => [
         ...prev,
 
-        {
-          label: "",
-
-          category:
-            "OTHER",
-
-          dailyRate: 0,
-
-          numberOfDays: 1,
-        },
+        createEmptyOperationalCostRow(),
       ]
     );
   }
@@ -2978,62 +3561,80 @@ export default function QuoteCreateForm({
           .filter(
             (row) =>
               row.label.trim() ||
-              operationalCostRowTotal(
-                row
+              operationalDisplayTotal(
+                row,
+                calculations.payingPassengers,
+                calculations.freePassengers
               ) > 0
           )
           .map(
             (
               row,
               index
-            ) => ({
-              title:
-                row.label.trim() ||
-                row.category,
+            ) => {
+              const displayedAmount =
+                operationalDisplayTotal(
+                  row,
+                  calculations.payingPassengers,
+                  calculations.freePassengers
+                );
 
-              description:
-                `Operational group cost / ${row.category}`,
+              const scopeLabel =
+                row.scope === "CORE"
+                  ? "Core"
+                  : row.scope ===
+                      "PRE"
+                    ? "Pre-Stay"
+                    : "Post-Stay";
 
-              itemType:
-                row.category ===
-                  "BUS" ||
-                row.category ===
-                  "FERRY" ||
-                row.category ===
-                  "TRANSFER"
-                  ? ("TRANSPORT" as const)
-                  : row.category ===
-                        "TOUR_GUIDE" ||
-                      row.category ===
-                        "TOUR_MANAGER"
-                    ? ("GUIDE" as const)
-                    : ("CUSTOM" as const),
+              return {
+                title:
+                  row.label.trim() ||
+                  row.category,
 
-              optional:
-                false,
+                description:
+                  `${scopeLabel} operational cost / ${row.category} / ${row.pricingBasis}`,
 
-              quantity: 1,
+                itemType:
+                  row.category ===
+                    "BUS" ||
+                  row.category ===
+                    "FERRY" ||
+                  row.category ===
+                    "TRANSFER"
+                    ? ("TRANSPORT" as const)
+                    : row.category ===
+                          "TOUR_GUIDE" ||
+                        row.category ===
+                          "TOUR_MANAGER" ||
+                        row.category ===
+                          "ASSISTANT"
+                      ? ("GUIDE" as const)
+                      : ("CUSTOM" as const),
 
-              unitPrice:
-                operationalCostRowTotal(
-                  row
-                ),
+                optional:
+                  row.scope !==
+                  "CORE",
 
-              discountAmount:
-                0,
+                quantity: 1,
 
-              taxAmount:
-                0,
+                unitPrice:
+                  displayedAmount,
 
-              total:
-                operationalCostRowTotal(
-                  row
-                ),
+                discountAmount:
+                  0,
 
-              sortOrder:
-                300 +
-                index,
-            })
+                taxAmount:
+                  0,
+
+                total:
+                  displayedAmount,
+
+                sortOrder:
+                  300 +
+                  index,
+              };
+            }
           ),
 
         ...(complimentarySetup
@@ -3247,15 +3848,47 @@ export default function QuoteCreateForm({
               category:
                 row.category,
 
+              scope:
+                row.scope,
+
+              costMode:
+                row.costMode,
+
+              pricingBasis:
+                row.pricingBasis,
+
+              totalContractCost:
+                row.totalContractCost,
+
               dailyRate:
                 row.dailyRate,
 
               numberOfDays:
                 row.numberOfDays,
 
+              hotelPerNight:
+                row.hotelPerNight,
+
+              hotelNights:
+                row.hotelNights,
+
+              airfareTransport:
+                row.airfareTransport,
+
+              mealsPerDay:
+                row.mealsPerDay,
+
+              mealDays:
+                row.mealDays,
+
+              otherExpenses:
+                row.otherExpenses,
+
               totalCost:
-                operationalCostRowTotal(
-                  row
+                operationalDisplayTotal(
+                  row,
+                  calculations.payingPassengers,
+                  calculations.freePassengers
                 ),
             })
           ),
@@ -3793,7 +4426,7 @@ export default function QuoteCreateForm({
       <OperationalCostsSection
         rows={operationalCostRows}
         currency={currency}
-        totalPassengers={
+        payingPassengers={
           calculations
             .payingPassengers
         }
@@ -3806,20 +4439,22 @@ export default function QuoteCreateForm({
         onUpdateRow={
           updateOperationalCostRow
         }
-        rowTotal={
-          operationalCostRowTotal
+        rowTotal={(row) =>
+          operationalDisplayTotal(
+            row,
+            calculations.payingPassengers,
+            calculations.freePassengers
+          )
         }
-        rowPerPerson={(
-          row
-        ) =>
-          calculations
-            .payingPassengers >
+        rowPerPerson={(row) =>
+          calculations.payingPassengers >
           0
-            ? operationalCostRowTotal(
-                row
+            ? operationalCoreActualTotal(
+                row,
+                calculations.payingPassengers,
+                calculations.freePassengers
               ) /
-              calculations
-                .payingPassengers
+              calculations.payingPassengers
             : 0
         }
         sectionTotal={
