@@ -8,12 +8,14 @@ import { useMemo, useState } from "react";
 import {
   Bell,
   BriefcaseBusiness,
+  Calculator,
   CalendarDays,
   ChevronDown,
   CircleDollarSign,
   ClipboardCheck,
   CreditCard,
   FileText,
+  FolderOpen,
   HandCoins,
   Headphones,
   LayoutDashboard,
@@ -28,6 +30,7 @@ import {
   Search,
   Sparkles,
   TicketCheck,
+  TrendingUp,
   Users,
   WalletCards,
   X,
@@ -106,6 +109,11 @@ const navSections: NavSection[] = [
     label: "Finance",
     items: [
       { label: "Finance Center", href: "/admin/finance", icon: CircleDollarSign },
+      {
+        label: "Profitability",
+        href: "/admin/finance/profitability",
+        icon: TrendingUp,
+      },
       { label: "Payments", href: "/admin/payments", icon: CreditCard },
       {
         label: "Expenses",
@@ -113,9 +121,29 @@ const navSections: NavSection[] = [
         icon: ReceiptText,
       },
       {
+        label: "Supplier Payables",
+        href: "/admin/supplier-payables",
+        icon: HandCoins,
+      },
+      {
         label: "Bank Accounts",
         href: "/admin/finance/bank-accounts",
         icon: WalletCards,
+      },
+      {
+        label: "Finance Documents",
+        href: "/admin/finance/documents",
+        icon: FolderOpen,
+      },
+      {
+        label: "Sales Documents",
+        href: "/admin/finance/sales-documents",
+        icon: FileText,
+      },
+      {
+        label: "Accounting",
+        href: "/admin/accounting",
+        icon: Calculator,
       },
     ],
   },

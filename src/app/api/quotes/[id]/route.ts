@@ -66,6 +66,8 @@ type QuotePayload = {
   startDate?: string | null;
   endDate?: string | null;
 
+  briefItinerary?: string | null;
+
   /*
    * Group setup
    */
@@ -135,6 +137,12 @@ type QuotePayload = {
   cancellationPolicy?: string;
 
   clientOfferNotes?: string;
+
+  /*
+   * Quotation validity / acceptance wording
+   */
+  availabilityNotes?: string;
+  nextStepNotes?: string;
 
   validUntil?: string | null;
 
@@ -270,6 +278,10 @@ function buildQuoteBuilderSummary(
       body.endDate ??
       null,
 
+    briefItinerary:
+      body.briefItinerary?.trim() ||
+      "",
+
     /*
      * Group structure
      */
@@ -377,6 +389,19 @@ function buildQuoteBuilderSummary(
       normalizeJsonArray(
         body.driverRows
       ),
+
+    /*
+     * Client-facing validity / acceptance wording.
+     * Stored in quoteBuilderSummary so no new
+     * Prisma columns are required.
+     */
+    availabilityNotes:
+      body.availabilityNotes?.trim() ||
+      "",
+
+    nextStepNotes:
+      body.nextStepNotes?.trim() ||
+      "",
   };
 }
 

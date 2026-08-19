@@ -13,6 +13,7 @@ import QuoteTemplatePicker, {
 import IncludesExcludesBuilder from "@/components/quotes/IncludesExcludesBuilder";
 import PolicySelector from "@/components/quotes/PolicySelector";
 import TermsSelector from "@/components/quotes/TermsSelector";
+import QuoteValiditySection from "@/components/quotes/create/QuoteValiditySection";
 
 import RecipientSection from "@/components/quotes/create/RecipientSection";
 import GroupSetupSection from "@/components/quotes/create/GroupSetupSection";
@@ -50,6 +51,8 @@ type TourOption = {
   category: string;
   startingPrice: number | null;
   currency: string;
+  overviewItinerary: string | null;
+  itinerary: string | null;
 };
 
 type SeasonalRateReference = {
@@ -187,6 +190,8 @@ type QuoteBuilderSummary = {
   startDate?: string | null;
   endDate?: string | null;
 
+  briefItinerary?: string | null;
+
   totalPassengers?: number;
   freePassengers?: number;
   payingPassengers?: number;
@@ -261,6 +266,9 @@ type InitialQuoteData = {
   clientOfferNotes?: string | null;
 
   validUntil?: string | Date | null;
+
+  availabilityNotes?: string | null;
+  nextStepNotes?: string | null;
 };
 
 type Props = {
@@ -1323,6 +1331,18 @@ export default function QuoteCreateForm({
     useState("");
 
   const [
+    briefItinerary,
+    setBriefItinerary,
+  ] =
+    useState("");
+
+  const [
+    briefItineraryTouched,
+    setBriefItineraryTouched,
+  ] =
+    useState(false);
+
+  const [
     clientIncludes,
     setClientIncludes,
   ] =
@@ -1355,6 +1375,18 @@ export default function QuoteCreateForm({
   const [
     validUntil,
     setValidUntil,
+  ] =
+    useState("");
+
+  const [
+    availabilityNotes,
+    setAvailabilityNotes,
+  ] =
+    useState("");
+
+  const [
+    nextStepNotes,
+    setNextStepNotes,
   ] =
     useState("");
 
@@ -1631,6 +1663,39 @@ export default function QuoteCreateForm({
   ]);
 
   useEffect(() => {
+    if (!tourId) {
+      if (!briefItineraryTouched) {
+        setBriefItinerary("");
+      }
+      return;
+    }
+
+    if (briefItineraryTouched) {
+      return;
+    }
+
+    const selectedTour =
+      tours.find(
+        (tour) =>
+          tour.id === tourId
+      );
+
+    if (!selectedTour) {
+      return;
+    }
+
+    setBriefItinerary(
+      selectedTour.overviewItinerary?.trim() ||
+      selectedTour.itinerary?.trim() ||
+      ""
+    );
+  }, [
+    tourId,
+    tours,
+    briefItineraryTouched,
+  ]);
+
+  useEffect(() => {
     if (!initialData) {
       return;
     }
@@ -1725,6 +1790,16 @@ export default function QuoteCreateForm({
         : ""
     );
 
+    setAvailabilityNotes(
+      initialData.availabilityNotes ||
+        ""
+    );
+
+    setNextStepNotes(
+      initialData.nextStepNotes ||
+        ""
+    );
+
     const matchedAgent =
       agents.find(
         (agent) =>
@@ -1753,6 +1828,21 @@ export default function QuoteCreateForm({
         "object"
         ? (initialData.quoteBuilderSummary as QuoteBuilderSummary)
         : null;
+
+    const savedBriefItinerary =
+      typeof summary?.briefItinerary === "string"
+        ? summary.briefItinerary
+        : "";
+
+    setBriefItinerary(
+      savedBriefItinerary
+    );
+
+    setBriefItineraryTouched(
+      Boolean(
+        savedBriefItinerary.trim()
+      )
+    );
 
     const savedFreePassengers =
       typeof summary?.freePassengers ===
@@ -3727,6 +3817,10 @@ export default function QuoteCreateForm({
           group.endDate ||
           null,
 
+        briefItinerary:
+          briefItinerary.trim() ||
+          null,
+
         totalPassengers:
           calculations.totalTravelers,
 
@@ -3918,6 +4012,14 @@ export default function QuoteCreateForm({
           validUntil ||
           null,
 
+        availabilityNotes:
+          availabilityNotes ||
+          null,
+
+        nextStepNotes:
+          nextStepNotes ||
+          null,
+
         items:
           generatedItems,
       };
@@ -4106,11 +4208,15 @@ export default function QuoteCreateForm({
               <select
                 className="w-full rounded-md border p-2"
                 value={tourId}
-                onChange={(e) =>
+                onChange={(e) => {
+                  setBriefItineraryTouched(
+                    false
+                  );
+
                   setTourId(
                     e.target.value
-                  )
-                }
+                  );
+                }}
               >
                 <option value="">
                   Select tour
@@ -4628,23 +4734,62 @@ export default function QuoteCreateForm({
               placeholder="e.g. Holy Land Pilgrimage Offer"
             />
           </label>
+        </div>
 
-          <label className="block">
-            <span className="mb-1 block text-sm font-medium">
-              Valid Until
-            </span>
+        <div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
+          <h3 className="font-medium text-[#001F3F]">
+            Brief Itinerary / Journey Overview
+          </h3>
 
-            <input
-              type="date"
-              className="w-full rounded-md border p-2"
-              value={validUntil}
-              onChange={(e) =>
-                setValidUntil(
-                  e.target.value
-                )
-              }
-            />
-          </label>
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+            <p className="mt-1 text-sm text-slate-600">
+              Automatically loaded from the selected Tour. You may edit it for
+              this quotation. Enter one day per line; the PDF calculates the
+              actual date and weekday from the tour start date.
+            </p>
+
+            <button
+              type="button"
+              onClick={() => {
+                const selectedTour =
+                  tours.find(
+                    (tour) =>
+                      tour.id === tourId
+                  );
+
+                setBriefItinerary(
+                  selectedTour?.overviewItinerary?.trim() ||
+                  selectedTour?.itinerary?.trim() ||
+                  ""
+                );
+
+                setBriefItineraryTouched(
+                  false
+                );
+              }}
+              disabled={!tourId}
+              className="shrink-0 rounded-md border bg-white px-3 py-2 text-xs font-medium text-[#001F3F] transition hover:bg-blue-50 disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              Reload from Tour
+            </button>
+          </div>
+
+          <textarea
+            className="mt-3 min-h-[220px] w-full resize-y rounded-md border bg-white p-4 text-sm leading-relaxed"
+            placeholder={`Athens - Acropolis, Areopagus, Plaka
+Corinth - Ancient Corinth, Bema of St. Paul
+Delphi - Sanctuary of Apollo, Archaeological Museum`}
+            value={briefItinerary}
+            onChange={(e) => {
+              setBriefItineraryTouched(
+                true
+              );
+
+              setBriefItinerary(
+                e.target.value
+              );
+            }}
+          />
         </div>
 
         <PassengerPricingSection
@@ -4741,6 +4886,9 @@ export default function QuoteCreateForm({
           </h3>
 
           <PolicySelector
+            startDate={group.startDate}
+            paymentValue={paymentPolicy}
+            cancellationValue={cancellationPolicy}
             onSelect={(
               payment,
               cancellation
@@ -4810,6 +4958,15 @@ export default function QuoteCreateForm({
             }
           />
         </div>
+
+        <QuoteValiditySection
+          validUntil={validUntil}
+          availabilityNotes={availabilityNotes}
+          nextStepNotes={nextStepNotes}
+          onValidUntilChange={setValidUntil}
+          onAvailabilityNotesChange={setAvailabilityNotes}
+          onNextStepNotesChange={setNextStepNotes}
+        />
       </section>
 
       <section className="rounded-xl border p-5">

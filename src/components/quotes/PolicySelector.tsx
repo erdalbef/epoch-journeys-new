@@ -1,98 +1,224 @@
 "use client";
 
-type PolicyPreset = {
-  id: string;
-  label: string;
-  payment: string;
-  cancellation: string;
+import { useEffect, useRef } from "react";
+
+type Props = {
+  startDate?: string;
+  paymentValue: string;
+  cancellationValue: string;
+  onSelect: (payment: string, cancellation: string) => void;
 };
 
-const POLICY_PRESETS: PolicyPreset[] = [
-  {
-    id: "flexible",
-    label: "Flexible Policy",
-    payment: `A deposit of 20% is required to confirm the booking.
+const STANDARD_CANCELLATION = `All cancellations must be submitted to Epoch Journeys in writing.
 
-A second payment of 30% is due 60 days prior to departure.
+Cancellation charges will be determined according to the cancellation conditions of the hotels, transportation companies, cruise lines, airlines, ferries, restaurants, local service providers, and other suppliers confirmed for the program.
 
-The remaining balance is due 30 days prior to departure.
+Any non-refundable deposits, prepayments, cancellation charges, or contractual commitments already incurred by Epoch Journeys on behalf of the group will apply.
 
-Bookings made within 30 days require full payment at confirmation.
+Certain services may become non-refundable immediately upon confirmation, ticketing, cabin allocation, room commitment, passenger-name submission, rooming-list submission, or another supplier-defined milestone.
 
-Bank transfer fees are the responsibility of the sender.`,
-    cancellation: `All cancellations must be submitted in writing.
+Because supplier conditions vary by destination, travel date, service, and group, the tour-specific cancellation conditions applicable to the confirmed program will be communicated with the Tour Proposal / Confirmation and related correspondence.
 
-• More than 60 days: Full refund minus administrative fees  
-• 59–30 days: 30% of total cost  
-• 29–15 days: 50% of total cost  
-• 14 days or less: 100% of total cost  
+The earliest applicable supplier deadline or restriction may determine when part of the tour becomes non-refundable.
 
-Unused services are non-refundable.`,
-  },
-  {
-    id: "standard",
-    label: "Standard Policy",
-    payment: `A non-refundable deposit of 30% is required to confirm the booking.
+Cancellations received close to departure may result in charges up to 100% of the total tour cost, depending on supplier commitments already made.
 
-A second payment of 40% is due 90 days prior to departure.
+No refund is provided for no-shows or voluntarily unused services after travel has commenced unless otherwise expressly agreed in writing.
 
-The remaining balance must be paid 60 days prior to departure.
+Comprehensive travel insurance, including trip cancellation and interruption coverage, is strongly recommended for all travelers.`;
 
-Bookings within 60 days require full payment at confirmation.
+function parseLocalDate(value?: string): Date | null {
+  if (!value) return null;
 
-All bank fees are the responsibility of the sender.`,
-    cancellation: `All cancellations must be submitted in writing.
+  const match = value.match(/^(\d{4})-(\d{2})-(\d{2})/);
 
-• More than 90 days: Deposit non-refundable  
-• 89–60 days: 50% of total cost  
-• 59–30 days: 75% of total cost  
-• 29 days or less: 100% of total cost  
+  if (match) {
+    return new Date(
+      Number(match[1]),
+      Number(match[2]) - 1,
+      Number(match[3]),
+      12,
+      0,
+      0
+    );
+  }
 
-No refunds for unused services or no-shows.`,
-  },
-  {
-    id: "strict",
-    label: "Strict Policy",
-    payment: `A non-refundable deposit of 40% is required to confirm the booking.
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
+}
 
-An additional 40% is due 120 days prior to departure.
+function subtractDays(date: Date, days: number) {
+  const result = new Date(date);
+  result.setDate(result.getDate() - days);
+  return result;
+}
 
-The remaining balance must be paid 90 days prior to departure.
+function startOfToday() {
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  return today;
+}
 
-Bookings within 90 days require full payment at confirmation.
+function formatDate(date: Date) {
+  return new Intl.DateTimeFormat("en-GB", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+  }).format(date);
+}
 
-All payments are non-refundable once made.`,
-    cancellation: `All cancellations must be submitted in writing.
+export function buildEpochPaymentPolicy(startDate?: string) {
+  const departure = parseLocalDate(startDate);
 
-• More than 120 days: Deposit non-refundable  
-• 119–90 days: 75% of total cost  
-• 89 days or less: 100% of total cost  
+  if (!departure) {
+    return `25% INITIAL DEPOSIT
+Due upon written confirmation and acceptance of the proposal.
 
-No refunds for cancellations, no-shows, or unused services.`,
-  },
-];
+35% SECOND DEPOSIT
+Due 90 days prior to departure.
+
+40% FINAL BALANCE
+Due 30 days prior to departure.
+
+If the quotation is confirmed after a scheduled payment date has passed, the applicable outstanding installment becomes due immediately.
+
+Reservations and services remain subject to availability until the required payment is received.
+
+All bank transfer charges and correspondent bank fees are the responsibility of the sender.`;
+  }
+
+  const today = startOfToday();
+  const secondDate = subtractDays(departure, 90);
+  const finalDate = subtractDays(departure, 30);
+
+  if (finalDate <= today) {
+    return `100% FULL PAYMENT
+Due upon written confirmation and acceptance of the proposal.
+
+As this booking is being confirmed within 30 days of departure, full payment is required at confirmation.
+
+Reservations and services remain subject to availability until payment is received and supplier confirmations are secured.
+
+All bank transfer charges and correspondent bank fees are the responsibility of the sender.`;
+  }
+
+  if (secondDate <= today) {
+    return `60% INITIAL PAYMENT
+Due upon written confirmation and acceptance of the proposal.
+
+This amount combines the standard 25% initial deposit and 35% second deposit because the normal 90-day payment deadline has already passed.
+
+40% FINAL BALANCE
+Due ${formatDate(finalDate)} (30 days prior to departure).
+
+Reservations and services remain subject to availability until the required payment is received.
+
+All bank transfer charges and correspondent bank fees are the responsibility of the sender.`;
+  }
+
+  return `25% INITIAL DEPOSIT
+Due upon written confirmation and acceptance of the proposal.
+
+35% SECOND DEPOSIT
+Due ${formatDate(secondDate)} (90 days prior to departure).
+
+40% FINAL BALANCE
+Due ${formatDate(finalDate)} (30 days prior to departure).
+
+Reservations and services remain subject to availability until the initial deposit is received.
+
+Payments must be received by the stated due dates in order to maintain confirmed arrangements and contracted rates.
+
+All bank transfer charges and correspondent bank fees are the responsibility of the sender.`;
+}
+
+function isOldGenericPayment(value: string) {
+  const text = value.trim();
+
+  if (!text) return true;
+
+  return (
+    /Due 90 days prior to departure\./i.test(text) ||
+    /Due 30 days prior to departure\./i.test(text) ||
+    /A second payment of 30% is due 60 days prior/i.test(text) ||
+    /The remaining balance must be paid 60 days prior/i.test(text)
+  );
+}
+
+function isOldGenericCancellation(value: string) {
+  const text = value.trim();
+
+  if (!text) return true;
+
+  return (
+    /More than 90 days prior to departure/i.test(text) ||
+    /90.?61 days prior to departure/i.test(text) ||
+    /60.?31 days prior to departure/i.test(text) ||
+    /30 days or less prior to departure/i.test(text)
+  );
+}
 
 export default function PolicySelector({
+  startDate,
+  paymentValue,
+  cancellationValue,
   onSelect,
-}: {
-  onSelect: (payment: string, cancellation: string) => void;
-}) {
-  return (
-    <div className="rounded-lg border p-4 space-y-3">
-      <h3 className="font-semibold text-sm">Policy Presets</h3>
+}: Props) {
+  const onSelectRef = useRef(onSelect);
 
-      <div className="flex flex-wrap gap-2">
-        {POLICY_PRESETS.map((p) => (
-          <button
-            key={p.id}
-            type="button"
-            onClick={() => onSelect(p.payment, p.cancellation)}
-            className="border px-3 py-2 text-sm rounded-md hover:bg-gray-100"
-          >
-            {p.label}
-          </button>
-        ))}
+  useEffect(() => {
+    onSelectRef.current = onSelect;
+  }, [onSelect]);
+
+  useEffect(() => {
+    if (!startDate) return;
+
+    const refreshPayment = isOldGenericPayment(paymentValue);
+    const refreshCancellation = isOldGenericCancellation(cancellationValue);
+
+    if (!refreshPayment && !refreshCancellation) return;
+
+    onSelectRef.current(
+      refreshPayment
+        ? buildEpochPaymentPolicy(startDate)
+        : paymentValue,
+      refreshCancellation
+        ? STANDARD_CANCELLATION
+        : cancellationValue
+    );
+  }, [startDate, paymentValue, cancellationValue]);
+
+  return (
+    <div className="space-y-4 rounded-xl border bg-slate-50 p-4">
+      <div>
+        <h3 className="text-sm font-semibold text-[#001F3F]">
+          Epoch Payment & Cancellation Policy
+        </h3>
+
+        <p className="mt-1 text-xs leading-5 text-slate-500">
+          Payment dates are calculated automatically from the tour start date.
+          Supplier-specific cancellation conditions can still be edited for each quotation.
+        </p>
       </div>
+
+      {!startDate ? (
+        <div className="rounded-md border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900">
+          Enter the tour start date to calculate exact payment due dates.
+        </div>
+      ) : null}
+
+      <button
+        type="button"
+        onClick={() =>
+          onSelect(
+            buildEpochPaymentPolicy(startDate),
+            STANDARD_CANCELLATION
+          )
+        }
+        className="rounded-md bg-[#001F3F] px-4 py-2 text-sm font-medium text-white transition hover:bg-[#0A2B50]"
+      >
+        Recalculate Epoch Standard
+      </button>
     </div>
   );
 }

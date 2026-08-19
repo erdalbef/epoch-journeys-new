@@ -66,6 +66,8 @@ type QuotePayload = {
   startDate?: string | null;
   endDate?: string | null;
 
+  briefItinerary?: string | null;
+
   /*
    * Passenger structure
    */
@@ -136,6 +138,12 @@ type QuotePayload = {
   cancellationPolicy?: string;
 
   clientOfferNotes?: string;
+
+  /*
+   * Quotation validity / acceptance wording
+   */
+  availabilityNotes?: string;
+  nextStepNotes?: string;
 
   validUntil?: string | null;
 
@@ -356,6 +364,10 @@ export async function POST(
         body.endDate ??
         null,
 
+      briefItinerary:
+        body.briefItinerary?.trim() ||
+        "",
+
       totalPassengers,
 
       freePassengers,
@@ -456,6 +468,20 @@ export async function POST(
         normalizeJsonArray(
           body.driverRows
         ),
+
+      /*
+       * Client-facing validity / acceptance wording.
+       * Stored in quoteBuilderSummary so these fields can
+       * be reopened and edited without requiring new
+       * Quote model columns.
+       */
+      availabilityNotes:
+        body.availabilityNotes?.trim() ||
+        "",
+
+      nextStepNotes:
+        body.nextStepNotes?.trim() ||
+        "",
     };
 
     const quote =

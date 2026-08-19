@@ -14,6 +14,8 @@ export async function getToursForQuoteForm() {
       id: true,
       title: true,
       category: true,
+      overviewItinerary: true,
+      itinerary: true,
 
       pricingTiers: {
         where: {
@@ -40,6 +42,8 @@ export async function getToursForQuoteForm() {
       id: tour.id,
       title: tour.title,
       category: tour.category,
+      overviewItinerary: tour.overviewItinerary,
+      itinerary: tour.itinerary,
 
       /*
        * Tour no longer stores startingPrice
@@ -107,6 +111,8 @@ export async function getQuoteById(id: string) {
           duration: true,
           shortDescription: true,
           overview: true,
+          overviewItinerary: true,
+          itinerary: true,
           brochureUrl: true,
           mainImageUrl: true,
           mapImageUrl: true,

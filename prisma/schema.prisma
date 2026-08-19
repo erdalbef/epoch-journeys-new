@@ -32,11 +32,14 @@ model User {
   partnerCompanyId           String?
   billingAddress             String?
   billingCity                String?
+  billingState               String?
   billingCompanyName         String?
+  billingCompanyRegNo        String?
   billingContactName         String?
   billingCountry             String?
   billingEmail               String?
   billingEmailSecondary      String?
+  billingPhone               String?
   billingPostalCode          String?
   billingTaxNumber           String?
   billingVatNumber           String?
@@ -67,6 +70,7 @@ model User {
   supplierPayablesCreated    SupplierPayable[]        @relation("SupplierPayable_createdByIdToUser")
   supplierPayablePayments    SupplierPayablePayment[]
   supportMessages            SupportMessage[]
+  resourcesUploaded          Resource[]               @relation("ResourceUploadedBy")
   partnerCompany             PartnerCompany?          @relation(fields: [partnerCompanyId], references: [id])
 
   @@index([role])
@@ -157,6 +161,7 @@ model Tour {
   supplierPayables     SupplierPayable[]
   tourControl          TourControl?
   seasonalPrices       TourSeasonalPrice[]
+  resources            Resource[]
 
   @@index([category])
   @@index([featured])
@@ -1121,6 +1126,90 @@ model BankAccount {
   supplierPayablePayments SupplierPayablePayment[]
 
   @@index([isActive])
+}
+
+// ============================================================
+// RESOURCE LIBRARY
+// ============================================================
+
+enum ResourceAudience {
+  AGENT
+  ADMIN
+}
+
+enum ResourceStatus {
+  ACTIVE
+  ARCHIVED
+}
+
+model ResourceCategory {
+  id          String  @id @default(cuid())
+  name        String
+  slug        String  @unique
+  description String?
+
+  audience ResourceAudience
+
+  parentId String?
+  parent   ResourceCategory?  @relation("ResourceCategoryTree", fields: [parentId], references: [id], onDelete: SetNull)
+  children ResourceCategory[] @relation("ResourceCategoryTree")
+
+  sortOrder Int     @default(0)
+  isActive  Boolean @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  resources Resource[]
+
+  @@unique([audience, parentId, name])
+  @@index([audience])
+  @@index([parentId])
+  @@index([sortOrder])
+  @@index([isActive])
+}
+
+model Resource {
+  id          String  @id @default(cuid())
+  title       String
+  description String?
+
+  audience ResourceAudience
+  status   ResourceStatus   @default(ACTIVE)
+
+  categoryId   String?
+  tourId       String?
+  uploadedById String?
+
+  destinations String[]
+  tags         String[]
+
+  originalFileName String
+  storedFileName   String
+  storagePath      String
+  mimeType         String
+  fileSize         Int
+
+  sortOrder Int     @default(0)
+  featured  Boolean @default(false)
+
+  archivedAt DateTime?
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+
+  category   ResourceCategory? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  tour       Tour?             @relation(fields: [tourId], references: [id], onDelete: SetNull)
+  uploadedBy User?             @relation("ResourceUploadedBy", fields: [uploadedById], references: [id], onDelete: SetNull)
+
+  @@index([audience])
+  @@index([status])
+  @@index([categoryId])
+  @@index([tourId])
+  @@index([uploadedById])
+  @@index([featured])
+  @@index([sortOrder])
+  @@index([createdAt])
+  @@index([archivedAt])
 }
 
 model AccountingPeriod {
