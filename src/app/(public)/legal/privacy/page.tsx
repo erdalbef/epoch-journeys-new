@@ -10,10 +10,7 @@ export default function PrivacyPage() {
       </p>
 
       <section className="mt-8 space-y-4 text-sm leading-7">
-        <p>
-          Epoch Journeys OOD ("we", "our", "us") respects your privacy and is
-          committed to protecting your personal data.
-        </p>
+        Epoch Journeys OOD (&quot;we&quot;, &quot;our&quot;, &quot;us&quot;) respects your privacy and is
 
         <h2 className="font-semibold text-lg text-[#001F3F]">
           Information We Collect

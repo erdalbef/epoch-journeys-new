@@ -2,11 +2,19 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { BankAccount } from "@prisma/client";
 import { toast } from "sonner";
 
+type BankAccountActionData = {
+  id: string;
+  name: string;
+  currency: string;
+  openingBalance: number;
+  isActive: boolean;
+  notes: string | null;
+};
+
 type Props = {
-  account: BankAccount;
+  account: BankAccountActionData;
 };
 
 export default function BankAccountActions({ account }: Props) {
@@ -14,10 +22,13 @@ export default function BankAccountActions({ account }: Props) {
   const [isEditing, setIsEditing] = useState(false);
 
   async function updateAccount(formData: FormData) {
-    const res = await fetch(`/api/admin/bank-accounts/${account.id}`, {
-      method: "PATCH",
-      body: formData,
-    });
+    const res = await fetch(
+      `/api/admin/bank-accounts/${account.id}`,
+      {
+        method: "PATCH",
+        body: formData,
+      },
+    );
 
     const data = (await res.json().catch(() => null)) as {
       success?: boolean;
@@ -25,7 +36,9 @@ export default function BankAccountActions({ account }: Props) {
     } | null;
 
     if (!res.ok || !data?.success) {
-      toast.error(data?.error || "Failed to update bank account.");
+      toast.error(
+        data?.error || "Failed to update bank account.",
+      );
       return;
     }
 
@@ -34,7 +47,9 @@ export default function BankAccountActions({ account }: Props) {
     router.refresh();
   }
 
-  async function handleEditSubmit(event: React.FormEvent<HTMLFormElement>) {
+  async function handleEditSubmit(
+    event: React.FormEvent<HTMLFormElement>,
+  ) {
     event.preventDefault();
     await updateAccount(new FormData(event.currentTarget));
   }
@@ -49,9 +64,12 @@ export default function BankAccountActions({ account }: Props) {
   async function deleteAccount() {
     if (!confirm("Delete this bank account?")) return;
 
-    const res = await fetch(`/api/admin/bank-accounts/${account.id}`, {
-      method: "DELETE",
-    });
+    const res = await fetch(
+      `/api/admin/bank-accounts/${account.id}`,
+      {
+        method: "DELETE",
+      },
+    );
 
     const data = (await res.json().catch(() => null)) as {
       success?: boolean;
@@ -59,7 +77,9 @@ export default function BankAccountActions({ account }: Props) {
     } | null;
 
     if (!res.ok || !data?.success) {
-      toast.error(data?.error || "Failed to delete bank account.");
+      toast.error(
+        data?.error || "Failed to delete bank account.",
+      );
       return;
     }
 
@@ -73,41 +93,62 @@ export default function BankAccountActions({ account }: Props) {
         onSubmit={handleEditSubmit}
         className="min-w-[360px] space-y-3 rounded-xl border bg-slate-50 p-4 text-left"
       >
-        <input
-          name="name"
-          defaultValue={account.name}
-          className="w-full rounded-lg border px-3 py-2 text-sm"
-        />
+        <div>
+          <label className="mb-1 block text-xs font-medium text-slate-600">
+            Account Name
+          </label>
 
-        <input
-          name="currency"
-          defaultValue={account.currency}
-          maxLength={3}
-          className="w-full rounded-lg border px-3 py-2 text-sm uppercase"
-        />
+          <input
+            name="name"
+            defaultValue={account.name}
+            className="w-full rounded-lg border px-3 py-2 text-sm"
+          />
+        </div>
 
-        <input
-          name="openingBalance"
-          type="number"
-          step="0.01"
-          defaultValue={account.openingBalance}
-          className="w-full rounded-lg border px-3 py-2 text-sm"
-        />
+        <div>
+          <label className="mb-1 block text-xs font-medium text-slate-600">
+            Currency
+          </label>
 
-        <input
-          name="currentBalance"
-          type="number"
-          step="0.01"
-          defaultValue={account.currentBalance}
-          className="w-full rounded-lg border px-3 py-2 text-sm"
-        />
+          <input
+            name="currency"
+            defaultValue={account.currency}
+            maxLength={3}
+            className="w-full rounded-lg border px-3 py-2 text-sm uppercase"
+          />
+        </div>
 
-        <textarea
-          name="notes"
-          defaultValue={account.notes || ""}
-          rows={2}
-          className="w-full rounded-lg border px-3 py-2 text-sm"
-        />
+        <div>
+          <label className="mb-1 block text-xs font-medium text-slate-600">
+            Opening Balance
+          </label>
+
+          <input
+            name="openingBalance"
+            type="number"
+            step="0.01"
+            defaultValue={account.openingBalance}
+            className="w-full rounded-lg border px-3 py-2 text-sm"
+          />
+
+          <p className="mt-1 text-xs leading-5 text-slate-500">
+            Changing the opening balance changes the calculated ledger balance.
+            Current Balance itself is not manually editable.
+          </p>
+        </div>
+
+        <div>
+          <label className="mb-1 block text-xs font-medium text-slate-600">
+            Notes
+          </label>
+
+          <textarea
+            name="notes"
+            defaultValue={account.notes || ""}
+            rows={2}
+            className="w-full rounded-lg border px-3 py-2 text-sm"
+          />
+        </div>
 
         <label className="flex items-center gap-2 text-sm">
           <input
@@ -148,7 +189,7 @@ export default function BankAccountActions({ account }: Props) {
         Edit
       </button>
 
-      {!account.isActive && (
+      {!account.isActive ? (
         <button
           type="button"
           onClick={setActiveAccount}
@@ -156,7 +197,7 @@ export default function BankAccountActions({ account }: Props) {
         >
           Set Active
         </button>
-      )}
+      ) : null}
 
       <button
         type="button"

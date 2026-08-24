@@ -1,7 +1,9 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import {
+  ExpenseApprovalStatus,
   ExpenseCategory,
+  ExpenseCostType,
   ExpensePaymentStatus,
   FinanceDirection,
   FinanceSourceType,
@@ -12,14 +14,14 @@ import { getServerSession } from "next-auth";
 
 import { authOptions } from "@/lib/authOptions";
 import { db } from "@/lib/db";
-import { formatCurrency } from "@/lib/payments/formatCurrency";
 import DeleteExpenseButton from "@/components/admin/finance/DeleteExpenseButton";
 
 type SearchParams = {
   q?: string;
   category?: string;
   status?: string;
-  direction?: string;
+  approvalStatus?: string;
+  costType?: string;
   sourceType?: string;
   clientCompany?: string;
   spender?: string;
@@ -39,6 +41,19 @@ function formatDate(value: Date | string | null | undefined) {
   });
 }
 
+function formatMoney(value: number, currency = "EUR") {
+  try {
+    return new Intl.NumberFormat("en-GB", {
+      style: "currency",
+      currency,
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    }).format(value);
+  } catch {
+    return `${currency} ${value.toFixed(2)}`;
+  }
+}
+
 function formatEnumLabel(value: string | null | undefined) {
   if (!value) return "-";
 
@@ -48,31 +63,34 @@ function formatEnumLabel(value: string | null | undefined) {
     .replace(/\b\w/g, (letter) => letter.toUpperCase());
 }
 
-function getStatusClass(status: ExpensePaymentStatus) {
+function getPaymentStatusClass(status: ExpensePaymentStatus) {
   switch (status) {
-    case "PAID":
+    case ExpensePaymentStatus.PAID:
       return "bg-green-100 text-green-700";
-    case "PENDING":
+    case ExpensePaymentStatus.PENDING:
       return "bg-amber-100 text-amber-700";
-    case "CANCELLED":
+    case ExpensePaymentStatus.CANCELLED:
       return "bg-red-100 text-red-700";
     default:
       return "bg-slate-100 text-slate-700";
   }
 }
 
-function getDirectionClass(direction: FinanceDirection) {
-  switch (direction) {
-    case "INCOME":
+function getApprovalStatusClass(status: ExpenseApprovalStatus) {
+  switch (status) {
+    case ExpenseApprovalStatus.APPROVED:
       return "bg-green-100 text-green-700";
-    case "EXPENSE":
+    case ExpenseApprovalStatus.PENDING_APPROVAL:
+      return "bg-amber-100 text-amber-700";
+    case ExpenseApprovalStatus.REJECTED:
+    case ExpenseApprovalStatus.CANCELLED:
       return "bg-red-100 text-red-700";
     default:
       return "bg-slate-100 text-slate-700";
   }
 }
 
-export default async function AdminFinanceEntriesPage({
+export default async function AdditionalExpensesPage({
   searchParams,
 }: {
   searchParams?: Promise<SearchParams>;
@@ -88,11 +106,14 @@ export default async function AdminFinanceEntriesPage({
   const q = params.q?.trim() ?? "";
   const category = params.category?.trim() ?? "";
   const status = params.status?.trim() ?? "";
-  const direction = params.direction?.trim() ?? "";
+  const approvalStatus = params.approvalStatus?.trim() ?? "";
+  const costType = params.costType?.trim() ?? "";
   const sourceType = params.sourceType?.trim() ?? "";
-  const to = params.to?.trim() ?? "";
+  const clientCompany = params.clientCompany?.trim() ?? "";
+  const spender = params.spender?.trim() ?? "";
+  const tourCategory = params.tourCategory?.trim() ?? "";
   const from = params.from?.trim() ?? "";
-  
+  const to = params.to?.trim() ?? "";
 
   const currentPage = Math.max(1, Number(params.page || "1"));
   const pageSize = 10;
@@ -131,74 +152,75 @@ export default async function AdminFinanceEntriesPage({
       ]
     : [];
 
-    const clientCompany = params.clientCompany?.trim() ?? "";
-    const spender = params.spender?.trim() ?? "";
-    const tourCategory = params.tourCategory?.trim() ?? "";
+  const where: Prisma.ExpenseWhereInput = {
+    direction: FinanceDirection.EXPENSE,
 
-    const where: Prisma.ExpenseWhereInput = {
-      ...(searchConditions.length > 0 ? { OR: searchConditions } : {}),
+    ...(searchConditions.length > 0 ? { OR: searchConditions } : {}),
 
-      ...(category &&
-      Object.values(ExpenseCategory).includes(category as ExpenseCategory)
-        ? { category: category as ExpenseCategory }
-        : {}),
+    ...(category &&
+    Object.values(ExpenseCategory).includes(category as ExpenseCategory)
+      ? { category: category as ExpenseCategory }
+      : {}),
 
-      ...(status &&
-      Object.values(ExpensePaymentStatus).includes(
-        status as ExpensePaymentStatus
-      )
-        ? { paymentStatus: status as ExpensePaymentStatus }
-        : {}),
+    ...(status &&
+    Object.values(ExpensePaymentStatus).includes(
+      status as ExpensePaymentStatus,
+    )
+      ? { paymentStatus: status as ExpensePaymentStatus }
+      : {}),
 
-      ...(direction &&
-      Object.values(FinanceDirection).includes(direction as FinanceDirection)
-        ? { direction: direction as FinanceDirection }
-        : {}),
+    ...(approvalStatus &&
+    Object.values(ExpenseApprovalStatus).includes(
+      approvalStatus as ExpenseApprovalStatus,
+    )
+      ? { approvalStatus: approvalStatus as ExpenseApprovalStatus }
+      : {}),
 
-      ...(sourceType &&
-      Object.values(FinanceSourceType).includes(sourceType as FinanceSourceType)
-        ? { sourceType: sourceType as FinanceSourceType }
-        : {}),
+    ...(costType &&
+    Object.values(ExpenseCostType).includes(costType as ExpenseCostType)
+      ? { costType: costType as ExpenseCostType }
+      : {}),
 
-      ...(clientCompany
-        ? {
-            clientCompanyName: {
-              contains: clientCompany,
-              mode: Prisma.QueryMode.insensitive,
-            },
-          }
-        : {}),
+    ...(sourceType &&
+    Object.values(FinanceSourceType).includes(sourceType as FinanceSourceType)
+      ? { sourceType: sourceType as FinanceSourceType }
+      : {}),
 
-      ...(spender
-        ? {
-            spenderName: {
-              contains: spender,
-              mode: Prisma.QueryMode.insensitive,
-            },
-          }
-        : {}),
+    ...(clientCompany
+      ? {
+          clientCompanyName: {
+            contains: clientCompany,
+            mode: Prisma.QueryMode.insensitive,
+          },
+        }
+      : {}),
 
-      ...(tourCategory
-        ? {
-            tourCategoryName: {
-              contains: tourCategory,
-              mode: Prisma.QueryMode.insensitive,
-            },
-          }
-        : {}),
+    ...(spender
+      ? {
+          spenderName: {
+            contains: spender,
+            mode: Prisma.QueryMode.insensitive,
+          },
+        }
+      : {}),
 
-      ...(from || to
-        ? {
-            expenseDate: {
-              ...(from
-                ? { gte: new Date(`${from}T00:00:00.000Z`) }
-                : {}),
-              ...(to
-                ? { lte: new Date(`${to}T23:59:59.999Z`) }
-                : {}),
-            },
-          }
-        : {}),
+    ...(tourCategory
+      ? {
+          tourCategoryName: {
+            contains: tourCategory,
+            mode: Prisma.QueryMode.insensitive,
+          },
+        }
+      : {}),
+
+    ...(from || to
+      ? {
+          expenseDate: {
+            ...(from ? { gte: new Date(`${from}T00:00:00.000Z`) } : {}),
+            ...(to ? { lte: new Date(`${to}T23:59:59.999Z`) } : {}),
+          },
+        }
+      : {}),
   };
 
   const [expenses, totalCount, summaryEntries] = await Promise.all([
@@ -237,8 +259,9 @@ export default async function AdminFinanceEntriesPage({
       where,
       select: {
         amount: true,
-        direction: true,
         paymentStatus: true,
+        approvalStatus: true,
+        costType: true,
         taxAmount: true,
       },
     }),
@@ -252,7 +275,8 @@ export default async function AdminFinanceEntriesPage({
     if (q) search.set("q", q);
     if (category) search.set("category", category);
     if (status) search.set("status", status);
-    if (direction) search.set("direction", direction);
+    if (approvalStatus) search.set("approvalStatus", approvalStatus);
+    if (costType) search.set("costType", costType);
     if (sourceType) search.set("sourceType", sourceType);
     if (from) search.set("from", from);
     if (to) search.set("to", to);
@@ -265,55 +289,42 @@ export default async function AdminFinanceEntriesPage({
     return `/admin/finance/expenses?${search.toString()}`;
   };
 
-  const totalIncome = summaryEntries
-    .filter((item) => item.direction === "INCOME")
-    .reduce((sum, item) => sum + item.amount, 0);
-
-  const totalExpenses = summaryEntries
-    .filter((item) => item.direction === "EXPENSE")
-    .reduce((sum, item) => sum + item.amount, 0);
-
-  const paidIncome = summaryEntries
-    .filter(
-      (item) => item.direction === "INCOME" && item.paymentStatus === "PAID"
-    )
-    .reduce((sum, item) => sum + item.amount, 0);
-
-  const pendingIncome = summaryEntries
-    .filter(
-      (item) => item.direction === "INCOME" && item.paymentStatus === "PENDING"
-    )
-    .reduce((sum, item) => sum + item.amount, 0);
+  const totalExpenses = summaryEntries.reduce(
+    (sum, item) => sum + item.amount,
+    0,
+  );
 
   const paidExpenses = summaryEntries
-    .filter(
-      (item) => item.direction === "EXPENSE" && item.paymentStatus === "PAID"
-    )
+    .filter((item) => item.paymentStatus === ExpensePaymentStatus.PAID)
     .reduce((sum, item) => sum + item.amount, 0);
 
   const pendingExpenses = summaryEntries
-    .filter(
-      (item) => item.direction === "EXPENSE" && item.paymentStatus === "PENDING"
-    )
+    .filter((item) => item.paymentStatus === ExpensePaymentStatus.PENDING)
     .reduce((sum, item) => sum + item.amount, 0);
 
   const totalTax = summaryEntries.reduce(
     (sum, item) => sum + (item.taxAmount || 0),
-    0
+    0,
   );
 
-  const netProfit = totalIncome - totalExpenses;
+  const approvedDirectTourCosts = summaryEntries
+    .filter(
+      (item) =>
+        item.approvalStatus === ExpenseApprovalStatus.APPROVED &&
+        item.costType === ExpenseCostType.DIRECT_TOUR_COST,
+    )
+    .reduce((sum, item) => sum + item.amount, 0);
 
   return (
     <div className="space-y-6 p-6">
       <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
         <div>
           <h1 className="text-3xl font-bold text-[#001F3F]">
-            Finance Entries
+            Additional Expenses
           </h1>
           <p className="mt-1 text-sm text-muted-foreground">
-            Full EUR ledger for income, expenses, tax, agencies, tours, and
-            groups.
+            Manual and exceptional expenses that are not already represented by
+            Supplier Payables.
           </p>
         </div>
 
@@ -326,72 +337,68 @@ export default async function AdminFinanceEntriesPage({
           </Link>
 
           <Link
+            href="/admin/supplier-payables"
+            className="rounded-xl border px-4 py-2 text-sm font-medium transition hover:border-[#8B0000] hover:text-[#8B0000]"
+          >
+            Supplier Payables
+          </Link>
+
+          <Link
             href="/admin/finance/expenses/create"
             className="rounded-xl bg-[#8B0000] px-4 py-2 text-sm font-medium text-white transition hover:bg-[#6f0000]"
           >
-            Add Finance Entry
+            Add Expense
           </Link>
         </div>
       </div>
 
-      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-        <div className="rounded-2xl border bg-green-50 p-5 shadow-sm">
-          <p className="text-sm font-medium text-green-700">Total Income</p>
-          <p className="mt-2 text-3xl font-bold text-green-800">
-            {formatCurrency(totalIncome, "EUR")}
+      <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm leading-6 text-amber-900">
+        <strong>Do not duplicate supplier costs here.</strong> Hotels, buses /
+        transportation, tour managers, local guides, audio / whisper sets,
+        restaurants / meals, entrance fees / tickets, local operators and other
+        contracted supplier costs should normally be entered through Supplier
+        Payables. Use this page for bank charges, office costs, staff or
+        owner-paid expenses, taxes / fees, small exceptional tour expenses and
+        other items not already represented by a Supplier Payable.
+      </div>
+
+      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
+        <div className="rounded-2xl border bg-red-50 p-5 shadow-sm">
+          <p className="text-sm font-medium text-red-700">
+            Additional Expenses
+          </p>
+          <p className="mt-2 text-3xl font-bold text-red-800">
+            {formatMoney(totalExpenses, "EUR")}
           </p>
         </div>
 
-        <div className="rounded-2xl border bg-red-50 p-5 shadow-sm">
-          <p className="text-sm font-medium text-red-700">Total Expenses</p>
-          <p className="mt-2 text-3xl font-bold text-red-800">
-            {formatCurrency(totalExpenses, "EUR")}
+        <div className="rounded-2xl border bg-white p-5 shadow-sm">
+          <p className="text-sm text-slate-500">Paid</p>
+          <p className="mt-2 text-2xl font-bold text-red-700">
+            {formatMoney(paidExpenses, "EUR")}
+          </p>
+        </div>
+
+        <div className="rounded-2xl border bg-white p-5 shadow-sm">
+          <p className="text-sm text-slate-500">Pending</p>
+          <p className="mt-2 text-2xl font-bold text-amber-700">
+            {formatMoney(pendingExpenses, "EUR")}
           </p>
         </div>
 
         <div className="rounded-2xl border bg-blue-50 p-5 shadow-sm">
-          <p className="text-sm font-medium text-blue-700">Net Profit</p>
-          <p
-            className={`mt-2 text-3xl font-bold ${
-              netProfit >= 0 ? "text-blue-800" : "text-red-700"
-            }`}
-          >
-            {formatCurrency(netProfit, "EUR")}
+          <p className="text-sm font-medium text-blue-700">
+            Approved Direct Tour Costs
+          </p>
+          <p className="mt-2 text-2xl font-bold text-blue-800">
+            {formatMoney(approvedDirectTourCosts, "EUR")}
           </p>
         </div>
 
         <div className="rounded-2xl border bg-amber-50 p-5 shadow-sm">
           <p className="text-sm font-medium text-amber-700">VAT / Tax</p>
-          <p className="mt-2 text-3xl font-bold text-amber-800">
-            {formatCurrency(totalTax, "EUR")}
-          </p>
-        </div>
-
-        <div className="rounded-2xl border bg-white p-5 shadow-sm">
-          <p className="text-sm text-slate-500">Paid Income</p>
-          <p className="mt-2 text-2xl font-bold text-green-700">
-            {formatCurrency(paidIncome, "EUR")}
-          </p>
-        </div>
-
-        <div className="rounded-2xl border bg-white p-5 shadow-sm">
-          <p className="text-sm text-slate-500">Pending Income</p>
-          <p className="mt-2 text-2xl font-bold text-amber-700">
-            {formatCurrency(pendingIncome, "EUR")}
-          </p>
-        </div>
-
-        <div className="rounded-2xl border bg-white p-5 shadow-sm">
-          <p className="text-sm text-slate-500">Paid Expenses</p>
-          <p className="mt-2 text-2xl font-bold text-red-700">
-            {formatCurrency(paidExpenses, "EUR")}
-          </p>
-        </div>
-
-        <div className="rounded-2xl border bg-white p-5 shadow-sm">
-          <p className="text-sm text-slate-500">Pending Expenses</p>
-          <p className="mt-2 text-2xl font-bold text-amber-700">
-            {formatCurrency(pendingExpenses, "EUR")}
+          <p className="mt-2 text-2xl font-bold text-amber-800">
+            {formatMoney(totalTax, "EUR")}
           </p>
         </div>
       </div>
@@ -405,27 +412,9 @@ export default async function AdminFinanceEntriesPage({
             <input
               name="q"
               defaultValue={q}
-              placeholder="Agency, tour, code, group, vendor, title..."
+              placeholder="Tour, group, vendor, title..."
               className="w-full rounded-xl border px-4 py-2.5 text-sm outline-none transition focus:border-[#8B0000]"
             />
-          </div>
-
-          <div>
-            <label className="mb-2 block text-sm font-medium text-slate-700">
-              Direction
-            </label>
-            <select
-              name="direction"
-              defaultValue={direction}
-              className="w-full rounded-xl border px-4 py-2.5 text-sm outline-none transition focus:border-[#8B0000]"
-            >
-              <option value="">All</option>
-              {Object.values(FinanceDirection).map((item) => (
-                <option key={item} value={item}>
-                  {formatEnumLabel(item)}
-                </option>
-              ))}
-            </select>
           </div>
 
           <div>
@@ -466,7 +455,43 @@ export default async function AdminFinanceEntriesPage({
 
           <div>
             <label className="mb-2 block text-sm font-medium text-slate-700">
-              Status
+              Cost Type
+            </label>
+            <select
+              name="costType"
+              defaultValue={costType}
+              className="w-full rounded-xl border px-4 py-2.5 text-sm outline-none transition focus:border-[#8B0000]"
+            >
+              <option value="">All</option>
+              {Object.values(ExpenseCostType).map((item) => (
+                <option key={item} value={item}>
+                  {formatEnumLabel(item)}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div>
+            <label className="mb-2 block text-sm font-medium text-slate-700">
+              Approval
+            </label>
+            <select
+              name="approvalStatus"
+              defaultValue={approvalStatus}
+              className="w-full rounded-xl border px-4 py-2.5 text-sm outline-none transition focus:border-[#8B0000]"
+            >
+              <option value="">All</option>
+              {Object.values(ExpenseApprovalStatus).map((item) => (
+                <option key={item} value={item}>
+                  {formatEnumLabel(item)}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div>
+            <label className="mb-2 block text-sm font-medium text-slate-700">
+              Payment Status
             </label>
             <select
               name="status"
@@ -481,18 +506,9 @@ export default async function AdminFinanceEntriesPage({
               ))}
             </select>
           </div>
-
-          <div className="flex items-end">
-            <button
-              type="submit"
-              className="w-full rounded-xl bg-black px-4 py-2.5 text-sm font-medium text-white transition hover:bg-slate-800"
-            >
-              Apply
-            </button>
-          </div>
         </div>
 
-        <div className="mt-4 grid gap-4 md:grid-cols-3 xl:grid-cols-6">
+        <div className="mt-4 grid gap-4 md:grid-cols-3 xl:grid-cols-7">
           <div>
             <label className="mb-2 block text-sm font-medium text-slate-700">
               From
@@ -554,6 +570,15 @@ export default async function AdminFinanceEntriesPage({
           </div>
 
           <div className="flex items-end">
+            <button
+              type="submit"
+              className="w-full rounded-xl bg-black px-4 py-2.5 text-sm font-medium text-white transition hover:bg-slate-800"
+            >
+              Apply
+            </button>
+          </div>
+
+          <div className="flex items-end">
             <Link
               href="/admin/finance/expenses"
               className="w-full rounded-xl border px-4 py-2.5 text-center text-sm font-medium transition hover:border-[#8B0000] hover:text-[#8B0000]"
@@ -566,23 +591,23 @@ export default async function AdminFinanceEntriesPage({
 
       <div className="overflow-hidden rounded-2xl border bg-white shadow-sm">
         <div className="overflow-x-auto">
-          <table className="w-full min-w-[1800px] text-sm">
+          <table className="w-full min-w-[1900px] text-sm">
             <thead className="bg-slate-50 text-left text-slate-600">
               <tr>
                 <th className="px-4 py-3 font-medium">Date</th>
                 <th className="px-4 py-3 font-medium">Title</th>
-                <th className="px-4 py-3 font-medium">Direction</th>
                 <th className="px-4 py-3 font-medium">Source</th>
                 <th className="px-4 py-3 font-medium">Category</th>
-                <th className="px-4 py-3 font-medium">Agency / Partner</th>
-                <th className="px-4 py-3 font-medium">Group / Package</th>
-                <th className="px-4 py-3 font-medium">Vendor / Payer</th>
+                <th className="px-4 py-3 font-medium">Cost Type</th>
+                <th className="px-4 py-3 font-medium">Approval</th>
+                <th className="px-4 py-3 font-medium">Vendor / Payee</th>
+                <th className="px-4 py-3 font-medium">Spender</th>
                 <th className="px-4 py-3 font-medium">Booking</th>
                 <th className="px-4 py-3 font-medium">Tour</th>
                 <th className="px-4 py-3 font-medium">Departure</th>
                 <th className="px-4 py-3 font-medium">Invoice</th>
                 <th className="px-4 py-3 font-medium">Tax</th>
-                <th className="px-4 py-3 font-medium">Status</th>
+                <th className="px-4 py-3 font-medium">Payment</th>
                 <th className="px-4 py-3 text-right font-medium">Amount</th>
                 <th className="px-4 py-3 text-right font-medium">Actions</th>
               </tr>
@@ -602,21 +627,11 @@ export default async function AdminFinanceEntriesPage({
                     <div className="font-medium text-[#001F3F]">
                       {expense.title}
                     </div>
-                    {expense.description && (
+                    {expense.description ? (
                       <div className="mt-1 line-clamp-2 text-xs text-slate-500">
                         {expense.description}
                       </div>
-                    )}
-                  </td>
-
-                  <td className="whitespace-nowrap px-4 py-3">
-                    <span
-                      className={`rounded-full px-2.5 py-1 text-xs font-medium ${getDirectionClass(
-                        expense.direction
-                      )}`}
-                    >
-                      {formatEnumLabel(expense.direction)}
-                    </span>
+                    ) : null}
                   </td>
 
                   <td className="whitespace-nowrap px-4 py-3">
@@ -627,37 +642,26 @@ export default async function AdminFinanceEntriesPage({
                     {formatEnumLabel(expense.category)}
                   </td>
 
-                  <td className="px-4 py-3">
-                    <div className="space-y-1">
-                      <div className="font-medium">
-                        {expense.partnerCompanyName ||
-                          expense.agentNameSnapshot ||
-                          "-"}
-                      </div>
-                      {expense.agentNameSnapshot &&
-                        expense.partnerCompanyName && (
-                          <div className="text-xs text-slate-500">
-                            Agent: {expense.agentNameSnapshot}
-                          </div>
-                        )}
-                    </div>
+                  <td className="whitespace-nowrap px-4 py-3">
+                    {formatEnumLabel(expense.costType)}
                   </td>
 
-                  <td className="px-4 py-3">
-                    <div className="space-y-1">
-                      <div className="font-medium">
-                        {expense.groupName || expense.customPackageName || "-"}
-                      </div>
-                      {expense.tourLeaderName && (
-                        <div className="text-xs text-slate-500">
-                          Leader: {expense.tourLeaderName}
-                        </div>
-                      )}
-                    </div>
+                  <td className="whitespace-nowrap px-4 py-3">
+                    <span
+                      className={`rounded-full px-2.5 py-1 text-xs font-medium ${getApprovalStatusClass(
+                        expense.approvalStatus,
+                      )}`}
+                    >
+                      {formatEnumLabel(expense.approvalStatus)}
+                    </span>
                   </td>
 
                   <td className="whitespace-nowrap px-4 py-3">
                     {expense.vendorName || "-"}
+                  </td>
+
+                  <td className="whitespace-nowrap px-4 py-3">
+                    {expense.spenderName || "-"}
                   </td>
 
                   <td className="whitespace-nowrap px-4 py-3">
@@ -703,7 +707,7 @@ export default async function AdminFinanceEntriesPage({
                           target="_blank"
                           className="text-blue-600 hover:underline"
                         >
-                          View PDF
+                          View
                         </Link>
 
                         <a
@@ -721,32 +725,25 @@ export default async function AdminFinanceEntriesPage({
 
                   <td className="whitespace-nowrap px-4 py-3">
                     <div>{formatEnumLabel(expense.taxType)}</div>
-                    {(expense.taxAmount || 0) > 0 && (
+                    {(expense.taxAmount || 0) > 0 ? (
                       <div className="text-xs text-slate-500">
-                        {formatCurrency(expense.taxAmount || 0, "EUR")}
+                        {formatMoney(expense.taxAmount || 0, "EUR")}
                       </div>
-                    )}
+                    ) : null}
                   </td>
 
                   <td className="whitespace-nowrap px-4 py-3">
                     <span
-                      className={`rounded-full px-2.5 py-1 text-xs font-medium ${getStatusClass(
-                        expense.paymentStatus
+                      className={`rounded-full px-2.5 py-1 text-xs font-medium ${getPaymentStatusClass(
+                        expense.paymentStatus,
                       )}`}
                     >
                       {formatEnumLabel(expense.paymentStatus)}
                     </span>
                   </td>
 
-                  <td
-                    className={`whitespace-nowrap px-4 py-3 text-right font-semibold ${
-                      expense.direction === "INCOME"
-                        ? "text-green-700"
-                        : "text-red-700"
-                    }`}
-                  >
-                    {expense.direction === "INCOME" ? "+" : "-"}
-                    {formatCurrency(expense.amount, "EUR")}
+                  <td className="whitespace-nowrap px-4 py-3 text-right font-semibold text-red-700">
+                    -{formatMoney(expense.amount, "EUR")}
                   </td>
 
                   <td className="px-4 py-3">
@@ -764,23 +761,23 @@ export default async function AdminFinanceEntriesPage({
                 </tr>
               ))}
 
-              {expenses.length === 0 && (
+              {expenses.length === 0 ? (
                 <tr>
                   <td
                     colSpan={16}
                     className="px-4 py-10 text-center text-sm text-slate-500"
                   >
-                    No finance entries found.
+                    No additional expenses found.
                   </td>
                 </tr>
-              )}
+              ) : null}
             </tbody>
           </table>
         </div>
 
         <div className="flex flex-col gap-3 border-t bg-white px-6 py-4 md:flex-row md:items-center md:justify-between">
           <p className="text-sm text-slate-500">
-            Showing {expenses.length} of {totalCount} entries — Page{" "}
+            Showing {expenses.length} of {totalCount} expenses — Page{" "}
             {currentPage} of {totalPages}
           </p>
 

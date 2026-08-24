@@ -19,16 +19,23 @@ export default function CreateExpenseForm({ children }: Props) {
 
     const method = String(formData.get("_method") || "POST");
     const expenseId = String(formData.get("expenseId") || "");
-
     const amount = Number(formData.get("amount") || 0);
+    const paymentStatus = String(formData.get("paymentStatus") || "PENDING");
+    const bankAccountId = String(formData.get("bankAccountId") || "").trim();
 
     if (!amount || amount <= 0) {
       toast.error("Amount must be greater than zero.");
       return;
     }
 
+    if (paymentStatus === "PAID" && !bankAccountId) {
+      toast.error("Select the bank account used to pay this expense.");
+      return;
+    }
+
     formData.set("amount", String(amount));
     formData.set("currency", "EUR");
+    formData.set("direction", "EXPENSE");
 
     const endpoint =
       method === "PATCH" && expenseId
@@ -47,21 +54,21 @@ export default function CreateExpenseForm({ children }: Props) {
       } | null;
 
       if (!res.ok || !data?.success) {
-        toast.error(data?.error || "Failed to save finance entry.");
+        toast.error(data?.error || "Failed to save expense.");
         return;
       }
 
       toast.success(
         method === "PATCH"
-          ? "Finance entry updated successfully."
-          : "Finance entry saved."
+          ? "Expense updated successfully."
+          : "Expense saved successfully.",
       );
 
       router.push("/admin/finance/expenses");
       router.refresh();
     } catch (error) {
-      console.error("SAVE_FINANCE_ENTRY_CLIENT_ERROR", error);
-      toast.error("Something went wrong while saving.");
+      console.error("SAVE_EXPENSE_CLIENT_ERROR", error);
+      toast.error("Something went wrong while saving the expense.");
     }
   }
 

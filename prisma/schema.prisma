@@ -32,17 +32,17 @@ model User {
   partnerCompanyId           String?
   billingAddress             String?
   billingCity                String?
-  billingState               String?
   billingCompanyName         String?
-  billingCompanyRegNo        String?
   billingContactName         String?
   billingCountry             String?
   billingEmail               String?
   billingEmailSecondary      String?
-  billingPhone               String?
   billingPostalCode          String?
   billingTaxNumber           String?
   billingVatNumber           String?
+  billingCompanyRegNo        String?
+  billingPhone               String?
+  billingState               String?
   AgentCommunication         AgentCommunication[]
   agentTourCommissions       AgentTourCommission[]
   bankReconciliations        BankReconciliation[]
@@ -57,12 +57,13 @@ model User {
   processedPartnerPayouts    PartnerPayout[]          @relation("ProcessedPartnerPayouts")
   reviewedPaymentSubmissions PaymentSubmission[]      @relation("PaymentSubmissionReviewer")
   paymentSubmissions         PaymentSubmission[]      @relation("PaymentSubmissionUser")
+  acceptedQuotes             Quote[]                  @relation("QuoteAcceptedBy")
   quotesFinalized            Quote[]                  @relation("QuoteFinalizedBy")
   quotesSent                 Quote[]                  @relation("QuoteSentBy")
-  acceptedQuotes             Quote[]                  @relation("QuoteAcceptedBy")
   quoteActivities            QuoteActivity[]
   quoteTemplates             QuoteTemplate[]
   refunds                    Refund[]
+  resourcesUploaded          Resource[]               @relation("ResourceUploadedBy")
   salesDocumentsCreated      SalesDocument[]          @relation("SalesDocument_createdByIdToUser")
   salesDocumentsIssued       SalesDocument[]          @relation("SalesDocument_issuedByIdToUser")
   salesDocumentsSent         SalesDocument[]          @relation("SalesDocument_sentByIdToUser")
@@ -70,7 +71,6 @@ model User {
   supplierPayablesCreated    SupplierPayable[]        @relation("SupplierPayable_createdByIdToUser")
   supplierPayablePayments    SupplierPayablePayment[]
   supportMessages            SupportMessage[]
-  resourcesUploaded          Resource[]               @relation("ResourceUploadedBy")
   partnerCompany             PartnerCompany?          @relation(fields: [partnerCompanyId], references: [id])
 
   @@index([role])
@@ -81,87 +81,72 @@ model User {
 }
 
 model Tour {
-  id String @id @default(cuid())
-
-  // Journey identity
-  title         String
-  subtitle      String?
-  category      String
-  subcategories String[]
-  tags          String[]
-  destinations  String[]
-  duration      Int
-  tourCode      String?  @unique
-  arrivalCity   String?
-  departureCity String?
-
-  // Storytelling
-  shortDescription   String?
-  overview           String?
-  tourIntroduction   String?
-  tourSignificance   String?
-  whyWeOfferThisTour String?
-  destinationBriefs  String?
-
-  // Agent / sales content
-  highlights         String[]
-  idealFor           String[]
-  agentSellingPoints String[]
-  walkingLevel       String?
-  pace               String?
-  massIncluded       Boolean  @default(true)
-
-  // Journey content
-  inclusions            String[]
-  exclusions            String[]
-  accommodations        String[]
-  hotelStandard         String?
-  mealPlan              String?
-  transportationSummary String?
-  overviewItinerary     String?
-  itinerary             String?
-
-  // Commercial reference
-  startingPrice        Float?
-  currency             String      @default("EUR")
-  startingPriceBasis   String      @default("DOUBLE_TWIN")
-  referenceGroupSize   Int?
-  singleSupplementFrom Float?
-  pricingType          PricingType @default(GROUP_BASED)
-  privatePricing       Json?
-  requiresQuote        Boolean     @default(true)
-
-  // Media
-  mainImageUrl String?
-  imageUrl2    String?
-  imageUrl3    String?
-  imageUrl4    String?
-  mapImageUrl  String?
-  brochureUrl  String?
-
-  // Publishing
-  featured    Boolean  @default(false)
-  isPublished Boolean  @default(false)
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-
-  // Relations
-  agentTourCommissions AgentTourCommission[]
-  bankTransactions     BankTransaction[]
-  bookings             Booking[]
-  customTourRequests   CustomTourRequest[]
-  departureDates       DepartureDate[]
-  expenses             Expense[]
-  financeDocuments     FinanceDocument[]
-  financeEntries       FinanceEntry[]
-  massArrangements     MassArrangement[]
-  partnerTourAliases   PartnerTourAlias[]
-  pricingTiers         PricingTier[]
-  quotes               Quote[]
-  supplierPayables     SupplierPayable[]
-  tourControl          TourControl?
-  seasonalPrices       TourSeasonalPrice[]
-  resources            Resource[]
+  id                       String                    @id @default(cuid())
+  title                    String
+  category                 String
+  subcategories            String[]
+  tags                     String[]
+  destinations             String[]
+  duration                 Int
+  shortDescription         String?
+  overview                 String?
+  tourIntroduction         String?
+  tourSignificance         String?
+  destinationBriefs        String?
+  highlights               String[]
+  inclusions               String[]
+  exclusions               String[]
+  accommodations           String[]
+  overviewItinerary        String?
+  itinerary                String?
+  mainImageUrl             String?
+  mapImageUrl              String?
+  brochureUrl              String?
+  featured                 Boolean                   @default(false)
+  isPublished              Boolean                   @default(false)
+  requiresQuote            Boolean                   @default(true)
+  createdAt                DateTime                  @default(now())
+  updatedAt                DateTime                  @updatedAt
+  tourCode                 String?                   @unique
+  pricingType              PricingType               @default(GROUP_BASED)
+  privatePricing           Json?
+  whyWeOfferThisTour       String?
+  imageUrl2                String?
+  imageUrl3                String?
+  imageUrl4                String?
+  agentSellingPoints       String[]
+  arrivalCity              String?
+  currency                 String                    @default("EUR")
+  departureCity            String?
+  hotelStandard            String?
+  idealFor                 String[]
+  massIncluded             Boolean                   @default(true)
+  mealPlan                 String?
+  pace                     String?
+  referenceGroupSize       Int?
+  singleSupplementFrom     Float?
+  startingPrice            Float?
+  startingPriceBasis       String                    @default("DOUBLE_TWIN")
+  subtitle                 String?
+  transportationSummary    String?
+  walkingLevel             String?
+  agentTourCommissions     AgentTourCommission[]
+  bankTransactions         BankTransaction[]
+  bookings                 Booking[]
+  customTourRequests       CustomTourRequest[]
+  departureDates           DepartureDate[]
+  expenses                 Expense[]
+  financeDocuments         FinanceDocument[]
+  financeEntries           FinanceEntry[]
+  massArrangements         MassArrangement[]
+  partnerTourAliases       PartnerTourAlias[]
+  pricingTiers             PricingTier[]
+  privateGroupPricingPlans PrivateGroupPricingPlan[]
+  quotes                   Quote[]
+  resources                Resource[]
+  supplierPayables         SupplierPayable[]
+  tourControl              TourControl?
+  seasonalPrices           TourSeasonalPrice[]
 
   @@index([category])
   @@index([featured])
@@ -173,21 +158,88 @@ model TourSeasonalPrice {
   id               String    @id @default(cuid())
   tourId           String
   season           Season
-  validFrom        DateTime?
-  validTo          DateTime?
   price            Float
-  singleSupplement Float?
-  tripleReduction  Float?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
   currency         String    @default("EUR")
   minPax           Int?
   notes            String?
-  createdAt        DateTime  @default(now())
-  updatedAt        DateTime  @updatedAt
+  singleSupplement Float?
+  tripleReduction  Float?
+  validFrom        DateTime?
+  validTo          DateTime?
   tour             Tour      @relation(fields: [tourId], references: [id], onDelete: Cascade)
 
   @@index([tourId])
   @@index([season])
   @@index([tourId, validFrom, validTo])
+}
+
+model PrivateGroupPricingPlan {
+  id                String               @id @default(cuid())
+  tourId            String
+  year              Int
+  currency          String               @default("EUR")
+  title             String?
+  description       String?
+  isActive          Boolean              @default(true)
+  minPayingPax      Int?
+  maxPayingPax      Int?
+  focEnabled        Boolean              @default(true)
+  focPayingPaxRatio Int                  @default(10)
+  focNotes          String?
+  packageIncludes   String[]
+  packageExcludes   String[]
+  pricingNotes      String?
+  createdAt         DateTime             @default(now())
+  updatedAt         DateTime             @updatedAt
+  tour              Tour                 @relation(fields: [tourId], references: [id], onDelete: Cascade)
+  seasons           PrivateGroupSeason[]
+
+  @@unique([tourId, year])
+  @@index([tourId])
+  @@index([year])
+  @@index([isActive])
+}
+
+model PrivateGroupSeason {
+  id               String                  @id @default(cuid())
+  pricingPlanId    String
+  season           Season
+  months           Int[]
+  seasonNote       String?
+  singleSupplement Decimal?                @db.Decimal(12, 2)
+  tripleReduction  Decimal?                @db.Decimal(12, 2)
+  isOnRequest      Boolean                 @default(false)
+  notes            String?
+  sortOrder        Int                     @default(0)
+  createdAt        DateTime                @default(now())
+  updatedAt        DateTime                @updatedAt
+  priceBands       PrivateGroupPriceBand[]
+  pricingPlan      PrivateGroupPricingPlan @relation(fields: [pricingPlanId], references: [id], onDelete: Cascade)
+
+  @@index([pricingPlanId])
+  @@index([season])
+  @@index([sortOrder])
+}
+
+model PrivateGroupPriceBand {
+  id              String             @id @default(cuid())
+  seasonId        String
+  minPayingPax    Int
+  maxPayingPax    Int?
+  doubleTwinPrice Decimal            @db.Decimal(12, 2)
+  isActive        Boolean            @default(true)
+  sortOrder       Int                @default(0)
+  notes           String?
+  createdAt       DateTime           @default(now())
+  updatedAt       DateTime           @updatedAt
+  season          PrivateGroupSeason @relation(fields: [seasonId], references: [id], onDelete: Cascade)
+
+  @@index([seasonId])
+  @@index([minPayingPax])
+  @@index([isActive])
+  @@index([sortOrder])
 }
 
 model DepartureDate {
@@ -275,17 +327,6 @@ model Booking {
   mapImageUrlSnapshot           String?
   departureDateSnapshot         DateTime?
   pricePerPersonSnapshot        Float
-  travelStartDateSnapshot       DateTime?
-  travelEndDateSnapshot         DateTime?
-  payingPaxSnapshot             Int?
-  complimentaryPaxSnapshot      Int?
-  netRateSingleSnapshot         Float?
-  netRateDoubleTwinSnapshot     Float?
-  netRateTripleSnapshot         Float?
-  quoteReferenceSnapshot        String?
-  quoteVersionSnapshot          Int?
-  quoteAcceptedAtSnapshot       DateTime?
-  quoteCommercialSnapshot       Json?
   earlyDiscountPercentSnapshot  Float?
   earlyDiscountDeadlineSnapshot DateTime?
   customerName                  String?
@@ -327,6 +368,17 @@ model Booking {
   partnerCompanyId              String?
   partnerPackageName            String?
   partnerTourAliasId            String?
+  complimentaryPaxSnapshot      Int?
+  netRateDoubleTwinSnapshot     Float?
+  netRateSingleSnapshot         Float?
+  netRateTripleSnapshot         Float?
+  payingPaxSnapshot             Int?
+  quoteAcceptedAtSnapshot       DateTime?
+  quoteCommercialSnapshot       Json?
+  quoteReferenceSnapshot        String?
+  quoteVersionSnapshot          Int?
+  travelEndDateSnapshot         DateTime?
+  travelStartDateSnapshot       DateTime?
   bankTransactions              BankTransaction[]
   departureDate                 DepartureDate?           @relation(fields: [departureDateId], references: [id])
   partnerCompany                PartnerCompany?          @relation(fields: [partnerCompanyId], references: [id])
@@ -394,87 +446,65 @@ model BookingOperationControl {
 }
 
 model CustomTourRequest {
-  id     String  @id @default(cuid())
-  userId String
-  tourId String?
-
-  requestReference String              @unique
-  status           CustomRequestStatus @default(NEW)
-  requestType      CustomRequestType   @default(TAILOR_MADE)
-
-  title        String?
-  destination  String?
-  destinations String[]
-
-  startDate            DateTime?
-  alternativeStartDate DateTime?
-  endDate              DateTime?
-  datesFlexible        Boolean   @default(false)
-  durationDays         Int?
-
-  estimatedPax Int?
-  adults       Int? @default(1)
-  children     Int? @default(0)
-  infants      Int? @default(0)
-
-  singleRooms Int? @default(0)
-  doubleRooms Int? @default(0)
-  twinRooms   Int? @default(0)
-  tripleRooms Int? @default(0)
-
-  complimentaryPlaces Int? @default(0)
-
-  priestTraveling    Boolean @default(false)
-  dailyMassRequested Boolean @default(true)
-
-  specialChurchRequests String?
-  guideLanguage         String?
+  id                    String              @id @default(cuid())
+  userId                String
+  requestReference      String              @unique
+  status                CustomRequestStatus @default(NEW)
+  requestType           CustomRequestType   @default(TAILOR_MADE)
+  title                 String?
+  destination           String?
+  destinations          String[]
+  startDate             DateTime?
+  endDate               DateTime?
+  durationDays          Int?
+  estimatedPax          Int?
+  adults                Int?                @default(1)
+  children              Int?                @default(0)
+  budgetPerPerson       Float?
+  currency              String              @default("EUR")
+  accommodationLevel    String?
+  roomPreference        String?
+  needsFlights          Boolean             @default(false)
+  landOnly              Boolean             @default(true)
+  groupName             String?
+  groupLeaderName       String?
+  customerName          String?
+  customerEmail         String?
+  customerPhone         String?
+  notes                 String?
+  internalNotes         String?
+  createdAt             DateTime            @default(now())
+  updatedAt             DateTime            @updatedAt
+  bookingType           BookingType         @default(FIT)
+  companyName           String?
+  doubleRooms           Int?                @default(0)
+  infants               Int?                @default(0)
+  leadEmail             String?
+  leadFirstName         String?
+  leadLastName          String?
+  leadPhone             String?
+  requestName           String?
+  singleRooms           Int?                @default(0)
+  specialRequests       String?
+  totalBudget           Float?
+  tripleRooms           Int?                @default(0)
+  twinRooms             Int?                @default(0)
+  selectedQuoteId       String?
+  adminReply            String?
+  alternativeStartDate  DateTime?
+  complimentaryPlaces   Int?                @default(0)
+  dailyMassRequested    Boolean             @default(true)
+  datesFlexible         Boolean             @default(false)
   extensionRequest      String?
-
-  budgetPerPerson Float?
-  totalBudget     Float?
-  currency        String @default("EUR")
-
-  accommodationLevel String?
-  roomPreference     String?
-
-  needsFlights Boolean @default(false)
-  landOnly     Boolean @default(true)
-
-  groupName       String?
-  groupLeaderName String?
-
-  customerName  String?
-  customerEmail String?
-  customerPhone String?
-
-  companyName String?
-
-  leadFirstName String?
-  leadLastName  String?
-  leadEmail     String?
-  leadPhone     String?
-
-  requestName String?
-
-  notes           String?
-  specialRequests String?
-  internalNotes   String?
-  adminReply      String?
-
-  bookingType BookingType @default(FIT)
-
-  selectedQuoteId String?
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  // Relations
-  tour          Tour?               @relation(fields: [tourId], references: [id])
-  selectedQuote Quote?              @relation("SelectedQuote", fields: [selectedQuoteId], references: [id])
-  user          User                @relation(fields: [userId], references: [id], onDelete: Cascade)
-  requestNotes  CustomRequestNote[]
-  quotes        Quote[]             @relation("RequestQuotes")
+  guideLanguage         String?
+  priestTraveling       Boolean             @default(false)
+  specialChurchRequests String?
+  tourId                String?
+  requestNotes          CustomRequestNote[]
+  selectedQuote         Quote?              @relation("SelectedQuote", fields: [selectedQuoteId], references: [id])
+  tour                  Tour?               @relation(fields: [tourId], references: [id])
+  user                  User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+  quotes                Quote[]             @relation("RequestQuotes")
 
   @@index([userId])
   @@index([tourId])
@@ -526,8 +556,6 @@ model Quote {
   templateId                String?
   viewedAt                  DateTime?
   approvedAt                DateTime?
-  acceptedAt                DateTime?
-  acceptedById              String?
   rejectedAt                DateTime?
   agentName                 String?
   clientName                String?
@@ -554,15 +582,17 @@ model Quote {
   partnerCompanyId          String?
   partnerPackageName        String?
   partnerTourAliasId        String?
+  acceptedAt                DateTime?
+  acceptedById              String?
   booking                   Booking?
   selectedFor               CustomTourRequest[] @relation("SelectedQuote")
+  acceptedBy                User?               @relation("QuoteAcceptedBy", fields: [acceptedById], references: [id])
   departureDate             DepartureDate?      @relation(fields: [departureDateId], references: [id])
   finalizedBy               User?               @relation("QuoteFinalizedBy", fields: [finalizedById], references: [id])
   partnerCompany            PartnerCompany?     @relation(fields: [partnerCompanyId], references: [id])
   partnerTourAlias          PartnerTourAlias?   @relation(fields: [partnerTourAliasId], references: [id])
   request                   CustomTourRequest?  @relation("RequestQuotes", fields: [requestId], references: [id])
   sentBy                    User?               @relation("QuoteSentBy", fields: [sentById], references: [id])
-  acceptedBy                User?               @relation("QuoteAcceptedBy", fields: [acceptedById], references: [id])
   template                  QuoteTemplate?      @relation(fields: [templateId], references: [id])
   tour                      Tour?               @relation(fields: [tourId], references: [id])
   activities                QuoteActivity[]
@@ -712,6 +742,7 @@ model Payment {
   allocationLockReason String?
   allocationLockedAt   DateTime?
   bankTransactions     BankTransaction[]
+  financeDocument      FinanceDocument?
   booking              Booking             @relation(fields: [bookingId], references: [id], onDelete: Cascade)
   allocations          PaymentAllocation[]
   refunds              Refund[]
@@ -1128,39 +1159,20 @@ model BankAccount {
   @@index([isActive])
 }
 
-// ============================================================
-// RESOURCE LIBRARY
-// ============================================================
-
-enum ResourceAudience {
-  AGENT
-  ADMIN
-}
-
-enum ResourceStatus {
-  ACTIVE
-  ARCHIVED
-}
-
 model ResourceCategory {
-  id          String  @id @default(cuid())
+  id          String             @id @default(cuid())
   name        String
-  slug        String  @unique
+  slug        String             @unique
   description String?
-
-  audience ResourceAudience
-
-  parentId String?
-  parent   ResourceCategory?  @relation("ResourceCategoryTree", fields: [parentId], references: [id], onDelete: SetNull)
-  children ResourceCategory[] @relation("ResourceCategoryTree")
-
-  sortOrder Int     @default(0)
-  isActive  Boolean @default(true)
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  resources Resource[]
+  audience    ResourceAudience
+  parentId    String?
+  sortOrder   Int                @default(0)
+  isActive    Boolean            @default(true)
+  createdAt   DateTime           @default(now())
+  updatedAt   DateTime           @updatedAt
+  resources   Resource[]
+  parent      ResourceCategory?  @relation("ResourceCategoryTree", fields: [parentId], references: [id])
+  children    ResourceCategory[] @relation("ResourceCategoryTree")
 
   @@unique([audience, parentId, name])
   @@index([audience])
@@ -1170,36 +1182,29 @@ model ResourceCategory {
 }
 
 model Resource {
-  id          String  @id @default(cuid())
-  title       String
-  description String?
-
-  audience ResourceAudience
-  status   ResourceStatus   @default(ACTIVE)
-
-  categoryId   String?
-  tourId       String?
-  uploadedById String?
-
-  destinations String[]
-  tags         String[]
-
+  id               String            @id @default(cuid())
+  title            String
+  description      String?
+  audience         ResourceAudience
+  status           ResourceStatus    @default(ACTIVE)
+  categoryId       String?
+  tourId           String?
+  uploadedById     String?
+  destinations     String[]
+  tags             String[]
   originalFileName String
   storedFileName   String
   storagePath      String
   mimeType         String
   fileSize         Int
-
-  sortOrder Int     @default(0)
-  featured  Boolean @default(false)
-
-  archivedAt DateTime?
-  createdAt  DateTime  @default(now())
-  updatedAt  DateTime  @updatedAt
-
-  category   ResourceCategory? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
-  tour       Tour?             @relation(fields: [tourId], references: [id], onDelete: SetNull)
-  uploadedBy User?             @relation("ResourceUploadedBy", fields: [uploadedById], references: [id], onDelete: SetNull)
+  sortOrder        Int               @default(0)
+  featured         Boolean           @default(false)
+  archivedAt       DateTime?
+  createdAt        DateTime          @default(now())
+  updatedAt        DateTime          @updatedAt
+  category         ResourceCategory? @relation(fields: [categoryId], references: [id])
+  tour             Tour?             @relation(fields: [tourId], references: [id])
+  uploadedBy       User?             @relation("ResourceUploadedBy", fields: [uploadedById], references: [id])
 
   @@index([audience])
   @@index([status])
@@ -1405,13 +1410,17 @@ model FinanceDocument {
   accountingCategory       AccountingCategory?
   accountingPeriodId       String?
   accountingSubcategory    String?
+  salesDocumentId          String?                 @unique
+  paymentId                String?                 @unique
   accountingPeriod         AccountingPeriod?       @relation(fields: [accountingPeriodId], references: [id])
   bankAccount              BankAccount?            @relation(fields: [bankAccountId], references: [id])
   bankTransaction          BankTransaction?        @relation(fields: [bankTransactionId], references: [id], onDelete: Cascade)
   booking                  Booking?                @relation(fields: [bookingId], references: [id])
   departureDate            DepartureDate?          @relation(fields: [departureDateId], references: [id])
   expense                  Expense?                @relation(fields: [expenseId], references: [id], onDelete: Cascade)
+  payment                  Payment?                @relation(fields: [paymentId], references: [id], onDelete: Cascade)
   refund                   Refund?                 @relation(fields: [refundId], references: [id], onDelete: Cascade)
+  salesDocument            SalesDocument?          @relation(fields: [salesDocumentId], references: [id], onDelete: Cascade)
   supplier                 Supplier?               @relation(fields: [supplierId], references: [id])
   supplierPayable          SupplierPayable?        @relation(fields: [supplierPayableId], references: [id], onDelete: Cascade)
   supplierPayablePayment   SupplierPayablePayment? @relation(fields: [supplierPayablePaymentId], references: [id], onDelete: Cascade)
@@ -1434,6 +1443,88 @@ model FinanceDocument {
   @@index([tourId])
   @@index([type])
   @@index([uploadedById])
+}
+
+model SalesDocument {
+  id                       String              @id @default(cuid())
+  bookingId                String?
+  paymentId                String?
+  createdById              String?
+  issuedById               String?
+  sentById                 String?
+  type                     SalesDocumentType
+  status                   SalesDocumentStatus @default(DRAFT)
+  documentNumber           String?             @unique
+  issueDate                DateTime?
+  dueDate                  DateTime?
+  currency                 String              @default("EUR")
+  subtotal                 Decimal             @default(0) @db.Decimal(12, 2)
+  discountTotal            Decimal             @default(0) @db.Decimal(12, 2)
+  taxTotal                 Decimal             @default(0) @db.Decimal(12, 2)
+  totalAmount              Decimal             @default(0) @db.Decimal(12, 2)
+  amountPaid               Decimal             @default(0) @db.Decimal(12, 2)
+  balance                  Decimal             @default(0) @db.Decimal(12, 2)
+  recipientName            String
+  recipientCompany         String?
+  recipientEmail           String?
+  recipientPhone           String?
+  recipientAddress         String?
+  recipientCity            String?
+  recipientPostalCode      String?
+  recipientCountry         String?
+  recipientTaxNumber       String?
+  recipientVatNumber       String?
+  issuerName               String
+  issuerLegalName          String?
+  issuerAddress            String?
+  issuerCity               String?
+  issuerPostalCode         String?
+  issuerCountry            String?
+  issuerTaxNumber          String?
+  issuerVatNumber          String?
+  bankName                 String?
+  bankAccountName          String?
+  iban                     String?
+  swiftBic                 String?
+  bookingReferenceSnapshot String?
+  tourTitleSnapshot        String?
+  departureDateSnapshot    DateTime?
+  groupNameSnapshot        String?
+  notes                    String?
+  paymentTerms             String?
+  footerNotes              String?
+  pdfUrl                   String?
+  pdfGeneratedAt           DateTime?
+  issuedAt                 DateTime?
+  sentAt                   DateTime?
+  paidAt                   DateTime?
+  cancelledAt              DateTime?
+  cancellationReason       String?
+  originalDocumentId       String?
+  createdAt                DateTime            @default(now())
+  updatedAt                DateTime            @updatedAt
+  recipientEmailSecondary  String?
+  financeDocument          FinanceDocument?
+  booking                  Booking?            @relation(fields: [bookingId], references: [id])
+  createdBy                User?               @relation("SalesDocument_createdByIdToUser", fields: [createdById], references: [id])
+  issuedBy                 User?               @relation("SalesDocument_issuedByIdToUser", fields: [issuedById], references: [id])
+  originalDocument         SalesDocument?      @relation("SalesDocumentToSalesDocument", fields: [originalDocumentId], references: [id], onDelete: Restrict)
+  creditNotes              SalesDocument[]     @relation("SalesDocumentToSalesDocument")
+  payment                  Payment?            @relation(fields: [paymentId], references: [id])
+  sentBy                   User?               @relation("SalesDocument_sentByIdToUser", fields: [sentById], references: [id])
+  items                    SalesDocumentItem[]
+
+  @@index([bookingId])
+  @@index([createdAt])
+  @@index([createdById])
+  @@index([dueDate])
+  @@index([issueDate])
+  @@index([issuedById])
+  @@index([originalDocumentId])
+  @@index([paymentId])
+  @@index([sentById])
+  @@index([status])
+  @@index([type])
 }
 
 model MassArrangement {
@@ -1517,87 +1608,6 @@ model Refund {
   @@index([reason])
   @@index([refundDate])
   @@index([status])
-}
-
-model SalesDocument {
-  id                       String              @id @default(cuid())
-  bookingId                String?
-  paymentId                String?
-  createdById              String?
-  issuedById               String?
-  sentById                 String?
-  type                     SalesDocumentType
-  status                   SalesDocumentStatus @default(DRAFT)
-  documentNumber           String?             @unique
-  issueDate                DateTime?
-  dueDate                  DateTime?
-  currency                 String              @default("EUR")
-  subtotal                 Decimal             @default(0) @db.Decimal(12, 2)
-  discountTotal            Decimal             @default(0) @db.Decimal(12, 2)
-  taxTotal                 Decimal             @default(0) @db.Decimal(12, 2)
-  totalAmount              Decimal             @default(0) @db.Decimal(12, 2)
-  amountPaid               Decimal             @default(0) @db.Decimal(12, 2)
-  balance                  Decimal             @default(0) @db.Decimal(12, 2)
-  recipientName            String
-  recipientCompany         String?
-  recipientEmail           String?
-  recipientPhone           String?
-  recipientAddress         String?
-  recipientCity            String?
-  recipientPostalCode      String?
-  recipientCountry         String?
-  recipientTaxNumber       String?
-  recipientVatNumber       String?
-  issuerName               String
-  issuerLegalName          String?
-  issuerAddress            String?
-  issuerCity               String?
-  issuerPostalCode         String?
-  issuerCountry            String?
-  issuerTaxNumber          String?
-  issuerVatNumber          String?
-  bankName                 String?
-  bankAccountName          String?
-  iban                     String?
-  swiftBic                 String?
-  bookingReferenceSnapshot String?
-  tourTitleSnapshot        String?
-  departureDateSnapshot    DateTime?
-  groupNameSnapshot        String?
-  notes                    String?
-  paymentTerms             String?
-  footerNotes              String?
-  pdfUrl                   String?
-  pdfGeneratedAt           DateTime?
-  issuedAt                 DateTime?
-  sentAt                   DateTime?
-  paidAt                   DateTime?
-  cancelledAt              DateTime?
-  cancellationReason       String?
-  originalDocumentId       String?
-  createdAt                DateTime            @default(now())
-  updatedAt                DateTime            @updatedAt
-  recipientEmailSecondary  String?
-  booking                  Booking?            @relation(fields: [bookingId], references: [id])
-  createdBy                User?               @relation("SalesDocument_createdByIdToUser", fields: [createdById], references: [id])
-  issuedBy                 User?               @relation("SalesDocument_issuedByIdToUser", fields: [issuedById], references: [id])
-  originalDocument         SalesDocument?      @relation("SalesDocumentToSalesDocument", fields: [originalDocumentId], references: [id], onDelete: Restrict)
-  creditNotes              SalesDocument[]     @relation("SalesDocumentToSalesDocument")
-  payment                  Payment?            @relation(fields: [paymentId], references: [id])
-  sentBy                   User?               @relation("SalesDocument_sentByIdToUser", fields: [sentById], references: [id])
-  items                    SalesDocumentItem[]
-
-  @@index([bookingId])
-  @@index([createdAt])
-  @@index([createdById])
-  @@index([dueDate])
-  @@index([issueDate])
-  @@index([issuedById])
-  @@index([originalDocumentId])
-  @@index([paymentId])
-  @@index([sentById])
-  @@index([status])
-  @@index([type])
 }
 
 model SalesDocumentItem {
@@ -1857,6 +1867,16 @@ model SupplierService {
   @@index([type])
 }
 
+enum ResourceAudience {
+  AGENT
+  ADMIN
+}
+
+enum ResourceStatus {
+  ACTIVE
+  ARCHIVED
+}
+
 enum PayoutStatus {
   PENDING
   PAID
@@ -1949,9 +1969,9 @@ enum QuoteStatus {
   DRAFT
   FINALIZED
   SENT
-  ACCEPTED
   CANCELLED
   CONVERTED
+  ACCEPTED
 }
 
 enum QuotePurpose {

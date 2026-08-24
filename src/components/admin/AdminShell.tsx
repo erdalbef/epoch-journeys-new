@@ -102,6 +102,7 @@ const navSections: NavSection[] = [
     label: "Partners",
     items: [
       { label: "Agents", href: "/admin/agents", icon: Users },
+      { label: "Suppliers", href: "/admin/suppliers", icon: BriefcaseBusiness },
       { label: "Payouts", href: "/admin/payouts", icon: HandCoins },
     ],
   },
@@ -116,19 +117,24 @@ const navSections: NavSection[] = [
       },
       { label: "Payments", href: "/admin/payments", icon: CreditCard },
       {
-        label: "Expenses",
-        href: "/admin/finance/expenses",
-        icon: ReceiptText,
-      },
-      {
         label: "Supplier Payables",
         href: "/admin/supplier-payables",
         icon: HandCoins,
       },
       {
+        label: "Additional Expenses",
+        href: "/admin/finance/expenses",
+        icon: ReceiptText,
+      },
+      {
         label: "Bank Accounts",
         href: "/admin/finance/bank-accounts",
         icon: WalletCards,
+      },
+      {
+        label: "Finance Ledger",
+        href: "/admin/finance/ledger",
+        icon: ReceiptText,
       },
       {
         label: "Finance Documents",

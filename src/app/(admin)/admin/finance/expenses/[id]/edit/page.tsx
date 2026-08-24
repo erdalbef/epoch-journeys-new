@@ -2,7 +2,9 @@ import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { getServerSession } from "next-auth";
 import {
+  ExpenseApprovalStatus,
   ExpenseCategory,
+  ExpenseCostType,
   ExpensePaymentStatus,
   FinanceDirection,
   FinanceSourceType,
@@ -15,9 +17,7 @@ import { db } from "@/lib/db";
 import CreateExpenseForm from "../../create/CreateExpenseForm";
 
 type PageProps = {
-  params: Promise<{
-    id: string;
-  }>;
+  params: Promise<{ id: string }>;
 };
 
 function formatEnumLabel(value: string) {
@@ -49,14 +49,16 @@ export default async function EditExpensePage({ params }: PageProps) {
     notFound();
   }
 
-  const [tours, bookings, departures, partnerCompanies] = await Promise.all([
+  // Historical manual income records are preserved but are not editable through
+  // the new Additional Expenses workflow.
+  if (expense.direction !== FinanceDirection.EXPENSE) {
+    redirect("/admin/finance/expenses");
+  }
+
+  const [tours, bookings, departures, partnerCompanies, bankAccounts] = await Promise.all([
     db.tour.findMany({
       orderBy: { title: "asc" },
-      select: {
-        id: true,
-        title: true,
-        tourCode: true,
-      },
+      select: { id: true, title: true, tourCode: true },
     }),
 
     db.booking.findMany({
@@ -77,19 +79,26 @@ export default async function EditExpensePage({ params }: PageProps) {
       select: {
         id: true,
         date: true,
-        tour: {
-          select: {
-            title: true,
-          },
-        },
+        tour: { select: { title: true } },
       },
     }),
 
     db.partnerCompany.findMany({
       orderBy: { name: "asc" },
+      select: { id: true, name: true },
+    }),
+
+    db.bankAccount.findMany({
+      where: {
+        isActive: true,
+        currency: "EUR",
+      },
+      orderBy: { name: "asc" },
       select: {
         id: true,
         name: true,
+        currency: true,
+        currentBalance: true,
       },
     }),
   ]);
@@ -99,11 +108,11 @@ export default async function EditExpensePage({ params }: PageProps) {
       <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
         <div>
           <h1 className="text-3xl font-bold text-[#001F3F]">
-            Edit Finance Entry
+            Edit Expense
           </h1>
-
           <p className="mt-1 text-sm text-muted-foreground">
-            Update finance, currency, tax, partner, and operation information.
+            Update an additional expense that is not already represented by a
+            Supplier Payable.
           </p>
         </div>
 
@@ -111,54 +120,41 @@ export default async function EditExpensePage({ params }: PageProps) {
           href="/admin/finance/expenses"
           className="inline-flex rounded-xl border px-4 py-2 text-sm font-medium transition hover:border-[#8B0000] hover:text-[#8B0000]"
         >
-          Back to Finance Entries
+          Back to Additional Expenses
         </Link>
+      </div>
+
+      <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm leading-6 text-amber-900">
+        <strong>Duplicate-cost check:</strong> if this item is now represented
+        by a Supplier Payable, cancel or remove this manual expense instead of
+        keeping both records.
       </div>
 
       <CreateExpenseForm>
         <input type="hidden" name="_method" value="PATCH" />
         <input type="hidden" name="expenseId" value={expense.id} />
+        <input type="hidden" name="direction" value="EXPENSE" />
 
         <div className="space-y-8">
           <section>
             <h2 className="mb-4 text-lg font-semibold text-[#001F3F]">
-              Main Finance Information
+              Main Expense Information
             </h2>
 
             <div className="grid gap-6 md:grid-cols-2">
               <div>
                 <label className="mb-2 block text-sm font-medium text-slate-700">
-                  Direction *
-                </label>
-
-                <select
-                  name="direction"
-                  required
-                  defaultValue={expense.direction}
-                  className="w-full rounded-xl border px-4 py-2.5 text-sm outline-none transition focus:border-[#8B0000]"
-                >
-                  {Object.values(FinanceDirection).map((direction) => (
-                    <option key={direction} value={direction}>
-                      {formatEnumLabel(direction)}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              <div>
-                <label className="mb-2 block text-sm font-medium text-slate-700">
                   Source Type *
                 </label>
-
                 <select
                   name="sourceType"
                   required
                   defaultValue={expense.sourceType}
                   className="w-full rounded-xl border px-4 py-2.5 text-sm outline-none transition focus:border-[#8B0000]"
                 >
-                  {Object.values(FinanceSourceType).map((sourceType) => (
-                    <option key={sourceType} value={sourceType}>
-                      {formatEnumLabel(sourceType)}
+                  {Object.values(FinanceSourceType).map((item) => (
+                    <option key={item} value={item}>
+                      {formatEnumLabel(item)}
                     </option>
                   ))}
                 </select>
@@ -168,16 +164,55 @@ export default async function EditExpensePage({ params }: PageProps) {
                 <label className="mb-2 block text-sm font-medium text-slate-700">
                   Category *
                 </label>
-
                 <select
                   name="category"
                   required
                   defaultValue={expense.category}
                   className="w-full rounded-xl border px-4 py-2.5 text-sm outline-none transition focus:border-[#8B0000]"
                 >
-                  {Object.values(ExpenseCategory).map((category) => (
-                    <option key={category} value={category}>
-                      {formatEnumLabel(category)}
+                  {Object.values(ExpenseCategory).map((item) => (
+                    <option key={item} value={item}>
+                      {formatEnumLabel(item)}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="mb-2 block text-sm font-medium text-slate-700">
+                  Cost Type *
+                </label>
+                <select
+                  name="costType"
+                  required
+                  defaultValue={expense.costType}
+                  className="w-full rounded-xl border px-4 py-2.5 text-sm outline-none transition focus:border-[#8B0000]"
+                >
+                  {Object.values(ExpenseCostType).map((item) => (
+                    <option key={item} value={item}>
+                      {formatEnumLabel(item)}
+                    </option>
+                  ))}
+                </select>
+                <p className="mt-1 text-xs text-slate-500">
+                  DIRECT TOUR COST affects profitability and requires a linked
+                  departure.
+                </p>
+              </div>
+
+              <div>
+                <label className="mb-2 block text-sm font-medium text-slate-700">
+                  Approval Status *
+                </label>
+                <select
+                  name="approvalStatus"
+                  required
+                  defaultValue={expense.approvalStatus}
+                  className="w-full rounded-xl border px-4 py-2.5 text-sm outline-none transition focus:border-[#8B0000]"
+                >
+                  {Object.values(ExpenseApprovalStatus).map((item) => (
+                    <option key={item} value={item}>
+                      {formatEnumLabel(item)}
                     </option>
                   ))}
                 </select>
@@ -187,7 +222,6 @@ export default async function EditExpensePage({ params }: PageProps) {
                 <label className="mb-2 block text-sm font-medium text-slate-700">
                   Title *
                 </label>
-
                 <input
                   name="title"
                   required
@@ -198,9 +232,8 @@ export default async function EditExpensePage({ params }: PageProps) {
 
               <div>
                 <label className="mb-2 block text-sm font-medium text-slate-700">
-                  Vendor / Supplier / Payer
+                  Vendor / Payee
                 </label>
-
                 <input
                   name="vendorName"
                   defaultValue={expense.vendorName || ""}
@@ -212,15 +245,14 @@ export default async function EditExpensePage({ params }: PageProps) {
                 <label className="mb-2 block text-sm font-medium text-slate-700">
                   Payment Status
                 </label>
-
                 <select
                   name="paymentStatus"
                   defaultValue={expense.paymentStatus}
                   className="w-full rounded-xl border px-4 py-2.5 text-sm outline-none transition focus:border-[#8B0000]"
                 >
-                  {Object.values(ExpensePaymentStatus).map((status) => (
-                    <option key={status} value={status}>
-                      {formatEnumLabel(status)}
+                  {Object.values(ExpensePaymentStatus).map((item) => (
+                    <option key={item} value={item}>
+                      {formatEnumLabel(item)}
                     </option>
                   ))}
                 </select>
@@ -230,7 +262,6 @@ export default async function EditExpensePage({ params }: PageProps) {
                 <label className="mb-2 block text-sm font-medium text-slate-700">
                   Expense Date *
                 </label>
-
                 <input
                   name="expenseDate"
                   type="date"
@@ -244,7 +275,6 @@ export default async function EditExpensePage({ params }: PageProps) {
                 <label className="mb-2 block text-sm font-medium text-slate-700">
                   Paid At
                 </label>
-
                 <input
                   name="paidAt"
                   type="date"
@@ -252,19 +282,44 @@ export default async function EditExpensePage({ params }: PageProps) {
                   className="w-full rounded-xl border px-4 py-2.5 text-sm outline-none transition focus:border-[#8B0000]"
                 />
               </div>
+
+              <div>
+                <label className="mb-2 block text-sm font-medium text-slate-700">
+                  Paid From Bank Account
+                </label>
+                <select
+                  name="bankAccountId"
+                  defaultValue={expense.bankAccountId || ""}
+                  className="w-full rounded-xl border px-4 py-2.5 text-sm outline-none transition focus:border-[#8B0000]"
+                >
+                  <option value="">Select bank account</option>
+                  {bankAccounts.map((account) => (
+                    <option key={account.id} value={account.id}>
+                      {account.name} — {account.currency} — Balance{" "}
+                      {new Intl.NumberFormat("en-GB", {
+                        style: "currency",
+                        currency: account.currency,
+                      }).format(account.currentBalance)}
+                    </option>
+                  ))}
+                </select>
+                <p className="mt-1 text-xs text-slate-500">
+                  Required when Payment Status is PAID. If you change a pending
+                  expense to PAID, select the account used for the payment.
+                </p>
+              </div>
             </div>
           </section>
+
           <section>
             <h2 className="mb-4 text-lg font-semibold text-[#001F3F]">
               Amount
             </h2>
-
             <div className="grid gap-6 md:grid-cols-2">
               <div>
                 <label className="mb-2 block text-sm font-medium text-slate-700">
                   Amount (EUR) *
                 </label>
-
                 <input
                   name="amount"
                   type="number"
@@ -275,30 +330,22 @@ export default async function EditExpensePage({ params }: PageProps) {
                   className="w-full rounded-xl border px-4 py-2.5 text-sm outline-none transition focus:border-[#8B0000]"
                 />
               </div>
-
-              <input
-                type="hidden"
-                name="currency"
-                value="EUR"
-              />
-
+              <input type="hidden" name="currency" value="EUR" />
               <div className="md:col-span-2 rounded-xl border bg-slate-50 p-4 text-sm text-slate-600">
-                All finance entries are stored and reported in EUR.
+                Additional expenses are currently stored and reported in EUR.
               </div>
             </div>
           </section>
-                    
+
           <section>
             <h2 className="mb-4 text-lg font-semibold text-[#001F3F]">
               Operation / Partner Summary
             </h2>
-
             <div className="grid gap-6 md:grid-cols-2">
               <div>
                 <label className="mb-2 block text-sm font-medium text-slate-700">
                   Agent / Travel Advisor
                 </label>
-
                 <input
                   name="agentNameSnapshot"
                   defaultValue={expense.agentNameSnapshot || ""}
@@ -310,7 +357,6 @@ export default async function EditExpensePage({ params }: PageProps) {
                 <label className="mb-2 block text-sm font-medium text-slate-700">
                   Partner Company Name
                 </label>
-
                 <input
                   name="partnerCompanyName"
                   defaultValue={expense.partnerCompanyName || ""}
@@ -322,11 +368,9 @@ export default async function EditExpensePage({ params }: PageProps) {
                 <label className="mb-2 block text-sm font-medium text-slate-700">
                   Client Company
                 </label>
-
                 <input
                   name="clientCompanyName"
                   defaultValue={expense.clientCompanyName ?? ""}
-                  placeholder="CTS, Corporate Travel..."
                   className="w-full rounded-xl border px-4 py-2.5 text-sm outline-none transition focus:border-[#8B0000]"
                 />
               </div>
@@ -335,11 +379,9 @@ export default async function EditExpensePage({ params }: PageProps) {
                 <label className="mb-2 block text-sm font-medium text-slate-700">
                   Spender / Cash Holder
                 </label>
-
                 <input
                   name="spenderName"
                   defaultValue={expense.spenderName ?? ""}
-                  placeholder="Erdal, Sedat, Guide..."
                   className="w-full rounded-xl border px-4 py-2.5 text-sm outline-none transition focus:border-[#8B0000]"
                 />
               </div>
@@ -348,11 +390,9 @@ export default async function EditExpensePage({ params }: PageProps) {
                 <label className="mb-2 block text-sm font-medium text-slate-700">
                   Tour Category
                 </label>
-
                 <input
                   name="tourCategoryName"
                   defaultValue={expense.tourCategoryName ?? ""}
-                  placeholder="Pilgrimage, Cultural, Cruise..."
                   className="w-full rounded-xl border px-4 py-2.5 text-sm outline-none transition focus:border-[#8B0000]"
                 />
               </div>
@@ -361,14 +401,12 @@ export default async function EditExpensePage({ params }: PageProps) {
                 <label className="mb-2 block text-sm font-medium text-slate-700">
                   Partner Company Record
                 </label>
-
                 <select
                   name="partnerCompanyId"
                   defaultValue={expense.partnerCompanyId || ""}
                   className="w-full rounded-xl border px-4 py-2.5 text-sm outline-none transition focus:border-[#8B0000]"
                 >
                   <option value="">Not linked</option>
-
                   {partnerCompanies.map((partner) => (
                     <option key={partner.id} value={partner.id}>
                       {partner.name}
@@ -381,7 +419,6 @@ export default async function EditExpensePage({ params }: PageProps) {
                 <label className="mb-2 block text-sm font-medium text-slate-700">
                   Custom Package Name
                 </label>
-
                 <input
                   name="customPackageName"
                   defaultValue={expense.customPackageName || ""}
@@ -393,7 +430,6 @@ export default async function EditExpensePage({ params }: PageProps) {
                 <label className="mb-2 block text-sm font-medium text-slate-700">
                   Tour Leader Name
                 </label>
-
                 <input
                   name="tourLeaderName"
                   defaultValue={expense.tourLeaderName || ""}
@@ -405,7 +441,6 @@ export default async function EditExpensePage({ params }: PageProps) {
                 <label className="mb-2 block text-sm font-medium text-slate-700">
                   Group Name
                 </label>
-
                 <input
                   name="groupName"
                   defaultValue={expense.groupName || ""}
@@ -419,25 +454,20 @@ export default async function EditExpensePage({ params }: PageProps) {
             <h2 className="mb-4 text-lg font-semibold text-[#001F3F]">
               Links
             </h2>
-
             <div className="grid gap-6 md:grid-cols-2">
               <div>
                 <label className="mb-2 block text-sm font-medium text-slate-700">
                   Link to Tour
                 </label>
-
                 <select
                   name="tourId"
                   defaultValue={expense.tourId || ""}
                   className="w-full rounded-xl border px-4 py-2.5 text-sm outline-none transition focus:border-[#8B0000]"
                 >
                   <option value="">Not linked</option>
-
                   {tours.map((tour) => (
                     <option key={tour.id} value={tour.id}>
-                      {tour.tourCode
-                        ? `${tour.tourCode} — ${tour.title}`
-                        : tour.title}
+                      {tour.tourCode ? `${tour.tourCode} — ${tour.title}` : tour.title}
                     </option>
                   ))}
                 </select>
@@ -447,18 +477,15 @@ export default async function EditExpensePage({ params }: PageProps) {
                 <label className="mb-2 block text-sm font-medium text-slate-700">
                   Link to Booking
                 </label>
-
                 <select
                   name="bookingId"
                   defaultValue={expense.bookingId || ""}
                   className="w-full rounded-xl border px-4 py-2.5 text-sm outline-none transition focus:border-[#8B0000]"
                 >
                   <option value="">Not linked</option>
-
                   {bookings.map((booking) => (
                     <option key={booking.id} value={booking.id}>
-                      {(booking.bookingDisplayCode ||
-                        booking.bookingReference) +
+                      {(booking.bookingDisplayCode || booking.bookingReference) +
                         " — " +
                         (booking.tourTitleSnapshot || "Untitled Tour") +
                         " — " +
@@ -472,14 +499,12 @@ export default async function EditExpensePage({ params }: PageProps) {
                 <label className="mb-2 block text-sm font-medium text-slate-700">
                   Link to Departure
                 </label>
-
                 <select
                   name="departureDateId"
                   defaultValue={expense.departureDateId || ""}
                   className="w-full rounded-xl border px-4 py-2.5 text-sm outline-none transition focus:border-[#8B0000]"
                 >
                   <option value="">Not linked</option>
-
                   {departures.map((departure) => (
                     <option key={departure.id} value={departure.id}>
                       {departure.tour.title} —{" "}
@@ -499,21 +524,19 @@ export default async function EditExpensePage({ params }: PageProps) {
             <h2 className="mb-4 text-lg font-semibold text-[#001F3F]">
               Tax / VAT
             </h2>
-
             <div className="grid gap-6 md:grid-cols-2">
               <div>
                 <label className="mb-2 block text-sm font-medium text-slate-700">
                   Tax Type
                 </label>
-
                 <select
                   name="taxType"
                   defaultValue={expense.taxType}
                   className="w-full rounded-xl border px-4 py-2.5 text-sm outline-none transition focus:border-[#8B0000]"
                 >
-                  {Object.values(FinanceTaxType).map((taxType) => (
-                    <option key={taxType} value={taxType}>
-                      {formatEnumLabel(taxType)}
+                  {Object.values(FinanceTaxType).map((item) => (
+                    <option key={item} value={item}>
+                      {formatEnumLabel(item)}
                     </option>
                   ))}
                 </select>
@@ -523,7 +546,6 @@ export default async function EditExpensePage({ params }: PageProps) {
                 <label className="mb-2 block text-sm font-medium text-slate-700">
                   Tax Rate %
                 </label>
-
                 <input
                   name="taxRate"
                   type="number"
@@ -538,7 +560,6 @@ export default async function EditExpensePage({ params }: PageProps) {
                 <label className="mb-2 block text-sm font-medium text-slate-700">
                   Tax Amount
                 </label>
-
                 <input
                   name="taxAmount"
                   type="number"
@@ -553,7 +574,6 @@ export default async function EditExpensePage({ params }: PageProps) {
                 <label className="mb-2 block text-sm font-medium text-slate-700">
                   Net Amount
                 </label>
-
                 <input
                   name="netAmount"
                   type="number"
@@ -568,7 +588,6 @@ export default async function EditExpensePage({ params }: PageProps) {
                 <label className="mb-2 block text-sm font-medium text-slate-700">
                   Gross Amount
                 </label>
-
                 <input
                   name="grossAmount"
                   type="number"
@@ -583,15 +602,13 @@ export default async function EditExpensePage({ params }: PageProps) {
 
           <section>
             <h2 className="mb-4 text-lg font-semibold text-[#001F3F]">
-              Notes
+              Notes / Document
             </h2>
-
             <div className="grid gap-6">
               <div>
                 <label className="mb-2 block text-sm font-medium text-slate-700">
                   Description
                 </label>
-
                 <textarea
                   name="description"
                   rows={3}
@@ -604,7 +621,6 @@ export default async function EditExpensePage({ params }: PageProps) {
                 <label className="mb-2 block text-sm font-medium text-slate-700">
                   Internal Notes
                 </label>
-
                 <textarea
                   name="notes"
                   rows={4}
@@ -617,7 +633,6 @@ export default async function EditExpensePage({ params }: PageProps) {
                 <label className="mb-2 block text-sm font-medium text-slate-700">
                   Receipt / Invoice URL
                 </label>
-
                 <input
                   name="receiptUrl"
                   defaultValue={expense.receiptUrl || ""}
@@ -633,7 +648,7 @@ export default async function EditExpensePage({ params }: PageProps) {
             type="submit"
             className="rounded-xl bg-[#8B0000] px-5 py-2.5 text-sm font-medium text-white transition hover:bg-[#6f0000]"
           >
-            Update Finance Entry
+            Update Expense
           </button>
 
           <Link

@@ -3,15 +3,24 @@ import { getServerSession } from "next-auth";
 import { revalidatePath } from "next/cache";
 
 import {
+  AccountingCategory,
   BankTransactionDirection,
   BankTransactionStatus,
   BankTransactionType,
   FinanceDocumentType,
   PaymentMethod,
   Prisma,
+  SupplierServiceType,
 } from "@prisma/client";
 
-import { del, put } from "@vercel/blob";
+import {
+  mkdir,
+  unlink,
+  writeFile,
+} from "node:fs/promises";
+
+import path from "node:path";
+import crypto from "node:crypto";
 
 import { authOptions } from "@/lib/authOptions";
 import { db } from "@/lib/db";
@@ -31,6 +40,15 @@ const ALLOWED_FILE_TYPES =
     "image/jpeg",
     "image/png",
     "image/webp",
+  ]);
+
+const ALLOWED_EXTENSIONS =
+  new Set([
+    ".pdf",
+    ".jpg",
+    ".jpeg",
+    ".png",
+    ".webp",
   ]);
 
 function stringValue(
@@ -61,22 +79,193 @@ function isMethod(
 function sanitizeFileName(
   fileName: string,
 ) {
-  return fileName
-    .normalize("NFKD")
-    .replace(/\s+/g, "-")
-    .replace(
-      /[^a-zA-Z0-9._-]/g,
-      "",
-    )
-    .replace(/-+/g, "-")
-    .slice(0, 150);
+  const extension =
+    path.extname(
+      fileName,
+    );
+
+  const baseName =
+    path.basename(
+      fileName,
+      extension,
+    );
+
+  const safeBase =
+    baseName
+      .normalize("NFKD")
+      .replace(/\s+/g, "-")
+      .replace(
+        /[^a-zA-Z0-9._-]/g,
+        "",
+      )
+      .replace(
+        /-+/g,
+        "-",
+      )
+      .slice(
+        0,
+        120,
+      );
+
+  const safeExtension =
+    extension
+      .toLowerCase()
+      .replace(
+        /[^a-z0-9.]/g,
+        "",
+      );
+
+  return `${
+    safeBase ||
+    "supplier-payment-proof"
+  }${safeExtension}`;
+}
+
+function parsePaymentDate(
+  value: string | null,
+) {
+  if (!value) {
+    return null;
+  }
+
+  const match =
+    value.match(
+      /^(\d{4})-(\d{2})-(\d{2})$/,
+    );
+
+  if (!match) {
+    return null;
+  }
+
+  const year =
+    Number(
+      match[1],
+    );
+
+  const month =
+    Number(
+      match[2],
+    );
+
+  const day =
+    Number(
+      match[3],
+    );
+
+  const result =
+    new Date(
+      Date.UTC(
+        year,
+        month - 1,
+        day,
+        12,
+        0,
+        0,
+      ),
+    );
+
+  if (
+    result.getUTCFullYear() !==
+      year ||
+    result.getUTCMonth() !==
+      month - 1 ||
+    result.getUTCDate() !==
+      day
+  ) {
+    return null;
+  }
+
+  return result;
+}
+
+function getDueDate(
+  year: number,
+  month: number,
+) {
+  const nextMonth =
+    month === 12
+      ? 1
+      : month + 1;
+
+  const nextYear =
+    month === 12
+      ? year + 1
+      : year;
+
+  return new Date(
+    Date.UTC(
+      nextYear,
+      nextMonth - 1,
+      5,
+      12,
+      0,
+      0,
+    ),
+  );
+}
+
+function accountingSubcategoryForService(
+  type:
+    | SupplierServiceType
+    | null,
+) {
+  switch (type) {
+    case SupplierServiceType.ACCOMMODATION:
+      return "Hotels / Accommodation";
+
+    case SupplierServiceType.TRANSPORT:
+      return "Transport / Transfers";
+
+    case SupplierServiceType.MEAL:
+      return "Restaurants / Meals";
+
+    case SupplierServiceType.GUIDE:
+      return "Guides / Excursions";
+
+    case SupplierServiceType.TOUR_MANAGER:
+      return "Tour Management";
+
+    case SupplierServiceType.ENTRANCE:
+      return "Entrance Fees";
+
+    case SupplierServiceType.TICKET:
+      return "Tickets";
+
+    case SupplierServiceType.MASS_ARRANGEMENT:
+      return "Mass Arrangements";
+
+    case SupplierServiceType.CHURCH_RESERVATION:
+      return "Church / Shrine Reservations";
+
+    case SupplierServiceType.FLIGHT:
+      return "Flights";
+
+    case SupplierServiceType.CRUISE:
+      return "Cruises";
+
+    case SupplierServiceType.FERRY:
+      return "Ferries";
+
+    case SupplierServiceType.RAIL:
+      return "Rail";
+
+    case SupplierServiceType.INSURANCE:
+      return "Insurance";
+
+    case SupplierServiceType.DMC_SERVICE:
+      return "DMC / Ground Services";
+
+    case SupplierServiceType.OTHER:
+    default:
+      return "Other Supplier Costs";
+  }
 }
 
 export async function POST(
   request: Request,
   { params }: Context,
 ) {
-  let uploadedBlobUrl:
+  let absoluteUploadedFilePath:
     | string
     | null = null;
 
@@ -123,6 +312,13 @@ export async function POST(
         ),
       );
 
+    const paymentDateRaw =
+      stringValue(
+        formData.get(
+          "paymentDate",
+        ),
+      );
+
     const bankAccountId =
       stringValue(
         formData.get(
@@ -151,10 +347,43 @@ export async function POST(
         ),
       );
 
-    const paymentProof =
+    const paymentProofValue =
       formData.get(
         "paymentProof",
       );
+
+    // ======================================================
+    // PAYMENT DATE
+    // ======================================================
+
+    if (!paymentDateRaw) {
+      return NextResponse.json(
+        {
+          error:
+            "Payment date is required.",
+        },
+        {
+          status: 400,
+        },
+      );
+    }
+
+    const paymentDate =
+      parsePaymentDate(
+        paymentDateRaw,
+      );
+
+    if (!paymentDate) {
+      return NextResponse.json(
+        {
+          error:
+            "Invalid payment date.",
+        },
+        {
+          status: 400,
+        },
+      );
+    }
 
     // ======================================================
     // PAYABLE
@@ -171,25 +400,40 @@ export async function POST(
           title: true,
 
           supplierId: true,
+
           supplierNameSnapshot:
             true,
 
-          approvalStatus: true,
-          paymentStatus: true,
+          approvalStatus:
+            true,
+
+          paymentStatus:
+            true,
 
           currency: true,
 
           amountPaid: true,
           balance: true,
-          approvedAmount: true,
-          creditAmount: true,
+          approvedAmount:
+            true,
+          creditAmount:
+            true,
 
           bookingId: true,
           tourId: true,
-          departureDateId: true,
+          departureDateId:
+            true,
 
           supplierInvoiceNumber:
             true,
+
+          service: {
+            select: {
+              id: true,
+              name: true,
+              type: true,
+            },
+          },
         },
       });
 
@@ -249,7 +493,9 @@ export async function POST(
 
     if (
       !methodRaw ||
-      !isMethod(methodRaw)
+      !isMethod(
+        methodRaw,
+      )
     ) {
       return NextResponse.json(
         {
@@ -298,7 +544,11 @@ export async function POST(
       );
     }
 
-    if (amount.lte(0)) {
+    if (
+      amount.lte(
+        0,
+      )
+    ) {
       return NextResponse.json(
         {
           error:
@@ -388,32 +638,49 @@ export async function POST(
     }
 
     // ======================================================
-    // PAYMENT PROOF VALIDATION
+    // PAYMENT PROOF
     // ======================================================
 
-    let blob:
-      | Awaited<
-          ReturnType<
-            typeof put
-          >
-        >
-      | null = null;
-
-    let originalFileName:
-      | string
-      | null = null;
-
-    let storedFileName:
-      | string
+    let paymentProof:
+      | File
       | null = null;
 
     if (
-      paymentProof &&
-      typeof paymentProof !==
-        "string" &&
-      paymentProof.size > 0
+      paymentProofValue instanceof
+        File &&
+      paymentProofValue.size >
+        0
     ) {
+      paymentProof =
+        paymentProofValue;
+    }
+
+    if (paymentProof) {
+      const extension =
+        path
+          .extname(
+            paymentProof.name,
+          )
+          .toLowerCase();
+
       if (
+        !ALLOWED_EXTENSIONS.has(
+          extension,
+        )
+      ) {
+        return NextResponse.json(
+          {
+            error:
+              "Only PDF, JPG, PNG and WEBP payment proofs are allowed.",
+          },
+          {
+            status: 400,
+          },
+        );
+      }
+
+      if (
+        paymentProof.type &&
         !ALLOWED_FILE_TYPES.has(
           paymentProof.type,
         )
@@ -443,52 +710,120 @@ export async function POST(
           },
         );
       }
+    }
 
+    // ======================================================
+    // ACCOUNTING PERIOD
+    // ======================================================
+
+    /*
+     * Payment proof belongs to the month
+     * in which the supplier payment was
+     * actually made.
+     */
+    const accountingYear =
+      paymentDate.getUTCFullYear();
+
+    const accountingMonth =
+      paymentDate.getUTCMonth() +
+      1;
+
+    const accountingSubcategory =
+      accountingSubcategoryForService(
+        payable.service?.type ??
+          null,
+      );
+
+    // ======================================================
+    // STORE PAYMENT PROOF LOCALLY
+    // ======================================================
+
+    let originalFileName:
+      | string
+      | null = null;
+
+    let storedFileName:
+      | string
+      | null = null;
+
+    let storagePath:
+      | string
+      | null = null;
+
+    if (paymentProof) {
       originalFileName =
         paymentProof.name ||
         "supplier-payment-proof";
 
-      const safeFileName =
+      const safeOriginalName =
         sanitizeFileName(
           originalFileName,
-        ) ||
-        "supplier-payment-proof";
+        );
 
-      // ====================================================
-      // VERCEL PRIVATE BLOB
-      // ====================================================
+      storedFileName =
+        `${Date.now()}-${crypto.randomUUID()}-${safeOriginalName}`;
 
-      blob = await put(
-        `finance/suppliers/payments/${Date.now()}-${safeFileName}`,
-        paymentProof,
+      const monthFolder =
+        String(
+          accountingMonth,
+        ).padStart(
+          2,
+          "0",
+        );
+
+      const relativeFolder =
+        path.join(
+          "uploads",
+          "accounting",
+          String(
+            accountingYear,
+          ),
+          monthFolder,
+        );
+
+      const absoluteFolder =
+        path.join(
+          process.cwd(),
+          "public",
+          relativeFolder,
+        );
+
+      await mkdir(
+        absoluteFolder,
         {
-          access:
-            "private",
-
-          addRandomSuffix:
+          recursive:
             true,
-
-          contentType:
-            paymentProof.type ||
-            "application/octet-stream",
         },
       );
 
-      uploadedBlobUrl =
-        blob.url;
+      absoluteUploadedFilePath =
+        path.join(
+          absoluteFolder,
+          storedFileName,
+        );
 
-      storedFileName =
-        blob.pathname
-          .split("/")
-          .pop() ||
-        safeFileName;
+      const bytes =
+        await paymentProof.arrayBuffer();
+
+      await writeFile(
+        absoluteUploadedFilePath,
+        Buffer.from(
+          bytes,
+        ),
+      );
+
+      storagePath =
+        `/${relativeFolder
+          .split(
+            path.sep,
+          )
+          .join(
+            "/",
+          )}/${storedFileName}`;
     }
 
-    const paymentDate =
-      new Date();
-
     // ======================================================
-    // PAYMENT TRANSACTION
+    // DATABASE TRANSACTION
     // ======================================================
 
     const result =
@@ -559,7 +894,7 @@ export async function POST(
                 reference,
 
                 description:
-                  `${payable.supplierNameSnapshot} — ${payable.title}`,
+                  `${payable.supplierNameSnapshot} - ${payable.title}`,
 
                 notes,
 
@@ -578,6 +913,54 @@ export async function POST(
             });
 
           // --------------------------------------------------
+          // ACCOUNTING PERIOD
+          // --------------------------------------------------
+
+          let accountingPeriodId:
+            | string
+            | null = null;
+
+          if (
+            paymentProof
+          ) {
+            const accountingPeriod =
+              await tx.accountingPeriod.upsert({
+                where: {
+                  year_month: {
+                    year:
+                      accountingYear,
+
+                    month:
+                      accountingMonth,
+                  },
+                },
+
+                update: {},
+
+                create: {
+                  year:
+                    accountingYear,
+
+                  month:
+                    accountingMonth,
+
+                  dueDate:
+                    getDueDate(
+                      accountingYear,
+                      accountingMonth,
+                    ),
+                },
+
+                select: {
+                  id: true,
+                },
+              });
+
+            accountingPeriodId =
+              accountingPeriod.id;
+          }
+
+          // --------------------------------------------------
           // PAYMENT PROOF DOCUMENT
           // --------------------------------------------------
 
@@ -588,12 +971,11 @@ export async function POST(
             | null = null;
 
           if (
-            blob &&
+            paymentProof &&
             originalFileName &&
             storedFileName &&
-            paymentProof &&
-            typeof paymentProof !==
-              "string"
+            storagePath &&
+            accountingPeriodId
           ) {
             financeDocument =
               await tx.financeDocument.create({
@@ -603,19 +985,18 @@ export async function POST(
 
                   title:
                     reference
-                      ? `Supplier Payment Proof – ${reference}`
-                      : `Supplier Payment Proof – ${payable.title}`,
+                      ? `Supplier Payment Proof - ${reference}`
+                      : `Supplier Payment Proof - ${payable.title}`,
 
                   description:
                     notes ??
-                    `Payment proof for ${payable.supplierNameSnapshot} — ${payable.title}`,
+                    `Payment proof for ${payable.supplierNameSnapshot} - ${payable.title}`,
 
                   originalFileName,
 
                   storedFileName,
 
-                  storagePath:
-                    blob.pathname,
+                  storagePath,
 
                   mimeType:
                     paymentProof.type ||
@@ -629,6 +1010,22 @@ export async function POST(
 
                   referenceNumber:
                     reference,
+
+                  /*
+                   * Supporting evidence for an
+                   * existing supplier expense.
+                   *
+                   * It is included in Category 03
+                   * but must not be interpreted as
+                   * another supplier expense.
+                   */
+                  accountingCategory:
+                    AccountingCategory.EXPENSES_PURCHASES,
+
+                  accountingSubcategory:
+                    `${accountingSubcategory} - Payment Proof`,
+
+                  accountingPeriodId,
 
                   supplierPayableId:
                     payable.id,
@@ -653,6 +1050,10 @@ export async function POST(
 
                   uploadedById:
                     session.user.id,
+                },
+
+                select: {
+                  id: true,
                 },
               });
           }
@@ -682,7 +1083,9 @@ export async function POST(
             );
 
           const nextPaymentStatus =
-            nextBalance.lte(0)
+            nextBalance.lte(
+              0,
+            )
               ? "PAID"
               : nextAmountPaid.gt(
                     0,
@@ -718,6 +1121,13 @@ export async function POST(
         },
       );
 
+    /*
+     * Database transaction succeeded.
+     * Do not remove the physical file.
+     */
+    absoluteUploadedFilePath =
+      null;
+
     // ======================================================
     // REVALIDATION
     // ======================================================
@@ -746,6 +1156,10 @@ export async function POST(
       "/admin/finance/profitability",
     );
 
+    revalidatePath(
+      "/admin/accounting",
+    );
+
     return NextResponse.json(
       {
         success: true,
@@ -761,6 +1175,25 @@ export async function POST(
 
         updated:
           result.updated,
+
+        accounting: {
+          category:
+            AccountingCategory.EXPENSES_PURCHASES,
+
+          subcategory:
+            `${accountingSubcategory} - Payment Proof`,
+
+          year:
+            accountingYear,
+
+          month:
+            accountingMonth,
+
+          included:
+            Boolean(
+              result.financeDocument,
+            ),
+        },
       },
       {
         status: 201,
@@ -768,19 +1201,21 @@ export async function POST(
     );
   } catch (error) {
     // ======================================================
-    // CLEAN UP ORPHANED BLOB
+    // CLEAN UP ORPHANED LOCAL FILE
     // ======================================================
 
-    if (uploadedBlobUrl) {
+    if (
+      absoluteUploadedFilePath
+    ) {
       try {
-        await del(
-          uploadedBlobUrl,
+        await unlink(
+          absoluteUploadedFilePath,
         );
       } catch (
         cleanupError
       ) {
         console.error(
-          "SUPPLIER_PAYMENT_PROOF_BLOB_CLEANUP_ERROR",
+          "SUPPLIER_PAYMENT_PROOF_FILE_CLEANUP_ERROR",
           cleanupError,
         );
       }

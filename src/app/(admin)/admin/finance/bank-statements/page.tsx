@@ -12,6 +12,7 @@ import { authOptions } from "@/lib/authOptions";
 import { db } from "@/lib/db";
 
 import BankStatementImportForm from "./BankStatementImportForm";
+import DeleteBankStatementButton from "./DeleteBankStatementButton";
 
 function money(value: number | null, currency: string) {
   if (value === null) {
@@ -315,12 +316,22 @@ export default async function BankStatementsPage() {
                       </td>
 
                       <td className="px-4 py-4 text-right">
-                        <Link
-                          href={`/admin/finance/bank-statements/${statement.id}`}
-                          className="font-semibold text-blue-700 hover:underline"
-                        >
-                          Open
-                        </Link>
+                        <div className="flex justify-end gap-3 whitespace-nowrap">
+                          <Link
+                            href={`/admin/finance/bank-statements/${statement.id}`}
+                            className="font-semibold text-blue-700 hover:underline"
+                          >
+                            Open
+                          </Link>
+
+                          {statement.status !== BankStatementStatus.RECONCILED &&
+                            statement.status !== BankStatementStatus.ARCHIVED && (
+                              <DeleteBankStatementButton
+                                statementId={statement.id}
+                                fileName={statement.fileName || "CSV import"}
+                              />
+                            )}
+                        </div>
                       </td>
                     </tr>
                   );

@@ -348,18 +348,6 @@ export default function RequestPartnershipPage() {
           onSubmit={handleSubmit}
           className="mt-8 space-y-6"
         >
-          {successMessage ? (
-            <div className="rounded-2xl border border-green-200 bg-green-50 px-5 py-4 text-sm text-green-800">
-              {successMessage}
-            </div>
-          ) : null}
-
-          {errorMessage ? (
-            <div className="rounded-2xl border border-red-200 bg-red-50 px-5 py-4 text-sm text-red-800">
-              {errorMessage}
-            </div>
-          ) : null}
-
           <FormSection
             eyebrow="Step 1"
             title="Contact & Login"
@@ -807,20 +795,36 @@ export default function RequestPartnershipPage() {
           </FormSection>
 
           <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm sm:p-8">
-            <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-              <div>
-                <h2 className="text-lg font-bold text-[#001F3F]">
-                  Submit Application
-                </h2>
+            <div>
+              <h2 className="text-lg font-bold text-[#001F3F]">
+                Submit Application
+              </h2>
 
-                <p className="mt-1 text-sm leading-6 text-slate-500">
-                  Your account remains
-                  pending until it is
-                  reviewed and approved by
-                  Epoch Journeys.
-                </p>
+              <p className="mt-1 text-sm leading-6 text-slate-500">
+                Your account remains pending until it is reviewed and approved
+                by Epoch Journeys.
+              </p>
+            </div>
+
+            {errorMessage ? (
+              <div
+                role="alert"
+                className="mt-5 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm leading-6 text-red-800"
+              >
+                {errorMessage}
               </div>
+            ) : null}
 
+            {successMessage ? (
+              <div
+                role="status"
+                className="mt-5 rounded-xl border border-green-200 bg-green-50 px-4 py-3 text-sm leading-6 text-green-800"
+              >
+                {successMessage}
+              </div>
+            ) : null}
+
+            <div className="mt-5 flex justify-end">
               <button
                 type="submit"
                 disabled={isSubmitting}

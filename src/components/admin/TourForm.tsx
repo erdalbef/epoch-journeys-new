@@ -740,7 +740,6 @@ export default function TourForm({
   return (
     <form
       action={action}
-      encType="multipart/form-data"
       className="space-y-7"
     >
       {/* ====================================================

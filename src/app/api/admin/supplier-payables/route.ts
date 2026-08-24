@@ -1,16 +1,33 @@
 import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import {
+  AccountingCategory,
   FinanceDocumentType,
   Prisma,
+  SupplierServiceType,
 } from "@prisma/client";
-import { del, put } from "@vercel/blob";
+import {
+  mkdir,
+  unlink,
+  writeFile,
+} from "fs/promises";
+import path from "path";
 
 import { authOptions } from "@/lib/authOptions";
 import { db } from "@/lib/db";
 
+export const runtime = "nodejs";
+
 const MAX_FILE_SIZE =
   10 * 1024 * 1024;
+
+const ALLOWED_EXTENSIONS = new Set([
+  ".pdf",
+  ".jpg",
+  ".jpeg",
+  ".png",
+  ".webp",
+]);
 
 const ALLOWED_FILE_TYPES =
   new Set([
@@ -24,8 +41,7 @@ function stringValue(
   value: FormDataEntryValue | null,
 ) {
   if (
-    typeof value !==
-    "string"
+    typeof value !== "string"
   ) {
     return null;
   }
@@ -96,21 +112,127 @@ function dateValue(
 function sanitizeFileName(
   fileName: string,
 ) {
-  return fileName
-    .normalize("NFKD")
-    .replace(/\s+/g, "-")
-    .replace(
-      /[^a-zA-Z0-9._-]/g,
-      "",
-    )
-    .replace(/-+/g, "-")
-    .slice(0, 150);
+  const extension =
+    path.extname(fileName);
+
+  const baseName =
+    path.basename(
+      fileName,
+      extension,
+    );
+
+  const safeBase =
+    baseName
+      .normalize("NFKD")
+      .replace(/\s+/g, "-")
+      .replace(
+        /[^a-zA-Z0-9._-]/g,
+        "",
+      )
+      .replace(/-+/g, "-")
+      .slice(0, 120);
+
+  const safeExtension =
+    extension
+      .toLowerCase()
+      .replace(
+        /[^a-z0-9.]/g,
+        "",
+      );
+
+  return `${
+    safeBase ||
+    "supplier-invoice"
+  }${safeExtension}`;
+}
+
+function getDueDate(
+  year: number,
+  month: number,
+) {
+  const nextMonth =
+    month === 12
+      ? 1
+      : month + 1;
+
+  const nextYear =
+    month === 12
+      ? year + 1
+      : year;
+
+  return new Date(
+    Date.UTC(
+      nextYear,
+      nextMonth - 1,
+      5,
+      12,
+      0,
+      0,
+    ),
+  );
+}
+
+function accountingSubcategoryForService(
+  type:
+    | SupplierServiceType
+    | null,
+) {
+  switch (type) {
+    case SupplierServiceType.ACCOMMODATION:
+      return "Hotels / Accommodation";
+
+    case SupplierServiceType.TRANSPORT:
+      return "Transport / Transfers";
+
+    case SupplierServiceType.MEAL:
+      return "Restaurants / Meals";
+
+    case SupplierServiceType.GUIDE:
+      return "Guides / Excursions";
+
+    case SupplierServiceType.TOUR_MANAGER:
+      return "Tour Management";
+
+    case SupplierServiceType.ENTRANCE:
+      return "Entrance Fees";
+
+    case SupplierServiceType.TICKET:
+      return "Tickets";
+
+    case SupplierServiceType.MASS_ARRANGEMENT:
+      return "Mass Arrangements";
+
+    case SupplierServiceType.CHURCH_RESERVATION:
+      return "Church / Shrine Reservations";
+
+    case SupplierServiceType.FLIGHT:
+      return "Flights";
+
+    case SupplierServiceType.CRUISE:
+      return "Cruises";
+
+    case SupplierServiceType.FERRY:
+      return "Ferries";
+
+    case SupplierServiceType.RAIL:
+      return "Rail";
+
+    case SupplierServiceType.INSURANCE:
+      return "Insurance";
+
+    case SupplierServiceType.DMC_SERVICE:
+      return "DMC / Ground Services";
+
+    case SupplierServiceType.OTHER:
+    default:
+      return "Other Supplier Costs";
+  }
 }
 
 export async function POST(
   request: Request,
 ) {
-  let uploadedBlobUrl:
+  let absoluteUploadedFilePath:
     | string
     | null = null;
 
@@ -301,6 +423,7 @@ export async function POST(
             select: {
               id: true,
               name: true,
+              type: true,
             },
           })
         : null;
@@ -516,7 +639,7 @@ export async function POST(
       ) === "true";
 
     // ========================================================
-    // FILE VALIDATION
+    // FILE
     // ========================================================
 
     const invoiceFile =
@@ -524,31 +647,50 @@ export async function POST(
         "invoiceFile",
       );
 
-    let blob:
-      | Awaited<
-          ReturnType<
-            typeof put
-          >
-        >
-      | null = null;
-
-    let originalFileName:
-      | string
-      | null = null;
-
-    let storedFileName:
-      | string
+    let file:
+      | File
       | null = null;
 
     if (
-      invoiceFile &&
-      typeof invoiceFile !==
-        "string" &&
+      invoiceFile instanceof
+        File &&
       invoiceFile.size > 0
     ) {
+      file = invoiceFile;
+    }
+
+    /*
+     * An invoice file requires a service.
+     *
+     * This gives Accounting a reliable
+     * automatic classification.
+     */
+    if (
+      file &&
+      !service
+    ) {
+      return NextResponse.json(
+        {
+          error:
+            "Please select the supplier service before attaching an invoice.",
+        },
+        {
+          status: 400,
+        },
+      );
+    }
+
+    if (file) {
+      const extension =
+        path
+          .extname(
+            file.name,
+          )
+          .toLowerCase();
+
       if (
-        !ALLOWED_FILE_TYPES.has(
-          invoiceFile.type,
+        !ALLOWED_EXTENSIONS.has(
+          extension,
         )
       ) {
         return NextResponse.json(
@@ -563,7 +705,24 @@ export async function POST(
       }
 
       if (
-        invoiceFile.size >
+        file.type &&
+        !ALLOWED_FILE_TYPES.has(
+          file.type,
+        )
+      ) {
+        return NextResponse.json(
+          {
+            error:
+              "Only PDF, JPG, PNG and WEBP files are allowed.",
+          },
+          {
+            status: 400,
+          },
+        );
+      }
+
+      if (
+        file.size >
         MAX_FILE_SIZE
       ) {
         return NextResponse.json(
@@ -576,44 +735,123 @@ export async function POST(
           },
         );
       }
-
-      originalFileName =
-        invoiceFile.name ||
-        "supplier-invoice";
-
-      const safeFileName =
-        sanitizeFileName(
-          originalFileName,
-        ) ||
-        "supplier-invoice";
-
-      blob = await put(
-        `finance/suppliers/${Date.now()}-${safeFileName}`,
-        invoiceFile,
-        {
-          access: "private",
-
-          addRandomSuffix:
-            true,
-
-          contentType:
-            invoiceFile.type ||
-            "application/octet-stream",
-        },
-      );
-
-      uploadedBlobUrl =
-        blob.url;
-
-      storedFileName =
-        blob.pathname
-          .split("/")
-          .pop() ||
-        safeFileName;
     }
 
     // ========================================================
-    // CREATE PAYABLE + DOCUMENT
+    // ACCOUNTING PERIOD
+    // ========================================================
+
+    /*
+     * Supplier invoice accounting month
+     * follows its invoice date.
+     *
+     * If no invoice date is entered,
+     * the current date is used.
+     */
+    const accountingDate =
+      invoiceDate ??
+      new Date();
+
+    const accountingYear =
+      accountingDate.getUTCFullYear();
+
+    const accountingMonth =
+      accountingDate.getUTCMonth() +
+      1;
+
+    const accountingSubcategory =
+      accountingSubcategoryForService(
+        service?.type ?? null,
+      );
+
+    // ========================================================
+    // STORE FILE LOCALLY
+    // ========================================================
+
+    let originalFileName:
+      | string
+      | null = null;
+
+    let storedFileName:
+      | string
+      | null = null;
+
+    let storagePath:
+      | string
+      | null = null;
+
+    if (file) {
+      originalFileName =
+        file.name ||
+        "supplier-invoice";
+
+      const safeOriginalName =
+        sanitizeFileName(
+          originalFileName,
+        );
+
+      storedFileName =
+        `${Date.now()}-${crypto.randomUUID()}-${safeOriginalName}`;
+
+      const monthFolder =
+        String(
+          accountingMonth,
+        ).padStart(
+          2,
+          "0",
+        );
+
+      /*
+       * Use exactly the same physical
+       * accounting storage family as
+       * manual Accounting uploads.
+       */
+      const relativeFolder =
+        path.join(
+          "uploads",
+          "accounting",
+          String(
+            accountingYear,
+          ),
+          monthFolder,
+        );
+
+      const absoluteFolder =
+        path.join(
+          process.cwd(),
+          "public",
+          relativeFolder,
+        );
+
+      await mkdir(
+        absoluteFolder,
+        {
+          recursive: true,
+        },
+      );
+
+      absoluteUploadedFilePath =
+        path.join(
+          absoluteFolder,
+          storedFileName,
+        );
+
+      const bytes =
+        await file.arrayBuffer();
+
+      await writeFile(
+        absoluteUploadedFilePath,
+        Buffer.from(bytes),
+      );
+
+      storagePath =
+        `/${relativeFolder
+          .split(path.sep)
+          .join("/")}/${storedFileName}`;
+    }
+
+    // ========================================================
+    // CREATE PAYABLE + FINANCE DOCUMENT
     // ========================================================
 
     const result =
@@ -670,10 +908,11 @@ export async function POST(
                   "UNPAID",
 
                 /*
-                 * Legacy field retained for
-                 * old/manual records only.
+                 * Legacy field retained
+                 * for old/manual records.
                  *
-                 * New uploads go through
+                 * New supplier invoice
+                 * files are represented by
                  * FinanceDocument.
                  */
                 documentUrl:
@@ -701,10 +940,43 @@ export async function POST(
             | null = null;
 
           if (
-            blob &&
+            file &&
             originalFileName &&
-            storedFileName
+            storedFileName &&
+            storagePath
           ) {
+            const accountingPeriod =
+              await tx.accountingPeriod.upsert({
+                where: {
+                  year_month: {
+                    year:
+                      accountingYear,
+                    month:
+                      accountingMonth,
+                  },
+                },
+
+                update: {},
+
+                create: {
+                  year:
+                    accountingYear,
+
+                  month:
+                    accountingMonth,
+
+                  dueDate:
+                    getDueDate(
+                      accountingYear,
+                      accountingMonth,
+                    ),
+                },
+
+                select: {
+                  id: true,
+                },
+              });
+
             financeDocument =
               await tx.financeDocument.create({
                 data: {
@@ -713,8 +985,8 @@ export async function POST(
 
                   title:
                     supplierInvoiceNumber
-                      ? `Supplier Invoice ${supplierInvoiceNumber} – ${title}`
-                      : `Supplier Invoice – ${title}`,
+                      ? `Supplier Invoice ${supplierInvoiceNumber} - ${title}`
+                      : `Supplier Invoice - ${title}`,
 
                   description,
 
@@ -722,30 +994,30 @@ export async function POST(
 
                   storedFileName,
 
-                  storagePath:
-                    blob.pathname,
+                  storagePath,
 
                   mimeType:
-                    invoiceFile &&
-                    typeof invoiceFile !==
-                      "string"
-                      ? invoiceFile.type ||
-                        "application/octet-stream"
-                      : "application/octet-stream",
+                    file.type ||
+                    "application/octet-stream",
 
                   fileSize:
-                    invoiceFile &&
-                    typeof invoiceFile !==
-                      "string"
-                      ? invoiceFile.size
-                      : 0,
+                    file.size,
 
                   documentDate:
-                    invoiceDate,
+                    invoiceDate ??
+                    accountingDate,
 
                   referenceNumber:
                     supplierInvoiceNumber ??
                     supplierReference,
+
+                  accountingCategory:
+                    AccountingCategory.EXPENSES_PURCHASES,
+
+                  accountingSubcategory,
+
+                  accountingPeriodId:
+                    accountingPeriod.id,
 
                   supplierPayableId:
                     payable.id,
@@ -761,6 +1033,10 @@ export async function POST(
                   uploadedById:
                     session.user.id,
                 },
+
+                select: {
+                  id: true,
+                },
               });
           }
 
@@ -771,6 +1047,15 @@ export async function POST(
         },
       );
 
+    /*
+     * Database creation succeeded.
+     * The physical file now belongs to
+     * the created FinanceDocument, so
+     * prevent catch cleanup.
+     */
+    absoluteUploadedFilePath =
+      null;
+
     return NextResponse.json(
       {
         success: true,
@@ -780,6 +1065,25 @@ export async function POST(
 
         financeDocument:
           result.financeDocument,
+
+        accounting: {
+          category:
+            AccountingCategory.EXPENSES_PURCHASES,
+
+          subcategory:
+            accountingSubcategory,
+
+          year:
+            accountingYear,
+
+          month:
+            accountingMonth,
+
+          included:
+            Boolean(
+              result.financeDocument,
+            ),
+        },
       },
       {
         status: 201,
@@ -787,19 +1091,22 @@ export async function POST(
     );
   } catch (error) {
     /*
-     * If Blob upload succeeded but database
-     * creation failed, remove the orphaned file.
+     * If the physical file was written
+     * but database creation failed,
+     * remove the orphaned file.
      */
-    if (uploadedBlobUrl) {
+    if (
+      absoluteUploadedFilePath
+    ) {
       try {
-        await del(
-          uploadedBlobUrl,
+        await unlink(
+          absoluteUploadedFilePath,
         );
       } catch (
         cleanupError
       ) {
         console.error(
-          "SUPPLIER_PAYABLE_BLOB_CLEANUP_ERROR",
+          "SUPPLIER_PAYABLE_FILE_CLEANUP_ERROR",
           cleanupError,
         );
       }

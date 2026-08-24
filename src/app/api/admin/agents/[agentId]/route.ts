@@ -14,6 +14,20 @@ type PatchBody = {
   notes?: string | null;
   commissionRate?: number | null;
   payoutPerPax?: number | null;
+
+  billingCompanyName?: string | null;
+  billingCompanyRegNo?: string | null;
+  billingTaxNumber?: string | null;
+  billingVatNumber?: string | null;
+  billingAddress?: string | null;
+  billingCity?: string | null;
+  billingState?: string | null;
+  billingPostalCode?: string | null;
+  billingCountry?: string | null;
+  billingContactName?: string | null;
+  billingEmail?: string | null;
+  billingEmailSecondary?: string | null;
+  billingPhone?: string | null;
 };
 
 function normalizeOptionalString(value: unknown) {
@@ -21,6 +35,11 @@ function normalizeOptionalString(value: unknown) {
 
   const trimmed = value.trim();
   return trimmed === "" ? null : trimmed;
+}
+
+function normalizeOptionalEmail(value: unknown) {
+  const normalized = normalizeOptionalString(value);
+  return normalized ? normalized.toLowerCase() : null;
 }
 
 function normalizeOptionalNumber(value: unknown) {
@@ -40,6 +59,7 @@ export async function PATCH(req: Request, context: RouteContext) {
 
     const existingAgent = await db.user.findUnique({
       where: { id: agentId },
+      select: { id: true },
     });
 
     if (!existingAgent) {
@@ -48,28 +68,40 @@ export async function PATCH(req: Request, context: RouteContext) {
 
     const data: PatchBody = {};
 
-    if ("fullName" in body) {
-      data.fullName = normalizeOptionalString(body.fullName);
+    const stringFields = [
+      "fullName",
+      "travelAgency",
+      "phone",
+      "website",
+      "membership",
+      "notes",
+      "billingCompanyName",
+      "billingCompanyRegNo",
+      "billingTaxNumber",
+      "billingVatNumber",
+      "billingAddress",
+      "billingCity",
+      "billingState",
+      "billingPostalCode",
+      "billingCountry",
+      "billingContactName",
+      "billingPhone",
+    ] as const;
+
+    for (const field of stringFields) {
+      if (field in body) {
+        data[field] = normalizeOptionalString(body[field]);
+      }
     }
 
-    if ("travelAgency" in body) {
-      data.travelAgency = normalizeOptionalString(body.travelAgency);
+    if ("billingEmail" in body) {
+      data.billingEmail = normalizeOptionalEmail(body.billingEmail);
     }
 
-    if ("phone" in body) {
-      data.phone = normalizeOptionalString(body.phone);
-    }
-
-    if ("website" in body) {
-      data.website = normalizeOptionalString(body.website);
-    }
-
-    if ("membership" in body) {
-      data.membership = normalizeOptionalString(body.membership);
-    }
-
-    if ("notes" in body) {
-      data.notes = normalizeOptionalString(body.notes);
+    if ("billingEmailSecondary" in body) {
+      data.billingEmailSecondary = normalizeOptionalEmail(
+        body.billingEmailSecondary,
+      );
     }
 
     if ("commissionRate" in body) {
@@ -78,14 +110,17 @@ export async function PATCH(req: Request, context: RouteContext) {
       if (Number.isNaN(commissionRate)) {
         return NextResponse.json(
           { error: "Commission rate must be a valid number." },
-          { status: 400 }
+          { status: 400 },
         );
       }
 
-      if (commissionRate !== null && (commissionRate < 0 || commissionRate > 1)) {
+      if (
+        commissionRate !== null &&
+        (commissionRate < 0 || commissionRate > 1)
+      ) {
         return NextResponse.json(
           { error: "Commission rate must be between 0 and 1." },
-          { status: 400 }
+          { status: 400 },
         );
       }
 
@@ -98,14 +133,14 @@ export async function PATCH(req: Request, context: RouteContext) {
       if (Number.isNaN(payoutPerPax)) {
         return NextResponse.json(
           { error: "Payout per pax must be a valid number." },
-          { status: 400 }
+          { status: 400 },
         );
       }
 
       if (payoutPerPax !== null && payoutPerPax < 0) {
         return NextResponse.json(
           { error: "Payout per pax cannot be negative." },
-          { status: 400 }
+          { status: 400 },
         );
       }
 
@@ -115,7 +150,7 @@ export async function PATCH(req: Request, context: RouteContext) {
     if (Object.keys(data).length === 0) {
       return NextResponse.json(
         { error: "No valid fields provided for update." },
-        { status: 400 }
+        { status: 400 },
       );
     }
 
@@ -134,7 +169,7 @@ export async function PATCH(req: Request, context: RouteContext) {
 
     return NextResponse.json(
       { error: "Failed to update agent." },
-      { status: 500 }
+      { status: 500 },
     );
   }
 }
@@ -150,7 +185,7 @@ export async function DELETE(req: Request, context: RouteContext) {
     if (!existingAgent) {
       return NextResponse.json(
         { success: false, message: "Agent not found." },
-        { status: 404 }
+        { status: 404 },
       );
     }
 
@@ -167,7 +202,7 @@ export async function DELETE(req: Request, context: RouteContext) {
 
     return NextResponse.json(
       { success: false, message: "Failed to delete agent." },
-      { status: 500 }
+      { status: 500 },
     );
   }
 }

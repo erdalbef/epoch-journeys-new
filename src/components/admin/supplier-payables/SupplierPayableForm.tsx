@@ -1,8 +1,13 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import {
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { useRouter } from "next/navigation";
 import {
+  CalendarDays,
   FileText,
   Upload,
   X,
@@ -58,6 +63,228 @@ const ALLOWED_FILE_TYPES = [
   "image/webp",
 ];
 
+function serviceTypeLabel(
+  type: string,
+) {
+  switch (type) {
+    case "ACCOMMODATION":
+      return "Accommodation / Hotel";
+
+    case "TRANSPORT":
+      return "Transport / Transfers";
+
+    case "GUIDE":
+      return "Guide";
+
+    case "TOUR_MANAGER":
+      return "Tour Manager";
+
+    case "MEAL":
+      return "Restaurant / Meals";
+
+    case "MASS_ARRANGEMENT":
+      return "Mass Arrangement";
+
+    case "CHURCH_RESERVATION":
+      return "Church / Shrine Reservation";
+
+    case "ENTRANCE":
+      return "Entrance Fee";
+
+    case "TICKET":
+      return "Ticket";
+
+    case "FLIGHT":
+      return "Flight";
+
+    case "CRUISE":
+      return "Cruise";
+
+    case "FERRY":
+      return "Ferry";
+
+    case "RAIL":
+      return "Rail";
+
+    case "INSURANCE":
+      return "Insurance";
+
+    case "DMC_SERVICE":
+      return "DMC / Ground Services";
+
+    case "OTHER":
+      return "Other";
+
+    default:
+      return type
+        .replaceAll("_", " ")
+        .toLowerCase()
+        .replace(
+          /\b\w/g,
+          (value) =>
+            value.toUpperCase(),
+        );
+  }
+}
+
+function rateUnitLabel(
+  unit: string,
+) {
+  return unit
+    .replaceAll("_", " ")
+    .toLowerCase()
+    .replace(
+      /\b\w/g,
+      (value) =>
+        value.toUpperCase(),
+    );
+}
+
+function parseEuropeanDate(
+  value: string,
+) {
+  const trimmed =
+    value.trim();
+
+  if (!trimmed) {
+    return "";
+  }
+
+  const match =
+    trimmed.match(
+      /^(\d{2})\/(\d{2})\/(\d{4})$/,
+    );
+
+  if (!match) {
+    return null;
+  }
+
+  const day =
+    Number(match[1]);
+
+  const month =
+    Number(match[2]);
+
+  const year =
+    Number(match[3]);
+
+  const date =
+    new Date(
+      Date.UTC(
+        year,
+        month - 1,
+        day,
+        12,
+        0,
+        0,
+      ),
+    );
+
+  if (
+    date.getUTCFullYear() !==
+      year ||
+    date.getUTCMonth() !==
+      month - 1 ||
+    date.getUTCDate() !==
+      day
+  ) {
+    return null;
+  }
+
+  return `${String(
+    year,
+  ).padStart(
+    4,
+    "0",
+  )}-${String(
+    month,
+  ).padStart(
+    2,
+    "0",
+  )}-${String(
+    day,
+  ).padStart(
+    2,
+    "0",
+  )}`;
+}
+
+function europeanDateFromIso(
+  value: string,
+) {
+  const directMatch =
+    value.match(
+      /^(\d{4})-(\d{2})-(\d{2})/,
+    );
+
+  if (directMatch) {
+    return `${directMatch[3]}/${directMatch[2]}/${directMatch[1]}`;
+  }
+
+  const date =
+    new Date(value);
+
+  if (
+    Number.isNaN(
+      date.getTime(),
+    )
+  ) {
+    return value;
+  }
+
+  return new Intl.DateTimeFormat(
+    "en-GB",
+    {
+      day: "2-digit",
+      month: "2-digit",
+      year: "numeric",
+      timeZone: "UTC",
+    },
+  ).format(date);
+}
+
+function formatDateTyping(
+  value: string,
+) {
+  const digits =
+    value
+      .replace(
+        /\D/g,
+        "",
+      )
+      .slice(
+        0,
+        8,
+      );
+
+  if (
+    digits.length <= 2
+  ) {
+    return digits;
+  }
+
+  if (
+    digits.length <= 4
+  ) {
+    return `${digits.slice(
+      0,
+      2,
+    )}/${digits.slice(
+      2,
+    )}`;
+  }
+
+  return `${digits.slice(
+    0,
+    2,
+  )}/${digits.slice(
+    2,
+    4,
+  )}/${digits.slice(
+    4,
+  )}`;
+}
+
 export default function SupplierPayableForm({
   suppliers,
   tours,
@@ -67,30 +294,45 @@ export default function SupplierPayableForm({
   tours: Tour[];
   bookings: Booking[];
 }) {
-  const router = useRouter();
+  const router =
+    useRouter();
 
-  const [supplierId, setSupplierId] =
-    useState("");
+  const [
+    supplierId,
+    setSupplierId,
+  ] = useState("");
 
-  const [serviceId, setServiceId] =
-    useState("");
+  const [
+    serviceId,
+    setServiceId,
+  ] = useState("");
 
-  const [rateId, setRateId] =
-    useState("");
+  const [
+    rateId,
+    setRateId,
+  ] = useState("");
 
-  const [tourId, setTourId] =
-    useState("");
+  const [
+    tourId,
+    setTourId,
+  ] = useState("");
 
   const [
     departureDateId,
     setDepartureDateId,
   ] = useState("");
 
-  const [bookingId, setBookingId] =
-    useState("");
+  const [
+    bookingId,
+    setBookingId,
+  ] = useState("");
 
-  const [currency, setCurrency] =
-    useState("EUR");
+  const [
+    currency,
+    setCurrency,
+  ] = useState(
+    "EUR",
+  );
 
   const [
     contractedAmount,
@@ -105,30 +347,58 @@ export default function SupplierPayableForm({
   const [
     creditAmount,
     setCreditAmount,
-  ] = useState("0");
+  ] = useState(
+    "0",
+  );
+
+  const [
+    invoiceDate,
+    setInvoiceDate,
+  ] = useState("");
+
+  const [
+    dueDate,
+    setDueDate,
+  ] = useState("");
 
   const [
     invoiceFile,
     setInvoiceFile,
-  ] = useState<File | null>(null);
+  ] =
+    useState<File | null>(
+      null,
+    );
 
-  const [loading, setLoading] =
+  const [
+    loading,
+    setLoading,
+  ] =
     useState(false);
 
   const supplier =
     suppliers.find(
       (item) =>
-        item.id === supplierId,
+        item.id ===
+        supplierId,
     );
 
   const selectedTour =
     tours.find(
       (item) =>
-        item.id === tourId,
+        item.id ===
+        tourId,
     );
 
+  const selectedService =
+    supplier?.services.find(
+      (item) =>
+        item.id ===
+        serviceId,
+    ) ?? null;
+
   const services =
-    supplier?.services ?? [];
+    supplier?.services ??
+    [];
 
   const rates =
     supplier?.rates.filter(
@@ -143,17 +413,20 @@ export default function SupplierPayableForm({
     useMemo(() => {
       const approved =
         Number(
-          approvedAmount || 0,
+          approvedAmount ||
+            0,
         );
 
       const credit =
         Number(
-          creditAmount || 0,
+          creditAmount ||
+            0,
         );
 
       return Math.max(
         0,
-        approved - credit,
+        approved -
+          credit,
       );
     }, [
       approvedAmount,
@@ -163,14 +436,23 @@ export default function SupplierPayableForm({
   function chooseSupplier(
     value: string,
   ) {
-    setSupplierId(value);
-    setServiceId("");
-    setRateId("");
+    setSupplierId(
+      value,
+    );
+
+    setServiceId(
+      "",
+    );
+
+    setRateId(
+      "",
+    );
 
     const selected =
       suppliers.find(
         (item) =>
-          item.id === value,
+          item.id ===
+          value,
       );
 
     if (selected) {
@@ -184,12 +466,15 @@ export default function SupplierPayableForm({
   function chooseRate(
     value: string,
   ) {
-    setRateId(value);
+    setRateId(
+      value,
+    );
 
     const selected =
       rates.find(
         (item) =>
-          item.id === value,
+          item.id ===
+          value,
       );
 
     if (!selected) {
@@ -204,13 +489,17 @@ export default function SupplierPayableForm({
       selected.amount,
     );
 
-    if (!approvedAmount) {
+    if (
+      !approvedAmount
+    ) {
       setApprovedAmount(
         selected.amount,
       );
     }
 
-    if (selected.serviceId) {
+    if (
+      selected.serviceId
+    ) {
       setServiceId(
         selected.serviceId,
       );
@@ -218,10 +507,14 @@ export default function SupplierPayableForm({
   }
 
   function handleInvoiceFile(
-    file: File | null,
+    file:
+      | File
+      | null,
   ) {
     if (!file) {
-      setInvoiceFile(null);
+      setInvoiceFile(
+        null,
+      );
       return;
     }
 
@@ -248,11 +541,14 @@ export default function SupplierPayableForm({
       return;
     }
 
-    setInvoiceFile(file);
+    setInvoiceFile(
+      file,
+    );
   }
 
   async function submit(
-    event: React.FormEvent<HTMLFormElement>,
+    event:
+      React.FormEvent<HTMLFormElement>,
   ) {
     event.preventDefault();
 
@@ -260,7 +556,52 @@ export default function SupplierPayableForm({
       return;
     }
 
-    setLoading(true);
+    if (
+      invoiceFile &&
+      !serviceId
+    ) {
+      toast.error(
+        "Please select the supplier service so the invoice can be classified correctly in Accounting.",
+      );
+
+      return;
+    }
+
+    const parsedInvoiceDate =
+      parseEuropeanDate(
+        invoiceDate,
+      );
+
+    if (
+      invoiceDate &&
+      !parsedInvoiceDate
+    ) {
+      toast.error(
+        "Invoice date must use DD/MM/YYYY format.",
+      );
+
+      return;
+    }
+
+    const parsedDueDate =
+      parseEuropeanDate(
+        dueDate,
+      );
+
+    if (
+      dueDate &&
+      !parsedDueDate
+    ) {
+      toast.error(
+        "Due date must use DD/MM/YYYY format.",
+      );
+
+      return;
+    }
+
+    setLoading(
+      true,
+    );
 
     const form =
       new FormData(
@@ -268,10 +609,27 @@ export default function SupplierPayableForm({
       );
 
     /*
-     * The controlled file is explicitly
-     * attached to the FormData.
+     * Visible form:
+     * DD/MM/YYYY
+     *
+     * API:
+     * YYYY-MM-DD
      */
-    if (invoiceFile) {
+    form.set(
+      "invoiceDate",
+      parsedInvoiceDate ||
+        "",
+    );
+
+    form.set(
+      "dueDate",
+      parsedDueDate ||
+        "",
+    );
+
+    if (
+      invoiceFile
+    ) {
       form.set(
         "invoiceFile",
         invoiceFile,
@@ -283,27 +641,40 @@ export default function SupplierPayableForm({
         await fetch(
           "/api/admin/supplier-payables",
           {
-            method: "POST",
-            body: form,
+            method:
+              "POST",
+            body:
+              form,
           },
         );
 
       const data =
         (await response
           .json()
-          .catch(() => null)) as {
+          .catch(
+            () =>
+              null,
+          )) as {
           error?: string;
+
           payable?: {
             id: string;
           };
+
           financeDocument?: {
             id: string;
           } | null;
+
+          accounting?: {
+            category?: string;
+            subcategory?: string;
+          };
         } | null;
 
       if (
         !response.ok ||
-        !data?.payable?.id
+        !data?.payable
+          ?.id
       ) {
         throw new Error(
           data?.error ||
@@ -313,7 +684,13 @@ export default function SupplierPayableForm({
 
       toast.success(
         invoiceFile
-          ? "Supplier payable created and invoice stored in Finance Documents."
+          ? `Supplier payable created. Invoice added to 03 - Expenses / Purchases${
+              data
+                .accounting
+                ?.subcategory
+                ? ` / ${data.accounting.subcategory}`
+                : ""
+            }.`
           : "Supplier payable created successfully.",
       );
 
@@ -324,18 +701,23 @@ export default function SupplierPayableForm({
       router.refresh();
     } catch (error) {
       toast.error(
-        error instanceof Error
+        error instanceof
+          Error
           ? error.message
           : "Failed to create supplier payable.",
       );
 
-      setLoading(false);
+      setLoading(
+        false,
+      );
     }
   }
 
   return (
     <form
-      onSubmit={submit}
+      onSubmit={
+        submit
+      }
       className="space-y-6 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6"
     >
       {/* ============================================== */}
@@ -347,52 +729,81 @@ export default function SupplierPayableForm({
           <select
             name="supplierId"
             required
-            value={supplierId}
-            onChange={(event) =>
+            value={
+              supplierId
+            }
+            onChange={(
+              event,
+            ) =>
               chooseSupplier(
-                event.target.value,
+                event
+                  .target
+                  .value,
               )
             }
             className="input"
           >
             <option value="">
-              Select supplier...
+              Select
+              supplier...
             </option>
 
             {suppliers.map(
               (item) => (
                 <option
-                  key={item.id}
-                  value={item.id}
+                  key={
+                    item.id
+                  }
+                  value={
+                    item.id
+                  }
                 >
-                  {item.name}
+                  {
+                    item.name
+                  }
                 </option>
               ),
             )}
           </select>
         </FieldLabel>
 
-        <FieldLabel label="Service">
+        <FieldLabel label="Supplier service">
           <select
             name="serviceId"
-            value={serviceId}
-            onChange={(event) => {
+            value={
+              serviceId
+            }
+            onChange={(
+              event,
+            ) => {
               setServiceId(
-                event.target.value,
+                event
+                  .target
+                  .value,
               );
 
-              setRateId("");
+              setRateId(
+                "",
+              );
             }}
-            disabled={!supplierId}
+            disabled={
+              !supplierId
+            }
             className="input"
           >
             <option value="">
-              General supplier
-              service
+              {supplierId
+                ? services.length >
+                  0
+                  ? "Select service..."
+                  : "No services configured for this supplier"
+                : "Select supplier first..."}
             </option>
 
             {services.map(
-              (service) => (
+              (
+                service,
+              ) => (
                 <option
                   key={
                     service.id
@@ -401,45 +812,103 @@ export default function SupplierPayableForm({
                     service.id
                   }
                 >
-                  {service.name} ·{" "}
-                  {service.type.replaceAll(
-                    "_",
-                    " ",
-                  )}
+                  {serviceTypeLabel(
+                    service.type,
+                  )}{" "}
+                  -{" "}
+                  {
+                    service.name
+                  }
                 </option>
               ),
             )}
           </select>
+
+          {supplierId &&
+            services.length ===
+              0 && (
+              <p className="mt-1.5 text-xs text-amber-700">
+                This
+                supplier has
+                no active
+                services.
+                Add a
+                service to
+                the supplier
+                before
+                attaching
+                an invoice
+                that should
+                be
+                classified
+                automatically.
+              </p>
+            )}
+
+          {selectedService && (
+            <p className="mt-1.5 text-xs text-slate-500">
+              Accounting
+              classification
+              will be based
+              on{" "}
+              <span className="font-semibold text-slate-700">
+                {serviceTypeLabel(
+                  selectedService.type,
+                )}
+              </span>
+              .
+            </p>
+          )}
         </FieldLabel>
 
         <FieldLabel label="Contracted rate">
           <select
             name="rateId"
-            value={rateId}
-            onChange={(event) =>
+            value={
+              rateId
+            }
+            onChange={(
+              event,
+            ) =>
               chooseRate(
-                event.target.value,
+                event
+                  .target
+                  .value,
               )
             }
-            disabled={!supplierId}
+            disabled={
+              !supplierId
+            }
             className="input"
           >
             <option value="">
-              No rate / manual cost
+              No rate /
+              manual cost
             </option>
 
             {rates.map(
               (rate) => (
                 <option
-                  key={rate.id}
-                  value={rate.id}
+                  key={
+                    rate.id
+                  }
+                  value={
+                    rate.id
+                  }
                 >
-                  {rate.name} ·{" "}
-                  {rate.currency}{" "}
-                  {rate.amount} /{" "}
-                  {rate.unit.replaceAll(
-                    "_",
-                    " ",
+                  {
+                    rate.name
+                  }{" "}
+                  -{" "}
+                  {
+                    rate.currency
+                  }{" "}
+                  {
+                    rate.amount
+                  }{" "}
+                  /{" "}
+                  {rateUnitLabel(
+                    rate.unit,
                   )}
                 </option>
               ),
@@ -451,13 +920,19 @@ export default function SupplierPayableForm({
           <input
             name="currency"
             required
-            value={currency}
-            onChange={(event) =>
+            value={
+              currency
+            }
+            onChange={(
+              event,
+            ) =>
               setCurrency(
                 event.target.value.toUpperCase(),
               )
             }
-            maxLength={3}
+            maxLength={
+              3
+            }
             className="input"
           />
         </FieldLabel>
@@ -477,9 +952,13 @@ export default function SupplierPayableForm({
             value={
               contractedAmount
             }
-            onChange={(event) =>
+            onChange={(
+              event,
+            ) =>
               setContractedAmount(
-                event.target.value,
+                event
+                  .target
+                  .value,
               )
             }
             className="input"
@@ -493,10 +972,16 @@ export default function SupplierPayableForm({
             min="0.01"
             step="0.01"
             required
-            value={approvedAmount}
-            onChange={(event) =>
+            value={
+              approvedAmount
+            }
+            onChange={(
+              event,
+            ) =>
               setApprovedAmount(
-                event.target.value,
+                event
+                  .target
+                  .value,
               )
             }
             className="input"
@@ -509,10 +994,16 @@ export default function SupplierPayableForm({
             type="number"
             min="0"
             step="0.01"
-            value={creditAmount}
-            onChange={(event) =>
+            value={
+              creditAmount
+            }
+            onChange={(
+              event,
+            ) =>
               setCreditAmount(
-                event.target.value,
+                event
+                  .target
+                  .value,
               )
             }
             className="input"
@@ -522,8 +1013,9 @@ export default function SupplierPayableForm({
 
       <div className="rounded-xl bg-slate-50 p-4">
         <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-          Initial balance
-          after credit
+          Initial
+          balance after
+          credit
         </p>
 
         <p className="mt-1 text-2xl font-bold text-[#001F3F]">
@@ -534,10 +1026,14 @@ export default function SupplierPayableForm({
         </p>
 
         <p className="mt-1 text-xs text-slate-500">
-          Payments recorded
-          later will reduce this
-          balance without creating
-          another supplier cost.
+          Payments
+          recorded later
+          will reduce
+          this balance
+          without
+          creating
+          another
+          supplier cost.
         </p>
       </div>
 
@@ -550,7 +1046,7 @@ export default function SupplierPayableForm({
           <input
             name="title"
             required
-            placeholder="e.g. Rome Hotel – May 2027 group"
+            placeholder="e.g. Rome Hotel - May 2027 group"
             className="input"
           />
         </FieldLabel>
@@ -570,18 +1066,24 @@ export default function SupplierPayableForm({
         </FieldLabel>
 
         <FieldLabel label="Invoice date">
-          <input
-            name="invoiceDate"
-            type="date"
-            className="input"
+          <EuropeanDateInput
+            value={
+              invoiceDate
+            }
+            onChange={
+              setInvoiceDate
+            }
           />
         </FieldLabel>
 
         <FieldLabel label="Due date">
-          <input
-            name="dueDate"
-            type="date"
-            className="input"
+          <EuropeanDateInput
+            value={
+              dueDate
+            }
+            onChange={
+              setDueDate
+            }
           />
         </FieldLabel>
       </div>
@@ -598,14 +1100,22 @@ export default function SupplierPayableForm({
 
           <div>
             <h3 className="font-bold text-slate-950">
-              Supplier Invoice
+              Supplier
+              Invoice
             </h3>
 
             <p className="mt-1 text-sm text-slate-500">
-              Upload the supplier
-              invoice once. It will
-              also appear automatically
-              in Finance Documents.
+              Upload the
+              supplier
+              invoice once.
+              It will
+              automatically
+              appear in
+              Finance
+              Documents and
+              in the monthly
+              Accounting
+              package.
             </p>
           </div>
         </div>
@@ -615,22 +1125,27 @@ export default function SupplierPayableForm({
             <Upload className="h-6 w-6 text-slate-400" />
 
             <span className="mt-2 text-sm font-semibold text-slate-700">
-              Select invoice or
-              supporting document
+              Select invoice
+              or supporting
+              document
             </span>
 
             <span className="mt-1 text-xs text-slate-500">
-              PDF, JPG, PNG or WEBP
-              · Maximum 10 MB
+              PDF, JPG, PNG
+              or WEBP -
+              Maximum 10 MB
             </span>
 
             <input
               name="invoiceFile"
               type="file"
               accept=".pdf,.jpg,.jpeg,.png,.webp,application/pdf,image/jpeg,image/png,image/webp"
-              onChange={(event) =>
+              onChange={(
+                event,
+              ) =>
                 handleInvoiceFile(
-                  event.target
+                  event
+                    .target
                     .files?.[0] ??
                     null,
                 )
@@ -657,7 +1172,9 @@ export default function SupplierPayableForm({
                     invoiceFile.size /
                     1024 /
                     1024
-                  ).toFixed(2)}{" "}
+                  ).toFixed(
+                    2,
+                  )}{" "}
                   MB
                 </p>
               </div>
@@ -687,10 +1204,16 @@ export default function SupplierPayableForm({
         <FieldLabel label="Tour">
           <select
             name="tourId"
-            value={tourId}
-            onChange={(event) => {
+            value={
+              tourId
+            }
+            onChange={(
+              event,
+            ) => {
               setTourId(
-                event.target.value,
+                event
+                  .target
+                  .value,
               );
 
               setDepartureDateId(
@@ -700,16 +1223,23 @@ export default function SupplierPayableForm({
             className="input"
           >
             <option value="">
-              Not linked to a tour
+              Not linked to
+              a tour
             </option>
 
             {tours.map(
               (tour) => (
                 <option
-                  key={tour.id}
-                  value={tour.id}
+                  key={
+                    tour.id
+                  }
+                  value={
+                    tour.id
+                  }
                 >
-                  {tour.title}
+                  {
+                    tour.title
+                  }
                 </option>
               ),
             )}
@@ -722,21 +1252,29 @@ export default function SupplierPayableForm({
             value={
               departureDateId
             }
-            onChange={(event) =>
+            onChange={(
+              event,
+            ) =>
               setDepartureDateId(
-                event.target.value,
+                event
+                  .target
+                  .value,
               )
             }
-            disabled={!tourId}
+            disabled={
+              !tourId
+            }
             className="input"
           >
             <option value="">
-              Not linked to a
-              departure
+              Not linked to
+              a departure
             </option>
 
             {selectedTour?.departureDates.map(
-              (departure) => (
+              (
+                departure,
+              ) => (
                 <option
                   key={
                     departure.id
@@ -745,10 +1283,8 @@ export default function SupplierPayableForm({
                     departure.id
                   }
                 >
-                  {new Date(
+                  {europeanDateFromIso(
                     departure.date,
-                  ).toLocaleDateString(
-                    "en-GB",
                   )}
                 </option>
               ),
@@ -759,21 +1295,29 @@ export default function SupplierPayableForm({
         <FieldLabel label="Booking">
           <select
             name="bookingId"
-            value={bookingId}
-            onChange={(event) =>
+            value={
+              bookingId
+            }
+            onChange={(
+              event,
+            ) =>
               setBookingId(
-                event.target.value,
+                event
+                  .target
+                  .value,
               )
             }
             className="input"
           >
             <option value="">
-              Not linked to a
-              booking
+              Not linked to
+              a booking
             </option>
 
             {bookings.map(
-              (booking) => (
+              (
+                booking,
+              ) => (
                 <option
                   key={
                     booking.id
@@ -784,7 +1328,7 @@ export default function SupplierPayableForm({
                 >
                   {booking.bookingDisplayCode ||
                     booking.bookingReference}{" "}
-                  ·{" "}
+                  -{" "}
                   {
                     booking.tourTitleSnapshot
                   }
@@ -822,7 +1366,9 @@ export default function SupplierPayableForm({
       <div className="flex flex-wrap gap-3">
         <button
           type="submit"
-          disabled={loading}
+          disabled={
+            loading
+          }
           className="rounded-xl bg-[#8B0000] px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-[#760000] disabled:cursor-not-allowed disabled:opacity-50"
         >
           {loading
@@ -834,7 +1380,9 @@ export default function SupplierPayableForm({
           type="submit"
           name="submitForApproval"
           value="true"
-          disabled={loading}
+          disabled={
+            loading
+          }
           className="rounded-xl bg-[#001F3F] px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-[#002d59] disabled:cursor-not-allowed disabled:opacity-50"
         >
           {loading
@@ -878,12 +1426,129 @@ export default function SupplierPayableForm({
   );
 }
 
+function EuropeanDateInput({
+  value,
+  onChange,
+}: {
+  value: string;
+  onChange: (
+    value: string,
+  ) => void;
+}) {
+  const pickerRef =
+    useRef<HTMLInputElement>(
+      null,
+    );
+
+  const isoValue =
+    parseEuropeanDate(
+      value,
+    ) || "";
+
+  function openCalendar() {
+    const picker =
+      pickerRef.current;
+
+    if (!picker) {
+      return;
+    }
+
+    if (
+      typeof picker.showPicker ===
+      "function"
+    ) {
+      picker.showPicker();
+      return;
+    }
+
+    picker.click();
+  }
+
+  return (
+    <div className="relative">
+      <input
+        type="text"
+        inputMode="numeric"
+        placeholder="DD/MM/YYYY"
+        value={value}
+        maxLength={10}
+        onChange={(
+          event,
+        ) =>
+          onChange(
+            formatDateTyping(
+              event
+                .target
+                .value,
+            ),
+          )
+        }
+        className="input pr-12"
+      />
+
+      <button
+        type="button"
+        onClick={
+          openCalendar
+        }
+        className="absolute right-1.5 top-1/2 inline-flex h-9 w-9 -translate-y-1/2 items-center justify-center rounded-lg text-slate-500 transition hover:bg-slate-100 hover:text-[#001F3F]"
+        title="Open calendar"
+        aria-label="Open calendar"
+      >
+        <CalendarDays className="h-4 w-4" />
+      </button>
+
+      <input
+        ref={
+          pickerRef
+        }
+        type="date"
+        tabIndex={-1}
+        value={
+          isoValue
+        }
+        onChange={(
+          event,
+        ) => {
+          const value =
+            event
+              .target
+              .value;
+
+          if (!value) {
+            onChange(
+              "",
+            );
+            return;
+          }
+
+          const [
+            year,
+            month,
+            day,
+          ] =
+            value.split(
+              "-",
+            );
+
+          onChange(
+            `${day}/${month}/${year}`,
+          );
+        }}
+        className="pointer-events-none absolute h-0 w-0 opacity-0"
+        aria-hidden="true"
+      />
+    </div>
+  );
+}
+
 function FieldLabel({
   label,
   children,
 }: {
   label: string;
-  children: React.ReactNode;
+  children:
+    React.ReactNode;
 }) {
   return (
     <label className="block">

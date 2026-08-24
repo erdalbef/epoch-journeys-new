@@ -38,6 +38,9 @@ async function recalculateReconciliation(
         ledgerOpeningBalance: true,
         statementClosingBalance: true,
         transactions: {
+          where: {
+            status: BankTransactionStatus.POSTED,
+          },
           select: {
             amount: true,
             direction: true,
@@ -105,12 +108,8 @@ export async function PATCH(
       session.user.role !== Role.ADMIN
     ) {
       return NextResponse.json(
-        {
-          error: "Unauthorized",
-        },
-        {
-          status: 401,
-        },
+        { error: "Unauthorized" },
+        { status: 401 },
       );
     }
 
@@ -130,11 +129,10 @@ export async function PATCH(
     ) {
       return NextResponse.json(
         {
-          error: "Invalid transaction reconciliation request.",
+          error:
+            "Invalid transaction reconciliation request.",
         },
-        {
-          status: 400,
-        },
+        { status: 400 },
       );
     }
 
@@ -153,12 +151,8 @@ export async function PATCH(
 
     if (!reconciliation) {
       return NextResponse.json(
-        {
-          error: "Reconciliation not found.",
-        },
-        {
-          status: 404,
-        },
+        { error: "Reconciliation not found." },
+        { status: 404 },
       );
     }
 
@@ -171,16 +165,15 @@ export async function PATCH(
           error:
             "This reconciliation is locked and its transactions cannot be changed.",
         },
-        {
-          status: 409,
-        },
+        { status: 409 },
       );
     }
 
     const previousReconciliation =
       await db.bankReconciliation.findFirst({
         where: {
-          bankAccountId: reconciliation.bankAccountId,
+          bankAccountId:
+            reconciliation.bankAccountId,
           id: {
             not: reconciliation.id,
           },
@@ -203,19 +196,20 @@ export async function PATCH(
       });
 
     await db.$transaction(async (tx) => {
-      const transaction = await tx.bankTransaction.findUnique({
-        where: {
-          id: transactionId,
-        },
-        select: {
-          id: true,
-          bankAccountId: true,
-          status: true,
-          type: true,
-          transactionDate: true,
-          reconciliationId: true,
-        },
-      });
+      const transaction =
+        await tx.bankTransaction.findUnique({
+          where: {
+            id: transactionId,
+          },
+          select: {
+            id: true,
+            bankAccountId: true,
+            status: true,
+            type: true,
+            transactionDate: true,
+            reconciliationId: true,
+          },
+        });
 
       if (!transaction) {
         throw new Error("Bank transaction not found.");
@@ -231,7 +225,8 @@ export async function PATCH(
       }
 
       if (
-        transaction.status !== BankTransactionStatus.POSTED
+        transaction.status !==
+        BankTransactionStatus.POSTED
       ) {
         throw new Error(
           "Only posted bank transactions can be reconciled.",
@@ -239,7 +234,8 @@ export async function PATCH(
       }
 
       if (
-        transaction.type === BankTransactionType.OPENING_BALANCE
+        transaction.type ===
+        BankTransactionType.OPENING_BALANCE
       ) {
         throw new Error(
           "Opening-balance transactions are not matched in reconciliation.",
@@ -249,7 +245,8 @@ export async function PATCH(
       if (body.action === "attach") {
         if (
           transaction.reconciliationId &&
-          transaction.reconciliationId !== reconciliation.id
+          transaction.reconciliationId !==
+            reconciliation.id
         ) {
           throw new Error(
             "This transaction is already assigned to another reconciliation.",
@@ -286,7 +283,8 @@ export async function PATCH(
         });
       } else {
         if (
-          transaction.reconciliationId !== reconciliation.id
+          transaction.reconciliationId !==
+          reconciliation.id
         ) {
           throw new Error(
             "This transaction is not assigned to this reconciliation.",
@@ -304,14 +302,20 @@ export async function PATCH(
         });
       }
 
-      await recalculateReconciliation(reconciliation.id, tx);
+      await recalculateReconciliation(
+        reconciliation.id,
+        tx,
+      );
     });
 
     return NextResponse.json({
       success: true,
     });
   } catch (error) {
-    console.error("MATCH_BANK_RECONCILIATION_TRANSACTION_ERROR", error);
+    console.error(
+      "MATCH_BANK_RECONCILIATION_TRANSACTION_ERROR",
+      error,
+    );
 
     return NextResponse.json(
       {
@@ -320,9 +324,7 @@ export async function PATCH(
             ? error.message
             : "Failed to update reconciliation transaction.",
       },
-      {
-        status: 500,
-      },
+      { status: 500 },
     );
   }
 }

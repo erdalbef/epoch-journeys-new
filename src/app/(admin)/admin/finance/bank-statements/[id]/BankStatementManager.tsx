@@ -199,6 +199,17 @@ export default function BankStatementManager({
 
   const [working, setWorking] = useState<string | null>(null);
   const [statusWorking, setStatusWorking] = useState(false);
+  const [editingDetails, setEditingDetails] = useState(false);
+  const [statementDateInput, setStatementDateInput] = useState(
+    statement.statementDate.slice(0, 10),
+  );
+  const [openingBalanceInput, setOpeningBalanceInput] = useState(
+    statement.openingBalance === null ? "" : String(statement.openingBalance),
+  );
+  const [closingBalanceInput, setClosingBalanceInput] = useState(
+    statement.closingBalance === null ? "" : String(statement.closingBalance),
+  );
+  const [notesInput, setNotesInput] = useState(statement.notes || "");
 
   const archived = statement.status === BankStatementStatus.ARCHIVED;
 
@@ -313,7 +324,7 @@ export default function BankStatementManager({
   }
 
   async function updateStatement(
-    action: "review" | "reconcile" | "archive",
+    action: "review" | "archive",
   ) {
     setStatusWorking(true);
 
@@ -349,6 +360,148 @@ export default function BankStatementManager({
         error instanceof Error
           ? error.message
           : "Failed to update bank statement.",
+      );
+    } finally {
+      setStatusWorking(false);
+    }
+  }
+
+  async function saveStatementDetails() {
+    const openingBalance =
+      openingBalanceInput.trim() === ""
+        ? null
+        : Number(openingBalanceInput);
+
+    const closingBalance =
+      closingBalanceInput.trim() === ""
+        ? null
+        : Number(closingBalanceInput);
+
+    if (
+      openingBalance !== null &&
+      !Number.isFinite(openingBalance)
+    ) {
+      toast.error("Opening balance is invalid.");
+      return;
+    }
+
+    if (
+      closingBalance !== null &&
+      !Number.isFinite(closingBalance)
+    ) {
+      toast.error("Closing balance is invalid.");
+      return;
+    }
+
+    if (!statementDateInput) {
+      toast.error("Statement date is required.");
+      return;
+    }
+
+    setStatusWorking(true);
+
+    try {
+      const response = await fetch(
+        `/api/admin/finance/bank-statements/${statement.id}`,
+        {
+          method: "PATCH",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            action: "update-details",
+            statementDate: statementDateInput,
+            openingBalance,
+            closingBalance,
+            notes: notesInput,
+          }),
+        },
+      );
+
+      const data = (await response.json().catch(() => null)) as {
+        success?: boolean;
+        error?: string;
+      } | null;
+
+      if (!response.ok || !data?.success) {
+        throw new Error(
+          data?.error || "Failed to update bank statement details.",
+        );
+      }
+
+      toast.success("Bank statement details updated.");
+      setEditingDetails(false);
+      router.refresh();
+    } catch (error) {
+      toast.error(
+        error instanceof Error
+          ? error.message
+          : "Failed to update bank statement details.",
+      );
+    } finally {
+      setStatusWorking(false);
+    }
+  }
+
+  async function startReconciliation() {
+    if (
+      statement.openingBalance === null ||
+      statement.closingBalance === null
+    ) {
+      toast.error(
+        "Opening and closing balances are required before starting reconciliation.",
+      );
+      return;
+    }
+
+    setStatusWorking(true);
+
+    try {
+      const response = await fetch(
+        "/api/admin/finance/reconciliation",
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            bankStatementId: statement.id,
+          }),
+        },
+      );
+
+      const data = (await response.json().catch(() => null)) as {
+        success?: boolean;
+        error?: string;
+        reconciliation?: {
+          id: string;
+          attachedTransactions?: number;
+        };
+      } | null;
+
+      if (!response.ok || !data?.success || !data.reconciliation?.id) {
+        throw new Error(
+          data?.error || "Failed to start bank reconciliation.",
+        );
+      }
+
+      toast.success(
+        `Bank reconciliation started with ${
+          data.reconciliation.attachedTransactions || 0
+        } matched ledger transaction${
+          data.reconciliation.attachedTransactions === 1 ? "" : "s"
+        }.`,
+      );
+
+      router.push(
+        `/admin/finance/reconciliation/${data.reconciliation.id}`,
+      );
+      router.refresh();
+    } catch (error) {
+      toast.error(
+        error instanceof Error
+          ? error.message
+          : "Failed to start bank reconciliation.",
       );
     } finally {
       setStatusWorking(false);
@@ -439,14 +592,27 @@ export default function BankStatementManager({
               )}
 
             {!archived &&
+              (statement.status === BankStatementStatus.IMPORTED ||
+                statement.status === BankStatementStatus.REVIEWED) && (
+                <button
+                  type="button"
+                  onClick={() => setEditingDetails((value) => !value)}
+                  disabled={statusWorking}
+                  className="rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 hover:border-[#8B0000] hover:text-[#8B0000] disabled:opacity-50"
+                >
+                  {editingDetails ? "Close Details" : "Edit Statement Details"}
+                </button>
+              )}
+
+            {!archived &&
               statement.status === BankStatementStatus.REVIEWED && (
                 <button
                   type="button"
-                  onClick={() => updateStatement("reconcile")}
+                  onClick={startReconciliation}
                   disabled={statusWorking}
                   className="rounded-xl bg-emerald-700 px-4 py-2.5 text-sm font-semibold text-white hover:bg-emerald-800 disabled:opacity-50"
                 >
-                  Mark Reconciled
+                  Start Reconciliation
                 </button>
               )}
 
@@ -464,7 +630,87 @@ export default function BankStatementManager({
           </div>
         </div>
 
-        {statement.notes && (
+        {editingDetails && (
+          <div className="mt-5 rounded-2xl border border-slate-200 bg-slate-50 p-4 sm:p-5">
+            <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+              <div>
+                <label className="mb-1.5 block text-sm font-semibold text-slate-700">
+                  Statement Date
+                </label>
+
+                <input
+                  type="date"
+                  value={statementDateInput}
+                  onChange={(event) =>
+                    setStatementDateInput(event.target.value)
+                  }
+                  className="h-11 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm outline-none focus:border-[#8B0000]"
+                />
+              </div>
+
+              <div>
+                <label className="mb-1.5 block text-sm font-semibold text-slate-700">
+                  Opening Balance
+                </label>
+
+                <input
+                  type="number"
+                  step="0.01"
+                  value={openingBalanceInput}
+                  onChange={(event) =>
+                    setOpeningBalanceInput(event.target.value)
+                  }
+                  placeholder="Example: 0.00"
+                  className="h-11 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm outline-none focus:border-[#8B0000]"
+                />
+              </div>
+
+              <div>
+                <label className="mb-1.5 block text-sm font-semibold text-slate-700">
+                  Closing Balance
+                </label>
+
+                <input
+                  type="number"
+                  step="0.01"
+                  value={closingBalanceInput}
+                  onChange={(event) =>
+                    setClosingBalanceInput(event.target.value)
+                  }
+                  placeholder="Example: -690.96"
+                  className="h-11 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm outline-none focus:border-[#8B0000]"
+                />
+              </div>
+
+              <div className="flex items-end">
+                <button
+                  type="button"
+                  onClick={saveStatementDetails}
+                  disabled={statusWorking}
+                  className="h-11 w-full rounded-xl bg-[#8B0000] px-4 text-sm font-semibold text-white hover:bg-[#6f0000] disabled:opacity-50"
+                >
+                  {statusWorking ? "Saving..." : "Save Details"}
+                </button>
+              </div>
+            </div>
+
+            <div className="mt-4">
+              <label className="mb-1.5 block text-sm font-semibold text-slate-700">
+                Notes
+              </label>
+
+              <textarea
+                rows={3}
+                value={notesInput}
+                onChange={(event) => setNotesInput(event.target.value)}
+                placeholder="Optional statement notes"
+                className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm outline-none focus:border-[#8B0000]"
+              />
+            </div>
+          </div>
+        )}
+
+        {statement.notes && !editingDetails && (
           <div className="mt-4 rounded-xl bg-slate-50 p-4 text-sm text-slate-600">
             {statement.notes}
           </div>
@@ -752,3 +998,4 @@ function SummaryCard({
     </section>
   );
 }
+

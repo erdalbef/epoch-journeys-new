@@ -1,104 +1,75 @@
+import { NextResponse } from "next/server";
+import { getServerSession } from "next-auth";
 import {
   BookingInstallmentStatus,
   BookingInstallmentType,
   Role,
 } from "@prisma/client";
-import { getServerSession } from "next-auth";
-import { NextResponse } from "next/server";
-import { revalidatePath } from "next/cache";
 
 import { authOptions } from "@/lib/authOptions";
 import { db } from "@/lib/db";
-import { recomputeBookingPaymentSummary } from "@/lib/bookings/recomputeBookingPaymentSummary";
 
-type RouteContext = {
-  params: Promise<{
-    id: string;
-  }>;
-};
+type Context = { params: Promise<{ id: string }> };
 
-type CreateInstallmentBody = {
-  type?: string;
-  title?: string | null;
-  notes?: string | null;
-  amount?: number | string;
+type Body = {
+  type?: BookingInstallmentType;
+  title?: string;
   dueDate?: string;
+  amount?: string;
+  notes?: string;
 };
 
-function isInstallmentType(value: string): value is BookingInstallmentType {
+function clean(value: unknown) {
+  if (typeof value !== "string") return null;
+  const trimmed = value.trim();
+  return trimmed || null;
+}
+
+function parseType(value: unknown): BookingInstallmentType | null {
   return Object.values(BookingInstallmentType).includes(
-    value as BookingInstallmentType
-  );
+    value as BookingInstallmentType,
+  )
+    ? (value as BookingInstallmentType)
+    : null;
 }
 
-function deriveStatus(
-  amount: number,
-  amountPaid: number,
-  dueDate: Date
-): BookingInstallmentStatus {
-  if (amountPaid >= amount) return "PAID";
-  if (amountPaid > 0) return "PARTIALLY_PAID";
-  if (dueDate.getTime() < Date.now()) return "OVERDUE";
-  return "PENDING";
+async function requireAdmin() {
+  const session = await getServerSession(authOptions);
+  if (!session?.user?.id || session.user.role !== Role.ADMIN) return null;
+  return session.user;
 }
 
-export async function POST(request: Request, context: RouteContext) {
+async function refreshBookingPaymentDueDate(bookingId: string) {
+  const nextSchedule = await db.bookingPaymentSchedule.findFirst({
+    where: {
+      bookingId,
+      status: {
+        in: [
+          BookingInstallmentStatus.PENDING,
+          BookingInstallmentStatus.PARTIALLY_PAID,
+          BookingInstallmentStatus.OVERDUE,
+        ],
+      },
+    },
+    orderBy: { dueDate: "asc" },
+    select: { dueDate: true },
+  });
+
+  await db.booking.update({
+    where: { id: bookingId },
+    data: { paymentDueDate: nextSchedule?.dueDate ?? null },
+  });
+}
+
+export async function POST(request: Request, context: Context) {
+  const admin = await requireAdmin();
+  if (!admin) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
   try {
-    const session = await getServerSession(authOptions);
-
-    if (!session?.user || session.user.role !== Role.ADMIN) {
-      return NextResponse.json({ error: "Unauthorized." }, { status: 401 });
-    }
-
     const { id: bookingId } = await context.params;
-    const body = (await request.json()) as CreateInstallmentBody;
-
-    const rawType = typeof body.type === "string" ? body.type : "CUSTOM";
-
-    if (!isInstallmentType(rawType)) {
-      return NextResponse.json(
-        { error: "Invalid installment type." },
-        { status: 400 }
-      );
-    }
-
-    const installmentType: BookingInstallmentType = rawType;
-
-    const title =
-      typeof body.title === "string" && body.title.trim()
-        ? body.title.trim()
-        : null;
-
-    const notes =
-      typeof body.notes === "string" && body.notes.trim()
-        ? body.notes.trim()
-        : null;
-
-    const amount =
-      typeof body.amount === "number" ? body.amount : Number(body.amount);
-
-    if (!Number.isFinite(amount) || amount <= 0) {
-      return NextResponse.json(
-        { error: "Amount must be greater than 0." },
-        { status: 400 }
-      );
-    }
-
-    if (typeof body.dueDate !== "string" || !body.dueDate.trim()) {
-      return NextResponse.json(
-        { error: "Due date is required." },
-        { status: 400 }
-      );
-    }
-
-    const dueDate = new Date(body.dueDate);
-
-    if (Number.isNaN(dueDate.getTime())) {
-      return NextResponse.json(
-        { error: "Invalid due date." },
-        { status: 400 }
-      );
-    }
+    const body = (await request.json()) as Body;
 
     const booking = await db.booking.findUnique({
       where: { id: bookingId },
@@ -106,38 +77,61 @@ export async function POST(request: Request, context: RouteContext) {
     });
 
     if (!booking) {
+      return NextResponse.json({ error: "Booking not found." }, { status: 404 });
+    }
+
+    const type = parseType(body.type);
+    const dueDate = body.dueDate
+      ? new Date(`${body.dueDate}T12:00:00.000Z`)
+      : null;
+    const amount = Number(body.amount);
+
+    if (!type) {
       return NextResponse.json(
-        { error: "Booking not found." },
-        { status: 404 }
+        { error: "Select a valid installment type." },
+        { status: 400 },
       );
     }
 
-    await db.$transaction(async (tx) => {
-      await tx.bookingPaymentSchedule.create({
-        data: {
-          bookingId,
-          type: installmentType,
-          title,
-          dueDate,
-          amount,
-          amountPaid: 0,
-          status: deriveStatus(amount, 0, dueDate),
-          notes,
-        },
-      });
+    if (!dueDate || Number.isNaN(dueDate.getTime())) {
+      return NextResponse.json(
+        { error: "Enter a valid due date." },
+        { status: 400 },
+      );
+    }
 
-      await recomputeBookingPaymentSummary(tx, bookingId);
+    if (!Number.isFinite(amount) || amount <= 0) {
+      return NextResponse.json(
+        { error: "Enter a valid installment amount." },
+        { status: 400 },
+      );
+    }
+
+    const created = await db.bookingPaymentSchedule.create({
+      data: {
+        bookingId,
+        type,
+        title: clean(body.title),
+        dueDate,
+        amount,
+        amountPaid: 0,
+        status: BookingInstallmentStatus.PENDING,
+        notes: clean(body.notes),
+      },
+      select: { id: true },
     });
 
-    revalidatePath(`/admin/bookings/${bookingId}`);
-    revalidatePath("/admin/bookings");
-    revalidatePath("/admin/finance");
+    await refreshBookingPaymentDueDate(bookingId);
 
-    return NextResponse.json({ success: true }, { status: 201 });
+    return NextResponse.json(
+      { success: true, id: created.id },
+      { status: 201 },
+    );
   } catch (error) {
-    const message =
-      error instanceof Error ? error.message : "Failed to create installment.";
-
-    return NextResponse.json({ error: message }, { status: 400 });
+    console.error("CREATE_BOOKING_PAYMENT_SCHEDULE_ERROR", error);
+    return NextResponse.json(
+      { error: "Failed to create payment installment." },
+      { status: 500 },
+    );
   }
 }

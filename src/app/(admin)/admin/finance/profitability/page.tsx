@@ -225,7 +225,11 @@ function addMetrics(
 function money(
   value: number,
   currency: string,
-) {
+  ) {
+  // Prevent "-€0.00" / "-0.00" caused by floating-point negative zero.
+    const normalizedValue =
+    Math.abs(value) < 0.005 ? 0 : value;
+
   try {
     return new Intl.NumberFormat(
       "en-GB",
@@ -233,12 +237,13 @@ function money(
         style: "currency",
         currency,
         maximumFractionDigits: 2,
+        minimumFractionDigits: 2,
       },
-    ).format(value);
-  } catch {
-    return `${currency} ${value.toFixed(2)}`;
-  }
-}
+        ).format(normalizedValue);
+      } catch {
+          return `${currency} ${normalizedValue.toFixed(2)}`;
+      }
+      }
 
 function formatDate(value: Date) {
   return value.toLocaleDateString(
@@ -486,9 +491,28 @@ export default async function ProfitabilityPage({
             commissionAmount: true,
             netAmount: true,
 
-            amountDue: true,
-
             currency: true,
+
+            paymentSchedules: {
+              select: {
+                amount: true,
+                amountPaid: true,
+              },
+            },
+
+            bankTransactions: {
+              where: {
+                status:
+                  BankTransactionStatus.POSTED,
+              },
+
+              select: {
+                type: true,
+                direction: true,
+                amount: true,
+                currency: true,
+              },
+            },
           },
         },
 
@@ -657,8 +681,64 @@ export default async function ProfitabilityPage({
           metric.netRevenue +=
             booking.netAmount;
 
+          const scheduledAmount =
+            booking.paymentSchedules.reduce(
+              (sum, schedule) =>
+                sum + schedule.amount,
+              0,
+            );
+
+          const scheduledPaid =
+            booking.paymentSchedules.reduce(
+              (sum, schedule) =>
+                sum + schedule.amountPaid,
+              0,
+            );
+
+          const bookingReceivable =
+            booking.paymentSchedules.length > 0
+              ? Math.max(
+                  scheduledAmount -
+                    scheduledPaid,
+                  0,
+                )
+              : Math.max(
+                  booking.netAmount,
+                  0,
+                );
+
           metric.receivables +=
-            booking.amountDue;
+            bookingReceivable;
+
+          /*
+           * Customer receipts are linked reliably to the Booking.
+           * A BankTransaction may have been created before the booking was
+           * assigned to a DepartureDate, so relying only on
+           * departure.bankTransactions can miss valid customer receipts.
+           */
+          for (
+            const transaction of booking.bankTransactions
+          ) {
+            if (
+              transaction.type !==
+                BankTransactionType.CUSTOMER_RECEIPT ||
+              transaction.direction !==
+                BankTransactionDirection.IN
+            ) {
+              continue;
+            }
+
+            const cashMetric =
+              getCurrencyMetrics(
+                metrics,
+                transaction.currency,
+              );
+
+            cashMetric.cashReceived +=
+              Number(
+                transaction.amount,
+              );
+          }
         }
 
         for (
@@ -762,16 +842,11 @@ export default async function ProfitabilityPage({
               transaction.amount,
             );
 
-          if (
-            transaction.type ===
-              BankTransactionType.CUSTOMER_RECEIPT &&
-            transaction.direction ===
-              BankTransactionDirection.IN
-          ) {
-            metric.cashReceived +=
-              amount;
-          }
-
+          /*
+           * Customer receipts are counted through each confirmed booking above.
+           * Keep departure-level BankTransactions for operational outflows only
+           * so the same receipt can never be counted twice.
+           */
           if (
             transaction.direction ===
               BankTransactionDirection.OUT &&
@@ -2108,26 +2183,47 @@ function CurrencyCell({
                   currency
                 ][field];
 
-              const value =
-                typeof raw ===
-                "number"
+              const rawValue =
+                typeof raw === "number"
                   ? raw
                   : 0;
+
+              // Normalize very small values and JavaScript negative zero.
+              const value =
+                Math.abs(rawValue) < 0.005
+                  ? 0
+                  : rawValue;
 
               let valueClass =
                 "font-semibold text-slate-800";
 
               if (negative) {
                 valueClass =
-                  "font-semibold text-red-700";
+                  value === 0
+                    ? "font-semibold text-slate-800"
+                    : "font-semibold text-red-700";
               }
 
               if (profit) {
                 valueClass =
-                  value >= 0
+                  value > 0
                     ? "font-bold text-emerald-700"
-                    : "font-bold text-red-700";
+                    : value < 0
+                      ? "font-bold text-red-700"
+                      : "font-bold text-slate-800";
               }
+
+              /*
+               * Cost columns are stored as positive amounts,
+               * but displayed as financial deductions.
+               *
+               * Profit / cash-position columns retain their
+               * actual mathematical sign.
+               */
+              const displayValue =
+                negative && value > 0
+                  ? -value
+                  : value;
 
               return (
                 <div
@@ -2139,15 +2235,8 @@ function CurrencyCell({
                       valueClass
                     }
                   >
-                    {negative &&
-                    value > 0
-                      ? "-"
-                      : ""}
-
                     {money(
-                      Math.abs(
-                        value,
-                      ),
+                      displayValue,
                       currency,
                     )}
                   </p>

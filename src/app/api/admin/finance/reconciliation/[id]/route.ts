@@ -3,7 +3,9 @@ import { getServerSession } from "next-auth";
 
 import {
   BankReconciliationStatus,
+  BankStatementStatus,
   BankTransactionDirection,
+  BankTransactionStatus,
   Role,
 } from "@prisma/client";
 
@@ -37,9 +39,15 @@ async function recalculateReconciliation(id: string) {
     },
     select: {
       id: true,
+      bankAccountId: true,
+      statementDate: true,
       ledgerOpeningBalance: true,
       statementClosingBalance: true,
+      status: true,
       transactions: {
+        where: {
+          status: BankTransactionStatus.POSTED,
+        },
         select: {
           amount: true,
           direction: true,
@@ -99,39 +107,34 @@ export async function PATCH(
       session.user.role !== Role.ADMIN
     ) {
       return NextResponse.json(
-        {
-          error: "Unauthorized",
-        },
-        {
-          status: 401,
-        },
+        { error: "Unauthorized" },
+        { status: 401 },
       );
     }
 
     const { id } = await context.params;
 
-    const reconciliation = await db.bankReconciliation.findUnique({
-      where: {
-        id,
-      },
-      select: {
-        id: true,
-        status: true,
-        difference: true,
-        statementOpeningBalance: true,
-        statementClosingBalance: true,
-        ledgerOpeningBalance: true,
-      },
-    });
+    const reconciliation =
+      await db.bankReconciliation.findUnique({
+        where: {
+          id,
+        },
+        select: {
+          id: true,
+          bankAccountId: true,
+          statementDate: true,
+          status: true,
+          difference: true,
+          statementOpeningBalance: true,
+          statementClosingBalance: true,
+          ledgerOpeningBalance: true,
+        },
+      });
 
     if (!reconciliation) {
       return NextResponse.json(
-        {
-          error: "Reconciliation not found.",
-        },
-        {
-          status: 404,
-        },
+        { error: "Reconciliation not found." },
+        { status: 404 },
       );
     }
 
@@ -139,16 +142,15 @@ export async function PATCH(
     const action = body.action || "update";
 
     if (
-      reconciliation.status === BankReconciliationStatus.LOCKED
+      reconciliation.status ===
+      BankReconciliationStatus.LOCKED
     ) {
       return NextResponse.json(
         {
           error:
             "This reconciliation is locked and can no longer be changed.",
         },
-        {
-          status: 409,
-        },
+        { status: 409 },
       );
     }
 
@@ -166,12 +168,8 @@ export async function PATCH(
         statementClosingBalance === null
       ) {
         return NextResponse.json(
-          {
-            error: "Statement balances are invalid.",
-          },
-          {
-            status: 400,
-          },
+          { error: "Statement balances are invalid." },
+          { status: 400 },
         );
       }
 
@@ -180,25 +178,38 @@ export async function PATCH(
           ? body.notes.trim()
           : null;
 
-      await db.bankReconciliation.update({
-        where: {
-          id,
-        },
-        data: {
-          statementOpeningBalance,
-          statementClosingBalance,
-          notes,
-          status:
-            reconciliation.status ===
-            BankReconciliationStatus.RECONCILED
+      const wasReconciled =
+        reconciliation.status ===
+        BankReconciliationStatus.RECONCILED;
+
+      await db.$transaction(async (tx) => {
+        await tx.bankReconciliation.update({
+          where: {
+            id,
+          },
+          data: {
+            statementOpeningBalance,
+            statementClosingBalance,
+            notes,
+            status: wasReconciled
               ? BankReconciliationStatus.IN_PROGRESS
               : reconciliation.status,
-          reconciledAt:
-            reconciliation.status ===
-            BankReconciliationStatus.RECONCILED
-              ? null
-              : undefined,
-        },
+            reconciledAt: wasReconciled ? null : undefined,
+          },
+        });
+
+        if (wasReconciled) {
+          await tx.bankStatement.updateMany({
+            where: {
+              bankAccountId: reconciliation.bankAccountId,
+              statementDate: reconciliation.statementDate,
+              status: BankStatementStatus.RECONCILED,
+            },
+            data: {
+              status: BankStatementStatus.REVIEWED,
+            },
+          });
+        }
       });
 
       await recalculateReconciliation(id);
@@ -209,17 +220,18 @@ export async function PATCH(
     }
 
     if (action === "reconcile") {
-      const recalculated = await recalculateReconciliation(id);
+      const recalculated =
+        await recalculateReconciliation(id);
 
-      if (Math.abs(Number(recalculated.difference)) >= 0.005) {
+      if (
+        Math.abs(Number(recalculated.difference)) >= 0.005
+      ) {
         return NextResponse.json(
           {
             error:
               "The reconciliation difference must be zero before the statement can be marked reconciled.",
           },
-          {
-            status: 409,
-          },
+          { status: 409 },
         );
       }
 
@@ -233,20 +245,31 @@ export async function PATCH(
             error:
               "The statement opening balance does not match the ledger opening balance. Review the prior period or opening balance before reconciling.",
           },
-          {
-            status: 409,
-          },
+          { status: 409 },
         );
       }
 
-      await db.bankReconciliation.update({
-        where: {
-          id,
-        },
-        data: {
-          status: BankReconciliationStatus.RECONCILED,
-          reconciledAt: new Date(),
-        },
+      await db.$transaction(async (tx) => {
+        await tx.bankReconciliation.update({
+          where: {
+            id,
+          },
+          data: {
+            status: BankReconciliationStatus.RECONCILED,
+            reconciledAt: new Date(),
+          },
+        });
+
+        await tx.bankStatement.updateMany({
+          where: {
+            bankAccountId: reconciliation.bankAccountId,
+            statementDate: reconciliation.statementDate,
+            status: BankStatementStatus.REVIEWED,
+          },
+          data: {
+            status: BankStatementStatus.RECONCILED,
+          },
+        });
       });
 
       return NextResponse.json({
@@ -255,31 +278,31 @@ export async function PATCH(
     }
 
     if (action === "lock") {
-      const recalculated = await recalculateReconciliation(id);
+      const recalculated =
+        await recalculateReconciliation(id);
 
       if (
-        recalculated.status !== BankReconciliationStatus.RECONCILED
+        recalculated.status !==
+        BankReconciliationStatus.RECONCILED
       ) {
         return NextResponse.json(
           {
             error:
               "Only a reconciled statement can be locked.",
           },
-          {
-            status: 409,
-          },
+          { status: 409 },
         );
       }
 
-      if (Math.abs(Number(recalculated.difference)) >= 0.005) {
+      if (
+        Math.abs(Number(recalculated.difference)) >= 0.005
+      ) {
         return NextResponse.json(
           {
             error:
               "The reconciliation difference must remain zero before locking.",
           },
-          {
-            status: 409,
-          },
+          { status: 409 },
         );
       }
 
@@ -299,12 +322,8 @@ export async function PATCH(
     }
 
     return NextResponse.json(
-      {
-        error: "Invalid reconciliation action.",
-      },
-      {
-        status: 400,
-      },
+      { error: "Invalid reconciliation action." },
+      { status: 400 },
     );
   } catch (error) {
     console.error("UPDATE_BANK_RECONCILIATION_ERROR", error);
@@ -316,9 +335,7 @@ export async function PATCH(
             ? error.message
             : "Failed to update bank reconciliation.",
       },
-      {
-        status: 500,
-      },
+      { status: 500 },
     );
   }
 }

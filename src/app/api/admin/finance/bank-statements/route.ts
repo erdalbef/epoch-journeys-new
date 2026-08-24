@@ -1,5 +1,7 @@
 import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
+import fs from "fs/promises";
+import path from "path";
 
 import {
   BankStatementLineMatchStatus,
@@ -225,10 +227,7 @@ function parseStatementLine(row: CsvRow, currency: string) {
     );
   }
 
-  const valueDateText = firstValue(row, [
-    "valuedate",
-    "valuedate",
-  ]);
+  const valueDateText = firstValue(row, ["valuedate"]);
 
   const debit = parseNumber(
     firstValue(row, ["debit", "debitamount", "withdrawal"]),
@@ -318,6 +317,12 @@ function parseStatementLine(row: CsvRow, currency: string) {
   };
 }
 
+function safeFileName(fileName: string) {
+  return fileName
+    .replace(/\s+/g, "-")
+    .replace(/[^a-zA-Z0-9._-]/g, "");
+}
+
 export async function POST(request: Request) {
   try {
     const session = await getServerSession(authOptions);
@@ -360,7 +365,9 @@ export async function POST(request: Request) {
       formData.get("closingBalance") || "",
     ).trim();
 
-    const notesValue = String(formData.get("notes") || "").trim();
+    const notesValue = String(
+      formData.get("notes") || "",
+    ).trim();
 
     const file = formData.get("file");
 
@@ -390,7 +397,10 @@ export async function POST(request: Request) {
       ? new Date(`${statementDateValue}T23:59:59.999Z`)
       : null;
 
-    if (!statementDate || Number.isNaN(statementDate.getTime())) {
+    if (
+      !statementDate ||
+      Number.isNaN(statementDate.getTime())
+    ) {
       return NextResponse.json(
         {
           error: "Statement date is invalid.",
@@ -468,11 +478,15 @@ export async function POST(request: Request) {
       );
     }
 
+    const originalFileName = file.name;
+    const storedFileName =
+      safeFileName(originalFileName) || "bank-statement.csv";
+
     const duplicate = await db.bankStatement.findFirst({
       where: {
         bankAccountId,
         statementDate,
-        fileName: file.name,
+        fileName: originalFileName,
       },
       select: {
         id: true,
@@ -491,7 +505,11 @@ export async function POST(request: Request) {
       );
     }
 
-    const text = await file.text();
+    const fileBuffer = Buffer.from(
+      await file.arrayBuffer(),
+    );
+
+    const text = fileBuffer.toString("utf-8");
     const rows = toRows(text);
 
     const parsedLines = rows.map((row) =>
@@ -540,29 +558,55 @@ export async function POST(request: Request) {
     }
 
     const statement = await db.$transaction(async (tx) => {
-      const created = await tx.bankStatement.create({
-        data: {
-          bankAccountId,
-          uploadedById: session.user.id,
-          fileName: file.name,
-          fileType: file.type || "text/csv",
-          statementDate,
-          openingBalance:
-            openingBalance === null
-              ? null
-              : new Prisma.Decimal(openingBalance),
-          closingBalance:
-            closingBalance === null
-              ? null
-              : new Prisma.Decimal(closingBalance),
-          currency,
-          status: BankStatementStatus.IMPORTED,
-          notes: notesValue || null,
-        },
-        select: {
-          id: true,
-        },
-      });
+      const accountingYear =
+        statementDate.getUTCFullYear();
+
+      const accountingMonth =
+        statementDate.getUTCMonth() + 1;
+
+      const accountingPeriod =
+        await tx.accountingPeriod.upsert({
+          where: {
+            year_month: {
+              year: accountingYear,
+              month: accountingMonth,
+            },
+          },
+          update: {},
+          create: {
+            year: accountingYear,
+            month: accountingMonth,
+          },
+          select: {
+            id: true,
+          },
+        });
+
+      const created =
+        await tx.bankStatement.create({
+          data: {
+            bankAccountId,
+            uploadedById: session.user.id,
+            accountingPeriodId: accountingPeriod.id,
+            fileName: originalFileName,
+            fileType: file.type || "text/csv",
+            statementDate,
+            openingBalance:
+              openingBalance === null
+                ? null
+                : new Prisma.Decimal(openingBalance),
+            closingBalance:
+              closingBalance === null
+                ? null
+                : new Prisma.Decimal(closingBalance),
+            currency,
+            status: BankStatementStatus.IMPORTED,
+            notes: notesValue || null,
+          },
+          select: {
+            id: true,
+          },
+        });
 
       await tx.bankStatementLine.createMany({
         data: parsedLines.map((line) => ({
@@ -573,6 +617,33 @@ export async function POST(request: Request) {
 
       return created;
     });
+
+    const uploadDir = path.join(
+      process.cwd(),
+      "public",
+      "uploads",
+      "bank-statements",
+      statement.id,
+    );
+
+    try {
+      await fs.mkdir(uploadDir, {
+        recursive: true,
+      });
+
+      await fs.writeFile(
+        path.join(uploadDir, storedFileName),
+        fileBuffer,
+      );
+    } catch (fileError) {
+      await db.bankStatement.delete({
+        where: {
+          id: statement.id,
+        },
+      });
+
+      throw fileError;
+    }
 
     return NextResponse.json(
       {
@@ -587,7 +658,10 @@ export async function POST(request: Request) {
       },
     );
   } catch (error) {
-    console.error("IMPORT_BANK_STATEMENT_ERROR", error);
+    console.error(
+      "IMPORT_BANK_STATEMENT_ERROR",
+      error,
+    );
 
     return NextResponse.json(
       {

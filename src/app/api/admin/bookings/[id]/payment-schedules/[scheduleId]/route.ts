@@ -1,242 +1,192 @@
+import { NextResponse } from "next/server";
+import { getServerSession } from "next-auth";
 import {
   BookingInstallmentStatus,
   BookingInstallmentType,
-  Prisma,
   Role,
 } from "@prisma/client";
-import { getServerSession } from "next-auth";
-import { NextResponse } from "next/server";
-import { revalidatePath } from "next/cache";
 
 import { authOptions } from "@/lib/authOptions";
 import { db } from "@/lib/db";
-import { recomputeBookingPaymentSummary } from "@/lib/bookings/recomputeBookingPaymentSummary";
 
-type RouteContext = {
-  params: Promise<{
-    id: string;
-    scheduleId: string;
-  }>;
+type Context = {
+  params: Promise<{ id: string; scheduleId: string }>;
 };
 
-function isInstallmentType(value: string): value is BookingInstallmentType {
+type Body = {
+  type?: BookingInstallmentType;
+  title?: string;
+  dueDate?: string;
+  amount?: string;
+  notes?: string;
+};
+
+function clean(value: unknown) {
+  if (typeof value !== "string") return null;
+  const trimmed = value.trim();
+  return trimmed || null;
+}
+
+function parseType(value: unknown): BookingInstallmentType | null {
   return Object.values(BookingInstallmentType).includes(
-    value as BookingInstallmentType
-  );
+    value as BookingInstallmentType,
+  )
+    ? (value as BookingInstallmentType)
+    : null;
 }
 
-function deriveStatus(
-  amount: number,
-  amountPaid: number,
-  dueDate: Date
-): BookingInstallmentStatus {
-  if (amountPaid >= amount) return "PAID";
-  if (amountPaid > 0) return "PARTIALLY_PAID";
-  if (dueDate.getTime() < Date.now()) return "OVERDUE";
-  return "PENDING";
+async function requireAdmin() {
+  const session = await getServerSession(authOptions);
+  if (!session?.user?.id || session.user.role !== Role.ADMIN) return null;
+  return session.user;
 }
 
-export async function PATCH(request: Request, context: RouteContext) {
+async function refreshBookingPaymentDueDate(bookingId: string) {
+  const nextSchedule = await db.bookingPaymentSchedule.findFirst({
+    where: {
+      bookingId,
+      status: {
+        in: [
+          BookingInstallmentStatus.PENDING,
+          BookingInstallmentStatus.PARTIALLY_PAID,
+          BookingInstallmentStatus.OVERDUE,
+        ],
+      },
+    },
+    orderBy: { dueDate: "asc" },
+    select: { dueDate: true },
+  });
+
+  await db.booking.update({
+    where: { id: bookingId },
+    data: { paymentDueDate: nextSchedule?.dueDate ?? null },
+  });
+}
+
+export async function PUT(request: Request, context: Context) {
+  const admin = await requireAdmin();
+  if (!admin) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
   try {
-    const session = await getServerSession(authOptions);
-
-    if (!session?.user || session.user.role !== Role.ADMIN) {
-      return NextResponse.json({ error: "Unauthorized." }, { status: 401 });
-    }
-
     const { id: bookingId, scheduleId } = await context.params;
-    const body = (await request.json()) as {
-      action?: "MARK_PAID" | "RESET" | "CANCEL";
-      amount?: number | string;
-      amountPaid?: number | string;
-      dueDate?: string;
-      type?: string;
-      title?: string | null;
-      notes?: string | null;
-    };
+    const body = (await request.json()) as Body;
 
-    const existing = await db.bookingPaymentSchedule.findUnique({
-      where: { id: scheduleId },
-      select: {
-        id: true,
-        bookingId: true,
-        amount: true,
-        amountPaid: true,
-        dueDate: true,
-        status: true,
-        type: true,
-        title: true,
-        notes: true,
+    const schedule = await db.bookingPaymentSchedule.findFirst({
+      where: { id: scheduleId, bookingId },
+      include: {
+        allocations: { select: { id: true } },
       },
     });
 
-    if (!existing || existing.bookingId !== bookingId) {
+    if (!schedule) {
       return NextResponse.json(
-        { error: "Installment not found." },
-        { status: 404 }
+        { error: "Payment installment not found." },
+        { status: 404 },
       );
     }
 
-    await db.$transaction(async (tx) => {
-      if (body.action === "MARK_PAID") {
-        await tx.bookingPaymentSchedule.update({
-          where: { id: scheduleId },
-          data: {
-            amountPaid: existing.amount,
-            paidAt: new Date(),
-            status: "PAID",
-          },
-        });
-      } else if (body.action === "RESET") {
-        const resetStatus = deriveStatus(existing.amount, 0, existing.dueDate);
+    if (schedule.amountPaid > 0 || schedule.allocations.length > 0) {
+      return NextResponse.json(
+        { error: "This installment has payment activity and can no longer be edited." },
+        { status: 409 },
+      );
+    }
 
-        await tx.bookingPaymentSchedule.update({
-          where: { id: scheduleId },
-          data: {
-            amountPaid: 0,
-            paidAt: null,
-            status: resetStatus,
-          },
-        });
-      } else if (body.action === "CANCEL") {
-        await tx.bookingPaymentSchedule.update({
-          where: { id: scheduleId },
-          data: {
-            status: "CANCELLED",
-          },
-        });
-      } else {
-        const amount =
-          body.amount !== undefined ? Number(body.amount) : existing.amount;
+    const type = parseType(body.type);
+    const dueDate = body.dueDate
+      ? new Date(`${body.dueDate}T12:00:00.000Z`)
+      : null;
+    const amount = Number(body.amount);
 
-        const amountPaid =
-          body.amountPaid !== undefined
-            ? Math.max(Number(body.amountPaid), 0)
-            : existing.amountPaid;
+    if (!type) {
+      return NextResponse.json(
+        { error: "Select a valid installment type." },
+        { status: 400 },
+      );
+    }
 
-        const dueDate =
-          body.dueDate !== undefined ? new Date(body.dueDate) : existing.dueDate;
+    if (!dueDate || Number.isNaN(dueDate.getTime())) {
+      return NextResponse.json(
+        { error: "Enter a valid due date." },
+        { status: 400 },
+      );
+    }
 
-        if (Number.isNaN(amount) || amount <= 0) {
-          throw new Error("Amount must be greater than 0.");
-        }
+    if (!Number.isFinite(amount) || amount <= 0) {
+      return NextResponse.json(
+        { error: "Enter a valid installment amount." },
+        { status: 400 },
+      );
+    }
 
-        if (Number.isNaN(amountPaid) || amountPaid < 0) {
-          throw new Error("Paid amount must be 0 or greater.");
-        }
-
-        if (Number.isNaN(dueDate.getTime())) {
-          throw new Error("Invalid due date.");
-        }
-
-        let nextType: BookingInstallmentType | undefined;
-
-        if (body.type !== undefined) {
-          if (!isInstallmentType(body.type)) {
-            throw new Error("Invalid installment type.");
-          }
-          nextType = body.type;
-        }
-
-        const title =
-          body.title === undefined
-            ? undefined
-            : typeof body.title === "string" && body.title.trim()
-            ? body.title.trim()
-            : null;
-
-        const notes =
-          body.notes === undefined
-            ? undefined
-            : typeof body.notes === "string" && body.notes.trim()
-            ? body.notes.trim()
-            : null;
-
-        const nextStatus =
-          existing.status === "CANCELLED"
-            ? "CANCELLED"
-            : deriveStatus(amount, amountPaid, dueDate);
-
-        const updateData: Prisma.BookingPaymentScheduleUpdateInput = {
-          amount,
-          amountPaid,
-          dueDate,
-          paidAt: amountPaid >= amount ? new Date() : null,
-          status: nextStatus,
-        };
-
-        if (nextType !== undefined) {
-          updateData.type = nextType;
-        }
-
-        if (title !== undefined) {
-          updateData.title = title;
-        }
-
-        if (notes !== undefined) {
-          updateData.notes = notes;
-        }
-
-        await tx.bookingPaymentSchedule.update({
-          where: { id: scheduleId },
-          data: updateData,
-        });
-      }
-
-      await recomputeBookingPaymentSummary(tx, bookingId);
+    await db.bookingPaymentSchedule.update({
+      where: { id: scheduleId },
+      data: {
+        type,
+        title: clean(body.title),
+        dueDate,
+        amount,
+        notes: clean(body.notes),
+        status: BookingInstallmentStatus.PENDING,
+      },
     });
 
-    revalidatePath(`/admin/bookings/${bookingId}`);
-    revalidatePath("/admin/bookings");
-    revalidatePath("/admin/finance");
+    await refreshBookingPaymentDueDate(bookingId);
 
     return NextResponse.json({ success: true });
   } catch (error) {
-    const message =
-      error instanceof Error ? error.message : "Failed to update installment.";
-
-    return NextResponse.json({ error: message }, { status: 400 });
+    console.error("UPDATE_BOOKING_PAYMENT_SCHEDULE_ERROR", error);
+    return NextResponse.json(
+      { error: "Failed to update payment installment." },
+      { status: 500 },
+    );
   }
 }
 
-export async function DELETE(_request: Request, context: RouteContext) {
+export async function DELETE(_request: Request, context: Context) {
+  const admin = await requireAdmin();
+  if (!admin) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
   try {
-    const session = await getServerSession(authOptions);
-
-    if (!session?.user || session.user.role !== Role.ADMIN) {
-      return NextResponse.json({ error: "Unauthorized." }, { status: 401 });
-    }
-
     const { id: bookingId, scheduleId } = await context.params;
 
-    await db.$transaction(async (tx) => {
-      const existing = await tx.bookingPaymentSchedule.findUnique({
-        where: { id: scheduleId },
-        select: {
-          bookingId: true,
-        },
-      });
-
-      if (!existing || existing.bookingId !== bookingId) {
-        throw new Error("Installment not found.");
-      }
-
-      await tx.bookingPaymentSchedule.delete({
-        where: { id: scheduleId },
-      });
-
-      await recomputeBookingPaymentSummary(tx, bookingId);
+    const schedule = await db.bookingPaymentSchedule.findFirst({
+      where: { id: scheduleId, bookingId },
+      include: {
+        allocations: { select: { id: true } },
+      },
     });
 
-    revalidatePath(`/admin/bookings/${bookingId}`);
-    revalidatePath("/admin/bookings");
-    revalidatePath("/admin/finance");
+    if (!schedule) {
+      return NextResponse.json(
+        { error: "Payment installment not found." },
+        { status: 404 },
+      );
+    }
+
+    if (schedule.amountPaid > 0 || schedule.allocations.length > 0) {
+      return NextResponse.json(
+        { error: "This installment has payment activity and cannot be deleted." },
+        { status: 409 },
+      );
+    }
+
+    await db.bookingPaymentSchedule.delete({
+      where: { id: scheduleId },
+    });
+
+    await refreshBookingPaymentDueDate(bookingId);
 
     return NextResponse.json({ success: true });
   } catch (error) {
-    const message =
-      error instanceof Error ? error.message : "Failed to delete installment.";
-
-    return NextResponse.json({ error: message }, { status: 400 });
+    console.error("DELETE_BOOKING_PAYMENT_SCHEDULE_ERROR", error);
+    return NextResponse.json(
+      { error: "Failed to delete payment installment." },
+      { status: 500 },
+    );
   }
 }

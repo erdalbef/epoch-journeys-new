@@ -1,4 +1,7 @@
-import { AccountingCategory } from "@prisma/client";
+import {
+  AccountingCategory,
+  BankTransactionDirection,
+} from "@prisma/client";
 import { ZipArchive } from "archiver";
 import { existsSync } from "fs";
 import path from "path";
@@ -12,20 +15,6 @@ type BuildAccountingPackageOptions = {
   year: number;
   month: number;
   part: AccountingPackagePart;
-
-  /**
-   * strict = true:
-   * throw an error if a database document cannot
-   * be found physically on the server.
-   *
-   * We will use this later for accountant email.
-   *
-   * strict = false:
-   * skip missing files and continue generating ZIP.
-   *
-   * This preserves the behavior of the current
-   * working download route.
-   */
   strict?: boolean;
 };
 
@@ -81,7 +70,7 @@ const CATEGORY_FOLDER_NAMES: Record<
 };
 
 function csvEscape(
-  value: string | number | null | undefined
+  value: string | number | null | undefined,
 ) {
   if (
     value === null ||
@@ -99,7 +88,7 @@ function csvEscape(
   ) {
     return `"${text.replaceAll(
       '"',
-      '""'
+      '""',
     )}"`;
   }
 
@@ -107,42 +96,67 @@ function csvEscape(
 }
 
 function safeArchiveFileName(
-  fileName: string
+  fileName: string,
 ) {
   return fileName
-    .replace(/[<>:"/\\|?*]/g, "-")
-    .replace(/\s+/g, " ")
+    .replace(
+      /[<>:"/\\|?*]/g,
+      "-",
+    )
+    .replace(
+      /\s+/g,
+      " ",
+    )
     .trim();
 }
 
+function safeStoredFileName(
+  fileName: string,
+) {
+  return fileName
+    .replace(
+      /\s+/g,
+      "-",
+    )
+    .replace(
+      /[^a-zA-Z0-9._-]/g,
+      "",
+    );
+}
+
 function resolvePublicFile(
-  storagePath: string
+  storagePath: string,
 ) {
   const relativePath =
-    storagePath.replace(/^\/+/, "");
+    storagePath.replace(
+      /^\/+/,
+      "",
+    );
 
   const publicRoot =
     path.resolve(
       process.cwd(),
-      "public"
+      "public",
     );
 
   const absolutePath =
     path.resolve(
       publicRoot,
-      relativePath
+      relativePath,
     );
 
   const relativeToPublic =
     path.relative(
       publicRoot,
-      absolutePath
+      absolutePath,
     );
 
   if (
-    relativeToPublic.startsWith("..") ||
+    relativeToPublic.startsWith(
+      "..",
+    ) ||
     path.isAbsolute(
-      relativeToPublic
+      relativeToPublic,
     )
   ) {
     return null;
@@ -154,19 +168,59 @@ function resolvePublicFile(
 function getBankStatementPath(
   year: number,
   month: number,
-  fileName: string
+  statementId: string,
+  fileName: string,
 ) {
   const monthFolder =
-    String(month).padStart(
+    String(
+      month,
+    ).padStart(
       2,
-      "0"
+      "0",
     );
 
-  /*
-   * Current preferred monthly folder.
-   */
+  const storedFileName =
+    safeStoredFileName(
+      fileName,
+    ) ||
+    "bank-statement.csv";
 
-  const directPath =
+  const financeIdPath =
+    path.resolve(
+      process.cwd(),
+      "public",
+      "uploads",
+      "bank-statements",
+      statementId,
+      storedFileName,
+    );
+
+  if (
+    existsSync(
+      financeIdPath,
+    )
+  ) {
+    return financeIdPath;
+  }
+
+  const financeFlatPath =
+    path.resolve(
+      process.cwd(),
+      "public",
+      "uploads",
+      "bank-statements",
+      storedFileName,
+    );
+
+  if (
+    existsSync(
+      financeFlatPath,
+    )
+  ) {
+    return financeFlatPath;
+  }
+
+  const directAccountingPath =
     path.resolve(
       process.cwd(),
       "public",
@@ -174,24 +228,18 @@ function getBankStatementPath(
       "accounting",
       String(year),
       monthFolder,
-      fileName
+      fileName,
     );
 
   if (
     existsSync(
-      directPath
+      directAccountingPath,
     )
   ) {
-    return directPath;
+    return directAccountingPath;
   }
 
-  /*
-   * Support the earlier bank-statements
-   * subfolder so existing uploads continue
-   * to work.
-   */
-
-  const bankStatementPath =
+  const legacyAccountingBankStatementPath =
     path.resolve(
       process.cwd(),
       "public",
@@ -200,53 +248,290 @@ function getBankStatementPath(
       String(year),
       monthFolder,
       "bank-statements",
-      fileName
+      fileName,
     );
 
   if (
     existsSync(
-      bankStatementPath
+      legacyAccountingBankStatementPath,
     )
   ) {
-    return bankStatementPath;
+    return legacyAccountingBankStatementPath;
   }
 
   return null;
 }
 
+function buildReconstructedStatementCsv(
+  lines: Array<{
+    transactionDate: Date;
+    valueDate: Date | null;
+    description: string | null;
+    reference: string | null;
+    amount: unknown;
+    direction: BankTransactionDirection;
+    balance: unknown;
+  }>,
+) {
+  const rows = [
+    [
+      "Date",
+      "Value Date",
+      "Description",
+      "Reference",
+      "Debit",
+      "Credit",
+      "Balance",
+    ].join(","),
+  ];
+
+  for (
+    const line of
+    lines
+  ) {
+    const amount =
+      Number(
+        line.amount,
+      );
+
+    const balance =
+      line.balance === null
+        ? ""
+        : Number(
+            line.balance,
+          ).toFixed(
+            2,
+          );
+
+    rows.push(
+      [
+        line.transactionDate
+          .toISOString()
+          .slice(
+            0,
+            10,
+          ),
+
+        line.valueDate
+          ? line.valueDate
+              .toISOString()
+              .slice(
+                0,
+                10,
+              )
+          : "",
+
+        line.description ??
+          "",
+
+        line.reference ??
+          "",
+
+        line.direction ===
+        BankTransactionDirection.OUT
+          ? amount.toFixed(
+              2,
+            )
+          : "",
+
+        line.direction ===
+        BankTransactionDirection.IN
+          ? amount.toFixed(
+              2,
+            )
+          : "",
+
+        balance,
+      ]
+        .map(
+          csvEscape,
+        )
+        .join(
+          ",",
+        ),
+    );
+  }
+
+  return rows.join(
+    "\n",
+  );
+}
+
 function collectStream(
-  stream: PassThrough
+  stream: PassThrough,
 ): Promise<Buffer> {
   return new Promise(
-    (resolve, reject) => {
-      const chunks: Buffer[] = [];
+    (
+      resolve,
+      reject,
+    ) => {
+      const chunks: Buffer[] =
+        [];
 
       stream.on(
         "data",
-        (chunk: Buffer | Uint8Array) => {
+        (
+          chunk:
+            | Buffer
+            | Uint8Array,
+        ) => {
           chunks.push(
-            Buffer.isBuffer(chunk)
+            Buffer.isBuffer(
+              chunk,
+            )
               ? chunk
-              : Buffer.from(chunk)
+              : Buffer.from(
+                  chunk,
+                ),
           );
-        }
+        },
       );
 
       stream.on(
         "end",
         () => {
           resolve(
-            Buffer.concat(chunks)
+            Buffer.concat(
+              chunks,
+            ),
           );
-        }
+        },
       );
 
       stream.on(
         "error",
-        reject
+        reject,
       );
-    }
+    },
   );
+}
+
+function getDocumentFinancialValue(
+  document: {
+    payment: {
+      amount: unknown;
+      currency: string;
+    } | null;
+
+    supplierPayablePayment: {
+      amount: unknown;
+      currency: string;
+    } | null;
+
+    supplierPayable: {
+      approvedAmount: unknown;
+      currency: string;
+    } | null;
+
+    salesDocument: {
+      totalAmount: unknown;
+      currency: string;
+    } | null;
+  },
+) {
+  /*
+   * Customer receipt / advance.
+   */
+  if (
+    document.payment
+  ) {
+    return {
+      amount:
+        Number(
+          document.payment
+            .amount,
+        ).toFixed(
+          2,
+        ),
+
+      currency:
+        document.payment
+          .currency,
+    };
+  }
+
+  /*
+   * Supplier payment proof.
+   *
+   * IMPORTANT:
+   * This must be checked BEFORE
+   * supplierPayable because the
+   * document is normally linked to
+   * both records.
+   *
+   * We want the actual installment
+   * paid, not the full invoice value.
+   */
+  if (
+    document.supplierPayablePayment
+  ) {
+    return {
+      amount:
+        Number(
+          document
+            .supplierPayablePayment
+            .amount,
+        ).toFixed(
+          2,
+        ),
+
+      currency:
+        document
+          .supplierPayablePayment
+          .currency,
+    };
+  }
+
+  /*
+   * Supplier invoice.
+   */
+  if (
+    document.supplierPayable
+  ) {
+    return {
+      amount:
+        Number(
+          document
+            .supplierPayable
+            .approvedAmount,
+        ).toFixed(
+          2,
+        ),
+
+      currency:
+        document
+          .supplierPayable
+          .currency,
+    };
+  }
+
+  /*
+   * Sales invoice / credit note.
+   */
+  if (
+    document.salesDocument
+  ) {
+    return {
+      amount:
+        Number(
+          document
+            .salesDocument
+            .totalAmount,
+        ).toFixed(
+          2,
+        ),
+
+      currency:
+        document
+          .salesDocument
+          .currency,
+    };
+  }
+
+  return {
+    amount: "",
+    currency: "",
+  };
 }
 
 export async function buildAccountingPackage({
@@ -256,22 +541,26 @@ export async function buildAccountingPackage({
   strict = false,
 }: BuildAccountingPackageOptions): Promise<AccountingPackageResult> {
   if (
-    !Number.isInteger(year) ||
+    !Number.isInteger(
+      year,
+    ) ||
     year < 2000 ||
     year > 2100
   ) {
     throw new Error(
-      "Invalid accounting year."
+      "Invalid accounting year.",
     );
   }
 
   if (
-    !Number.isInteger(month) ||
+    !Number.isInteger(
+      month,
+    ) ||
     month < 1 ||
     month > 12
   ) {
     throw new Error(
-      "Invalid accounting month."
+      "Invalid accounting month.",
     );
   }
 
@@ -280,7 +569,7 @@ export async function buildAccountingPackage({
     part !== 2
   ) {
     throw new Error(
-      "Invalid accounting package part."
+      "Invalid accounting package part.",
     );
   }
 
@@ -295,6 +584,40 @@ export async function buildAccountingPackage({
 
       include: {
         documents: {
+          include: {
+            payment: {
+              select: {
+                amount: true,
+                currency: true,
+              },
+            },
+
+            supplierPayablePayment: {
+              select: {
+                amount: true,
+                currency: true,
+              },
+            },
+
+            supplierPayable: {
+              select: {
+                approvedAmount:
+                  true,
+                currency:
+                  true,
+              },
+            },
+
+            salesDocument: {
+              select: {
+                totalAmount:
+                  true,
+                currency:
+                  true,
+              },
+            },
+          },
+
           orderBy: [
             {
               accountingCategory:
@@ -313,13 +636,39 @@ export async function buildAccountingPackage({
 
         bankStatements: {
           where: {
-            currency: "EUR",
+            currency:
+              "EUR",
           },
 
           include: {
             bankAccount: {
               select: {
-                name: true,
+                name:
+                  true,
+              },
+            },
+
+            lines: {
+              orderBy: {
+                transactionDate:
+                  "asc",
+              },
+
+              select: {
+                transactionDate:
+                  true,
+                valueDate:
+                  true,
+                description:
+                  true,
+                reference:
+                  true,
+                amount:
+                  true,
+                direction:
+                  true,
+                balance:
+                  true,
               },
             },
           },
@@ -334,12 +683,11 @@ export async function buildAccountingPackage({
 
   if (!period) {
     throw new Error(
-      "Accounting period not found."
+      "Accounting period not found.",
     );
   }
 
-  const selectedCategories:
-    AccountingCategory[] =
+  const selectedCategories =
     part === 1
       ? PART_1_CATEGORIES
       : PART_2_CATEGORIES;
@@ -350,22 +698,27 @@ export async function buildAccountingPackage({
         document.accountingCategory !==
           null &&
         selectedCategories.includes(
-          document.accountingCategory
-        )
+          document.accountingCategory,
+        ),
     );
 
   const statementCount =
     part === 1
-      ? period.bankStatements.length
+      ? period
+          .bankStatements
+          .length
       : 0;
 
   const documentCount =
     selectedDocuments.length +
     statementCount;
 
-  if (documentCount === 0) {
+  if (
+    documentCount ===
+    0
+  ) {
     throw new Error(
-      `Accounting ZIP Part ${part} has no documents.`
+      `Accounting ZIP Part ${part} has no documents.`,
     );
   }
 
@@ -382,34 +735,39 @@ export async function buildAccountingPackage({
   const missingFiles:
     string[] = [];
 
-  let includedFileCount = 0;
+  let includedFileCount =
+    0;
 
   archive.on(
     "warning",
-    (warning: Error) => {
+    (
+      warning: Error,
+    ) => {
       console.warn(
         "Accounting ZIP warning:",
-        warning
+        warning,
       );
-    }
+    },
   );
 
   archive.on(
     "error",
-    (error: Error) => {
+    (
+      error: Error,
+    ) => {
       output.destroy(
-        error
+        error,
       );
-    }
+    },
   );
 
   archive.pipe(
-    output
+    output,
   );
 
   const bufferPromise =
     collectStream(
-      output
+      output,
     );
 
   const indexRows:
@@ -421,16 +779,16 @@ export async function buildAccountingPackage({
       "Original File",
       "Document Date",
       "Reference Number",
+      "Amount",
+      "Currency",
     ]
       .map(
-        csvEscape
+        csvEscape,
       )
-      .join(","),
+      .join(
+        ",",
+      ),
   ];
-
-  /*
-   * FinanceDocument records
-   */
 
   for (
     const document of
@@ -442,23 +800,28 @@ export async function buildAccountingPackage({
       continue;
     }
 
+    const financialValue =
+      getDocumentFinancialValue(
+        document,
+      );
+
     const absolutePath =
       resolvePublicFile(
-        document.storagePath
+        document.storagePath,
       );
 
     if (
       !absolutePath ||
       !existsSync(
-        absolutePath
+        absolutePath,
       )
     ) {
       missingFiles.push(
-        document.originalFileName
+        document.originalFileName,
       );
 
       console.warn(
-        `Accounting file missing: ${document.storagePath}`
+        `Accounting file missing: ${document.storagePath}`,
       );
 
       continue;
@@ -472,7 +835,7 @@ export async function buildAccountingPackage({
 
     const archiveFileName =
       safeArchiveFileName(
-        document.originalFileName
+        document.originalFileName,
       );
 
     archive.file(
@@ -480,157 +843,224 @@ export async function buildAccountingPackage({
       {
         name:
           `${folderName}/${archiveFileName}`,
-      }
+      },
     );
 
-    includedFileCount += 1;
+    includedFileCount +=
+      1;
 
     indexRows.push(
       [
         folderName,
+
         document.accountingSubcategory ??
           "",
+
         document.title,
+
         document.originalFileName,
+
         document.documentDate
           ? document.documentDate
               .toISOString()
               .slice(
                 0,
-                10
+                10,
               )
           : "",
+
         document.referenceNumber ??
           "",
+
+        financialValue.amount,
+
+        financialValue.currency,
       ]
         .map(
-          csvEscape
+          csvEscape,
         )
-        .join(",")
+        .join(
+          ",",
+        ),
     );
   }
 
-  /*
-   * BankStatement records
-   * belong only in Part 1.
-   */
-
-  if (part === 1) {
+  if (
+    part === 1
+  ) {
     for (
       const statement of
       period.bankStatements
     ) {
-      if (
-        !statement.fileName
-      ) {
-        missingFiles.push(
-          `Bank statement ${statement.id}`
-        );
-
-        continue;
-      }
-
-      const absolutePath =
-        getBankStatementPath(
-          year,
-          month,
-          statement.fileName
-        );
-
-      if (!absolutePath) {
-        missingFiles.push(
-          statement.fileName
-        );
-
-        console.warn(
-          `Bank statement file missing: ${statement.fileName}`
-        );
-
-        continue;
-      }
-
       const folderName =
         CATEGORY_FOLDER_NAMES[
           AccountingCategory.BANK_STATEMENTS
         ];
 
-      const archiveFileName =
+      const accountFolder =
         safeArchiveFileName(
-          statement.fileName
+          `${statement.bankAccount.name}-${statement.currency}`,
         );
 
-      archive.file(
-        absolutePath,
+      const absolutePath =
+        statement.fileName
+          ? getBankStatementPath(
+              year,
+              month,
+              statement.id,
+              statement.fileName,
+            )
+          : null;
+
+      if (
+        absolutePath
+      ) {
+        const archiveFileName =
+          safeArchiveFileName(
+            statement.fileName ||
+              `bank-statement-${statement.id}.csv`,
+          );
+
+        archive.file(
+          absolutePath,
+          {
+            name:
+              `${folderName}/${accountFolder}/${archiveFileName}`,
+          },
+        );
+
+        includedFileCount +=
+          1;
+
+        indexRows.push(
+          [
+            folderName,
+
+            statement.bankAccount
+              .name,
+
+            "Bank Statement",
+
+            statement.fileName ??
+              "",
+
+            statement.statementDate
+              .toISOString()
+              .slice(
+                0,
+                10,
+              ),
+
+            "",
+
+            "",
+
+            "",
+          ]
+            .map(
+              csvEscape,
+            )
+            .join(
+              ",",
+            ),
+        );
+
+        continue;
+      }
+
+      const reconstructedCsv =
+        buildReconstructedStatementCsv(
+          statement.lines,
+        );
+
+      const baseName =
+        statement.fileName
+          ? path.parse(
+              statement.fileName,
+            ).name
+          : `bank-statement-${statement.id}`;
+
+      const reconstructedFileName =
+        safeArchiveFileName(
+          `${baseName}-reconstructed.csv`,
+        );
+
+      archive.append(
+        reconstructedCsv,
         {
           name:
-            `${folderName}/${archiveFileName}`,
-        }
+            `${folderName}/${accountFolder}/${reconstructedFileName}`,
+        },
       );
 
-      includedFileCount += 1;
+      includedFileCount +=
+        1;
 
       indexRows.push(
         [
           folderName,
-          statement
-            .bankAccount
+
+          statement.bankAccount
             .name,
-          "Bank Statement",
-          statement.fileName,
+
+          "Bank Statement (Reconstructed)",
+
+          reconstructedFileName,
+
           statement.statementDate
             .toISOString()
             .slice(
               0,
-              10
+              10,
             ),
+
+          "",
+
+          "",
+
           "",
         ]
           .map(
-            csvEscape
+            csvEscape,
           )
-          .join(",")
+          .join(
+            ",",
+          ),
       );
     }
   }
 
-  /*
-   * For official accountant email sending
-   * we will use strict=true.
-   *
-   * This prevents an incomplete accounting
-   * package from being emailed.
-   */
-
   if (
     strict &&
-    missingFiles.length > 0
+    missingFiles.length >
+      0
   ) {
     archive.abort();
     output.destroy();
 
     throw new Error(
       `Accounting package is incomplete. Missing files: ${missingFiles.join(
-        ", "
-      )}`
+        ", ",
+      )}`,
     );
   }
 
   const indexFileName =
     `Epoch-Journeys-Accounting-${year}-${String(
-      month
+      month,
     ).padStart(
       2,
-      "0"
+      "0",
     )}-Part-${part}-Index.csv`;
 
   archive.append(
     indexRows.join(
-      "\n"
+      "\n",
     ),
     {
       name:
         indexFileName,
-    }
+    },
   );
 
   await archive.finalize();
@@ -640,10 +1070,10 @@ export async function buildAccountingPackage({
 
   const fileName =
     `Epoch-Journeys-Accounting-${year}-${String(
-      month
+      month,
     ).padStart(
       2,
-      "0"
+      "0",
     )}-Part-${part}.zip`;
 
   return {

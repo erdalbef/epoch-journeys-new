@@ -1,6 +1,8 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
+
 import { db } from "@/lib/db";
+import { EditAgentForm } from "./EditAgentForm";
 
 type PageProps = {
   params: Promise<{ id: string }>;
@@ -12,6 +14,15 @@ function formatDate(value: Date) {
     month: "short",
     year: "numeric",
   }).format(value);
+}
+
+function partnerTypeLabel(value: string | null) {
+  if (!value) return "—";
+
+  return value
+    .replaceAll("_", " ")
+    .toLowerCase()
+    .replace(/\b\w/g, (character) => character.toUpperCase());
 }
 
 export default async function AdminAgentDetailPage({ params }: PageProps) {
@@ -36,6 +47,20 @@ export default async function AdminAgentDetailPage({ params }: PageProps) {
       partnerType: true,
       agentCode: true,
       agentLogoUrl: true,
+
+      billingCompanyName: true,
+      billingCompanyRegNo: true,
+      billingTaxNumber: true,
+      billingVatNumber: true,
+      billingAddress: true,
+      billingCity: true,
+      billingState: true,
+      billingPostalCode: true,
+      billingCountry: true,
+      billingContactName: true,
+      billingEmail: true,
+      billingEmailSecondary: true,
+      billingPhone: true,
     },
   });
 
@@ -68,22 +93,22 @@ export default async function AdminAgentDetailPage({ params }: PageProps) {
                     Role: {agent.role}
                   </span>
 
-                  {agent.partnerType && (
+                  {agent.partnerType ? (
                     <span className="rounded-full bg-white/10 px-3 py-1 text-xs">
-                      {agent.partnerType}
+                      {partnerTypeLabel(agent.partnerType)}
                     </span>
-                  )}
+                  ) : null}
 
-                  {agent.commissionRate != null && (
+                  {agent.commissionRate != null ? (
                     <span className="rounded-full bg-[#FFD8A8] px-3 py-1 text-xs font-semibold text-[#8B0000]">
                       {agent.commissionRate}%
                     </span>
-                  )}
+                  ) : null}
                 </div>
               </div>
             </div>
 
-            <div className="flex gap-3">
+            <div className="flex flex-wrap gap-3">
               <Link
                 href={`/admin/agents/${agent.id}/commissions`}
                 className="rounded bg-white px-4 py-2 text-sm font-semibold text-[#001F3F]"
@@ -93,7 +118,7 @@ export default async function AdminAgentDetailPage({ params }: PageProps) {
 
               <Link
                 href="/admin/agents"
-                className="rounded border px-4 py-2 text-sm text-white"
+                className="rounded border border-white/30 px-4 py-2 text-sm text-white"
               >
                 Back
               </Link>
@@ -102,54 +127,154 @@ export default async function AdminAgentDetailPage({ params }: PageProps) {
         </div>
 
         <div className="grid gap-6 p-6 xl:grid-cols-3">
-          <section className="space-y-4 xl:col-span-2">
+          <section className="space-y-6 xl:col-span-2">
             <div className="rounded-xl border bg-slate-50 p-5">
-              <h2 className="mb-4 text-lg font-semibold">Profile</h2>
-
-              <div className="grid gap-4 md:grid-cols-2">
-                <div>Full Name: {agent.fullName || "—"}</div>
-                <div>Email: {agent.email}</div>
-                <div>Phone: {agent.phone || "—"}</div>
-                <div>Joined: {formatDate(agent.createdAt)}</div>
-                <div>Status: {agent.status}</div>
-                <div>Membership: {agent.membership || "—"}</div>
-              </div>
-            </div>
-
-            <div className="rounded-xl border bg-white p-5">
-              <h2 className="mb-4 text-lg font-semibold">
-                Business Information
+              <h2 className="mb-4 text-lg font-semibold text-[#001F3F]">
+                Partner Overview
               </h2>
 
-              <div className="grid gap-4 md:grid-cols-2">
-                <div>Travel Agency: {agent.travelAgency || "—"}</div>
-                <div>Partner Type: {agent.partnerType}</div>
-                <div>Website: {agent.website || "—"}</div>
-                <div>Agent Code: {agent.agentCode || "—"}</div>
+              <div className="grid gap-4 text-sm md:grid-cols-2">
+                <div>
+                  <span className="font-semibold">Full Name:</span>{" "}
+                  {agent.fullName || "—"}
+                </div>
+
+                <div>
+                  <span className="font-semibold">Email:</span> {agent.email}
+                </div>
+
+                <div>
+                  <span className="font-semibold">Phone:</span>{" "}
+                  {agent.phone || "—"}
+                </div>
+
+                <div>
+                  <span className="font-semibold">Joined:</span>{" "}
+                  {formatDate(agent.createdAt)}
+                </div>
+
+                <div>
+                  <span className="font-semibold">Status:</span> {agent.status}
+                </div>
+
+                <div>
+                  <span className="font-semibold">Partner Type:</span>{" "}
+                  {partnerTypeLabel(agent.partnerType)}
+                </div>
+
+                <div>
+                  <span className="font-semibold">Travel Agency:</span>{" "}
+                  {agent.travelAgency || "—"}
+                </div>
+
+                <div>
+                  <span className="font-semibold">Agent Code:</span>{" "}
+                  {agent.agentCode || "—"}
+                </div>
               </div>
             </div>
 
-            <div className="rounded-xl border bg-white p-5">
-              <h2 className="mb-4 text-lg font-semibold">Notes</h2>
-              <div>{agent.notes || "No notes"}</div>
-            </div>
+            <EditAgentForm
+              agentId={agent.id}
+              fullName={agent.fullName}
+              travelAgency={agent.travelAgency}
+              phone={agent.phone}
+              website={agent.website}
+              membership={agent.membership}
+              notes={agent.notes}
+              billingCompanyName={agent.billingCompanyName}
+              billingCompanyRegNo={agent.billingCompanyRegNo}
+              billingTaxNumber={agent.billingTaxNumber}
+              billingVatNumber={agent.billingVatNumber}
+              billingAddress={agent.billingAddress}
+              billingCity={agent.billingCity}
+              billingState={agent.billingState}
+              billingPostalCode={agent.billingPostalCode}
+              billingCountry={agent.billingCountry}
+              billingContactName={agent.billingContactName}
+              billingEmail={agent.billingEmail}
+              billingEmailSecondary={agent.billingEmailSecondary}
+              billingPhone={agent.billingPhone}
+            />
           </section>
 
           <aside className="space-y-4">
             <div className="rounded-xl border bg-white p-5">
-              <h2 className="mb-4 text-lg font-semibold">Commission</h2>
+              <h2 className="mb-4 text-lg font-semibold text-[#001F3F]">
+                Commission
+              </h2>
 
               <div className="text-3xl font-bold">
                 {agent.commissionRate != null
                   ? `${agent.commissionRate}%`
                   : "—"}
               </div>
+
+              <Link
+                href={`/admin/agents/${agent.id}/commissions`}
+                className="mt-4 inline-block text-sm font-semibold text-[#8B0000] hover:underline"
+              >
+                Manage commissions
+              </Link>
             </div>
 
             <div className="rounded-xl border bg-white p-5">
-              <h2 className="mb-4 text-lg font-semibold">Agent Info</h2>
+              <h2 className="mb-4 text-lg font-semibold text-[#001F3F]">
+                Billing Snapshot
+              </h2>
 
-              <div>Logo: {agent.agentLogoUrl || "—"}</div>
+              <div className="space-y-3 text-sm text-slate-700">
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">
+                    Legal Name
+                  </p>
+                  <p>{agent.billingCompanyName || "—"}</p>
+                </div>
+
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">
+                    VAT Number
+                  </p>
+                  <p>{agent.billingVatNumber || "—"}</p>
+                </div>
+
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">
+                    Billing Email
+                  </p>
+                  <p className="break-all">{agent.billingEmail || "—"}</p>
+                </div>
+
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">
+                    Country
+                  </p>
+                  <p>{agent.billingCountry || "—"}</p>
+                </div>
+              </div>
+            </div>
+
+            <div className="rounded-xl border bg-white p-5">
+              <h2 className="mb-4 text-lg font-semibold text-[#001F3F]">
+                Agent Info
+              </h2>
+
+              <div className="space-y-2 text-sm">
+                <div>
+                  <span className="font-semibold">Membership:</span>{" "}
+                  {agent.membership || "—"}
+                </div>
+
+                <div>
+                  <span className="font-semibold">Website:</span>{" "}
+                  {agent.website || "—"}
+                </div>
+
+                <div>
+                  <span className="font-semibold">Logo:</span>{" "}
+                  {agent.agentLogoUrl || "—"}
+                </div>
+              </div>
             </div>
           </aside>
         </div>

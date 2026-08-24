@@ -6,6 +6,8 @@ import { BookingStatus, PaymentStatus } from "@prisma/client";
 import { db } from "@/lib/db";
 import { authOptions } from "@/lib/authOptions";
 import BookingDetailClient from "@/components/bookings/BookingDetailClient";
+import BookingPaymentSchedule from "@/components/admin/bookings/BookingPaymentSchedule";
+import RecordCustomerPayment from "@/components/admin/bookings/RecordCustomerPayment";
 import ActionButton from "@/components/shared/button/ActionButton";
 
 type PageProps = {
@@ -203,6 +205,41 @@ export default async function AdminBookingDetailPage({ params }: PageProps) {
         },
       },
       operationControl: true,
+      paymentSchedules: {
+        orderBy: { dueDate: "asc" },
+        include: {
+          allocations: {
+            select: {
+              id: true,
+              amount: true,
+            },
+          },
+        },
+      },
+      payments: {
+        orderBy: {
+          createdAt: "desc",
+        },
+        include: {
+          allocations: {
+            select: {
+              id: true,
+              amount: true,
+              paymentScheduleId: true,
+            },
+          },
+          bankTransactions: {
+            where: {
+              status: "POSTED",
+            },
+            select: {
+              id: true,
+              bankAccountId: true,
+              transactionDate: true,
+            },
+          },
+        },
+      },
     },
   });
 
@@ -219,6 +256,21 @@ export default async function AdminBookingDetailPage({ params }: PageProps) {
   });
 
   const operationStatus = booking.operationControl?.status || "PENDING";
+
+  const bankAccounts = await db.bankAccount.findMany({
+    where: {
+      isActive: true,
+      currency: booking.currency,
+    },
+    orderBy: {
+      name: "asc",
+    },
+    select: {
+      id: true,
+      name: true,
+      currency: true,
+    },
+  });
 
   return (
     <div className="mx-auto max-w-7xl space-y-6 p-8">
@@ -307,6 +359,66 @@ export default async function AdminBookingDetailPage({ params }: PageProps) {
           currency: booking.currency,
         }}
       />
+
+      <BookingPaymentSchedule
+        bookingId={booking.id}
+        bookingReference={booking.bookingReference}
+        currency={booking.currency}
+        totalPrice={booking.totalPrice}
+        amountPaid={booking.amountPaid}
+        schedules={booking.paymentSchedules.map((item) => ({
+          id: item.id,
+          type: item.type,
+          title: item.title,
+          dueDate: item.dueDate.toISOString(),
+          amount: item.amount,
+          amountPaid: item.amountPaid,
+          status: item.status,
+          paidAt: item.paidAt?.toISOString() ?? null,
+          notes: item.notes,
+          allocationCount: item.allocations.length,
+          allocatedAmount: item.allocations.reduce(
+            (sum, allocation) => sum + allocation.amount,
+            0,
+          ),
+        }))}
+      />
+
+      <RecordCustomerPayment
+        bookingId={booking.id}
+        bookingReference={booking.bookingReference}
+        currency={booking.currency}
+        totalPrice={booking.totalPrice}
+        currentAmountPaid={booking.amountPaid}
+        bankAccounts={bankAccounts}
+        schedules={booking.paymentSchedules.map((item) => ({
+          id: item.id,
+          type: item.type,
+          title: item.title,
+          dueDate: item.dueDate.toISOString(),
+          amount: item.amount,
+          amountPaid: item.amountPaid,
+          status: item.status,
+        }))}
+        payments={booking.payments.map((payment) => ({
+          id: payment.id,
+          amount: payment.amount,
+          currency: payment.currency,
+          method: payment.method,
+          status: payment.status,
+          reference: payment.reference,
+          paidAt: payment.paidAt?.toISOString() ?? null,
+          createdAt: payment.createdAt.toISOString(),
+          allocatedAmount: payment.allocations.reduce(
+            (sum, allocation) => sum + allocation.amount,
+            0,
+          ),
+          bankAccountId:
+            payment.bankTransactions[0]?.bankAccountId ?? null,
+        }))}
+      />
+
+
 
       <div className="grid grid-cols-1 gap-6 xl:grid-cols-3">
         <div className="space-y-6 xl:col-span-2">

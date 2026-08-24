@@ -39,48 +39,64 @@ function isBookingStatus(value: string): value is BookingStatus {
   );
 }
 
-function isPaymentStatus(value: string): value is PaymentStatus {
-  return (
-    value === "UNPAID" ||
-    value === "PARTIALLY_PAID" ||
-    value === "PAID" ||
-    value === "REFUNDED"
-  );
+function paymentStatusLabel(status: PaymentStatus) {
+  switch (status) {
+    case "PARTIALLY_PAID":
+      return "Partially Paid";
+    case "PAID":
+      return "Paid";
+    case "REFUNDED":
+      return "Refunded";
+    default:
+      return "Unpaid";
+  }
+}
+
+function paymentStatusClass(status: PaymentStatus) {
+  switch (status) {
+    case "PAID":
+      return "border-green-200 bg-green-50 text-green-800";
+    case "PARTIALLY_PAID":
+      return "border-amber-200 bg-amber-50 text-amber-800";
+    case "REFUNDED":
+      return "border-slate-300 bg-slate-100 text-slate-700";
+    default:
+      return "border-red-200 bg-red-50 text-red-800";
+  }
 }
 
 export default function BookingDetailClient({ booking }: Props) {
   const router = useRouter();
 
   const [status, setStatus] = useState<BookingStatus>(booking.status);
-  const [paymentStatus, setPaymentStatus] = useState<PaymentStatus>(
-    booking.paymentStatus
-  );
-  const [amountPaid, setAmountPaid] = useState<number>(booking.amountPaid || 0);
   const [loading, setLoading] = useState(false);
 
   const updateBooking = async () => {
     try {
       setLoading(true);
 
-      const res = await fetch(`/api/admin/bookings/${booking.id}`, {
-        method: "PATCH",
-        headers: {
-          "Content-Type": "application/json",
+      const res = await fetch(
+        `/api/admin/bookings/${booking.id}/update-status`,
+        {
+          method: "PATCH",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            status,
+          }),
         },
-        body: JSON.stringify({
-          status,
-          paymentStatus,
-          amountPaid,
-        }),
-      });
+      );
 
-      const data = (await res.json()) as {
-        error?: string;
-        success?: boolean;
-      };
+      const data = (await res.json().catch(() => null)) as
+        | {
+            error?: string;
+            success?: boolean;
+          }
+        | null;
 
       if (!res.ok) {
-        throw new Error(data.error || "Update failed");
+        throw new Error(data?.error || "Update failed");
       }
 
       alert("Booking updated successfully");
@@ -88,6 +104,7 @@ export default function BookingDetailClient({ booking }: Props) {
     } catch (err: unknown) {
       const message =
         err instanceof Error ? err.message : "Unexpected error occurred";
+
       alert(message);
     } finally {
       setLoading(false);
@@ -101,7 +118,10 @@ export default function BookingDetailClient({ booking }: Props) {
     }).format(value);
   };
 
-  const remainingAmount = Math.max(0, booking.totalPrice - amountPaid);
+  const remainingAmount = Math.max(
+    0,
+    booking.amountDue ?? booking.totalPrice - booking.amountPaid,
+  );
 
   return (
     <div className="space-y-6 p-6">
@@ -109,8 +129,10 @@ export default function BookingDetailClient({ booking }: Props) {
         <h1 className="text-2xl font-semibold">
           Booking {booking.bookingReference}
         </h1>
+
         <p className="text-sm text-gray-500">
-          Manage booking status and payments
+          Manage booking status; payment information is controlled by recorded
+          customer receipts.
         </p>
       </div>
 
@@ -122,11 +144,13 @@ export default function BookingDetailClient({ booking }: Props) {
           >
             Booking Status
           </label>
+
           <select
             id="booking-status"
             value={status}
             onChange={(e) => {
               const value = e.target.value;
+
               if (isBookingStatus(value)) {
                 setStatus(value);
               }
@@ -142,46 +166,35 @@ export default function BookingDetailClient({ booking }: Props) {
         </div>
 
         <div>
-          <label
-            htmlFor="payment-status"
-            className="mb-2 block text-sm font-medium text-gray-700"
-          >
+          <p className="mb-2 block text-sm font-medium text-gray-700">
             Payment Status
-          </label>
-          <select
-            id="payment-status"
-            value={paymentStatus}
-            onChange={(e) => {
-              const value = e.target.value;
-              if (isPaymentStatus(value)) {
-                setPaymentStatus(value);
-              }
-            }}
-            className="w-full rounded-md border p-2"
+          </p>
+
+          <div
+            className={`flex h-[42px] items-center rounded-md border px-3 text-sm font-semibold ${paymentStatusClass(
+              booking.paymentStatus,
+            )}`}
           >
-            <option value="UNPAID">Unpaid</option>
-            <option value="PARTIALLY_PAID">Partially Paid</option>
-            <option value="PAID">Paid</option>
-            <option value="REFUNDED">Refunded</option>
-          </select>
+            {paymentStatusLabel(booking.paymentStatus)}
+          </div>
+
+          <p className="mt-1.5 text-xs text-gray-500">
+            Updated automatically from recorded customer payments.
+          </p>
         </div>
 
         <div>
-          <label
-            htmlFor="amount-paid"
-            className="mb-2 block text-sm font-medium text-gray-700"
-          >
+          <p className="mb-2 block text-sm font-medium text-gray-700">
             Amount Paid
-          </label>
-          <input
-            id="amount-paid"
-            type="number"
-            min="0"
-            step="0.01"
-            value={amountPaid}
-            onChange={(e) => setAmountPaid(Number(e.target.value) || 0)}
-            className="w-full rounded-md border p-2"
-          />
+          </p>
+
+          <div className="flex h-[42px] items-center rounded-md border bg-gray-50 px-3 text-sm font-semibold text-gray-900">
+            {formatMoney(booking.amountPaid)}
+          </div>
+
+          <p className="mt-1.5 text-xs text-gray-500">
+            Record new receipts using the Record Payment section below.
+          </p>
         </div>
       </div>
 
@@ -195,7 +208,9 @@ export default function BookingDetailClient({ booking }: Props) {
 
         <div className="rounded-lg border p-4">
           <p className="text-sm text-gray-500">Paid</p>
-          <p className="text-lg font-semibold">{formatMoney(amountPaid)}</p>
+          <p className="text-lg font-semibold">
+            {formatMoney(booking.amountPaid)}
+          </p>
         </div>
 
         <div className="rounded-lg border p-4">
@@ -206,13 +221,19 @@ export default function BookingDetailClient({ booking }: Props) {
         </div>
       </div>
 
+      <div className="rounded-lg border border-blue-100 bg-blue-50 p-4 text-sm leading-6 text-blue-900">
+        Payment Status and Amount Paid are read-only here to protect the finance
+        record; use <strong>Record Customer Payment</strong> to register money
+        actually received and allocate it to the payment schedule.
+      </div>
+
       <div>
         <button
           onClick={updateBooking}
           disabled={loading}
           className="rounded-md bg-black px-4 py-2 text-white hover:bg-gray-800 disabled:opacity-50"
         >
-          {loading ? "Updating..." : "Save Changes"}
+          {loading ? "Updating..." : "Save Booking Status"}
         </button>
       </div>
     </div>
