@@ -1,7 +1,13 @@
 "use client";
 
-import { useMemo, useState } from "react";
-import { useRouter } from "next/navigation";
+import {
+  useMemo,
+  useState,
+} from "react";
+
+import {
+  useRouter,
+} from "next/navigation";
 
 type BillToData = {
   recipientName: string;
@@ -16,10 +22,11 @@ type BillToData = {
   recipientVatNumber: string;
 };
 
-type BillToOption = BillToData & {
-  key: string;
-  label: string;
-};
+type BillToOption =
+  BillToData & {
+    key: string;
+    label: string;
+  };
 
 type BookingOption = {
   id: string;
@@ -43,219 +50,394 @@ type Line = {
   taxRate: number;
 };
 
-const emptyBillTo: BillToData = {
-  recipientName: "",
-  recipientCompany: "",
-  recipientEmail: "",
-  recipientEmailSecondary: "",
-  recipientAddress: "",
-  recipientCity: "",
-  recipientPostalCode: "",
-  recipientCountry: "",
-  recipientTaxNumber: "",
-  recipientVatNumber: "",
+type CreditNoteSource = {
+  id: string;
+  documentNumber: string;
+  issueDate: string | null;
+  bookingId: string | null;
+  bookingReference: string | null;
+  currency: string;
+
+  billTo: BillToData;
+
+  items: Line[];
+
+  serviceDescriptionEn: string;
+  serviceDescriptionBg: string;
+
+  vatEn: string;
+  vatBg: string;
 };
+
+const emptyBillTo: BillToData =
+  {
+    recipientName: "",
+    recipientCompany: "",
+    recipientEmail: "",
+    recipientEmailSecondary:
+      "",
+    recipientAddress: "",
+    recipientCity: "",
+    recipientPostalCode: "",
+    recipientCountry: "",
+    recipientTaxNumber: "",
+    recipientVatNumber: "",
+  };
+
+const defaultServiceDescriptionEn =
+  "Pilgrimage land arrangements including accommodation, transportation, licensed guides, entrance fees and operational services.";
+
+const defaultServiceDescriptionBg =
+  "Поклонническа програма, включваща хотелско настаняване, транспорт, лицензиран екскурзовод, входни такси и организационно обслужване.";
+
+const defaultVatEn =
+  "VAT treatment to be confirmed according to the applicable Bulgarian VAT rules.";
+
+const defaultVatBg =
+  "ДДС третирането се определя съгласно приложимите правила на българското законодателство по ДДС.";
+
+const defaultPaymentEn =
+  "Please include the document number and booking reference in the bank transfer.";
+
+const defaultPaymentBg =
+  "Моля, посочете номера на документа и референтния номер на резервацията при банковия превод.";
 
 function formatMoney(
   value: number,
   currency: string,
 ) {
   try {
-    return new Intl.NumberFormat("en-GB", {
-      style: "currency",
-      currency,
-      minimumFractionDigits: 2,
-      maximumFractionDigits: 2,
-    }).format(value);
+    return new Intl.NumberFormat(
+      "en-GB",
+      {
+        style: "currency",
+        currency,
+        minimumFractionDigits:
+          2,
+        maximumFractionDigits:
+          2,
+      },
+    ).format(value);
   } catch {
-    return `${currency} ${value.toFixed(2)}`;
+    return `${currency} ${value.toFixed(
+      2,
+    )}`;
   }
 }
 
 export default function SalesDocumentForm({
   bookings,
   billToOptions,
+  creditNoteSource = null,
 }: {
   bookings: BookingOption[];
   billToOptions: BillToOption[];
+  creditNoteSource?: CreditNoteSource | null;
 }) {
-  const router = useRouter();
+  const router =
+    useRouter();
 
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState("");
+  const isCreditNote =
+    Boolean(
+      creditNoteSource,
+    );
 
-  const [type, setType] =
-    useState("PROFORMA");
+  const [
+    busy,
+    setBusy,
+  ] =
+    useState(false);
 
-  const [bookingId, setBookingId] =
+  const [
+    error,
+    setError,
+  ] =
     useState("");
+
+  const [
+    type,
+    setType,
+  ] =
+    useState(
+      creditNoteSource
+        ? "CREDIT_NOTE"
+        : "PROFORMA",
+    );
+
+  const [
+    bookingId,
+    setBookingId,
+  ] =
+    useState(
+      creditNoteSource?.bookingId ??
+        "",
+    );
 
   const [
     billToProfileKey,
     setBillToProfileKey,
-  ] = useState("");
+  ] =
+    useState("");
 
   const [
     saveBillingProfile,
     setSaveBillingProfile,
-  ] = useState(true);
-
-  const [billTo, setBillTo] =
-    useState<BillToData>(
-      emptyBillTo,
+  ] =
+    useState(
+      !isCreditNote,
     );
 
-  const [amountPaid, setAmountPaid] =
+  const [
+    billTo,
+    setBillTo,
+  ] =
+    useState<BillToData>(
+      creditNoteSource?.billTo ??
+        emptyBillTo,
+    );
+
+  const [
+    amountPaid,
+    setAmountPaid,
+  ] =
     useState(0);
 
   const [
     additionalNotes,
     setAdditionalNotes,
-  ] = useState("");
+  ] =
+    useState(
+      creditNoteSource
+        ? `Credit Note against Invoice ${creditNoteSource.documentNumber}`
+        : "",
+    );
 
   const [
     serviceDescriptionEn,
     setServiceDescriptionEn,
-  ] = useState(
-    "Pilgrimage land arrangements including accommodation, transportation, licensed guides, entrance fees and operational services.",
-  );
+  ] =
+    useState(
+      creditNoteSource?.serviceDescriptionEn ||
+        defaultServiceDescriptionEn,
+    );
 
   const [
     serviceDescriptionBg,
     setServiceDescriptionBg,
-  ] = useState(
-    "Поклонническа програма, включваща хотелско настаняване, транспорт, лицензиран екскурзовод, входни такси и организационно обслужване.",
-  );
-
-  const [vatEn, setVatEn] = useState(
-    "VAT not charged according to Article 21 of the Bulgarian VAT Act (Reverse Charge).",
-  );
-
-  const [vatBg, setVatBg] = useState(
-    "Основание за неначисляване на ДДС: чл.21 от Закона за ДДС – Обратно начисляване.",
-  );
-
-  const [paymentEn, setPaymentEn] =
+  ] =
     useState(
-      "Please include the document number and booking reference in the bank transfer.",
+      creditNoteSource?.serviceDescriptionBg ||
+        defaultServiceDescriptionBg,
     );
 
-  const [paymentBg, setPaymentBg] =
+  const [
+    vatEn,
+    setVatEn,
+  ] =
     useState(
-      "Моля посочете номера на документа и референтния номер на резервацията при банковия превод.",
+      creditNoteSource?.vatEn ||
+        defaultVatEn,
     );
 
-  const [lines, setLines] =
-    useState<Line[]>([
-      {
-        description:
-          "Land arrangements",
-        quantity: 1,
-        unitPrice: 0,
-        taxRate: 0,
-      },
-    ]);
+  const [
+    vatBg,
+    setVatBg,
+  ] =
+    useState(
+      creditNoteSource?.vatBg ||
+        defaultVatBg,
+    );
 
-  const selected = useMemo(
-    () =>
-      bookings.find(
-        (booking) =>
-          booking.id === bookingId,
-      ),
-    [bookings, bookingId],
-  );
+  const [
+    paymentEn,
+    setPaymentEn,
+  ] =
+    useState(
+      defaultPaymentEn,
+    );
+
+  const [
+    paymentBg,
+    setPaymentBg,
+  ] =
+    useState(
+      defaultPaymentBg,
+    );
+
+  const [
+    lines,
+    setLines,
+  ] =
+    useState<Line[]>(
+      creditNoteSource
+        ?.items.length
+        ? creditNoteSource.items
+        : [
+            {
+              description:
+                "Land arrangements",
+              quantity: 1,
+              unitPrice: 0,
+              taxRate: 0,
+            },
+          ],
+    );
+
+  const selected =
+    useMemo(
+      () =>
+        bookings.find(
+          (booking) =>
+            booking.id ===
+            bookingId,
+        ),
+
+      [
+        bookings,
+        bookingId,
+      ],
+    );
 
   const currency =
-    selected?.currency || "EUR";
+    creditNoteSource
+      ?.currency ||
+    selected?.currency ||
+    "EUR";
 
-  const subtotal = useMemo(
-    () =>
-      lines.reduce(
-        (sum, line) =>
-          sum +
-          line.quantity *
-            line.unitPrice,
-        0,
-      ),
-    [lines],
-  );
-
-  const taxTotal = useMemo(
-    () =>
-      lines.reduce(
-        (sum, line) => {
-          const lineSubtotal =
-            line.quantity *
-            line.unitPrice;
-
-          return (
+  const subtotal =
+    useMemo(
+      () =>
+        lines.reduce(
+          (
+            sum,
+            line,
+          ) =>
             sum +
-            lineSubtotal *
-              (line.taxRate / 100)
-          );
-        },
-        0,
-      ),
-    [lines],
-  );
+            line.quantity *
+              line.unitPrice,
+          0,
+        ),
+
+      [lines],
+    );
+
+  const taxTotal =
+    useMemo(
+      () =>
+        lines.reduce(
+          (
+            sum,
+            line,
+          ) => {
+            const lineSubtotal =
+              line.quantity *
+              line.unitPrice;
+
+            return (
+              sum +
+              lineSubtotal *
+                (line.taxRate /
+                  100)
+            );
+          },
+          0,
+        ),
+
+      [lines],
+    );
 
   const total =
-    subtotal + taxTotal;
+    subtotal +
+    taxTotal;
 
-  const balanceDue = Math.max(
-    0,
-    total - amountPaid,
-  );
+  const balanceDue =
+    Math.max(
+      0,
+      total -
+        amountPaid,
+    );
 
   function applyBillTo(
     data: BillToData,
   ) {
-    setBillTo(data);
+    setBillTo(
+      data,
+    );
   }
 
   function selectBillToProfile(
     key: string,
   ) {
-    setBillToProfileKey(key);
+    if (
+      isCreditNote
+    ) {
+      return;
+    }
+
+    setBillToProfileKey(
+      key,
+    );
 
     const profile =
       billToOptions.find(
         (option) =>
-          option.key === key,
+          option.key ===
+          key,
       );
 
     if (profile) {
-      applyBillTo(profile);
+      applyBillTo(
+        profile,
+      );
     }
   }
 
   function selectBooking(
     id: string,
   ) {
-    setBookingId(id);
+    if (
+      isCreditNote
+    ) {
+      return;
+    }
+
+    setBookingId(
+      id,
+    );
 
     const booking =
       bookings.find(
         (option) =>
-          option.id === id,
+          option.id ===
+          id,
       );
 
     if (!booking) {
-      setAmountPaid(0);
+      setAmountPaid(
+        0,
+      );
+
       return;
     }
 
-    applyBillTo(booking.billTo);
+    applyBillTo(
+      booking.billTo,
+    );
+
     setAmountPaid(
       booking.amountPaid,
     );
 
     setLines([
       {
-        description: `${booking.tourTitleSnapshot} - Land Arrangements`,
+        description:
+          `${booking.tourTitleSnapshot} - Land Arrangements`,
+
         quantity: 1,
+
         unitPrice:
           booking.netAmount,
+
         taxRate: 0,
       },
     ]);
@@ -267,40 +449,55 @@ export default function SalesDocumentForm({
     key: K,
     value: BillToData[K],
   ) {
-    setBillTo((current) => ({
-      ...current,
-      [key]: value,
-    }));
+    if (
+      isCreditNote
+    ) {
+      return;
+    }
+
+    setBillTo(
+      (current) => ({
+        ...current,
+        [key]: value,
+      }),
+    );
   }
 
   function updateLine(
     index: number,
     patch: Partial<Line>,
   ) {
-    setLines((current) =>
-      current.map(
-        (
-          line,
-          currentIndex,
-        ) =>
-          currentIndex === index
-            ? {
-                ...line,
-                ...patch,
-              }
-            : line,
-      ),
+    setLines(
+      (current) =>
+        current.map(
+          (
+            line,
+            currentIndex,
+          ) =>
+            currentIndex ===
+            index
+              ? {
+                  ...line,
+                  ...patch,
+                }
+              : line,
+        ),
     );
   }
 
   function removeLine(
     index: number,
   ) {
-    setLines((current) =>
-      current.filter(
-        (_, currentIndex) =>
-          currentIndex !== index,
-      ),
+    setLines(
+      (current) =>
+        current.filter(
+          (
+            _,
+            currentIndex,
+          ) =>
+            currentIndex !==
+            index,
+        ),
     );
   }
 
@@ -316,13 +513,19 @@ export default function SalesDocumentForm({
       lines.find(
         (line) =>
           !line.description.trim() ||
-          line.quantity <= 0 ||
-          line.unitPrice < 0 ||
-          line.taxRate < 0 ||
-          line.taxRate > 100,
+          line.quantity <=
+            0 ||
+          line.unitPrice <
+            0 ||
+          line.taxRate <
+            0 ||
+          line.taxRate >
+            100,
       );
 
-    if (invalidLine) {
+    if (
+      invalidLine
+    ) {
       setBusy(false);
 
       setError(
@@ -332,35 +535,69 @@ export default function SalesDocumentForm({
       return;
     }
 
-    const form = new FormData(
-      event.currentTarget,
-    );
+    if (
+      isCreditNote &&
+      total <= 0
+    ) {
+      setBusy(false);
+
+      setError(
+        "Credit Note amount must be greater than zero.",
+      );
+
+      return;
+    }
+
+    const form =
+      new FormData(
+        event.currentTarget,
+      );
 
     const payload = {
       type,
-      bookingId:
-        bookingId || null,
 
-      billToProfileKey:
-        billToProfileKey ||
+      originalDocumentId:
+        creditNoteSource?.id ??
         null,
 
-      saveBillingProfile,
+      bookingId:
+        bookingId ||
+        null,
+
+      billToProfileKey:
+        isCreditNote
+          ? null
+          : billToProfileKey ||
+            null,
+
+      saveBillingProfile:
+        isCreditNote
+          ? false
+          : saveBillingProfile,
 
       ...billTo,
 
-      amountPaid: bookingId
-        ? undefined
-        : amountPaid,
+      amountPaid:
+        isCreditNote
+          ? 0
+          : bookingId
+            ? undefined
+            : amountPaid,
 
       dueDate:
-        form.get("dueDate") ||
-        null,
+        isCreditNote
+          ? null
+          : form.get(
+                "dueDate",
+              ) ||
+            null,
 
       serviceDescriptionEn,
       serviceDescriptionBg,
+
       vatEn,
       vatBg,
+
       paymentEn,
       paymentBg,
 
@@ -368,7 +605,8 @@ export default function SalesDocumentForm({
         additionalNotes ||
         null,
 
-      items: lines,
+      items:
+        lines,
     };
 
     try {
@@ -376,25 +614,32 @@ export default function SalesDocumentForm({
         await fetch(
           "/api/admin/finance/sales-documents",
           {
-            method: "POST",
+            method:
+              "POST",
 
             headers: {
               "Content-Type":
                 "application/json",
             },
 
-            body: JSON.stringify(
-              payload,
-            ),
+            body:
+              JSON.stringify(
+                payload,
+              ),
           },
         );
 
       const data =
         await response
           .json()
-          .catch(() => null);
+          .catch(
+            () =>
+              null,
+          );
 
-      if (!response.ok) {
+      if (
+        !response.ok
+      ) {
         setError(
           data?.error ||
             "Could not create sales document.",
@@ -419,7 +664,9 @@ export default function SalesDocumentForm({
 
   return (
     <form
-      onSubmit={submit}
+      onSubmit={
+        submit
+      }
       className="space-y-6"
     >
       {error && (
@@ -435,9 +682,78 @@ export default function SalesDocumentForm({
           Document & Booking
         </h2>
 
+        {creditNoteSource && (
+          <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50 p-4">
+            <p className="text-xs font-bold uppercase tracking-[0.14em] text-amber-700">
+              Credit Note
+              Against Invoice
+            </p>
+
+            <div className="mt-2 flex flex-wrap gap-x-6 gap-y-2 text-sm text-amber-950">
+              <div>
+                Original
+                Invoice:{" "}
+                <strong>
+                  {
+                    creditNoteSource.documentNumber
+                  }
+                </strong>
+              </div>
+
+              {creditNoteSource.bookingReference && (
+                <div>
+                  Booking:{" "}
+                  <strong>
+                    {
+                      creditNoteSource.bookingReference
+                    }
+                  </strong>
+                </div>
+              )}
+
+              <div>
+                Currency:{" "}
+                <strong>
+                  {
+                    creditNoteSource.currency
+                  }
+                </strong>
+              </div>
+
+              {creditNoteSource.issueDate && (
+                <div>
+                  Invoice
+                  Date:{" "}
+                  <strong>
+                    {new Date(
+                      creditNoteSource.issueDate,
+                    ).toLocaleDateString(
+                      "en-GB",
+                    )}
+                  </strong>
+                </div>
+              )}
+            </div>
+
+            <p className="mt-2 text-xs leading-5 text-amber-800">
+              The Credit Note
+              will remain
+              permanently linked
+              to this Invoice.
+              Adjust the line
+              items below to
+              include only the
+              amount or services
+              being credited.
+            </p>
+          </div>
+        )}
+
         <div className="mt-4 grid gap-4 md:grid-cols-2">
           <label
-            className={labelClass}
+            className={
+              labelClass
+            }
           >
             Document Type
 
@@ -445,7 +761,12 @@ export default function SalesDocumentForm({
               className={
                 inputClass
               }
-              value={type}
+              value={
+                type
+              }
+              disabled={
+                isCreditNote
+              }
               onChange={(
                 event,
               ) =>
@@ -464,14 +785,18 @@ export default function SalesDocumentForm({
                 Invoice
               </option>
 
-              <option value="CREDIT_NOTE">
-                Credit Note
-              </option>
+              {isCreditNote && (
+                <option value="CREDIT_NOTE">
+                  Credit Note
+                </option>
+              )}
             </select>
           </label>
 
           <label
-            className={labelClass}
+            className={
+              labelClass
+            }
           >
             Select Booking
             (optional)
@@ -480,7 +805,12 @@ export default function SalesDocumentForm({
               className={
                 inputClass
               }
-              value={bookingId}
+              value={
+                bookingId
+              }
+              disabled={
+                isCreditNote
+              }
               onChange={(
                 event,
               ) =>
@@ -496,7 +826,9 @@ export default function SalesDocumentForm({
               </option>
 
               {bookings.map(
-                (booking) => (
+                (
+                  booking,
+                ) => (
                   <option
                     key={
                       booking.id
@@ -517,22 +849,44 @@ export default function SalesDocumentForm({
             </select>
           </label>
 
-          <label
-            className={labelClass}
-          >
-            Due Date
-
-            <input
-              name="dueDate"
-              type="date"
+          {!isCreditNote && (
+            <label
               className={
-                inputClass
+                labelClass
               }
-            />
-          </label>
+            >
+              Due Date
+
+              <input
+                name="dueDate"
+                type="date"
+                className={
+                  inputClass
+                }
+              />
+            </label>
+          )}
 
           <div className="rounded-xl bg-slate-50 p-3 text-sm text-slate-600">
-            {selected ? (
+            {creditNoteSource ? (
+              <>
+                <strong>
+                  Original
+                  Invoice{" "}
+                  {
+                    creditNoteSource.documentNumber
+                  }
+                </strong>
+
+                <div className="mt-1">
+                  Credit Note
+                  currency:{" "}
+                  {
+                    creditNoteSource.currency
+                  }
+                </div>
+              </>
+            ) : selected ? (
               <>
                 <strong>
                   {
@@ -541,7 +895,8 @@ export default function SalesDocumentForm({
                 </strong>
 
                 <div className="mt-1">
-                  Booking total:{" "}
+                  Booking
+                  total:{" "}
                   {
                     selected.currency
                   }{" "}
@@ -573,57 +928,61 @@ export default function SalesDocumentForm({
         </h2>
 
         <p className="mt-1 text-sm text-slate-500">
-          Select a registered
-          agent/company or enter
-          the billing details
-          manually.
+          {isCreditNote
+            ? "Recipient details are inherited from the original Invoice."
+            : "Select a registered agent/company or enter the billing details manually."}
         </p>
 
         <div className="mt-4 grid gap-4 md:grid-cols-2">
-          <label
-            className={`${labelClass} md:col-span-2`}
-          >
-            Bill To Profile
-
-            <select
-              className={
-                inputClass
-              }
-              value={
-                billToProfileKey
-              }
-              onChange={(
-                event,
-              ) =>
-                selectBillToProfile(
-                  event.target
-                    .value,
-                )
-              }
+          {!isCreditNote && (
+            <label
+              className={`${labelClass} md:col-span-2`}
             >
-              <option value="">
-                Manual / do not
-                use saved profile
-              </option>
+              Bill To Profile
 
-              {billToOptions.map(
-                (option) => (
-                  <option
-                    key={
-                      option.key
-                    }
-                    value={
-                      option.key
-                    }
-                  >
-                    {
-                      option.label
-                    }
-                  </option>
-                ),
-              )}
-            </select>
-          </label>
+              <select
+                className={
+                  inputClass
+                }
+                value={
+                  billToProfileKey
+                }
+                onChange={(
+                  event,
+                ) =>
+                  selectBillToProfile(
+                    event.target
+                      .value,
+                  )
+                }
+              >
+                <option value="">
+                  Manual / do
+                  not use saved
+                  profile
+                </option>
+
+                {billToOptions.map(
+                  (
+                    option,
+                  ) => (
+                    <option
+                      key={
+                        option.key
+                      }
+                      value={
+                        option.key
+                      }
+                    >
+                      {
+                        option.label
+                      }
+                    </option>
+                  ),
+                )}
+              </select>
+            </label>
+          )}
 
           <BillingInput
             label="Recipient / Contact Name *"
@@ -631,7 +990,12 @@ export default function SalesDocumentForm({
               billTo.recipientName
             }
             required
-            onChange={(value) =>
+            disabled={
+              isCreditNote
+            }
+            onChange={(
+              value,
+            ) =>
               updateBillTo(
                 "recipientName",
                 value,
@@ -644,7 +1008,12 @@ export default function SalesDocumentForm({
             value={
               billTo.recipientCompany
             }
-            onChange={(value) =>
+            disabled={
+              isCreditNote
+            }
+            onChange={(
+              value,
+            ) =>
               updateBillTo(
                 "recipientCompany",
                 value,
@@ -658,7 +1027,12 @@ export default function SalesDocumentForm({
             value={
               billTo.recipientEmail
             }
-            onChange={(value) =>
+            disabled={
+              isCreditNote
+            }
+            onChange={(
+              value,
+            ) =>
               updateBillTo(
                 "recipientEmail",
                 value,
@@ -672,7 +1046,12 @@ export default function SalesDocumentForm({
             value={
               billTo.recipientEmailSecondary
             }
-            onChange={(value) =>
+            disabled={
+              isCreditNote
+            }
+            onChange={(
+              value,
+            ) =>
               updateBillTo(
                 "recipientEmailSecondary",
                 value,
@@ -685,7 +1064,12 @@ export default function SalesDocumentForm({
             value={
               billTo.recipientAddress
             }
-            onChange={(value) =>
+            disabled={
+              isCreditNote
+            }
+            onChange={(
+              value,
+            ) =>
               updateBillTo(
                 "recipientAddress",
                 value,
@@ -698,7 +1082,12 @@ export default function SalesDocumentForm({
             value={
               billTo.recipientCity
             }
-            onChange={(value) =>
+            disabled={
+              isCreditNote
+            }
+            onChange={(
+              value,
+            ) =>
               updateBillTo(
                 "recipientCity",
                 value,
@@ -711,7 +1100,12 @@ export default function SalesDocumentForm({
             value={
               billTo.recipientPostalCode
             }
-            onChange={(value) =>
+            disabled={
+              isCreditNote
+            }
+            onChange={(
+              value,
+            ) =>
               updateBillTo(
                 "recipientPostalCode",
                 value,
@@ -724,7 +1118,12 @@ export default function SalesDocumentForm({
             value={
               billTo.recipientCountry
             }
-            onChange={(value) =>
+            disabled={
+              isCreditNote
+            }
+            onChange={(
+              value,
+            ) =>
               updateBillTo(
                 "recipientCountry",
                 value,
@@ -737,7 +1136,12 @@ export default function SalesDocumentForm({
             value={
               billTo.recipientTaxNumber
             }
-            onChange={(value) =>
+            disabled={
+              isCreditNote
+            }
+            onChange={(
+              value,
+            ) =>
               updateBillTo(
                 "recipientTaxNumber",
                 value,
@@ -750,7 +1154,12 @@ export default function SalesDocumentForm({
             value={
               billTo.recipientVatNumber
             }
-            onChange={(value) =>
+            disabled={
+              isCreditNote
+            }
+            onChange={(
+              value,
+            ) =>
               updateBillTo(
                 "recipientVatNumber",
                 value,
@@ -758,94 +1167,106 @@ export default function SalesDocumentForm({
             }
           />
 
-          {billToProfileKey && (
-            <label className="flex items-center gap-2 text-sm text-slate-600 md:col-span-2">
-              <input
-                type="checkbox"
-                checked={
-                  saveBillingProfile
-                }
-                onChange={(
-                  event,
-                ) =>
-                  setSaveBillingProfile(
-                    event.target
-                      .checked,
-                  )
-                }
-              />
+          {!isCreditNote &&
+            billToProfileKey && (
+              <label className="flex items-center gap-2 text-sm text-slate-600 md:col-span-2">
+                <input
+                  type="checkbox"
+                  checked={
+                    saveBillingProfile
+                  }
+                  onChange={(
+                    event,
+                  ) =>
+                    setSaveBillingProfile(
+                      event
+                        .target
+                        .checked,
+                    )
+                  }
+                />
 
-              Save these Bill To
-              details back to the
-              selected registered
-              profile for future
-              invoices.
-            </label>
-          )}
+                Save these Bill
+                To details back
+                to the selected
+                registered
+                profile for
+                future invoices.
+              </label>
+            )}
         </div>
       </section>
 
       {/* PAYMENTS */}
 
-      <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-        <h2 className="text-lg font-bold text-[#001F3F]">
-          Payments
-        </h2>
+      {!isCreditNote && (
+        <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+          <h2 className="text-lg font-bold text-[#001F3F]">
+            Payments
+          </h2>
 
-        <p className="mt-1 text-sm text-slate-500">
-          When a booking is
-          selected, Paid /
-          Deposit Received comes
-          from the booking
-          automatically.
-        </p>
+          <p className="mt-1 text-sm text-slate-500">
+            When a booking is
+            selected, Paid /
+            Deposit Received
+            comes from the
+            booking automatically.
+          </p>
 
-        <div className="mt-4 grid gap-4 md:grid-cols-2">
-          <label
-            className={labelClass}
-          >
-            Paid / Deposit
-            Received
-
-            <input
-              type="number"
-              min="0"
-              step="0.01"
+          <div className="mt-4 grid gap-4 md:grid-cols-2">
+            <label
               className={
-                inputClass
+                labelClass
               }
-              value={amountPaid}
-              disabled={Boolean(
-                bookingId,
-              )}
-              onChange={(
-                event,
-              ) =>
-                setAmountPaid(
-                  Number(
-                    event.target
-                      .value,
-                  ),
-                )
-              }
-            />
-          </label>
+            >
+              Paid / Deposit
+              Received
 
-          <div className="rounded-xl bg-slate-50 p-4">
-            <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-              Current Balance
-              Due
-            </p>
+              <input
+                type="number"
+                min="0"
+                step="0.01"
+                className={
+                  inputClass
+                }
+                value={
+                  amountPaid
+                }
+                disabled={
+                  Boolean(
+                    bookingId,
+                  )
+                }
+                onChange={(
+                  event,
+                ) =>
+                  setAmountPaid(
+                    Number(
+                      event
+                        .target
+                        .value,
+                    ),
+                  )
+                }
+              />
+            </label>
 
-            <p className="mt-1 text-xl font-bold text-[#001F3F]">
-              {formatMoney(
-                balanceDue,
-                currency,
-              )}
-            </p>
+            <div className="rounded-xl bg-slate-50 p-4">
+              <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                Current
+                Balance Due
+              </p>
+
+              <p className="mt-1 text-xl font-bold text-[#001F3F]">
+                {formatMoney(
+                  balanceDue,
+                  currency,
+                )}
+              </p>
+            </div>
           </div>
-        </div>
-      </section>
+        </section>
+      )}
 
       {/* LINE ITEMS */}
 
@@ -853,16 +1274,15 @@ export default function SalesDocumentForm({
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div>
             <h2 className="text-lg font-bold text-[#001F3F]">
-              Line Items
+              {isCreditNote
+                ? "Credited Items"
+                : "Line Items"}
             </h2>
 
             <p className="mt-1 text-sm text-slate-500">
-              Enter the service,
-              number of units or
-              passengers, price
-              per unit and
-              applicable VAT
-              rate.
+              {isCreditNote
+                ? "Adjust the copied Invoice lines so they represent only the services or amount being credited."
+                : "Enter the service, number of units or passengers, price per unit and applicable VAT rate."}
             </p>
           </div>
 
@@ -873,14 +1293,19 @@ export default function SalesDocumentForm({
             }
             onClick={() =>
               setLines(
-                (current) => [
+                (
+                  current,
+                ) => [
                   ...current,
                   {
                     description:
                       "",
-                    quantity: 1,
-                    unitPrice: 0,
-                    taxRate: 0,
+                    quantity:
+                      1,
+                    unitPrice:
+                      0,
+                    taxRate:
+                      0,
                   },
                 ],
               )
@@ -892,7 +1317,10 @@ export default function SalesDocumentForm({
 
         <div className="mt-5 space-y-4">
           {lines.map(
-            (line, index) => {
+            (
+              line,
+              index,
+            ) => {
               const lineSubtotal =
                 line.quantity *
                 line.unitPrice;
@@ -908,7 +1336,9 @@ export default function SalesDocumentForm({
 
               return (
                 <div
-                  key={index}
+                  key={
+                    index
+                  }
                   className="rounded-2xl border border-slate-200 bg-slate-50/50 p-4"
                 >
                   <div className="grid gap-4 lg:grid-cols-[minmax(220px,1fr)_110px_150px_110px_150px]">
@@ -1054,9 +1484,11 @@ export default function SalesDocumentForm({
                     </label>
 
                     <div>
-                      <p className={
-                        labelClass
-                      }>
+                      <p
+                        className={
+                          labelClass
+                        }
+                      >
                         Line Total
                       </p>
 
@@ -1121,7 +1553,9 @@ export default function SalesDocumentForm({
 
           <div className="flex justify-between bg-[#001F3F] px-4 py-4 text-white">
             <span className="font-semibold">
-              Draft Total
+              {isCreditNote
+                ? "Credit Amount"
+                : "Draft Total"}
             </span>
 
             <span className="text-lg font-bold">
@@ -1138,15 +1572,14 @@ export default function SalesDocumentForm({
 
       <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
         <h2 className="text-lg font-bold text-[#001F3F]">
-          Bilingual Invoice
+          Bilingual Document
           Text
         </h2>
 
         <p className="mt-1 text-sm text-slate-500">
           These fields remain
-          easy to rewrite before
-          the document is
-          issued.
+          editable before the
+          document is issued.
         </p>
 
         <div className="mt-4 grid gap-4 lg:grid-cols-2">
@@ -1172,31 +1605,47 @@ export default function SalesDocumentForm({
 
           <TextArea
             label="VAT Note — English"
-            value={vatEn}
-            setValue={setVatEn}
+            value={
+              vatEn
+            }
+            setValue={
+              setVatEn
+            }
           />
 
           <TextArea
             label="ДДС — Български"
-            value={vatBg}
-            setValue={setVatBg}
-          />
-
-          <TextArea
-            label="Payment Reference — English"
-            value={paymentEn}
+            value={
+              vatBg
+            }
             setValue={
-              setPaymentEn
+              setVatBg
             }
           />
 
-          <TextArea
-            label="Основание за плащане — Български"
-            value={paymentBg}
-            setValue={
-              setPaymentBg
-            }
-          />
+          {!isCreditNote && (
+            <>
+              <TextArea
+                label="Payment Reference — English"
+                value={
+                  paymentEn
+                }
+                setValue={
+                  setPaymentEn
+                }
+              />
+
+              <TextArea
+                label="Основание за плащане — Български"
+                value={
+                  paymentBg
+                }
+                setValue={
+                  setPaymentBg
+                }
+              />
+            </>
+          )}
 
           <label
             className={`${labelClass} lg:col-span-2`}
@@ -1215,7 +1664,8 @@ export default function SalesDocumentForm({
                 event,
               ) =>
                 setAdditionalNotes(
-                  event.target
+                  event
+                    .target
                     .value,
                 )
               }
@@ -1229,13 +1679,16 @@ export default function SalesDocumentForm({
           type="submit"
           disabled={
             busy ||
-            lines.length === 0
+            lines.length ===
+              0
           }
           className="rounded-xl bg-[#8B0000] px-6 py-3 text-sm font-bold text-white transition hover:bg-[#6f0000] disabled:cursor-not-allowed disabled:opacity-50"
         >
           {busy
             ? "Saving..."
-            : "Save Draft"}
+            : isCreditNote
+              ? "Save Credit Note Draft"
+              : "Save Draft"}
         </button>
       </div>
     </form>
@@ -1248,6 +1701,7 @@ function BillingInput({
   onChange,
   type = "text",
   required = false,
+  disabled = false,
 }: {
   label: string;
   value: string;
@@ -1256,21 +1710,38 @@ function BillingInput({
   ) => void;
   type?: string;
   required?: boolean;
+  disabled?: boolean;
 }) {
   return (
     <label
-      className={labelClass}
+      className={
+        labelClass
+      }
     >
       {label}
 
       <input
-        type={type}
-        className={inputClass}
-        value={value}
-        required={required}
-        onChange={(event) =>
+        type={
+          type
+        }
+        className={
+          inputClass
+        }
+        value={
+          value
+        }
+        required={
+          required
+        }
+        disabled={
+          disabled
+        }
+        onChange={(
+          event,
+        ) =>
           onChange(
-            event.target.value,
+            event.target
+              .value,
           )
         }
       />
@@ -1291,16 +1762,23 @@ function TextArea({
 }) {
   return (
     <label
-      className={labelClass}
+      className={
+        labelClass
+      }
     >
       {label}
 
       <textarea
         className={`${inputClass} min-h-28 py-3`}
-        value={value}
-        onChange={(event) =>
+        value={
+          value
+        }
+        onChange={(
+          event,
+        ) =>
           setValue(
-            event.target.value,
+            event.target
+              .value,
           )
         }
       />

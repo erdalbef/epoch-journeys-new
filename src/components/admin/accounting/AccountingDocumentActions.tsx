@@ -6,6 +6,7 @@ import { useState } from "react";
 import {
   Edit3,
   Loader2,
+  LockKeyhole,
   Trash2,
 } from "lucide-react";
 
@@ -14,6 +15,7 @@ type Props = {
   year: number;
   month: number;
   category?: string | null;
+  readOnly?: boolean;
 };
 
 export default function AccountingDocumentActions({
@@ -21,6 +23,7 @@ export default function AccountingDocumentActions({
   year,
   month,
   category,
+  readOnly = false,
 }: Props) {
   const router = useRouter();
 
@@ -35,6 +38,10 @@ export default function AccountingDocumentActions({
       : "");
 
   async function handleDelete() {
+    if (readOnly) {
+      return;
+    }
+
     const confirmed = window.confirm(
       "Delete this accounting document?\n\n" +
         "The database record and uploaded file will both be permanently deleted."
@@ -54,10 +61,11 @@ export default function AccountingDocumentActions({
         }
       );
 
-      const result = (await response.json()) as {
-        ok?: boolean;
-        error?: string;
-      };
+      const result =
+        (await response.json()) as {
+          ok?: boolean;
+          error?: string;
+        };
 
       if (!response.ok) {
         throw new Error(
@@ -79,11 +87,22 @@ export default function AccountingDocumentActions({
     }
   }
 
+  if (readOnly) {
+    return (
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="inline-flex items-center justify-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm font-semibold text-slate-500">
+          <LockKeyhole className="h-4 w-4" />
+          Closed Period
+        </span>
+      </div>
+    );
+  }
+
   return (
     <div className="flex flex-wrap items-center gap-2">
       <Link
         href={editHref}
-        className="inline-flex items-center justify-center gap-2 rounded-lg border px-3 py-2 text-sm font-semibold text-[#0B1F3A] transition hover:bg-slate-50"
+        className="inline-flex items-center justify-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-[#0B1F3A] transition hover:bg-slate-50"
       >
         <Edit3 className="h-4 w-4" />
         Edit
@@ -93,7 +112,7 @@ export default function AccountingDocumentActions({
         type="button"
         onClick={handleDelete}
         disabled={deleting}
-        className="inline-flex items-center justify-center gap-2 rounded-lg border border-red-200 px-3 py-2 text-sm font-semibold text-red-700 transition hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-60"
+        className="inline-flex items-center justify-center gap-2 rounded-lg border border-red-200 bg-white px-3 py-2 text-sm font-semibold text-red-700 transition hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-60"
       >
         {deleting ? (
           <Loader2 className="h-4 w-4 animate-spin" />

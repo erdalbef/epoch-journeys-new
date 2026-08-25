@@ -53,6 +53,7 @@ model User {
   customTourRequests         CustomTourRequest[]
   expensesCreated            Expense[]                @relation("ExpenseCreatedBy")
   financeDocuments           FinanceDocument[]
+  cashTransactionsCreated    CashTransaction[]
   partnerPayouts             PartnerPayout[]          @relation("AgentPayouts")
   processedPartnerPayouts    PartnerPayout[]          @relation("ProcessedPartnerPayouts")
   reviewedPaymentSubmissions PaymentSubmission[]      @relation("PaymentSubmissionReviewer")
@@ -137,6 +138,7 @@ model Tour {
   departureDates           DepartureDate[]
   expenses                 Expense[]
   financeDocuments         FinanceDocument[]
+  cashTransactions         CashTransaction[]
   financeEntries           FinanceEntry[]
   massArrangements         MassArrangement[]
   partnerTourAliases       PartnerTourAlias[]
@@ -263,6 +265,7 @@ model DepartureDate {
   tour                  Tour              @relation(fields: [tourId], references: [id], onDelete: Cascade)
   expenses              Expense[]
   financeDocuments      FinanceDocument[]
+  cashTransactions      CashTransaction[]
   massArrangements      MassArrangement[]
   quotes                Quote[]
   supplierPayables      SupplierPayable[]
@@ -391,6 +394,7 @@ model Booking {
   paymentSchedules              BookingPaymentSchedule[]
   expenses                      Expense[]
   financeDocuments              FinanceDocument[]
+  cashTransactions              CashTransaction[]
   financeEntries                FinanceEntry[]
   massArrangements              MassArrangement[]
   passengers                    Passenger[]
@@ -878,67 +882,72 @@ model SupportMessage {
 }
 
 model Expense {
-  id                    String                @id @default(cuid())
-  title                 String
-  description           String?
-  amount                Float
-  currency              String                @default("EUR")
-  category              ExpenseCategory
-  paymentStatus         ExpensePaymentStatus  @default(PENDING)
-  vendorName            String?
-  expenseDate           DateTime
-  paidAt                DateTime?
-  receiptUrl            String?
-  notes                 String?
-  bookingId             String?
-  tourId                String?
-  departureDateId       String?
-  createdById           String?
-  createdAt             DateTime              @default(now())
-  updatedAt             DateTime              @updatedAt
-  agentNameSnapshot     String?
-  customPackageName     String?
-  direction             FinanceDirection      @default(EXPENSE)
-  grossAmount           Float?
-  groupName             String?
-  netAmount             Float?
-  partnerCompanyId      String?
-  partnerCompanyName    String?
-  sourceType            FinanceSourceType     @default(INTERNAL)
-  taxAmount             Float?                @default(0)
-  taxRate               Float?
-  taxType               FinanceTaxType        @default(NONE)
-  tourLeaderName        String?
-  baseAmount            Float                 @default(0)
-  baseCurrency          String                @default("EUR")
-  exchangeRateToBase    Float                 @default(1)
-  originalAmount        Float                 @default(0)
-  originalCurrency      String                @default("EUR")
-  clientCompanyName     String?
-  spenderName           String?
-  tourCategoryName      String?
-  approvalStatus        ExpenseApprovalStatus @default(DRAFT)
-  bankAccountId         String?
-  costCenter            ExpenseCostCenter?
-  costType              ExpenseCostType       @default(OVERHEAD)
-  documentUrl           String?
-  dueDate               DateTime?
-  expenseItem           ExpenseItem?
-  invoiceDate           DateTime?
-  paymentMethod         PaymentMethod?
-  paymentReference      String?
-  recurring             Boolean               @default(false)
-  reimbursable          Boolean               @default(false)
-  supplierId            String?
-  supplierInvoiceNumber String?
-  bankTransactions      BankTransaction[]
-  bankAccount           BankAccount?          @relation(fields: [bankAccountId], references: [id])
-  booking               Booking?              @relation(fields: [bookingId], references: [id])
-  createdBy             User?                 @relation("ExpenseCreatedBy", fields: [createdById], references: [id])
-  departureDate         DepartureDate?        @relation(fields: [departureDateId], references: [id])
-  supplier              Supplier?             @relation(fields: [supplierId], references: [id])
-  tour                  Tour?                 @relation(fields: [tourId], references: [id])
-  documents             FinanceDocument[]
+  id                     String                     @id @default(cuid())
+  title                  String
+  description            String?
+  amount                 Float
+  currency               String                     @default("EUR")
+  category               ExpenseCategory
+  paymentStatus          ExpensePaymentStatus       @default(PENDING)
+  vendorName             String?
+  expenseDate            DateTime
+  paidAt                 DateTime?
+  receiptUrl             String?
+  notes                  String?
+  bookingId              String?
+  tourId                 String?
+  departureDateId        String?
+  createdById            String?
+  createdAt              DateTime                   @default(now())
+  updatedAt              DateTime                   @updatedAt
+  agentNameSnapshot      String?
+  customPackageName      String?
+  direction              FinanceDirection           @default(EXPENSE)
+  grossAmount            Float?
+  groupName              String?
+  netAmount              Float?
+  partnerCompanyId       String?
+  partnerCompanyName     String?
+  sourceType             FinanceSourceType          @default(INTERNAL)
+  taxAmount              Float?                     @default(0)
+  taxRate                Float?
+  taxType                FinanceTaxType             @default(NONE)
+  tourLeaderName         String?
+  baseAmount             Float                      @default(0)
+  baseCurrency           String                     @default("EUR")
+  exchangeRateToBase     Float                      @default(1)
+  originalAmount         Float                      @default(0)
+  originalCurrency       String                     @default("EUR")
+  clientCompanyName      String?
+  spenderName            String?
+  tourCategoryName       String?
+  approvalStatus         ExpenseApprovalStatus      @default(DRAFT)
+  bankAccountId          String?
+  costCenter             ExpenseCostCenter?
+  costType               ExpenseCostType            @default(OVERHEAD)
+  documentUrl            String?
+  dueDate                DateTime?
+  expenseItem            ExpenseItem?
+  invoiceDate            DateTime?
+  paymentMethod          PaymentMethod?
+  paymentReference       String?
+  recurring              Boolean                    @default(false)
+  reimbursable           Boolean                    @default(false)
+  paymentSource          ExpensePaymentSource       @default(COMPANY_BANK)
+  reimbursementStatus    ExpenseReimbursementStatus @default(NOT_APPLICABLE)
+  reimbursedAmount       Float                      @default(0)
+  reimbursedAt           DateTime?
+  reimbursementReference String?
+  supplierId             String?
+  supplierInvoiceNumber  String?
+  bankTransactions       BankTransaction[]
+  bankAccount            BankAccount?               @relation(fields: [bankAccountId], references: [id])
+  booking                Booking?                   @relation(fields: [bookingId], references: [id])
+  createdBy              User?                      @relation("ExpenseCreatedBy", fields: [createdById], references: [id])
+  departureDate          DepartureDate?             @relation(fields: [departureDateId], references: [id])
+  supplier               Supplier?                  @relation(fields: [supplierId], references: [id])
+  tour                   Tour?                      @relation(fields: [tourId], references: [id])
+  documents              FinanceDocument[]
 
   @@index([category])
   @@index([paymentStatus])
@@ -959,6 +968,8 @@ model Expense {
   @@index([costType])
   @@index([dueDate])
   @@index([expenseItem])
+  @@index([paymentSource])
+  @@index([reimbursementStatus])
   @@index([supplierId])
 }
 
@@ -1218,23 +1229,61 @@ model Resource {
 }
 
 model AccountingPeriod {
-  id             String                 @id @default(cuid())
-  year           Int
-  month          Int
-  status         AccountingPeriodStatus @default(OPEN)
-  dueDate        DateTime?
-  submittedAt    DateTime?
-  closedAt       DateTime?
-  notes          String?
-  createdAt      DateTime               @default(now())
-  updatedAt      DateTime               @updatedAt
-  bankStatements BankStatement[]
-  documents      FinanceDocument[]
+  id               String                 @id @default(cuid())
+  year             Int
+  month            Int
+  status           AccountingPeriodStatus @default(OPEN)
+  dueDate          DateTime?
+  submittedAt      DateTime?
+  closedAt         DateTime?
+  notes            String?
+  createdAt        DateTime               @default(now())
+  updatedAt        DateTime               @updatedAt
+  bankStatements   BankStatement[]
+  documents        FinanceDocument[]
+  cashTransactions CashTransaction[]
 
   @@unique([year, month])
   @@index([month])
   @@index([status])
   @@index([year])
+}
+
+model CashTransaction {
+  id                 String                   @id @default(cuid())
+  accountingPeriodId String
+  createdById        String?
+  direction          CashTransactionDirection
+  status             CashTransactionStatus    @default(POSTED)
+  transactionDate    DateTime
+  amount             Decimal                  @db.Decimal(12, 2)
+  currency           String                   @default("EUR")
+  counterparty       String?
+  description        String
+  reference          String?
+  notes              String?
+  supplierId         String?
+  bookingId          String?
+  tourId             String?
+  departureDateId    String?
+  createdAt          DateTime                 @default(now())
+  updatedAt          DateTime                 @updatedAt
+  accountingPeriod   AccountingPeriod         @relation(fields: [accountingPeriodId], references: [id])
+  createdBy          User?                    @relation(fields: [createdById], references: [id])
+  supplier           Supplier?                @relation(fields: [supplierId], references: [id])
+  booking            Booking?                 @relation(fields: [bookingId], references: [id])
+  tour               Tour?                    @relation(fields: [tourId], references: [id])
+  departureDate      DepartureDate?           @relation(fields: [departureDateId], references: [id])
+
+  @@index([accountingPeriodId])
+  @@index([bookingId])
+  @@index([createdById])
+  @@index([departureDateId])
+  @@index([direction])
+  @@index([status])
+  @@index([supplierId])
+  @@index([tourId])
+  @@index([transactionDate])
 }
 
 model BankReconciliation {
@@ -1657,6 +1706,7 @@ model Supplier {
   updatedAt         DateTime           @updatedAt
   expenses          Expense[]
   documents         FinanceDocument[]
+  cashTransactions  CashTransaction[]
   massArrangements  MassArrangement[]
   contacts          SupplierContact[]
   contracts         SupplierContract[]
@@ -2126,6 +2176,17 @@ enum FinanceTaxType {
   OTHER
 }
 
+enum CashTransactionDirection {
+  RECEIPT
+  PAYMENT
+}
+
+enum CashTransactionStatus {
+  DRAFT
+  POSTED
+  CANCELLED
+}
+
 enum AccountingCategory {
   BANK_STATEMENTS
   SALES_INCOME
@@ -2187,6 +2248,19 @@ enum BankTransactionType {
   REVERSAL
   OPENING_BALANCE
   OTHER
+}
+
+enum ExpensePaymentSource {
+  COMPANY_BANK
+  EMPLOYEE_PERSONAL
+  OWNER_PERSONAL
+}
+
+enum ExpenseReimbursementStatus {
+  NOT_APPLICABLE
+  PENDING
+  PARTIALLY_REIMBURSED
+  REIMBURSED
 }
 
 enum ExpenseApprovalStatus {

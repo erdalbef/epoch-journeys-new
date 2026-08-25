@@ -76,160 +76,158 @@ export default async function AdminFinanceDashboardPage() {
 
   const [financeEntries, bookings, bankAccounts, supplierPayables] =
     await Promise.all([
-    db.expense.findMany({
-      orderBy: [{ expenseDate: "desc" }, { createdAt: "desc" }],
-      include: {
-        booking: {
-          select: {
-            id: true,
-            bookingDisplayCode: true,
-            bookingReference: true,
-          },
-        },
-        tour: {
-          select: {
-            id: true,
-            title: true,
-            tourCode: true,
-          },
-        },
-      },
-    }),
-
-    db.booking.findMany({
-      where: {
-        status: {
-          not: BookingStatus.CANCELLED,
-        },
-      },
-      select: {
-        id: true,
-        bookingReference: true,
-        bookingDisplayCode: true,
-        currency: true,
-        totalPrice: true,
-        agencyNameSnapshot: true,
-        agentNameSnapshot: true,
-        groupName: true,
-        tourTitleSnapshot: true,
-        paymentSchedules: {
-          where: {
-            status: {
-              not: BookingInstallmentStatus.CANCELLED,
+      db.expense.findMany({
+        orderBy: [{ expenseDate: "desc" }, { createdAt: "desc" }],
+        include: {
+          booking: {
+            select: {
+              id: true,
+              bookingDisplayCode: true,
+              bookingReference: true,
             },
           },
-          orderBy: {
-            dueDate: "asc",
-          },
-          select: {
-            id: true,
-            title: true,
-            type: true,
-            dueDate: true,
-            amount: true,
-            amountPaid: true,
-            status: true,
-          },
-        },
-        payments: {
-          where: {
-            status: {
-              in: [
-                PaymentRecordStatus.RECEIVED,
-                PaymentRecordStatus.REFUNDED,
-              ],
+          tour: {
+            select: {
+              id: true,
+              title: true,
+              tourCode: true,
             },
           },
-          select: {
-            id: true,
-            amount: true,
-            status: true,
-            paidAt: true,
-            createdAt: true,
-          },
         },
-      },
-    }),
+      }),
 
-    db.bankAccount.findMany({
-      where: {
-        isActive: true,
-        currency: REPORTING_CURRENCY,
-      },
-      orderBy: {
-        createdAt: "asc",
-      },
-      select: {
-        id: true,
-        name: true,
-        openingBalance: true,
-        currency: true,
-      },
-    }),
+      db.booking.findMany({
+        where: {
+          status: {
+            not: BookingStatus.CANCELLED,
+          },
+        },
+        select: {
+          id: true,
+          bookingReference: true,
+          bookingDisplayCode: true,
+          currency: true,
+          totalPrice: true,
+          agencyNameSnapshot: true,
+          agentNameSnapshot: true,
+          groupName: true,
+          tourTitleSnapshot: true,
 
-    db.supplierPayable.findMany({
-      where: {
-        approvalStatus: SupplierPayableApprovalStatus.APPROVED,
-        currency: REPORTING_CURRENCY,
-      },
-      orderBy: [{ dueDate: "asc" }, { createdAt: "desc" }],
-      include: {
-        payments: {
-          orderBy: {
-            paymentDate: "asc",
+          paymentSchedules: {
+            where: {
+              status: {
+                not: BookingInstallmentStatus.CANCELLED,
+              },
+            },
+            orderBy: {
+              dueDate: "asc",
+            },
+            select: {
+              id: true,
+              title: true,
+              type: true,
+              dueDate: true,
+              amount: true,
+              amountPaid: true,
+              status: true,
+            },
           },
-          select: {
-            id: true,
-            amount: true,
-            paymentDate: true,
-            method: true,
-            reference: true,
-          },
-        },
-        booking: {
-          select: {
-            id: true,
-            bookingReference: true,
-            bookingDisplayCode: true,
-            agencyNameSnapshot: true,
-            agentNameSnapshot: true,
-            groupName: true,
-            tourTitleSnapshot: true,
-          },
-        },
-        tour: {
-          select: {
-            id: true,
-            title: true,
-            tourCode: true,
-          },
-        },
-        supplier: {
-          select: {
-            id: true,
-            name: true,
+
+          payments: {
+            where: {
+              status: {
+                in: [
+                  PaymentRecordStatus.RECEIVED,
+                  PaymentRecordStatus.REFUNDED,
+                ],
+              },
+            },
+            select: {
+              id: true,
+              amount: true,
+              status: true,
+              paidAt: true,
+              createdAt: true,
+            },
           },
         },
-      },
-    }),
-  ]);
+      }),
+
+      db.bankAccount.findMany({
+        where: {
+          isActive: true,
+          currency: REPORTING_CURRENCY,
+        },
+        orderBy: {
+          createdAt: "asc",
+        },
+        select: {
+          id: true,
+          name: true,
+          openingBalance: true,
+          currency: true,
+        },
+      }),
+
+      db.supplierPayable.findMany({
+        where: {
+          approvalStatus: SupplierPayableApprovalStatus.APPROVED,
+          currency: REPORTING_CURRENCY,
+        },
+        orderBy: [{ dueDate: "asc" }, { createdAt: "desc" }],
+        include: {
+          payments: {
+            orderBy: {
+              paymentDate: "asc",
+            },
+            select: {
+              id: true,
+              amount: true,
+              paymentDate: true,
+              method: true,
+              reference: true,
+            },
+          },
+
+          booking: {
+            select: {
+              id: true,
+              bookingReference: true,
+              bookingDisplayCode: true,
+              agencyNameSnapshot: true,
+              agentNameSnapshot: true,
+              groupName: true,
+              tourTitleSnapshot: true,
+            },
+          },
+
+          tour: {
+            select: {
+              id: true,
+              title: true,
+              tourCode: true,
+            },
+          },
+
+          supplier: {
+            select: {
+              id: true,
+              name: true,
+            },
+          },
+        },
+      }),
+    ]);
 
   const getReportingAmount = (
     entry: (typeof financeEntries)[number],
   ) => entry.amount;
 
   /*
-   * TRANSITION RULE
-   * ----------------
-   * Booking-linked INCOME entries are excluded from headline income totals.
-   * Booking income now comes automatically from BookingPaymentSchedule +
-   * Payment records. This prevents the old manual booking-income entries from
-   * being counted twice.
-   *
-   * Manual INCOME without a booking remains valid for exceptional/non-booking
-   * income. All manual EXPENSE entries remain active until the supplier expense
-   * side is automated later.
+   * Booking-linked manual income is excluded from headline income
+   * because booking schedules and payments now feed Finance automatically.
    */
+
   const manualIncomeEntries = financeEntries.filter(
     (entry) =>
       entry.direction === "INCOME" &&
@@ -248,11 +246,10 @@ export default async function AdminFinanceDashboardPage() {
   );
 
   /*
-   * Manual expense rows remain valid during the transition.
-   * We exclude a manual supplier expense only when an APPROVED automatic
-   * SupplierPayable exists for the same booking + supplier + tour combination.
-   * This avoids double counting while preserving historical/manual expenses.
+   * Keep standalone/manual expenses unless an approved supplier payable
+   * represents the same booking + supplier + tour combination.
    */
+
   const manualExpenseEntries = financeEntries.filter((entry) => {
     if (
       entry.direction !== "EXPENSE" ||
@@ -339,12 +336,6 @@ export default async function AdminFinanceDashboardPage() {
         0,
       );
 
-      /*
-       * Once a schedule exists, the schedule is the receivable source.
-       * If a payment exists before a schedule is created, that received amount
-       * is still treated as recognized booking income so Paid Income never
-       * exceeds Total Income.
-       */
       const recognizedIncome =
         scheduledTotal > 0
           ? Math.max(scheduledTotal, actualPaid)
@@ -411,9 +402,13 @@ export default async function AdminFinanceDashboardPage() {
       (entry) =>
         entry.paymentStatus === ExpensePaymentStatus.PAID,
     )
-    .reduce((sum, entry) => sum + getReportingAmount(entry), 0);
+    .reduce(
+      (sum, entry) => sum + getReportingAmount(entry),
+      0,
+    );
 
-  const paidIncome = automaticPaidIncome + manualPaidIncome;
+  const paidIncome =
+    automaticPaidIncome + manualPaidIncome;
 
   const automaticPendingIncome = automaticBookingFinance.reduce(
     (sum, booking) => sum + booking.pendingReceivable,
@@ -425,7 +420,10 @@ export default async function AdminFinanceDashboardPage() {
       (entry) =>
         entry.paymentStatus === ExpensePaymentStatus.PENDING,
     )
-    .reduce((sum, entry) => sum + getReportingAmount(entry), 0);
+    .reduce(
+      (sum, entry) => sum + getReportingAmount(entry),
+      0,
+    );
 
   const pendingIncome =
     automaticPendingIncome + manualPendingIncome;
@@ -440,7 +438,10 @@ export default async function AdminFinanceDashboardPage() {
       (entry) =>
         entry.paymentStatus === ExpensePaymentStatus.PAID,
     )
-    .reduce((sum, entry) => sum + getReportingAmount(entry), 0);
+    .reduce(
+      (sum, entry) => sum + getReportingAmount(entry),
+      0,
+    );
 
   const paidExpenses =
     automaticPaidExpenses + manualPaidExpenses;
@@ -456,16 +457,26 @@ export default async function AdminFinanceDashboardPage() {
       (entry) =>
         entry.paymentStatus === ExpensePaymentStatus.PENDING,
     )
-    .reduce((sum, entry) => sum + getReportingAmount(entry), 0);
+    .reduce(
+      (sum, entry) => sum + getReportingAmount(entry),
+      0,
+    );
 
   const pendingExpenses =
     automaticPendingExpenses + manualPendingExpenses;
 
   const totalTax = financeEntries
-    .filter((entry) => entry.currency === REPORTING_CURRENCY)
-    .reduce((sum, entry) => sum + (entry.taxAmount || 0), 0);
+    .filter(
+      (entry) =>
+        entry.currency === REPORTING_CURRENCY,
+    )
+    .reduce(
+      (sum, entry) => sum + (entry.taxAmount || 0),
+      0,
+    );
 
-  const netProfit = totalIncome - totalExpenses;
+  const netProfit =
+    totalIncome - totalExpenses;
 
   const openingBalance = bankAccounts.reduce(
     (sum, account) => sum + account.openingBalance,
@@ -480,17 +491,16 @@ export default async function AdminFinanceDashboardPage() {
   const groupMap = new Map<string, SummaryItem>();
   const supplierMap = new Map<string, SummaryItem>();
 
-  /*
-   * Manual exceptional income + all manual expenses.
-   * Booking-linked manual income is intentionally skipped to avoid duplication.
-   */
   for (const entry of [
     ...manualIncomeEntries,
     ...manualExpenseEntries,
   ]) {
     const amount = getReportingAmount(entry);
+
     const direction =
-      entry.direction === "INCOME" ? "INCOME" : "EXPENSE";
+      entry.direction === "INCOME"
+        ? "INCOME"
+        : "EXPENSE";
 
     const agencyLabel =
       entry.partnerCompanyName ||
@@ -509,7 +519,8 @@ export default async function AdminFinanceDashboardPage() {
       ? entry.tour.tourCode
         ? `${entry.tour.tourCode} — ${entry.tour.title}`
         : entry.tour.title
-      : entry.customPackageName || "Unlinked Tour / Package";
+      : entry.customPackageName ||
+        "Unlinked Tour / Package";
 
     addToSummary(
       tourMap,
@@ -534,7 +545,8 @@ export default async function AdminFinanceDashboardPage() {
 
     if (direction === "EXPENSE") {
       const supplierLabel =
-        entry.vendorName || "Unassigned Supplier / Payer";
+        entry.vendorName ||
+        "Unassigned Supplier / Payer";
 
       addToSummary(
         supplierMap,
@@ -546,9 +558,6 @@ export default async function AdminFinanceDashboardPage() {
     }
   }
 
-  /*
-   * Add automatic booking receivable/income to profitability summaries.
-   */
   for (const booking of automaticBookingFinance) {
     const agencyLabel =
       booking.agencyNameSnapshot ||
@@ -564,7 +573,8 @@ export default async function AdminFinanceDashboardPage() {
     );
 
     const tourLabel =
-      booking.tourTitleSnapshot || "Unlinked Tour / Package";
+      booking.tourTitleSnapshot ||
+      "Unlinked Tour / Package";
 
     addToSummary(
       tourMap,
@@ -588,9 +598,6 @@ export default async function AdminFinanceDashboardPage() {
     );
   }
 
-  /*
-   * Add approved supplier payables to profitability summaries.
-   */
   for (const payable of automaticSupplierFinance) {
     const agencyLabel =
       payable.booking?.agencyNameSnapshot ||
@@ -652,39 +659,57 @@ export default async function AdminFinanceDashboardPage() {
   const topTour = getTopItem(tourMap);
   const topGroup = getTopItem(groupMap);
 
-  const topSupplier = Array.from(supplierMap.values()).sort(
-    (a, b) => b.expenses - a.expenses,
-  )[0];
+  const topSupplier =
+    Array.from(supplierMap.values()).sort(
+      (a, b) => b.expenses - a.expenses,
+    )[0];
 
-  const recentEntries = financeEntries.slice(0, 8);
+  const recentEntries =
+    financeEntries.slice(0, 8);
 
-  const recentSupplierPayables = [...automaticSupplierFinance]
-    .sort((a, b) => {
-      const aDate = a.dueDate?.getTime() ?? Number.MAX_SAFE_INTEGER;
-      const bDate = b.dueDate?.getTime() ?? Number.MAX_SAFE_INTEGER;
-      return aDate - bDate;
-    })
-    .slice(0, 8);
+  const recentSupplierPayables =
+    [...automaticSupplierFinance]
+      .sort((a, b) => {
+        const aDate =
+          a.dueDate?.getTime() ??
+          Number.MAX_SAFE_INTEGER;
 
-  const overduePayables = automaticSupplierFinance.filter(
-    (payable) => payable.isOverdue,
-  );
+        const bDate =
+          b.dueDate?.getTime() ??
+          Number.MAX_SAFE_INTEGER;
 
-  const overduePayablesTotal = overduePayables.reduce(
-    (sum, payable) => sum + payable.pendingPayable,
-    0,
-  );
+        return aDate - bDate;
+      })
+      .slice(0, 8);
 
-  const recentAutomaticBookings = [...automaticBookingFinance]
-    .sort((a, b) => {
-      const aDate = a.nextDueDate?.getTime() ?? 0;
-      const bDate = b.nextDueDate?.getTime() ?? 0;
-      return aDate - bDate;
-    })
-    .slice(0, 8);
+  const overduePayables =
+    automaticSupplierFinance.filter(
+      (payable) => payable.isOverdue,
+    );
+
+  const overduePayablesTotal =
+    overduePayables.reduce(
+      (sum, payable) => sum + payable.pendingPayable,
+      0,
+    );
+
+  const recentAutomaticBookings =
+    [...automaticBookingFinance]
+      .sort((a, b) => {
+        const aDate =
+          a.nextDueDate?.getTime() ?? 0;
+
+        const bDate =
+          b.nextDueDate?.getTime() ?? 0;
+
+        return aDate - bDate;
+      })
+      .slice(0, 8);
 
   return (
     <div className="space-y-8 p-6">
+      {/* HEADER */}
+
       <div className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
         <div>
           <h1 className="text-3xl font-bold text-[#001F3F]">
@@ -692,25 +717,33 @@ export default async function AdminFinanceDashboardPage() {
           </h1>
 
           <p className="mt-2 text-sm text-muted-foreground">
-            Executive overview of automatic booking receivables, received
-            customer payments, approved supplier payables, supplier payments,
-            additional expenses, tax, bank position, and profitability.
+            Executive overview of automatic booking receivables,
+            received customer payments, approved supplier payables,
+            supplier payments, additional expenses, tax, bank
+            position, and profitability.
           </p>
         </div>
 
         <div className="flex flex-wrap gap-3">
           <Link
-            href="/admin/payments"
+            href="/admin/finance/reports"
             className="rounded-xl border px-4 py-2 text-sm font-medium transition hover:border-[#8B0000] hover:text-[#8B0000]"
           >
-            Customer Payments
+            Finance Reports
+          </Link>
+
+          <Link
+            href="/admin/finance/reports/accounts-receivable"
+            className="rounded-xl border px-4 py-2 text-sm font-medium transition hover:border-[#8B0000] hover:text-[#8B0000]"
+          >
+            Accounts Receivable
           </Link>
 
           <Link
             href="/admin/finance/ledger"
             className="rounded-xl border px-4 py-2 text-sm font-medium transition hover:border-[#8B0000] hover:text-[#8B0000]"
           >
-            Open Finance Ledger
+            Finance Ledger
           </Link>
 
           <Link
@@ -722,14 +755,22 @@ export default async function AdminFinanceDashboardPage() {
         </div>
       </div>
 
+      {/* AUTOMATIC FINANCE NOTICE */}
+
       <div className="rounded-xl border border-blue-100 bg-blue-50 px-4 py-3 text-sm leading-6 text-blue-900">
-        <strong>Automatic finance is active:</strong> booking payment
-        schedules feed Total Income and Pending Receivables; received customer
-        payments feed Paid Income; approved supplier payables feed Total
-        Expenses and Pending Payables; supplier payments feed Paid Expenses.
-        Matching manual booking/supplier expenses are excluded to prevent
-        double counting, while standalone additional expenses remain active.
+        <strong>
+          Automatic finance is active:
+        </strong>{" "}
+        booking payment schedules feed Total Income and Pending
+        Receivables; received customer payments feed Paid Income;
+        approved supplier payables feed Total Expenses and Pending
+        Payables; supplier payments feed Paid Expenses. Matching
+        manual booking/supplier expenses are excluded to prevent
+        double counting, while standalone additional expenses remain
+        active.
       </div>
+
+      {/* MAIN KPI CARDS */}
 
       <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
         <div className="rounded-2xl border bg-emerald-50 p-5 shadow-sm">
@@ -755,11 +796,15 @@ export default async function AdminFinanceDashboardPage() {
           </p>
 
           <p className="mt-2 text-3xl font-bold text-green-800">
-            {formatCurrency(totalIncome, REPORTING_CURRENCY)}
+            {formatCurrency(
+              totalIncome,
+              REPORTING_CURRENCY,
+            )}
           </p>
 
           <p className="mt-2 text-xs text-green-700">
-            Automatic scheduled booking income + historical exceptional income
+            Automatic scheduled booking income + historical
+            exceptional income
           </p>
         </div>
 
@@ -769,11 +814,15 @@ export default async function AdminFinanceDashboardPage() {
           </p>
 
           <p className="mt-2 text-3xl font-bold text-red-800">
-            {formatCurrency(totalExpenses, REPORTING_CURRENCY)}
+            {formatCurrency(
+              totalExpenses,
+              REPORTING_CURRENCY,
+            )}
           </p>
 
           <p className="mt-2 text-xs text-red-700">
-            Approved supplier payables + standalone additional expenses
+            Approved supplier payables + standalone additional
+            expenses
           </p>
         </div>
 
@@ -789,7 +838,10 @@ export default async function AdminFinanceDashboardPage() {
                 : "text-red-700"
             }`}
           >
-            {formatCurrency(netProfit, REPORTING_CURRENCY)}
+            {formatCurrency(
+              netProfit,
+              REPORTING_CURRENCY,
+            )}
           </p>
         </div>
 
@@ -799,7 +851,10 @@ export default async function AdminFinanceDashboardPage() {
           </p>
 
           <p className="mt-2 text-3xl font-bold text-amber-800">
-            {formatCurrency(totalTax, REPORTING_CURRENCY)}
+            {formatCurrency(
+              totalTax,
+              REPORTING_CURRENCY,
+            )}
           </p>
 
           <p className="mt-2 text-xs text-amber-700">
@@ -808,6 +863,8 @@ export default async function AdminFinanceDashboardPage() {
         </div>
       </section>
 
+      {/* CASH POSITION */}
+
       <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
         <div className="rounded-2xl border bg-white p-5 shadow-sm">
           <p className="text-sm text-slate-500">
@@ -815,7 +872,10 @@ export default async function AdminFinanceDashboardPage() {
           </p>
 
           <p className="mt-2 text-2xl font-bold text-slate-800">
-            {formatCurrency(openingBalance, REPORTING_CURRENCY)}
+            {formatCurrency(
+              openingBalance,
+              REPORTING_CURRENCY,
+            )}
           </p>
 
           <p className="mt-1 text-xs text-slate-500">
@@ -828,14 +888,20 @@ export default async function AdminFinanceDashboardPage() {
         </div>
 
         <div className="rounded-2xl border bg-white p-5 shadow-sm">
-          <p className="text-sm text-slate-500">Paid Income</p>
+          <p className="text-sm text-slate-500">
+            Paid Income
+          </p>
 
           <p className="mt-2 text-2xl font-bold text-green-700">
-            {formatCurrency(paidIncome, REPORTING_CURRENCY)}
+            {formatCurrency(
+              paidIncome,
+              REPORTING_CURRENCY,
+            )}
           </p>
 
           <p className="mt-1 text-xs text-slate-500">
-            Received customer payments + historical paid exceptional income
+            Received customer payments + historical paid exceptional
+            income
           </p>
         </div>
 
@@ -845,7 +911,10 @@ export default async function AdminFinanceDashboardPage() {
           </p>
 
           <p className="mt-2 text-2xl font-bold text-red-700">
-            {formatCurrency(paidExpenses, REPORTING_CURRENCY)}
+            {formatCurrency(
+              paidExpenses,
+              REPORTING_CURRENCY,
+            )}
           </p>
 
           <p className="mt-1 text-xs text-slate-500">
@@ -873,6 +942,8 @@ export default async function AdminFinanceDashboardPage() {
         </div>
       </section>
 
+      {/* PENDING / PROFITABILITY */}
+
       <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
         <div className="rounded-2xl border bg-white p-5 shadow-sm">
           <p className="text-sm text-slate-500">
@@ -887,8 +958,16 @@ export default async function AdminFinanceDashboardPage() {
           </p>
 
           <p className="mt-1 text-xs text-slate-500">
-            Open booking installments + historical pending exceptional income
+            Open booking installments + historical pending exceptional
+            income
           </p>
+
+          <Link
+            href="/admin/finance/reports/accounts-receivable"
+            className="mt-3 inline-block text-xs font-semibold text-[#8B0000] hover:underline"
+          >
+            View Accounts Receivable
+          </Link>
         </div>
 
         <div className="rounded-2xl border bg-white p-5 shadow-sm">
@@ -904,17 +983,26 @@ export default async function AdminFinanceDashboardPage() {
           </p>
 
           <p className="mt-1 text-xs text-slate-500">
-            Outstanding approved supplier payables + pending additional expenses
+            Outstanding approved supplier payables + pending
+            additional expenses
           </p>
 
           {overduePayablesTotal > 0 ? (
             <p className="mt-2 text-xs font-semibold text-red-700">
-              Overdue: {formatCurrency(
+              Overdue:{" "}
+              {formatCurrency(
                 overduePayablesTotal,
                 REPORTING_CURRENCY,
               )}
             </p>
           ) : null}
+
+          <Link
+            href="/admin/finance/reports/accounts-payable"
+            className="mt-3 inline-block text-xs font-semibold text-[#8B0000] hover:underline"
+          >
+            View Accounts Payable
+          </Link>
         </div>
 
         <div className="rounded-2xl border bg-white p-5 shadow-sm">
@@ -938,7 +1026,10 @@ export default async function AdminFinanceDashboardPage() {
                   getResult(topAgency),
                   REPORTING_CURRENCY,
                 )
-              : formatCurrency(0, REPORTING_CURRENCY)}
+              : formatCurrency(
+                  0,
+                  REPORTING_CURRENCY,
+                )}
           </p>
         </div>
 
@@ -963,14 +1054,19 @@ export default async function AdminFinanceDashboardPage() {
                   getResult(topTour),
                   REPORTING_CURRENCY,
                 )
-              : formatCurrency(0, REPORTING_CURRENCY)}
+              : formatCurrency(
+                  0,
+                  REPORTING_CURRENCY,
+                )}
           </p>
         </div>
       </section>
 
       <section className="grid gap-4 md:grid-cols-2">
         <div className="rounded-2xl border bg-white p-5 shadow-sm">
-          <p className="text-sm text-slate-500">Top Group</p>
+          <p className="text-sm text-slate-500">
+            Top Group
+          </p>
 
           <p className="mt-2 text-lg font-bold text-[#001F3F]">
             {topGroup?.label || "-"}
@@ -988,7 +1084,10 @@ export default async function AdminFinanceDashboardPage() {
                   getResult(topGroup),
                   REPORTING_CURRENCY,
                 )
-              : formatCurrency(0, REPORTING_CURRENCY)}
+              : formatCurrency(
+                  0,
+                  REPORTING_CURRENCY,
+                )}
           </p>
         </div>
 
@@ -1007,10 +1106,15 @@ export default async function AdminFinanceDashboardPage() {
                   topSupplier.expenses,
                   REPORTING_CURRENCY,
                 )
-              : formatCurrency(0, REPORTING_CURRENCY)}
+              : formatCurrency(
+                  0,
+                  REPORTING_CURRENCY,
+                )}
           </p>
         </div>
       </section>
+
+      {/* AUTOMATIC RECEIVABLES */}
 
       <section className="rounded-2xl border bg-white p-5 shadow-sm">
         <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
@@ -1024,12 +1128,21 @@ export default async function AdminFinanceDashboardPage() {
             </p>
           </div>
 
-          <Link
-            href="/admin/payments"
-            className="text-sm font-medium text-[#8B0000] hover:underline"
-          >
-            Open Payments
-          </Link>
+          <div className="flex gap-4">
+            <Link
+              href="/admin/finance/reports/accounts-receivable"
+              className="text-sm font-medium text-[#8B0000] hover:underline"
+            >
+              Accounts Receivable
+            </Link>
+
+            <Link
+              href="/admin/payments"
+              className="text-sm font-medium text-[#8B0000] hover:underline"
+            >
+              Open Payments
+            </Link>
+          </div>
         </div>
 
         <div className="overflow-x-auto">
@@ -1039,21 +1152,27 @@ export default async function AdminFinanceDashboardPage() {
                 <th className="px-3 py-3 font-medium">
                   Booking
                 </th>
+
                 <th className="px-3 py-3 font-medium">
                   Partner / Group
                 </th>
+
                 <th className="px-3 py-3 font-medium">
                   Next Due
                 </th>
+
                 <th className="px-3 py-3 text-right font-medium">
                   Scheduled
                 </th>
+
                 <th className="px-3 py-3 text-right font-medium">
                   Received
                 </th>
+
                 <th className="px-3 py-3 text-right font-medium">
                   Outstanding
                 </th>
+
                 <th className="px-3 py-3 text-right font-medium">
                   Action
                 </th>
@@ -1092,7 +1211,9 @@ export default async function AdminFinanceDashboardPage() {
                     </td>
 
                     <td className="whitespace-nowrap px-3 py-3">
-                      {formatDate(booking.nextDueDate)}
+                      {formatDate(
+                        booking.nextDueDate,
+                      )}
                     </td>
 
                     <td className="px-3 py-3 text-right">
@@ -1143,6 +1264,8 @@ export default async function AdminFinanceDashboardPage() {
         </div>
       </section>
 
+      {/* SUPPLIER PAYABLES */}
+
       <section className="rounded-2xl border bg-white p-5 shadow-sm">
         <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div>
@@ -1151,8 +1274,8 @@ export default async function AdminFinanceDashboardPage() {
             </h2>
 
             <p className="text-sm text-slate-500">
-              Approved supplier payables feed expenses automatically; recorded
-              supplier payments feed Paid Expenses.
+              Approved supplier payables feed expenses automatically;
+              recorded supplier payments feed Paid Expenses.
             </p>
           </div>
 
@@ -1168,16 +1291,37 @@ export default async function AdminFinanceDashboardPage() {
           <table className="w-full min-w-[1050px] text-sm">
             <thead className="bg-slate-50 text-left text-slate-600">
               <tr>
-                <th className="px-3 py-3 font-medium">Supplier</th>
-                <th className="px-3 py-3 font-medium">Booking / Tour</th>
-                <th className="px-3 py-3 font-medium">Due Date</th>
-                <th className="px-3 py-3 text-right font-medium">Approved</th>
-                <th className="px-3 py-3 text-right font-medium">Paid</th>
+                <th className="px-3 py-3 font-medium">
+                  Supplier
+                </th>
+
+                <th className="px-3 py-3 font-medium">
+                  Booking / Tour
+                </th>
+
+                <th className="px-3 py-3 font-medium">
+                  Due Date
+                </th>
+
+                <th className="px-3 py-3 text-right font-medium">
+                  Approved
+                </th>
+
+                <th className="px-3 py-3 text-right font-medium">
+                  Paid
+                </th>
+
                 <th className="px-3 py-3 text-right font-medium">
                   Outstanding
                 </th>
-                <th className="px-3 py-3 font-medium">Status</th>
-                <th className="px-3 py-3 text-right font-medium">Action</th>
+
+                <th className="px-3 py-3 font-medium">
+                  Status
+                </th>
+
+                <th className="px-3 py-3 text-right font-medium">
+                  Action
+                </th>
               </tr>
             </thead>
 
@@ -1192,7 +1336,8 @@ export default async function AdminFinanceDashboardPage() {
                   ? payable.tour.tourCode
                     ? `${payable.tour.tourCode} — ${payable.tour.title}`
                     : payable.tour.title
-                  : payable.booking?.tourTitleSnapshot || "-";
+                  : payable.booking?.tourTitleSnapshot ||
+                    "-";
 
                 const supplierLabel =
                   payable.supplierNameSnapshot ||
@@ -1200,7 +1345,10 @@ export default async function AdminFinanceDashboardPage() {
                   "-";
 
                 return (
-                  <tr key={payable.id} className="border-t">
+                  <tr
+                    key={payable.id}
+                    className="border-t"
+                  >
                     <td className="px-3 py-3">
                       <div className="font-semibold text-[#001F3F]">
                         {supplierLabel}
@@ -1212,7 +1360,9 @@ export default async function AdminFinanceDashboardPage() {
                     </td>
 
                     <td className="px-3 py-3">
-                      <div className="font-medium">{bookingRef}</div>
+                      <div className="font-medium">
+                        {bookingRef}
+                      </div>
 
                       <div className="mt-1 max-w-72 truncate text-xs text-slate-500">
                         {tourLabel}
@@ -1226,7 +1376,9 @@ export default async function AdminFinanceDashboardPage() {
                           : ""
                       }`}
                     >
-                      {formatDate(payable.dueDate)}
+                      {formatDate(
+                        payable.dueDate,
+                      )}
                     </td>
 
                     <td className="px-3 py-3 text-right">
@@ -1299,6 +1451,8 @@ export default async function AdminFinanceDashboardPage() {
         </div>
       </section>
 
+      {/* BOTTOM AREA */}
+
       <section className="grid gap-4 xl:grid-cols-2">
         <div className="rounded-2xl border bg-white p-5 shadow-sm">
           <div className="mb-4 flex items-center justify-between gap-3">
@@ -1327,15 +1481,19 @@ export default async function AdminFinanceDashboardPage() {
                   <th className="px-3 py-3 font-medium">
                     Date
                   </th>
+
                   <th className="px-3 py-3 font-medium">
                     Title
                   </th>
+
                   <th className="px-3 py-3 font-medium">
                     Agency / Group
                   </th>
+
                   <th className="px-3 py-3 font-medium">
                     Status
                   </th>
+
                   <th className="px-3 py-3 text-right font-medium">
                     Amount
                   </th>
@@ -1344,9 +1502,14 @@ export default async function AdminFinanceDashboardPage() {
 
               <tbody>
                 {recentEntries.map((entry) => (
-                  <tr key={entry.id} className="border-t">
+                  <tr
+                    key={entry.id}
+                    className="border-t"
+                  >
                     <td className="whitespace-nowrap px-3 py-3">
-                      {formatDate(entry.expenseDate)}
+                      {formatDate(
+                        entry.expenseDate,
+                      )}
                     </td>
 
                     <td className="px-3 py-3">
@@ -1400,7 +1563,10 @@ export default async function AdminFinanceDashboardPage() {
                           : "text-red-700"
                       }`}
                     >
-                      {entry.direction === "INCOME" ? "+" : "-"}
+                      {entry.direction === "INCOME"
+                        ? "+"
+                        : "-"}
+
                       {formatCurrency(
                         getReportingAmount(entry),
                         REPORTING_CURRENCY,
@@ -1424,16 +1590,43 @@ export default async function AdminFinanceDashboardPage() {
           </div>
         </div>
 
+        {/* COMPLETE FINANCE NAVIGATION */}
+
         <div className="rounded-2xl border bg-white p-5 shadow-sm">
           <h2 className="text-lg font-semibold text-[#001F3F]">
             Finance Actions
           </h2>
 
           <p className="mt-1 text-sm text-slate-500">
-            Quick access to operational finance tools.
+            Complete access to Epoch Journeys finance and accounting
+            tools.
           </p>
 
-          <div className="mt-5 grid gap-3">
+          <div className="mt-5 grid gap-3 sm:grid-cols-2">
+            <Link
+              href="/admin/finance/reports/accounts-receivable"
+              className="rounded-xl border p-4 transition hover:border-[#8B0000] hover:bg-red-50"
+            >
+              <p className="font-semibold text-[#001F3F]">
+                Accounts Receivable
+              </p>
+              <p className="mt-1 text-sm text-slate-500">
+                Customer and agent balances, collections and aging.
+              </p>
+            </Link>
+
+            <Link
+              href="/admin/finance/reports/accounts-payable"
+              className="rounded-xl border p-4 transition hover:border-[#8B0000] hover:bg-red-50"
+            >
+              <p className="font-semibold text-[#001F3F]">
+                Accounts Payable
+              </p>
+              <p className="mt-1 text-sm text-slate-500">
+                Supplier liabilities and outstanding balances.
+              </p>
+            </Link>
+
             <Link
               href="/admin/payments"
               className="rounded-xl border p-4 transition hover:border-[#8B0000] hover:bg-red-50"
@@ -1441,10 +1634,44 @@ export default async function AdminFinanceDashboardPage() {
               <p className="font-semibold text-[#001F3F]">
                 Customer Payments
               </p>
-
               <p className="mt-1 text-sm text-slate-500">
-                Review received customer payments and pending agent
-                submissions.
+                Received payments and pending submissions.
+              </p>
+            </Link>
+
+            <Link
+              href="/admin/supplier-payables"
+              className="rounded-xl border p-4 transition hover:border-[#8B0000] hover:bg-red-50"
+            >
+              <p className="font-semibold text-[#001F3F]">
+                Supplier Payables
+              </p>
+              <p className="mt-1 text-sm text-slate-500">
+                Supplier invoices, approvals and payments.
+              </p>
+            </Link>
+
+            <Link
+              href="/admin/finance/sales-documents"
+              className="rounded-xl border p-4 transition hover:border-[#8B0000] hover:bg-red-50"
+            >
+              <p className="font-semibold text-[#001F3F]">
+                Sales Documents
+              </p>
+              <p className="mt-1 text-sm text-slate-500">
+                Quotations, invoices, proformas and credit documents.
+              </p>
+            </Link>
+
+            <Link
+              href="/admin/finance/documents"
+              className="rounded-xl border p-4 transition hover:border-[#8B0000] hover:bg-red-50"
+            >
+              <p className="font-semibold text-[#001F3F]">
+                Finance Documents
+              </p>
+              <p className="mt-1 text-sm text-slate-500">
+                Supplier invoices, receipts and accounting documents.
               </p>
             </Link>
 
@@ -1455,53 +1682,20 @@ export default async function AdminFinanceDashboardPage() {
               <p className="font-semibold text-[#001F3F]">
                 Bank Accounts
               </p>
-
               <p className="mt-1 text-sm text-slate-500">
-                Manage opening balances and active company bank accounts.
+                Company accounts and opening balances.
               </p>
             </Link>
 
             <Link
-              href="/admin/finance/expenses/create"
+              href="/admin/finance/bank-transfers"
               className="rounded-xl border p-4 transition hover:border-[#8B0000] hover:bg-red-50"
             >
               <p className="font-semibold text-[#001F3F]">
-                Add Additional Expense
+                Bank Transfers
               </p>
-
               <p className="mt-1 text-sm text-slate-500">
-                Record bank fees, tax, overhead, reimbursements, staff or
-                owner-paid costs, and other exceptional expenses not already
-                represented by Supplier Payables.
-              </p>
-            </Link>
-
-            <Link
-              href="/admin/finance/expenses"
-              className="rounded-xl border p-4 transition hover:border-[#8B0000] hover:bg-red-50"
-            >
-              <p className="font-semibold text-[#001F3F]">
-                Additional Expenses
-              </p>
-
-              <p className="mt-1 text-sm text-slate-500">
-                View and manage manually entered expenses, overhead,
-                reimbursements, bank fees, tax, and other exceptional items.
-              </p>
-            </Link>
-
-            <Link
-              href="/admin/finance/ledger"
-              className="rounded-xl border p-4 transition hover:border-[#8B0000] hover:bg-red-50"
-            >
-              <p className="font-semibold text-[#001F3F]">
-                Finance Ledger
-              </p>
-
-              <p className="mt-1 text-sm text-slate-500">
-                View the consolidated record of actual customer receipts,
-                supplier payments, additional expense payments, refunds,
-                transfers, and adjustments.
+                Record transfers between company accounts.
               </p>
             </Link>
 
@@ -1512,10 +1706,8 @@ export default async function AdminFinanceDashboardPage() {
               <p className="font-semibold text-[#001F3F]">
                 Bank Statements
               </p>
-
               <p className="mt-1 text-sm text-slate-500">
-                Import bank statements, review statement lines, and match
-                them against posted Bank Ledger transactions.
+                Import statements and review statement lines.
               </p>
             </Link>
 
@@ -1526,10 +1718,71 @@ export default async function AdminFinanceDashboardPage() {
               <p className="font-semibold text-[#001F3F]">
                 Bank Reconciliation
               </p>
-
               <p className="mt-1 text-sm text-slate-500">
-                Reconcile Bank Ledger transactions against bank statements,
-                verify balances, and lock completed reconciliation periods.
+                Match ledger activity with bank statements.
+              </p>
+            </Link>
+
+            <Link
+              href="/admin/finance/ledger"
+              className="rounded-xl border p-4 transition hover:border-[#8B0000] hover:bg-red-50"
+            >
+              <p className="font-semibold text-[#001F3F]">
+                Finance Ledger
+              </p>
+              <p className="mt-1 text-sm text-slate-500">
+                Detailed record of finance transactions.
+              </p>
+            </Link>
+
+            <Link
+              href="/admin/finance/expenses"
+              className="rounded-xl border p-4 transition hover:border-[#8B0000] hover:bg-red-50"
+            >
+              <p className="font-semibold text-[#001F3F]">
+                Additional Expenses
+              </p>
+              <p className="mt-1 text-sm text-slate-500">
+                Overhead, fees, reimbursements and exceptional costs.
+              </p>
+            </Link>
+
+            <Link
+              href="/admin/finance/expenses/create"
+              className="rounded-xl border p-4 transition hover:border-[#8B0000] hover:bg-red-50"
+            >
+              <p className="font-semibold text-[#001F3F]">
+                Add Additional Expense
+              </p>
+              <p className="mt-1 text-sm text-slate-500">
+                Record a new standalone finance expense.
+              </p>
+            </Link>
+
+            <Link
+              href="/admin/finance/profitability"
+              className="rounded-xl border p-4 transition hover:border-[#8B0000] hover:bg-red-50"
+            >
+              <p className="font-semibold text-[#001F3F]">
+                Profitability
+              </p>
+              <p className="mt-1 text-sm text-slate-500">
+                Analyze profitability by tour and departure.
+              </p>
+            </Link>
+
+            <Link
+              href="/admin/finance/reports"
+              className="rounded-xl border p-4 transition hover:border-[#8B0000] hover:bg-red-50 sm:col-span-2"
+            >
+              <p className="font-semibold text-[#001F3F]">
+                Finance Reports
+              </p>
+              <p className="mt-1 text-sm text-slate-500">
+                Accounts receivable, accounts payable, cash and bank,
+                due and overdue items, expenses, general ledger,
+                management summary, refunds and other financial
+                reports.
               </p>
             </Link>
           </div>
@@ -1537,9 +1790,10 @@ export default async function AdminFinanceDashboardPage() {
       </section>
 
       <p className="text-xs leading-5 text-slate-500">
-        Headline automatic booking and supplier-payable figures currently use
-        EUR only; non-EUR receivables/payables should remain in their original
-        currency until a proper accounting FX conversion layer is added.
+        Headline automatic booking and supplier-payable figures
+        currently use EUR only; non-EUR receivables/payables should
+        remain in their original currency until a proper accounting
+        FX conversion layer is added.
       </p>
     </div>
   );

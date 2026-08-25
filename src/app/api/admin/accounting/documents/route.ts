@@ -376,6 +376,21 @@ export async function POST(
         },
       });
 
+      if (
+        period.status === "CLOSED"
+      ) {
+        return NextResponse.json(
+         {
+            ok: false,
+            error:
+              "This accounting period is closed. Reopen the period before uploading documents.",
+          },
+          {
+            status: 409,
+          }
+        );
+      }
+
     /*
      * Read optional document fields
      */

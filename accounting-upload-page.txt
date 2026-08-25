@@ -135,16 +135,6 @@ const documentTypes = [
 ];
 
 const subcategories = [
-  // 01 - Bank Statements
-  "Bank Statement",
-
-  // 02 - Sales / Income
-  "Customer Advances",
-  "Customer Payments",
-  "Credit Notes",
-  "Other Income",
-
-  // 03 - Expenses / Purchases
   "Hotels / Accommodation",
   "Transport / Transfers",
   "Restaurants / Meals",
@@ -153,52 +143,25 @@ const subcategories = [
   "Entrance Fees",
   "Flights",
   "Insurance",
-  "Other Supplier Invoice / Receipt",
-
-  // 04 - Cash
+  "Customer Advances",
+  "Customer Payments",
+  "Credit Notes",
   "Cash Receipt",
   "Cash Payment",
-
-  // 05 - Employees / Accountable Persons
   "Employee Travel Expense",
   "Employee-Paid Company Expense",
   "Expense Report / Settlement",
-  "Employee Reimbursement Supporting Document",
-
-  // 06 - Owner / Personal Payments
   "Owner-Paid Company Expense",
   "Owner Funds Provided",
   "Owner Reimbursement",
-
-  // 07 - Other Documents
-  "Contracts & Agreements",
-  "Insurance Document",
+  "Contract",
   "Loan / Financing",
-  "Tax / VAT Document",
-  "Legal / Corporate Document",
-  "Licence / Registration",
-  "Accountant Correspondence",
-  "Official Correspondence",
-  "Other Accounting Document",
-
-  // 08 - Trip / Group Documentation
+  "Insurance Document",
   "Tour Itinerary",
-  "Tour Proposal / Confirmation",
   "Booking Confirmation",
-  "Hotel Confirmation",
-  "Transportation Confirmation",
-  "Guide / Excursion Confirmation",
-  "Restaurant / Meal Confirmation",
-  "Entrance / Ticket Confirmation",
   "Voucher",
   "Rooming List",
-  "Passport List",
   "Passenger List",
-  "Mass / Church Confirmation",
-  "Flight / Travel Confirmation",
-  "Group Correspondence",
-  "Other Trip / Group Supporting Document",
-
   "Other",
 ];
 
@@ -351,60 +314,24 @@ export default async function AccountingUploadPage({
         </p>
       </div>
 
-      <div className="grid gap-4 lg:grid-cols-3">
-        <div className="rounded-2xl border border-blue-100 bg-blue-50 p-5">
-          <div className="flex gap-3">
-            <Info className="mt-0.5 h-5 w-5 shrink-0 text-blue-700" />
+      <div className="rounded-2xl border border-blue-100 bg-blue-50 p-5">
+        <div className="flex gap-3">
+          <Info className="mt-0.5 h-5 w-5 shrink-0 text-blue-700" />
 
-            <div>
-              <p className="font-semibold text-blue-900">
-                Bank statements
-              </p>
+          <div>
+            <p className="font-semibold text-blue-900">
+              Bank statements
+            </p>
 
-              <p className="mt-1 text-sm leading-6 text-blue-800">
-                Complete monthly bank statements should continue to use the
-                dedicated Bank Statement module. Use this page for supporting
-                invoices, receipts, proofs, contracts and other documents.
-              </p>
-            </div>
-          </div>
-        </div>
-
-        <div className="rounded-2xl border border-amber-100 bg-amber-50 p-5">
-          <div className="flex gap-3">
-            <Info className="mt-0.5 h-5 w-5 shrink-0 text-amber-700" />
-
-            <div>
-              <p className="font-semibold text-amber-900">
-                07 - Other Documents
-              </p>
-
-              <p className="mt-1 text-sm leading-6 text-amber-800">
-                Use for contracts, insurance, financing, tax/VAT, legal or
-                corporate records, licences, registrations and accountant or
-                official correspondence that does not belong in categories
-                01-06.
-              </p>
-            </div>
-          </div>
-        </div>
-
-        <div className="rounded-2xl border border-emerald-100 bg-emerald-50 p-5">
-          <div className="flex gap-3">
-            <Info className="mt-0.5 h-5 w-5 shrink-0 text-emerald-700" />
-
-            <div>
-              <p className="font-semibold text-emerald-900">
-                08 - Trip / Group Documentation
-              </p>
-
-              <p className="mt-1 text-sm leading-6 text-emerald-800">
-                Use for itineraries, confirmations, vouchers, rooming and
-                passport lists, Mass confirmations and other operational group
-                documents. Link these to the Booking, Tour or Departure whenever
-                possible.
-              </p>
-            </div>
+            <p className="mt-1 text-sm leading-6 text-blue-800">
+              Complete monthly bank statements
+              should continue to use the dedicated
+              Bank Statement module. This upload
+              page is primarily for invoices,
+              receipts, payment proofs, contracts,
+              vouchers, and other supporting
+              accounting documents.
+            </p>
           </div>
         </div>
       </div>
@@ -718,10 +645,8 @@ export default async function AccountingUploadPage({
             </h2>
 
             <p className="mt-1 text-sm text-slate-600">
-              These links are optional for most accounting documents. For
-              08 - Trip / Group Documentation, link the file to the relevant
-              Booking / Group, Tour or Departure whenever possible so the
-              accountant package retains clear operational support.
+              These are optional but useful for
+              finding accounting documents later.
             </p>
           </div>
 

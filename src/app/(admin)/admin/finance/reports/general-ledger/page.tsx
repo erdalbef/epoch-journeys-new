@@ -41,7 +41,9 @@ function parseDateStart(value: string | undefined) {
 
   const date = new Date(`${value}T00:00:00.000Z`);
 
-  return Number.isNaN(date.getTime()) ? null : date;
+  return Number.isNaN(date.getTime())
+    ? null
+    : date;
 }
 
 function parseDateEnd(value: string | undefined) {
@@ -51,10 +53,14 @@ function parseDateEnd(value: string | undefined) {
 
   const date = new Date(`${value}T23:59:59.999Z`);
 
-  return Number.isNaN(date.getTime()) ? null : date;
+  return Number.isNaN(date.getTime())
+    ? null
+    : date;
 }
 
-function validEnum<T extends Record<string, string>>(
+function validEnum<
+  T extends Record<string, string>,
+>(
   source: T,
   value: string | undefined,
 ): T[keyof T] | undefined {
@@ -64,10 +70,15 @@ function validEnum<T extends Record<string, string>>(
 
   const values = Object.values(source);
 
-  return values.includes(value) ? (value as T[keyof T]) : undefined;
+  return values.includes(value)
+    ? (value as T[keyof T])
+    : undefined;
 }
 
-function money(value: number, currency: string) {
+function money(
+  value: number,
+  currency: string,
+) {
   try {
     return new Intl.NumberFormat("en-GB", {
       style: "currency",
@@ -79,7 +90,13 @@ function money(value: number, currency: string) {
   }
 }
 
-function formatDate(value: Date) {
+function formatDate(
+  value: Date | null | undefined,
+) {
+  if (!value) {
+    return "—";
+  }
+
   return value.toLocaleDateString("en-GB", {
     day: "2-digit",
     month: "short",
@@ -91,7 +108,10 @@ function enumLabel(value: string) {
   return value
     .replaceAll("_", " ")
     .toLowerCase()
-    .replace(/\b\w/g, (letter) => letter.toUpperCase());
+    .replace(
+      /\b\w/g,
+      (letter) => letter.toUpperCase(),
+    );
 }
 
 function sourceLabel(transaction: {
@@ -99,25 +119,30 @@ function sourceLabel(transaction: {
     bookingReference: string;
     bookingDisplayCode: string | null;
   } | null;
+
   payment: {
     id: string;
   } | null;
+
   supplierPayablePayment: {
     payable: {
       title: string;
       supplierNameSnapshot: string;
     };
   } | null;
+
   expense: {
     title: string;
     vendorName: string | null;
   } | null;
+
   refund: {
     booking: {
       bookingReference: string;
       bookingDisplayCode: string | null;
     };
   } | null;
+
   tour: {
     title: string;
   } | null;
@@ -154,97 +179,160 @@ function sourceLabel(transaction: {
     return "Customer payment";
   }
 
-  return "-";
+  return "—";
+}
+
+function transactionStatusClass(
+  status: BankTransactionStatus,
+) {
+  switch (status) {
+    case BankTransactionStatus.POSTED:
+      return "bg-green-100 text-green-700";
+
+    default:
+      return "bg-slate-100 text-slate-700";
+  }
 }
 
 export default async function GeneralLedgerPage({
   searchParams,
 }: PageProps) {
-  const session = await getServerSession(authOptions);
+  const session =
+    await getServerSession(
+      authOptions,
+    );
 
-  if (!session?.user || session.user.role !== Role.ADMIN) {
+  if (
+    !session?.user ||
+    session.user.role !== Role.ADMIN
+  ) {
     redirect("/admin-login");
   }
 
   const params = await searchParams;
 
-  const from = parseDateStart(params.from);
-  const to = parseDateEnd(params.to);
+  const from =
+    parseDateStart(
+      params.from,
+    );
 
-  const selectedType = validEnum(
-    BankTransactionType,
-    params.type,
-  );
+  const to =
+    parseDateEnd(
+      params.to,
+    );
 
-  const selectedDirection = validEnum(
-    BankTransactionDirection,
-    params.direction,
-  );
+  const selectedType =
+    validEnum(
+      BankTransactionType,
+      params.type,
+    );
 
-  const selectedStatus = validEnum(
-    BankTransactionStatus,
-    params.status,
-  );
+  const selectedDirection =
+    validEnum(
+      BankTransactionDirection,
+      params.direction,
+    );
 
-  const q = params.q?.trim() || "";
+  const selectedStatus =
+    validEnum(
+      BankTransactionStatus,
+      params.status,
+    );
 
-  const accounts = await db.bankAccount.findMany({
-    orderBy: [
-      {
-        currency: "asc",
+  const q =
+    params.q?.trim() || "";
+
+  // ==========================================================
+  // BANK ACCOUNTS
+  // ==========================================================
+
+  const accounts =
+    await db.bankAccount.findMany({
+      orderBy: [
+        {
+          currency: "asc",
+        },
+        {
+          name: "asc",
+        },
+      ],
+
+      select: {
+        id: true,
+        name: true,
+        currency: true,
+        openingBalance: true,
+        isActive: true,
       },
-      {
-        name: "asc",
-      },
-    ],
-    select: {
-      id: true,
-      name: true,
-      currency: true,
-      openingBalance: true,
-      isActive: true,
-    },
-  });
+    });
 
   const selectedAccount =
     params.bankAccountId &&
-    accounts.some((account) => account.id === params.bankAccountId)
+    accounts.some(
+      (account) =>
+        account.id ===
+        params.bankAccountId,
+    )
       ? params.bankAccountId
       : undefined;
 
-  const dateWhere: Prisma.BankTransactionWhereInput = {
+  // ==========================================================
+  // FILTERS
+  // ==========================================================
+
+  const dateWhere:
+    Prisma.BankTransactionWhereInput = {
     ...(from || to
       ? {
           transactionDate: {
-            ...(from ? { gte: from } : {}),
-            ...(to ? { lte: to } : {}),
+            ...(from
+              ? {
+                  gte: from,
+                }
+              : {}),
+
+            ...(to
+              ? {
+                  lte: to,
+                }
+              : {}),
           },
         }
       : {}),
   };
 
-  const rowWhere: Prisma.BankTransactionWhereInput = {
+  const rowWhere:
+    Prisma.BankTransactionWhereInput = {
     ...dateWhere,
+
     ...(selectedAccount
       ? {
-          bankAccountId: selectedAccount,
+          bankAccountId:
+            selectedAccount,
         }
       : {}),
+
     ...(selectedType
       ? {
-          type: selectedType,
+          type:
+            selectedType,
         }
       : {}),
+
     ...(selectedDirection
       ? {
-          direction: selectedDirection,
+          direction:
+            selectedDirection,
         }
       : {}),
+
     ...(selectedStatus
       ? {
-          status: selectedStatus,
+          status:
+            selectedStatus,
         }
       : {}),
+
     ...(q
       ? {
           OR: [
@@ -254,18 +342,21 @@ export default async function GeneralLedgerPage({
                 mode: "insensitive",
               },
             },
+
             {
               description: {
                 contains: q,
                 mode: "insensitive",
               },
             },
+
             {
               notes: {
                 contains: q,
                 mode: "insensitive",
               },
             },
+
             {
               booking: {
                 bookingReference: {
@@ -274,6 +365,7 @@ export default async function GeneralLedgerPage({
                 },
               },
             },
+
             {
               booking: {
                 bookingDisplayCode: {
@@ -287,15 +379,33 @@ export default async function GeneralLedgerPage({
       : {}),
   };
 
-  const positionAccounts = selectedAccount
-    ? accounts.filter((account) => account.id === selectedAccount)
-    : accounts;
+  const positionAccounts =
+    selectedAccount
+      ? accounts.filter(
+          (account) =>
+            account.id ===
+            selectedAccount,
+        )
+      : accounts;
 
-  const accountIds = positionAccounts.map((account) => account.id);
+  const accountIds =
+    positionAccounts.map(
+      (account) =>
+        account.id,
+    );
 
-  const [transactions, prePeriodRows, periodRows] = await Promise.all([
+  // ==========================================================
+  // DATA
+  // ==========================================================
+
+  const [
+    transactions,
+    prePeriodRows,
+    periodRows,
+  ] = await Promise.all([
     db.bankTransaction.findMany({
       where: rowWhere,
+
       orderBy: [
         {
           bankAccountId: "asc",
@@ -307,22 +417,31 @@ export default async function GeneralLedgerPage({
           createdAt: "asc",
         },
       ],
+
       take: 2000,
+
       select: {
         id: true,
+
         bankAccountId: true,
+
         type: true,
         direction: true,
         status: true,
+
         amount: true,
         currency: true,
+
         transactionDate: true,
         valueDate: true,
+
         reference: true,
         description: true,
         notes: true,
+
         reconciledAt: true,
         reconciliationId: true,
+
         transferGroupId: true,
 
         bankAccount: {
@@ -402,18 +521,25 @@ export default async function GeneralLedgerPage({
             "bankAccountId",
             "direction",
           ],
+
           where: {
             bankAccountId: {
               in: accountIds,
             },
-            status: BankTransactionStatus.POSTED,
+
+            status:
+              BankTransactionStatus.POSTED,
+
             type: {
-              not: BankTransactionType.OPENING_BALANCE,
+              not:
+                BankTransactionType.OPENING_BALANCE,
             },
+
             transactionDate: {
               lt: from,
             },
           },
+
           _sum: {
             amount: true,
           },
@@ -426,29 +552,49 @@ export default async function GeneralLedgerPage({
             "bankAccountId",
             "direction",
           ],
+
           where: {
             bankAccountId: {
               in: accountIds,
             },
-            status: BankTransactionStatus.POSTED,
+
+            status:
+              BankTransactionStatus.POSTED,
+
             type: {
-              not: BankTransactionType.OPENING_BALANCE,
+              not:
+                BankTransactionType.OPENING_BALANCE,
             },
+
             ...(from || to
               ? {
                   transactionDate: {
-                    ...(from ? { gte: from } : {}),
-                    ...(to ? { lte: to } : {}),
+                    ...(from
+                      ? {
+                          gte: from,
+                        }
+                      : {}),
+
+                    ...(to
+                      ? {
+                          lte: to,
+                        }
+                      : {}),
                   },
                 }
               : {}),
           },
+
           _sum: {
             amount: true,
           },
         })
       : Promise.resolve([]),
   ]);
+
+  // ==========================================================
+  // PRE-PERIOD POSITION
+  // ==========================================================
 
   const preMap = new Map<
     string,
@@ -459,21 +605,37 @@ export default async function GeneralLedgerPage({
   >();
 
   for (const row of prePeriodRows) {
-    const current = preMap.get(row.bankAccountId) ?? {
-      incoming: 0,
-      outgoing: 0,
-    };
+    const current =
+      preMap.get(
+        row.bankAccountId,
+      ) ?? {
+        incoming: 0,
+        outgoing: 0,
+      };
 
-    const amount = Number(row._sum.amount ?? 0);
+    const amount =
+      Number(
+        row._sum.amount ?? 0,
+      );
 
-    if (row.direction === BankTransactionDirection.IN) {
+    if (
+      row.direction ===
+      BankTransactionDirection.IN
+    ) {
       current.incoming += amount;
     } else {
       current.outgoing += amount;
     }
 
-    preMap.set(row.bankAccountId, current);
+    preMap.set(
+      row.bankAccountId,
+      current,
+    );
   }
+
+  // ==========================================================
+  // PERIOD MOVEMENT
+  // ==========================================================
 
   const periodMap = new Map<
     string,
@@ -484,34 +646,56 @@ export default async function GeneralLedgerPage({
   >();
 
   for (const row of periodRows) {
-    const current = periodMap.get(row.bankAccountId) ?? {
-      incoming: 0,
-      outgoing: 0,
-    };
+    const current =
+      periodMap.get(
+        row.bankAccountId,
+      ) ?? {
+        incoming: 0,
+        outgoing: 0,
+      };
 
-    const amount = Number(row._sum.amount ?? 0);
+    const amount =
+      Number(
+        row._sum.amount ?? 0,
+      );
 
-    if (row.direction === BankTransactionDirection.IN) {
+    if (
+      row.direction ===
+      BankTransactionDirection.IN
+    ) {
       current.incoming += amount;
     } else {
       current.outgoing += amount;
     }
 
-    periodMap.set(row.bankAccountId, current);
+    periodMap.set(
+      row.bankAccountId,
+      current,
+    );
   }
 
-  const positions = new Map<string, Position>();
+  // ==========================================================
+  // ACCOUNT POSITIONS
+  // ==========================================================
+
+  const positions =
+    new Map<
+      string,
+      Position
+    >();
 
   for (const account of positionAccounts) {
-    const before = preMap.get(account.id) ?? {
-      incoming: 0,
-      outgoing: 0,
-    };
+    const before =
+      preMap.get(account.id) ?? {
+        incoming: 0,
+        outgoing: 0,
+      };
 
-    const period = periodMap.get(account.id) ?? {
-      incoming: 0,
-      outgoing: 0,
-    };
+    const period =
+      periodMap.get(account.id) ?? {
+        incoming: 0,
+        outgoing: 0,
+      };
 
     const opening =
       account.openingBalance +
@@ -520,8 +704,13 @@ export default async function GeneralLedgerPage({
 
     positions.set(account.id, {
       opening,
-      incoming: period.incoming,
-      outgoing: period.outgoing,
+
+      incoming:
+        period.incoming,
+
+      outgoing:
+        period.outgoing,
+
       closing:
         opening +
         period.incoming -
@@ -529,52 +718,136 @@ export default async function GeneralLedgerPage({
     });
   }
 
-  const running = new Map<string, number>();
+  // ==========================================================
+  // RUNNING BALANCE
+  // ==========================================================
+
+  const running =
+    new Map<
+      string,
+      number
+    >();
 
   for (const account of positionAccounts) {
     running.set(
       account.id,
-      positions.get(account.id)?.opening ?? account.openingBalance,
+      positions.get(account.id)?.opening ??
+        account.openingBalance,
     );
   }
 
-  const rows = transactions.map((transaction) => {
-    let runningBalance = running.get(transaction.bankAccountId) ?? 0;
+  const rows =
+    transactions.map(
+      (transaction) => {
+        let runningBalance =
+          running.get(
+            transaction.bankAccountId,
+          ) ?? 0;
 
-    if (
-      transaction.status === BankTransactionStatus.POSTED &&
-      transaction.type !== BankTransactionType.OPENING_BALANCE
-    ) {
-      runningBalance +=
-        transaction.direction === BankTransactionDirection.IN
-          ? Number(transaction.amount)
-          : -Number(transaction.amount);
+        if (
+          transaction.status ===
+            BankTransactionStatus.POSTED &&
+          transaction.type !==
+            BankTransactionType.OPENING_BALANCE
+        ) {
+          runningBalance +=
+            transaction.direction ===
+            BankTransactionDirection.IN
+              ? Number(
+                  transaction.amount,
+                )
+              : -Number(
+                  transaction.amount,
+                );
 
-      running.set(transaction.bankAccountId, runningBalance);
-    }
+          running.set(
+            transaction.bankAccountId,
+            runningBalance,
+          );
+        }
 
-    return {
-      ...transaction,
-      amountNumber: Number(transaction.amount),
-      runningBalance,
-    };
-  });
+        return {
+          ...transaction,
 
-  const query = new URLSearchParams();
+          amountNumber:
+            Number(
+              transaction.amount,
+            ),
 
-  if (params.from) query.set("from", params.from);
-  if (params.to) query.set("to", params.to);
-  if (selectedAccount) query.set("bankAccountId", selectedAccount);
-  if (selectedType) query.set("type", selectedType);
-  if (selectedDirection) query.set("direction", selectedDirection);
-  if (selectedStatus) query.set("status", selectedStatus);
-  if (q) query.set("q", q);
+          runningBalance,
+        };
+      },
+    );
+
+  // ==========================================================
+  // EXPORT
+  // ==========================================================
+
+  const query =
+    new URLSearchParams();
+
+  if (params.from) {
+    query.set(
+      "from",
+      params.from,
+    );
+  }
+
+  if (params.to) {
+    query.set(
+      "to",
+      params.to,
+    );
+  }
+
+  if (selectedAccount) {
+    query.set(
+      "bankAccountId",
+      selectedAccount,
+    );
+  }
+
+  if (selectedType) {
+    query.set(
+      "type",
+      selectedType,
+    );
+  }
+
+  if (selectedDirection) {
+    query.set(
+      "direction",
+      selectedDirection,
+    );
+  }
+
+  if (selectedStatus) {
+    query.set(
+      "status",
+      selectedStatus,
+    );
+  }
+
+  if (q) {
+    query.set(
+      "q",
+      q,
+    );
+  }
 
   const exportHref =
     `/api/admin/finance/reports/general-ledger?${query.toString()}`;
 
+  const secondaryButton =
+    "rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:border-[#8B0000] hover:text-[#8B0000]";
+
+  const primaryButton =
+    "rounded-xl bg-[#001F3F] px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-[#002d5a]";
+
   return (
     <div className="mx-auto max-w-[1700px] space-y-6 p-4 sm:p-6 lg:p-8">
+      {/* HEADER */}
+
       <div className="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
         <div>
           <p className="text-xs font-bold uppercase tracking-[0.2em] text-[#8B0000]">
@@ -586,9 +859,10 @@ export default async function GeneralLedgerPage({
           </h1>
 
           <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-500">
-            Posted bank and cash activity with account opening position,
-            period inflows and outflows, running balance, source references,
-            statement matching, and reconciliation status.
+            Posted bank and cash activity with account opening
+            position, period inflows and outflows, running balance,
+            source references, statement matching and reconciliation
+            status.
           </p>
         </div>
 
@@ -597,407 +871,620 @@ export default async function GeneralLedgerPage({
             href="/admin/finance/reports"
             className={secondaryButton}
           >
-            ← Finance Reports
+            ← Back to Reports
           </Link>
 
           <a
             href={exportHref}
-            className="rounded-xl bg-[#001F3F] px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-[#002b57]"
+            className={secondaryButton}
           >
-            Export CSV
+            Export Ledger
           </a>
+
+          <Link
+            href="/admin/finance/ledger"
+            className={primaryButton}
+          >
+            Finance Ledger
+          </Link>
         </div>
       </div>
 
-      <form
-        method="GET"
-        className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm"
-      >
+      {/* FILTERS */}
+
+      <form className="rounded-2xl border bg-white p-5 shadow-sm">
         <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-7">
-          <FilterField label="From">
+          <div className="xl:col-span-2">
+            <label
+              htmlFor="q"
+              className="text-sm font-semibold text-slate-700"
+            >
+              Search
+            </label>
+
             <input
+              id="q"
+              name="q"
+              type="text"
+              defaultValue={q}
+              placeholder="Reference, booking, description or notes"
+              className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm outline-none transition focus:border-[#8B0000]"
+            />
+          </div>
+
+          <div>
+            <label
+              htmlFor="from"
+              className="text-sm font-semibold text-slate-700"
+            >
+              From
+            </label>
+
+            <input
+              id="from"
               name="from"
               type="date"
-              defaultValue={params.from || ""}
-              className={inputClass}
+              defaultValue={
+                params.from || ""
+              }
+              className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm outline-none transition focus:border-[#8B0000]"
             />
-          </FilterField>
+          </div>
 
-          <FilterField label="To">
+          <div>
+            <label
+              htmlFor="to"
+              className="text-sm font-semibold text-slate-700"
+            >
+              To
+            </label>
+
             <input
+              id="to"
               name="to"
               type="date"
-              defaultValue={params.to || ""}
-              className={inputClass}
+              defaultValue={
+                params.to || ""
+              }
+              className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm outline-none transition focus:border-[#8B0000]"
             />
-          </FilterField>
+          </div>
 
-          <FilterField label="Account">
+          <div>
+            <label
+              htmlFor="bankAccountId"
+              className="text-sm font-semibold text-slate-700"
+            >
+              Bank Account
+            </label>
+
             <select
+              id="bankAccountId"
               name="bankAccountId"
-              defaultValue={selectedAccount || ""}
-              className={inputClass}
+              defaultValue={
+                selectedAccount ||
+                ""
+              }
+              className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm outline-none transition focus:border-[#8B0000]"
             >
-              <option value="">All accounts</option>
+              <option value="">
+                All Accounts
+              </option>
 
-              {accounts.map((account) => (
-                <option key={account.id} value={account.id}>
-                  {account.name} · {account.currency}
-                </option>
-              ))}
+              {accounts.map(
+                (account) => (
+                  <option
+                    key={account.id}
+                    value={account.id}
+                  >
+                    {account.name} · {account.currency}
+                  </option>
+                ),
+              )}
             </select>
-          </FilterField>
+          </div>
 
-          <FilterField label="Type">
+          <div>
+            <label
+              htmlFor="type"
+              className="text-sm font-semibold text-slate-700"
+            >
+              Transaction Type
+            </label>
+
             <select
+              id="type"
               name="type"
-              defaultValue={selectedType || ""}
-              className={inputClass}
+              defaultValue={
+                selectedType || ""
+              }
+              className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm outline-none transition focus:border-[#8B0000]"
             >
-              <option value="">All types</option>
+              <option value="">
+                All Types
+              </option>
 
-              {Object.values(BankTransactionType).map((value) => (
-                <option key={value} value={value}>
+              {Object.values(
+                BankTransactionType,
+              ).map((value) => (
+                <option
+                  key={value}
+                  value={value}
+                >
                   {enumLabel(value)}
                 </option>
               ))}
             </select>
-          </FilterField>
+          </div>
 
-          <FilterField label="Direction">
+          <div>
+            <label
+              htmlFor="direction"
+              className="text-sm font-semibold text-slate-700"
+            >
+              Direction
+            </label>
+
             <select
+              id="direction"
               name="direction"
-              defaultValue={selectedDirection || ""}
-              className={inputClass}
+              defaultValue={
+                selectedDirection ||
+                ""
+              }
+              className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm outline-none transition focus:border-[#8B0000]"
             >
-              <option value="">All directions</option>
+              <option value="">
+                All
+              </option>
 
-              {Object.values(BankTransactionDirection).map((value) => (
-                <option key={value} value={value}>
+              {Object.values(
+                BankTransactionDirection,
+              ).map((value) => (
+                <option
+                  key={value}
+                  value={value}
+                >
                   {enumLabel(value)}
                 </option>
               ))}
             </select>
-          </FilterField>
-
-          <FilterField label="Status">
-            <select
-              name="status"
-              defaultValue={selectedStatus || ""}
-              className={inputClass}
-            >
-              <option value="">All statuses</option>
-
-              {Object.values(BankTransactionStatus).map((value) => (
-                <option key={value} value={value}>
-                  {enumLabel(value)}
-                </option>
-              ))}
-            </select>
-          </FilterField>
-
-          <FilterField label="Search">
-            <input
-              name="q"
-              defaultValue={q}
-              placeholder="Reference, booking..."
-              className={inputClass}
-            />
-          </FilterField>
+          </div>
         </div>
 
-        <div className="mt-4 flex flex-wrap justify-end gap-2">
-          <Link
-            href="/admin/finance/reports/general-ledger"
-            className={secondaryButton}
-          >
-            Clear
-          </Link>
+        <div className="mt-4 flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+          <div className="w-full sm:max-w-xs">
+            <label
+              htmlFor="status"
+              className="text-sm font-semibold text-slate-700"
+            >
+              Transaction Status
+            </label>
 
-          <button
-            type="submit"
-            className="rounded-xl bg-[#8B0000] px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-[#6f0000]"
-          >
-            Apply Filters
-          </button>
+            <select
+              id="status"
+              name="status"
+              defaultValue={
+                selectedStatus || ""
+              }
+              className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm outline-none transition focus:border-[#8B0000]"
+            >
+              <option value="">
+                All
+              </option>
+
+              {Object.values(
+                BankTransactionStatus,
+              ).map((value) => (
+                <option
+                  key={value}
+                  value={value}
+                >
+                  {enumLabel(value)}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div className="flex flex-wrap gap-2">
+            <button
+              type="submit"
+              className="rounded-xl bg-[#8B0000] px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-[#6f0000]"
+            >
+              Apply Filters
+            </button>
+
+            <Link
+              href="/admin/finance/reports/general-ledger"
+              className={secondaryButton}
+            >
+              Clear
+            </Link>
+          </div>
         </div>
       </form>
 
-      <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-        {positionAccounts.length === 0 ? (
-          <div className="col-span-full rounded-2xl border border-slate-200 bg-white p-5 text-sm text-slate-500">
-            No bank accounts available.
-          </div>
-        ) : (
-          positionAccounts.map((account) => {
-            const position = positions.get(account.id)!;
+      {/* ACCOUNT POSITIONS */}
 
-            return (
-              <div
-                key={account.id}
-                className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm"
-              >
-                <p className="font-bold text-[#001F3F]">{account.name}</p>
+      <section className="space-y-4">
+        <div>
+          <h2 className="text-lg font-semibold text-[#001F3F]">
+            Ledger Position by Bank Account
+          </h2>
 
-                <p className="mt-0.5 text-xs text-slate-400">
-                  {account.currency}
-                  {!account.isActive ? " · Inactive" : ""}
-                </p>
-
-                <div className="mt-4 space-y-2 text-sm">
-                  <PositionRow
-                    label="Opening"
-                    value={money(position.opening, account.currency)}
-                  />
-                  <PositionRow
-                    label="Posted In"
-                    value={money(position.incoming, account.currency)}
-                    positive
-                  />
-                  <PositionRow
-                    label="Posted Out"
-                    value={money(position.outgoing, account.currency)}
-                    negative
-                  />
-
-                  <div className="border-t border-slate-200 pt-2">
-                    <PositionRow
-                      label="Closing"
-                      value={money(position.closing, account.currency)}
-                      strong
-                    />
-                  </div>
-                </div>
-              </div>
-            );
-          })
-        )}
-      </section>
-
-      <section className="rounded-2xl border border-blue-100 bg-blue-50 p-4">
-        <p className="text-xs leading-5 text-blue-800">
-          <strong>Position cards</strong> always use all POSTED ledger
-          transactions for the selected account and date period. Type,
-          direction, status, and text filters affect the transaction table,
-          but do not distort the true account opening and closing position.
-        </p>
-      </section>
-
-      <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
-        <div className="border-b border-slate-200 p-5">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <div>
-              <h2 className="text-lg font-bold text-[#001F3F]">
-                Ledger Transactions
-              </h2>
-
-              <p className="mt-1 text-sm text-slate-500">
-                Showing {rows.length} transaction{rows.length === 1 ? "" : "s"}.
-                Maximum 2,000 rows on screen; use CSV export for the complete
-                filtered result.
-              </p>
-            </div>
-          </div>
+          <p className="mt-1 text-sm text-slate-500">
+            Opening position and posted movement for the selected
+            reporting period.
+          </p>
         </div>
 
-        {rows.length === 0 ? (
-          <div className="px-5 py-12 text-center text-sm text-slate-500">
-            No ledger transactions match the selected filters.
-          </div>
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="min-w-[1900px] w-full text-left text-sm">
-              <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
-                <tr>
-                  <th className="px-4 py-3">Date</th>
-                  <th className="px-4 py-3">Account</th>
-                  <th className="px-4 py-3">Type</th>
-                  <th className="px-4 py-3">Status</th>
-                  <th className="px-4 py-3">Description</th>
-                  <th className="px-4 py-3">Reference</th>
-                  <th className="px-4 py-3">Source</th>
-                  <th className="px-4 py-3">Statement</th>
-                  <th className="px-4 py-3">Reconciliation</th>
-                  <th className="px-4 py-3 text-right">Debit / Out</th>
-                  <th className="px-4 py-3 text-right">Credit / In</th>
-                  <th className="px-4 py-3 text-right">Running Balance</th>
-                  <th className="px-4 py-3">Created By</th>
-                </tr>
-              </thead>
+        <div className="grid gap-4 xl:grid-cols-2">
+          {positionAccounts.map(
+            (account) => {
+              const position =
+                positions.get(
+                  account.id,
+                );
 
-              <tbody className="divide-y divide-slate-100">
-                {rows.map((transaction) => {
-                  const incoming =
-                    transaction.direction === BankTransactionDirection.IN;
+              if (!position) {
+                return null;
+              }
 
-                  return (
-                    <tr key={transaction.id} className="hover:bg-slate-50">
-                      <td className="whitespace-nowrap px-4 py-4">
-                        {formatDate(transaction.transactionDate)}
-                      </td>
+              return (
+                <div
+                  key={account.id}
+                  className="rounded-2xl border bg-white p-5 shadow-sm"
+                >
+                  <div className="flex items-center justify-between gap-3">
+                    <div>
+                      <h3 className="text-lg font-bold text-[#001F3F]">
+                        {account.name}
+                      </h3>
 
-                      <td className="px-4 py-4">
-                        <p className="font-semibold text-[#001F3F]">
-                          {transaction.bankAccount.name}
-                        </p>
+                      <p className="mt-1 text-xs text-slate-500">
+                        {account.isActive
+                          ? "Active account"
+                          : "Inactive account"}
+                      </p>
+                    </div>
 
-                        <p className="mt-0.5 text-xs text-slate-400">
-                          {transaction.currency}
-                        </p>
-                      </td>
+                    <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-bold text-slate-700">
+                      {account.currency}
+                    </span>
+                  </div>
 
-                      <td className="px-4 py-4">
-                        <span className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-semibold text-slate-700">
-                          {enumLabel(transaction.type)}
-                        </span>
-                      </td>
+                  <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                    <div className="rounded-xl bg-slate-50 p-3">
+                      <p className="text-xs font-medium text-slate-500">
+                        Opening
+                      </p>
 
-                      <td className="px-4 py-4">
-                        <span
-                          className={`rounded-full px-2.5 py-1 text-xs font-semibold ${
-                            transaction.status ===
-                            BankTransactionStatus.POSTED
-                              ? "bg-emerald-100 text-emerald-800"
-                              : transaction.status ===
-                                  BankTransactionStatus.REVERSED
-                                ? "bg-purple-100 text-purple-800"
-                                : "bg-slate-100 text-slate-600"
-                          }`}
-                        >
-                          {enumLabel(transaction.status)}
-                        </span>
-                      </td>
-
-                      <td className="max-w-[300px] px-4 py-4 text-slate-700">
-                        {transaction.description || "-"}
-                      </td>
-
-                      <td className="px-4 py-4 text-slate-500">
-                        {transaction.reference || "-"}
-                      </td>
-
-                      <td className="max-w-[300px] px-4 py-4 text-slate-600">
-                        {sourceLabel(transaction)}
-                      </td>
-
-                      <td className="px-4 py-4">
-                        {transaction.statementLine ? (
-                          <span className="rounded-full bg-blue-100 px-2 py-1 text-[11px] font-semibold text-blue-800">
-                            Matched
-                          </span>
-                        ) : (
-                          <span className="text-slate-400">-</span>
-                        )}
-                      </td>
-
-                      <td className="px-4 py-4">
-                        {transaction.reconciliationId ? (
-                          <Link
-                            href={`/admin/finance/reconciliation/${transaction.reconciliationId}`}
-                            className="font-semibold text-blue-700 hover:underline"
-                          >
-                            Reconciled
-                          </Link>
-                        ) : (
-                          <span className="text-slate-400">-</span>
-                        )}
-                      </td>
-
-                      <td className="whitespace-nowrap px-4 py-4 text-right font-semibold text-red-700">
-                        {!incoming
-                          ? money(
-                              transaction.amountNumber,
-                              transaction.currency,
-                            )
-                          : "-"}
-                      </td>
-
-                      <td className="whitespace-nowrap px-4 py-4 text-right font-semibold text-emerald-700">
-                        {incoming
-                          ? money(
-                              transaction.amountNumber,
-                              transaction.currency,
-                            )
-                          : "-"}
-                      </td>
-
-                      <td className="whitespace-nowrap px-4 py-4 text-right font-bold text-[#001F3F]">
+                      <p className="mt-1 font-bold text-[#001F3F]">
                         {money(
-                          transaction.runningBalance,
-                          transaction.currency,
+                          position.opening,
+                          account.currency,
                         )}
-                      </td>
+                      </p>
+                    </div>
 
-                      <td className="px-4 py-4 text-slate-500">
-                        {transaction.createdBy?.fullName ||
-                          transaction.createdBy?.email ||
-                          "-"}
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-        )}
+                    <div className="rounded-xl bg-green-50 p-3">
+                      <p className="text-xs font-medium text-green-700">
+                        Incoming
+                      </p>
+
+                      <p className="mt-1 font-bold text-green-900">
+                        {money(
+                          position.incoming,
+                          account.currency,
+                        )}
+                      </p>
+                    </div>
+
+                    <div className="rounded-xl bg-red-50 p-3">
+                      <p className="text-xs font-medium text-red-700">
+                        Outgoing
+                      </p>
+
+                      <p className="mt-1 font-bold text-red-900">
+                        {money(
+                          position.outgoing,
+                          account.currency,
+                        )}
+                      </p>
+                    </div>
+
+                    <div className="rounded-xl bg-blue-50 p-3">
+                      <p className="text-xs font-medium text-blue-700">
+                        Closing
+                      </p>
+
+                      <p className="mt-1 font-bold text-blue-900">
+                        {money(
+                          position.closing,
+                          account.currency,
+                        )}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              );
+            },
+          )}
+
+          {positionAccounts.length === 0 ? (
+            <div className="rounded-2xl border bg-white p-10 text-center text-sm text-slate-500 xl:col-span-2">
+              No bank accounts are available.
+            </div>
+          ) : null}
+        </div>
       </section>
+
+      {/* GENERAL LEDGER REGISTER */}
+
+      <section className="rounded-2xl border bg-white p-5 shadow-sm">
+        <div className="mb-4 flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+          <div>
+            <h2 className="text-lg font-semibold text-[#001F3F]">
+              General Ledger Register
+            </h2>
+
+            <p className="mt-1 text-sm text-slate-500">
+              Chronological bank-ledger activity with running balance
+              for each bank account.
+            </p>
+          </div>
+
+          <p className="text-sm font-medium text-slate-500">
+            {rows.length} transaction
+            {rows.length === 1
+              ? ""
+              : "s"}
+          </p>
+        </div>
+
+        <div className="overflow-x-auto">
+          <table className="w-full min-w-[1700px] text-sm">
+            <thead className="bg-slate-50 text-left text-slate-600">
+              <tr>
+                <th className="px-3 py-3 font-medium">
+                  Date
+                </th>
+
+                <th className="px-3 py-3 font-medium">
+                  Value Date
+                </th>
+
+                <th className="px-3 py-3 font-medium">
+                  Account
+                </th>
+
+                <th className="px-3 py-3 font-medium">
+                  Type
+                </th>
+
+                <th className="px-3 py-3 font-medium">
+                  Reference
+                </th>
+
+                <th className="px-3 py-3 font-medium">
+                  Description
+                </th>
+
+                <th className="px-3 py-3 font-medium">
+                  Source
+                </th>
+
+                <th className="px-3 py-3 font-medium">
+                  Status
+                </th>
+
+                <th className="px-3 py-3 font-medium">
+                  Matching
+                </th>
+
+                <th className="px-3 py-3 text-right font-medium">
+                  Debit / Out
+                </th>
+
+                <th className="px-3 py-3 text-right font-medium">
+                  Credit / In
+                </th>
+
+                <th className="px-3 py-3 text-right font-medium">
+                  Running Balance
+                </th>
+              </tr>
+            </thead>
+
+            <tbody>
+              {rows.map(
+                (row) => (
+                  <tr
+                    key={row.id}
+                    className="border-t align-top"
+                  >
+                    <td className="whitespace-nowrap px-3 py-3">
+                      {formatDate(
+                        row.transactionDate,
+                      )}
+                    </td>
+
+                    <td className="whitespace-nowrap px-3 py-3">
+                      {formatDate(
+                        row.valueDate,
+                      )}
+                    </td>
+
+                    <td className="px-3 py-3">
+                      <div className="font-semibold text-[#001F3F]">
+                        {row.bankAccount.name}
+                      </div>
+
+                      <div className="mt-1 text-xs text-slate-500">
+                        {row.currency}
+                      </div>
+                    </td>
+
+                    <td className="px-3 py-3">
+                      {enumLabel(
+                        row.type,
+                      )}
+                    </td>
+
+                    <td className="px-3 py-3">
+                      {row.reference ||
+                        "—"}
+                    </td>
+
+                    <td className="px-3 py-3">
+                      <div className="max-w-72">
+                        {row.description ||
+                          "—"}
+                      </div>
+
+                      {row.notes ? (
+                        <div className="mt-1 max-w-72 text-xs text-slate-500">
+                          {row.notes}
+                        </div>
+                      ) : null}
+                    </td>
+
+                    <td className="px-3 py-3">
+                      {sourceLabel(row)}
+                    </td>
+
+                    <td className="px-3 py-3">
+                      <span
+                        className={`rounded-full px-2.5 py-1 text-xs font-semibold ${transactionStatusClass(
+                          row.status,
+                        )}`}
+                      >
+                        {enumLabel(
+                          row.status,
+                        )}
+                      </span>
+                    </td>
+
+                    <td className="px-3 py-3">
+                      {row.reconciliationId ? (
+                        <span className="rounded-full bg-green-100 px-2.5 py-1 text-xs font-semibold text-green-700">
+                          Reconciled
+                        </span>
+                      ) : row.statementLine ? (
+                        <span className="rounded-full bg-blue-100 px-2.5 py-1 text-xs font-semibold text-blue-700">
+                          Statement Matched
+                        </span>
+                      ) : (
+                        <span className="rounded-full bg-amber-100 px-2.5 py-1 text-xs font-semibold text-amber-700">
+                          Unmatched
+                        </span>
+                      )}
+                    </td>
+
+                    <td className="whitespace-nowrap px-3 py-3 text-right font-semibold text-red-700">
+                      {row.direction ===
+                      BankTransactionDirection.OUT
+                        ? money(
+                            row.amountNumber,
+                            row.currency,
+                          )
+                        : "—"}
+                    </td>
+
+                    <td className="whitespace-nowrap px-3 py-3 text-right font-semibold text-green-700">
+                      {row.direction ===
+                      BankTransactionDirection.IN
+                        ? money(
+                            row.amountNumber,
+                            row.currency,
+                          )
+                        : "—"}
+                    </td>
+
+                    <td className="whitespace-nowrap px-3 py-3 text-right font-bold text-[#001F3F]">
+                      {money(
+                        row.runningBalance,
+                        row.currency,
+                      )}
+                    </td>
+                  </tr>
+                ),
+              )}
+
+              {rows.length === 0 ? (
+                <tr>
+                  <td
+                    colSpan={12}
+                    className="px-3 py-10 text-center text-slate-500"
+                  >
+                    No ledger transactions match the selected filters.
+                  </td>
+                </tr>
+              ) : null}
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      {/* CONTROL LINKS */}
+
+      <section className="rounded-2xl border bg-slate-50 p-5">
+        <div>
+          <h2 className="text-lg font-semibold text-[#001F3F]">
+            Ledger Control
+          </h2>
+
+          <p className="mt-1 text-sm text-slate-500">
+            Open the supporting banking tools to verify transactions
+            and balances.
+          </p>
+        </div>
+
+        <div className="mt-4 flex flex-wrap gap-3">
+          <Link
+            href="/admin/finance/bank-accounts"
+            className={secondaryButton}
+          >
+            Bank Accounts
+          </Link>
+
+          <Link
+            href="/admin/finance/bank-statements"
+            className={secondaryButton}
+          >
+            Bank Statements
+          </Link>
+
+          <Link
+            href="/admin/finance/reconciliation"
+            className={secondaryButton}
+          >
+            Reconciliation
+          </Link>
+
+          <Link
+            href="/admin/finance/bank-transfers"
+            className={secondaryButton}
+          >
+            Bank Transfers
+          </Link>
+
+          <Link
+            href="/admin/finance/reports/cash-bank"
+            className={secondaryButton}
+          >
+            Cash & Bank Report
+          </Link>
+        </div>
+      </section>
+
+      <p className="text-xs leading-5 text-slate-500">
+        Running balances are calculated separately for each bank
+        account. Only posted transactions affect the running balance,
+        and opening-balance ledger entries are excluded because the
+        account opening balance is already used as the starting
+        position. Different currencies are never combined.
+      </p>
     </div>
   );
 }
-
-function FilterField({
-  label,
-  children,
-}: {
-  label: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <div>
-      <label className="mb-1.5 block text-xs font-bold uppercase tracking-wide text-slate-500">
-        {label}
-      </label>
-      {children}
-    </div>
-  );
-}
-
-function PositionRow({
-  label,
-  value,
-  positive = false,
-  negative = false,
-  strong = false,
-}: {
-  label: string;
-  value: string;
-  positive?: boolean;
-  negative?: boolean;
-  strong?: boolean;
-}) {
-  return (
-    <div className="flex items-center justify-between gap-3">
-      <span className="text-slate-500">{label}</span>
-
-      <span
-        className={
-          strong
-            ? "font-bold text-[#001F3F]"
-            : positive
-              ? "font-semibold text-emerald-700"
-              : negative
-                ? "font-semibold text-red-700"
-                : "font-medium text-slate-700"
-        }
-      >
-        {value}
-      </span>
-    </div>
-  );
-}
-
-const secondaryButton =
-  "rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:border-[#8B0000] hover:text-[#8B0000]";
-
-const inputClass =
-  "h-11 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm text-slate-900 outline-none transition focus:border-[#8B0000] focus:ring-4 focus:ring-red-50";

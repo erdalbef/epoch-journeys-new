@@ -35,24 +35,38 @@ type PageProps = {
 
 function parseDateStart(value: string | undefined) {
   if (!value) return null;
+
   const date = new Date(`${value}T00:00:00.000Z`);
-  return Number.isNaN(date.getTime()) ? null : date;
+
+  return Number.isNaN(date.getTime())
+    ? null
+    : date;
 }
 
 function parseDateEnd(value: string | undefined) {
   if (!value) return null;
+
   const date = new Date(`${value}T23:59:59.999Z`);
-  return Number.isNaN(date.getTime()) ? null : date;
+
+  return Number.isNaN(date.getTime())
+    ? null
+    : date;
 }
 
 function enumLabel(value: string) {
   return value
     .replaceAll("_", " ")
     .toLowerCase()
-    .replace(/\b\w/g, (letter) => letter.toUpperCase());
+    .replace(
+      /\b\w/g,
+      (letter) => letter.toUpperCase(),
+    );
 }
 
-function money(value: number, currency: string) {
+function money(
+  value: number,
+  currency: string,
+) {
   try {
     return new Intl.NumberFormat("en-GB", {
       style: "currency",
@@ -64,8 +78,10 @@ function money(value: number, currency: string) {
   }
 }
 
-function formatDate(value: Date | null | undefined) {
-  if (!value) return "-";
+function formatDate(
+  value: Date | null | undefined,
+) {
+  if (!value) return "—";
 
   return value.toLocaleDateString("en-GB", {
     day: "2-digit",
@@ -74,7 +90,9 @@ function formatDate(value: Date | null | undefined) {
   });
 }
 
-function validEnum<T extends Record<string, string>>(
+function validEnum<
+  T extends Record<string, string>,
+>(
   source: T,
   value: string | undefined,
 ): T[keyof T] | undefined {
@@ -83,6 +101,40 @@ function validEnum<T extends Record<string, string>>(
   return Object.values(source).includes(value)
     ? (value as T[keyof T])
     : undefined;
+}
+
+function approvalClass(
+  status: ExpenseApprovalStatus,
+) {
+  switch (status) {
+    case ExpenseApprovalStatus.APPROVED:
+      return "bg-green-100 text-green-700";
+
+    case ExpenseApprovalStatus.PENDING_APPROVAL:
+      return "bg-amber-100 text-amber-700";
+
+    case ExpenseApprovalStatus.REJECTED:
+    case ExpenseApprovalStatus.CANCELLED:
+      return "bg-red-100 text-red-700";
+
+    default:
+      return "bg-slate-100 text-slate-700";
+  }
+}
+
+function paymentClass(
+  status: ExpensePaymentStatus,
+) {
+  switch (status) {
+    case ExpensePaymentStatus.PAID:
+      return "bg-green-100 text-green-700";
+
+    case ExpensePaymentStatus.PENDING:
+      return "bg-amber-100 text-amber-700";
+
+    default:
+      return "bg-red-100 text-red-700";
+  }
 }
 
 export default async function ExpenseReportPage({
@@ -99,20 +151,41 @@ export default async function ExpenseReportPage({
   const from = parseDateStart(params.from);
   const to = parseDateEnd(params.to);
 
-  const costType = validEnum(ExpenseCostType, params.costType);
-  const costCenter = validEnum(ExpenseCostCenter, params.costCenter);
-  const expenseItem = validEnum(ExpenseItem, params.expenseItem);
+  const costType = validEnum(
+    ExpenseCostType,
+    params.costType,
+  );
+
+  const costCenter = validEnum(
+    ExpenseCostCenter,
+    params.costCenter,
+  );
+
+  const expenseItem = validEnum(
+    ExpenseItem,
+    params.expenseItem,
+  );
+
   const approvalStatus = validEnum(
     ExpenseApprovalStatus,
     params.approvalStatus,
   );
+
   const paymentStatus = validEnum(
     ExpensePaymentStatus,
     params.paymentStatus,
   );
-  const sourceType = validEnum(FinanceSourceType, params.sourceType);
+
+  const sourceType = validEnum(
+    FinanceSourceType,
+    params.sourceType,
+  );
 
   const q = params.q?.trim() || "";
+
+  // ==========================================================
+  // FILTERS
+  // ==========================================================
 
   const where: Prisma.ExpenseWhereInput = {
     ...(from || to
@@ -140,54 +213,63 @@ export default async function ExpenseReportPage({
                 mode: "insensitive",
               },
             },
+
             {
               description: {
                 contains: q,
                 mode: "insensitive",
               },
             },
+
             {
               vendorName: {
                 contains: q,
                 mode: "insensitive",
               },
             },
+
             {
               supplierInvoiceNumber: {
                 contains: q,
                 mode: "insensitive",
               },
             },
+
             {
               paymentReference: {
                 contains: q,
                 mode: "insensitive",
               },
             },
+
             {
               clientCompanyName: {
                 contains: q,
                 mode: "insensitive",
               },
             },
+
             {
               spenderName: {
                 contains: q,
                 mode: "insensitive",
               },
             },
+
             {
               tourCategoryName: {
                 contains: q,
                 mode: "insensitive",
               },
             },
+
             {
               groupName: {
                 contains: q,
                 mode: "insensitive",
               },
             },
+
             {
               tour: {
                 title: {
@@ -196,6 +278,7 @@ export default async function ExpenseReportPage({
                 },
               },
             },
+
             {
               booking: {
                 bookingReference: {
@@ -204,6 +287,7 @@ export default async function ExpenseReportPage({
                 },
               },
             },
+
             {
               booking: {
                 bookingDisplayCode: {
@@ -212,6 +296,7 @@ export default async function ExpenseReportPage({
                 },
               },
             },
+
             {
               supplier: {
                 name: {
@@ -225,8 +310,13 @@ export default async function ExpenseReportPage({
       : {}),
   };
 
+  // ==========================================================
+  // DATA
+  // ==========================================================
+
   const expenses = await db.expense.findMany({
     where,
+
     orderBy: [
       {
         expenseDate: "desc",
@@ -235,25 +325,34 @@ export default async function ExpenseReportPage({
         createdAt: "desc",
       },
     ],
+
     take: 2500,
+
     select: {
       id: true,
+
       title: true,
       description: true,
+
       amount: true,
       currency: true,
+
       category: true,
 
       costType: true,
       expenseItem: true,
       costCenter: true,
+
       approvalStatus: true,
       paymentStatus: true,
 
       vendorName: true,
+
       paymentMethod: true,
       paymentReference: true,
+
       supplierInvoiceNumber: true,
+
       invoiceDate: true,
       dueDate: true,
       expenseDate: true,
@@ -268,12 +367,15 @@ export default async function ExpenseReportPage({
       taxType: true,
       taxRate: true,
       taxAmount: true,
+
       grossAmount: true,
       netAmount: true,
 
       originalAmount: true,
       originalCurrency: true,
+
       exchangeRateToBase: true,
+
       baseCurrency: true,
       baseAmount: true,
 
@@ -344,6 +446,10 @@ export default async function ExpenseReportPage({
     },
   });
 
+  // ==========================================================
+  // REPORTING AMOUNT
+  // ==========================================================
+
   const rows = expenses.map((expense) => {
     const reportingAmount =
       expense.baseAmount > 0
@@ -352,7 +458,8 @@ export default async function ExpenseReportPage({
           expense.amount;
 
     const reportingCurrency =
-      expense.baseCurrency || expense.currency;
+      expense.baseCurrency ||
+      expense.currency;
 
     return {
       ...expense,
@@ -360,6 +467,10 @@ export default async function ExpenseReportPage({
       reportingCurrency,
     };
   });
+
+  // ==========================================================
+  // CURRENCY SUMMARY
+  // ==========================================================
 
   const byCurrency = new Map<
     string,
@@ -375,45 +486,69 @@ export default async function ExpenseReportPage({
   >();
 
   for (const row of rows) {
-    const summary = byCurrency.get(row.reportingCurrency) ?? {
-      total: 0,
-      direct: 0,
-      overhead: 0,
-      paid: 0,
-      pending: 0,
-      reimbursable: 0,
-      recurring: 0,
-    };
+    const summary =
+      byCurrency.get(
+        row.reportingCurrency,
+      ) ?? {
+        total: 0,
+        direct: 0,
+        overhead: 0,
+        paid: 0,
+        pending: 0,
+        reimbursable: 0,
+        recurring: 0,
+      };
 
     if (
       row.direction === FinanceDirection.EXPENSE &&
-      row.approvalStatus !== ExpenseApprovalStatus.CANCELLED
+      row.approvalStatus !==
+        ExpenseApprovalStatus.CANCELLED
     ) {
-      summary.total += row.reportingAmount;
+      summary.total +=
+        row.reportingAmount;
 
-      if (row.costType === ExpenseCostType.DIRECT_TOUR_COST) {
-        summary.direct += row.reportingAmount;
+      if (
+        row.costType ===
+        ExpenseCostType.DIRECT_TOUR_COST
+      ) {
+        summary.direct +=
+          row.reportingAmount;
       } else {
-        summary.overhead += row.reportingAmount;
+        summary.overhead +=
+          row.reportingAmount;
       }
 
-      if (row.paymentStatus === ExpensePaymentStatus.PAID) {
-        summary.paid += row.reportingAmount;
+      if (
+        row.paymentStatus ===
+        ExpensePaymentStatus.PAID
+      ) {
+        summary.paid +=
+          row.reportingAmount;
       } else {
-        summary.pending += row.reportingAmount;
+        summary.pending +=
+          row.reportingAmount;
       }
 
       if (row.reimbursable) {
-        summary.reimbursable += row.reportingAmount;
+        summary.reimbursable +=
+          row.reportingAmount;
       }
 
       if (row.recurring) {
-        summary.recurring += row.reportingAmount;
+        summary.recurring +=
+          row.reportingAmount;
       }
     }
 
-    byCurrency.set(row.reportingCurrency, summary);
+    byCurrency.set(
+      row.reportingCurrency,
+      summary,
+    );
   }
+
+  // ==========================================================
+  // COST CENTER SUMMARY
+  // ==========================================================
 
   const byCostCenter = new Map<
     string,
@@ -422,51 +557,167 @@ export default async function ExpenseReportPage({
 
   for (const row of rows) {
     if (
-      row.direction !== FinanceDirection.EXPENSE ||
-      row.approvalStatus === ExpenseApprovalStatus.CANCELLED
+      row.direction !==
+        FinanceDirection.EXPENSE ||
+      row.approvalStatus ===
+        ExpenseApprovalStatus.CANCELLED
     ) {
       continue;
     }
 
+    const key =
+      row.costCenter ||
+      "UNASSIGNED";
+
     const currencyMap =
-      byCostCenter.get(row.costCenter || "UNASSIGNED") ??
+      byCostCenter.get(key) ??
       new Map<string, number>();
 
     currencyMap.set(
       row.reportingCurrency,
-      (currencyMap.get(row.reportingCurrency) || 0) +
+      (currencyMap.get(
+        row.reportingCurrency,
+      ) || 0) +
         row.reportingAmount,
     );
 
     byCostCenter.set(
-      row.costCenter || "UNASSIGNED",
+      key,
       currencyMap,
     );
   }
 
-  const exportParams = new URLSearchParams();
+  // ==========================================================
+  // EXPENSE ITEM SUMMARY
+  // ==========================================================
 
-  if (params.from) exportParams.set("from", params.from);
-  if (params.to) exportParams.set("to", params.to);
-  if (costType) exportParams.set("costType", costType);
-  if (costCenter) exportParams.set("costCenter", costCenter);
-  if (expenseItem) exportParams.set("expenseItem", expenseItem);
+  const byExpenseItem = new Map<
+    string,
+    Map<string, number>
+  >();
+
+  for (const row of rows) {
+    if (
+      row.direction !==
+        FinanceDirection.EXPENSE ||
+      row.approvalStatus ===
+        ExpenseApprovalStatus.CANCELLED
+    ) {
+      continue;
+    }
+
+    const key =
+      row.expenseItem ||
+      "UNASSIGNED";
+
+    const currencyMap =
+      byExpenseItem.get(key) ??
+      new Map<string, number>();
+
+    currencyMap.set(
+      row.reportingCurrency,
+      (currencyMap.get(
+        row.reportingCurrency,
+      ) || 0) +
+        row.reportingAmount,
+    );
+
+    byExpenseItem.set(
+      key,
+      currencyMap,
+    );
+  }
+
+  // ==========================================================
+  // EXPORT
+  // ==========================================================
+
+  const exportParams =
+    new URLSearchParams();
+
+  if (params.from) {
+    exportParams.set(
+      "from",
+      params.from,
+    );
+  }
+
+  if (params.to) {
+    exportParams.set(
+      "to",
+      params.to,
+    );
+  }
+
+  if (costType) {
+    exportParams.set(
+      "costType",
+      costType,
+    );
+  }
+
+  if (costCenter) {
+    exportParams.set(
+      "costCenter",
+      costCenter,
+    );
+  }
+
+  if (expenseItem) {
+    exportParams.set(
+      "expenseItem",
+      expenseItem,
+    );
+  }
+
   if (approvalStatus) {
-    exportParams.set("approvalStatus", approvalStatus);
+    exportParams.set(
+      "approvalStatus",
+      approvalStatus,
+    );
   }
+
   if (paymentStatus) {
-    exportParams.set("paymentStatus", paymentStatus);
+    exportParams.set(
+      "paymentStatus",
+      paymentStatus,
+    );
   }
+
   if (sourceType) {
-    exportParams.set("sourceType", sourceType);
+    exportParams.set(
+      "sourceType",
+      sourceType,
+    );
   }
-  if (q) exportParams.set("q", q);
+
+  if (q) {
+    exportParams.set(
+      "q",
+      q,
+    );
+  }
 
   const exportHref =
     `/api/admin/finance/reports/expenses?${exportParams.toString()}`;
 
+  const currencyEntries =
+    Array.from(
+      byCurrency.entries(),
+    ).sort(([a], [b]) =>
+      a.localeCompare(b),
+    );
+
+  const secondaryButton =
+    "rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:border-[#8B0000] hover:text-[#8B0000]";
+
+  const primaryButton =
+    "rounded-xl bg-[#001F3F] px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-[#002d5a]";
+
   return (
     <div className="mx-auto max-w-[1700px] space-y-6 p-4 sm:p-6 lg:p-8">
+      {/* HEADER */}
+
       <div className="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
         <div>
           <p className="text-xs font-bold uppercase tracking-[0.2em] text-[#8B0000]">
@@ -478,9 +729,9 @@ export default async function ExpenseReportPage({
           </h1>
 
           <p className="mt-2 max-w-4xl text-sm leading-6 text-slate-500">
-            Direct tour costs and overhead by cost type, cost center, expense
-            item, supplier, payment status, source, tour, booking, and reporting
-            currency.
+            Direct tour costs and overhead by cost type, cost center,
+            expense item, supplier, payment status, source, tour,
+            booking and reporting currency.
           </p>
         </div>
 
@@ -489,575 +740,781 @@ export default async function ExpenseReportPage({
             href="/admin/finance/reports"
             className={secondaryButton}
           >
-            ← Finance Reports
+            ← Back to Reports
           </Link>
 
           <a
             href={exportHref}
-            className="rounded-xl bg-[#001F3F] px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-[#002b57]"
+            className={secondaryButton}
           >
-            Export CSV
+            Export Report
           </a>
+
+          <Link
+            href="/admin/finance/expenses"
+            className={secondaryButton}
+          >
+            Expenses
+          </Link>
+
+          <Link
+            href="/admin/finance/expenses/create"
+            className={primaryButton}
+          >
+            Add Expense
+          </Link>
         </div>
       </div>
 
-      <form
-        method="GET"
-        className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm"
-      >
-        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-8">
-          <FilterField label="Expense From">
+      {/* FILTERS */}
+
+      <form className="rounded-2xl border bg-white p-5 shadow-sm">
+        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+          <div className="xl:col-span-2">
+            <label
+              htmlFor="q"
+              className="text-sm font-semibold text-slate-700"
+            >
+              Search
+            </label>
+
             <input
+              id="q"
+              name="q"
+              type="text"
+              defaultValue={q}
+              placeholder="Expense, supplier, invoice, booking, group or person"
+              className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm outline-none transition focus:border-[#8B0000]"
+            />
+          </div>
+
+          <div>
+            <label
+              htmlFor="from"
+              className="text-sm font-semibold text-slate-700"
+            >
+              From
+            </label>
+
+            <input
+              id="from"
               name="from"
               type="date"
-              defaultValue={params.from || ""}
-              className={inputClass}
+              defaultValue={
+                params.from || ""
+              }
+              className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm outline-none transition focus:border-[#8B0000]"
             />
-          </FilterField>
+          </div>
 
-          <FilterField label="Expense To">
+          <div>
+            <label
+              htmlFor="to"
+              className="text-sm font-semibold text-slate-700"
+            >
+              To
+            </label>
+
             <input
+              id="to"
               name="to"
               type="date"
-              defaultValue={params.to || ""}
-              className={inputClass}
+              defaultValue={
+                params.to || ""
+              }
+              className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm outline-none transition focus:border-[#8B0000]"
             />
-          </FilterField>
+          </div>
 
-          <FilterField label="Cost Type">
+          <div>
+            <label
+              htmlFor="costType"
+              className="text-sm font-semibold text-slate-700"
+            >
+              Cost Type
+            </label>
+
             <select
+              id="costType"
               name="costType"
-              defaultValue={costType || ""}
-              className={inputClass}
+              defaultValue={
+                costType || ""
+              }
+              className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm outline-none transition focus:border-[#8B0000]"
             >
-              <option value="">All cost types</option>
+              <option value="">
+                All
+              </option>
 
-              {Object.values(ExpenseCostType).map((value) => (
-                <option key={value} value={value}>
+              {Object.values(
+                ExpenseCostType,
+              ).map((value) => (
+                <option
+                  key={value}
+                  value={value}
+                >
                   {enumLabel(value)}
                 </option>
               ))}
             </select>
-          </FilterField>
+          </div>
 
-          <FilterField label="Cost Center">
+          <div>
+            <label
+              htmlFor="costCenter"
+              className="text-sm font-semibold text-slate-700"
+            >
+              Cost Center
+            </label>
+
             <select
+              id="costCenter"
               name="costCenter"
-              defaultValue={costCenter || ""}
-              className={inputClass}
+              defaultValue={
+                costCenter || ""
+              }
+              className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm outline-none transition focus:border-[#8B0000]"
             >
-              <option value="">All cost centers</option>
+              <option value="">
+                All
+              </option>
 
-              {Object.values(ExpenseCostCenter).map((value) => (
-                <option key={value} value={value}>
+              {Object.values(
+                ExpenseCostCenter,
+              ).map((value) => (
+                <option
+                  key={value}
+                  value={value}
+                >
                   {enumLabel(value)}
                 </option>
               ))}
             </select>
-          </FilterField>
+          </div>
 
-          <FilterField label="Expense Item">
+          <div>
+            <label
+              htmlFor="expenseItem"
+              className="text-sm font-semibold text-slate-700"
+            >
+              Expense Item
+            </label>
+
             <select
+              id="expenseItem"
               name="expenseItem"
-              defaultValue={expenseItem || ""}
-              className={inputClass}
+              defaultValue={
+                expenseItem || ""
+              }
+              className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm outline-none transition focus:border-[#8B0000]"
             >
-              <option value="">All expense items</option>
+              <option value="">
+                All
+              </option>
 
-              {Object.values(ExpenseItem).map((value) => (
-                <option key={value} value={value}>
+              {Object.values(
+                ExpenseItem,
+              ).map((value) => (
+                <option
+                  key={value}
+                  value={value}
+                >
                   {enumLabel(value)}
                 </option>
               ))}
             </select>
-          </FilterField>
+          </div>
 
-          <FilterField label="Approval">
+          <div>
+            <label
+              htmlFor="approvalStatus"
+              className="text-sm font-semibold text-slate-700"
+            >
+              Approval
+            </label>
+
             <select
+              id="approvalStatus"
               name="approvalStatus"
-              defaultValue={approvalStatus || ""}
-              className={inputClass}
+              defaultValue={
+                approvalStatus || ""
+              }
+              className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm outline-none transition focus:border-[#8B0000]"
             >
-              <option value="">All approvals</option>
+              <option value="">
+                All
+              </option>
 
-              {Object.values(ExpenseApprovalStatus).map(
-                (value) => (
-                  <option key={value} value={value}>
-                    {enumLabel(value)}
-                  </option>
-                ),
-              )}
-            </select>
-          </FilterField>
-
-          <FilterField label="Payment">
-            <select
-              name="paymentStatus"
-              defaultValue={paymentStatus || ""}
-              className={inputClass}
-            >
-              <option value="">All payment statuses</option>
-
-              {Object.values(ExpensePaymentStatus).map(
-                (value) => (
-                  <option key={value} value={value}>
-                    {enumLabel(value)}
-                  </option>
-                ),
-              )}
-            </select>
-          </FilterField>
-
-          <FilterField label="Source">
-            <select
-              name="sourceType"
-              defaultValue={sourceType || ""}
-              className={inputClass}
-            >
-              <option value="">All sources</option>
-
-              {Object.values(FinanceSourceType).map((value) => (
-                <option key={value} value={value}>
+              {Object.values(
+                ExpenseApprovalStatus,
+              ).map((value) => (
+                <option
+                  key={value}
+                  value={value}
+                >
                   {enumLabel(value)}
                 </option>
               ))}
             </select>
-          </FilterField>
+          </div>
+
+          <div>
+            <label
+              htmlFor="paymentStatus"
+              className="text-sm font-semibold text-slate-700"
+            >
+              Payment Status
+            </label>
+
+            <select
+              id="paymentStatus"
+              name="paymentStatus"
+              defaultValue={
+                paymentStatus || ""
+              }
+              className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm outline-none transition focus:border-[#8B0000]"
+            >
+              <option value="">
+                All
+              </option>
+
+              {Object.values(
+                ExpensePaymentStatus,
+              ).map((value) => (
+                <option
+                  key={value}
+                  value={value}
+                >
+                  {enumLabel(value)}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div>
+            <label
+              htmlFor="sourceType"
+              className="text-sm font-semibold text-slate-700"
+            >
+              Source
+            </label>
+
+            <select
+              id="sourceType"
+              name="sourceType"
+              defaultValue={
+                sourceType || ""
+              }
+              className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm outline-none transition focus:border-[#8B0000]"
+            >
+              <option value="">
+                All
+              </option>
+
+              {Object.values(
+                FinanceSourceType,
+              ).map((value) => (
+                <option
+                  key={value}
+                  value={value}
+                >
+                  {enumLabel(value)}
+                </option>
+              ))}
+            </select>
+          </div>
         </div>
 
-        <div className="mt-4 grid gap-4 xl:grid-cols-[1fr_auto]">
-          <div>
-            <FilterField label="Search">
-              <input
-                name="q"
-                defaultValue={q}
-                placeholder="Title, supplier, invoice, tour, booking, client..."
-                className={inputClass}
-              />
-            </FilterField>
-          </div>
+        <div className="mt-4 flex flex-wrap gap-2">
+          <button
+            type="submit"
+            className="rounded-xl bg-[#8B0000] px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-[#6f0000]"
+          >
+            Apply Filters
+          </button>
 
-          <div className="flex items-end justify-end gap-2">
-            <Link
-              href="/admin/finance/reports/expenses"
-              className={secondaryButton}
-            >
-              Clear
-            </Link>
-
-            <button
-              type="submit"
-              className="rounded-xl bg-[#8B0000] px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-[#6f0000]"
-            >
-              Apply Filters
-            </button>
-          </div>
+          <Link
+            href="/admin/finance/reports/expenses"
+            className={secondaryButton}
+          >
+            Clear
+          </Link>
         </div>
       </form>
 
-      {[...byCurrency.entries()].map(([currency, summary]) => (
-        <section key={currency} className="space-y-4">
-          <h2 className="text-lg font-bold text-[#001F3F]">
-            {currency} Expense Summary
-          </h2>
+      {/* SUMMARY */}
 
-          <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-            <SummaryCard
-              title="Total Expense"
-              value={money(summary.total, currency)}
-              subtitle="Non-cancelled expense records"
-            />
+      {currencyEntries.length > 0 ? (
+        <section className="space-y-4">
+          <div>
+            <h2 className="text-lg font-semibold text-[#001F3F]">
+              Expense Position by Reporting Currency
+            </h2>
 
-            <SummaryCard
-              title="Direct Tour Cost"
-              value={money(summary.direct, currency)}
-              subtitle="Tour-linked operating costs"
-            />
-
-            <SummaryCard
-              title="Overhead"
-              value={money(summary.overhead, currency)}
-              subtitle="Administrative and operating overhead"
-            />
-
-            <SummaryCard
-              title="Paid"
-              value={money(summary.paid, currency)}
-              subtitle="Expenses marked paid"
-              positive
-            />
+            <p className="mt-1 text-sm text-slate-500">
+              Expense totals are displayed using the stored base
+              reporting amount where available.
+            </p>
           </div>
 
-          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-            <MiniCard
-              label="Pending / Unpaid"
-              value={money(summary.pending, currency)}
-            />
+          <div className="grid gap-4 xl:grid-cols-2">
+            {currencyEntries.map(
+              ([currency, summary]) => (
+                <div
+                  key={currency}
+                  className="rounded-2xl border bg-white p-5 shadow-sm"
+                >
+                  <div className="flex items-center justify-between">
+                    <h3 className="text-xl font-bold text-[#001F3F]">
+                      {currency}
+                    </h3>
 
-            <MiniCard
-              label="Reimbursable"
-              value={money(summary.reimbursable, currency)}
-            />
+                    <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-bold text-slate-700">
+                      {currency}
+                    </span>
+                  </div>
 
-            <MiniCard
-              label="Recurring"
-              value={money(summary.recurring, currency)}
-            />
+                  <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                    <div className="rounded-xl bg-red-50 p-3">
+                      <p className="text-xs font-medium text-red-700">
+                        Total Expenses
+                      </p>
+
+                      <p className="mt-1 font-bold text-red-900">
+                        {money(
+                          summary.total,
+                          currency,
+                        )}
+                      </p>
+                    </div>
+
+                    <div className="rounded-xl bg-blue-50 p-3">
+                      <p className="text-xs font-medium text-blue-700">
+                        Direct Tour Costs
+                      </p>
+
+                      <p className="mt-1 font-bold text-blue-900">
+                        {money(
+                          summary.direct,
+                          currency,
+                        )}
+                      </p>
+                    </div>
+
+                    <div className="rounded-xl bg-slate-50 p-3">
+                      <p className="text-xs font-medium text-slate-600">
+                        Overhead
+                      </p>
+
+                      <p className="mt-1 font-bold text-[#001F3F]">
+                        {money(
+                          summary.overhead,
+                          currency,
+                        )}
+                      </p>
+                    </div>
+
+                    <div className="rounded-xl bg-green-50 p-3">
+                      <p className="text-xs font-medium text-green-700">
+                        Paid
+                      </p>
+
+                      <p className="mt-1 font-bold text-green-900">
+                        {money(
+                          summary.paid,
+                          currency,
+                        )}
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="mt-3 grid gap-3 sm:grid-cols-3">
+                    <div className="rounded-xl border p-3">
+                      <p className="text-xs text-slate-500">
+                        Pending
+                      </p>
+
+                      <p className="mt-1 font-semibold text-amber-700">
+                        {money(
+                          summary.pending,
+                          currency,
+                        )}
+                      </p>
+                    </div>
+
+                    <div className="rounded-xl border p-3">
+                      <p className="text-xs text-slate-500">
+                        Reimbursable
+                      </p>
+
+                      <p className="mt-1 font-semibold text-[#001F3F]">
+                        {money(
+                          summary.reimbursable,
+                          currency,
+                        )}
+                      </p>
+                    </div>
+
+                    <div className="rounded-xl border p-3">
+                      <p className="text-xs text-slate-500">
+                        Recurring
+                      </p>
+
+                      <p className="mt-1 font-semibold text-[#001F3F]">
+                        {money(
+                          summary.recurring,
+                          currency,
+                        )}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              ),
+            )}
           </div>
         </section>
-      ))}
+      ) : null}
 
-      {byCurrency.size === 0 && (
-        <section className="rounded-2xl border border-slate-200 bg-white p-6 text-sm text-slate-500 shadow-sm">
-          No expenses match the selected filters.
-        </section>
-      )}
+      {/* COST CENTER + EXPENSE ITEM */}
 
-      {byCostCenter.size > 0 && (
-        <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-          <h2 className="text-lg font-bold text-[#001F3F]">
-            Cost Center Breakdown
+      <section className="grid gap-4 xl:grid-cols-2">
+        <div className="rounded-2xl border bg-white p-5 shadow-sm">
+          <h2 className="text-lg font-semibold text-[#001F3F]">
+            Expenses by Cost Center
           </h2>
 
-          <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-            {[...byCostCenter.entries()]
-              .sort(([a], [b]) => a.localeCompare(b))
-              .map(([center, currencyMap]) => (
+          <p className="mt-1 text-sm text-slate-500">
+            Operational allocation of expense records.
+          </p>
+
+          <div className="mt-4 space-y-3">
+            {Array.from(
+              byCostCenter.entries(),
+            ).map(
+              ([center, currencyMap]) => (
                 <div
                   key={center}
-                  className="rounded-xl border border-slate-200 bg-slate-50 p-4"
+                  className="rounded-xl border p-4"
                 >
-                  <p className="text-xs font-bold uppercase tracking-wide text-slate-500">
+                  <p className="font-semibold text-[#001F3F]">
                     {center === "UNASSIGNED"
                       ? "Unassigned"
                       : enumLabel(center)}
                   </p>
 
-                  <div className="mt-3 space-y-1.5">
-                    {[...currencyMap.entries()].map(
-                      ([currency, value]) => (
-                        <div
+                  <div className="mt-2 flex flex-wrap gap-2">
+                    {Array.from(
+                      currencyMap.entries(),
+                    ).map(
+                      ([currency, total]) => (
+                        <span
                           key={currency}
-                          className="flex items-center justify-between gap-3 text-sm"
+                          className="rounded-lg bg-slate-50 px-3 py-1.5 text-sm font-semibold text-slate-700"
                         >
-                          <span className="text-slate-500">
-                            {currency}
-                          </span>
-
-                          <span className="font-bold text-[#001F3F]">
-                            {money(value, currency)}
-                          </span>
-                        </div>
+                          {money(
+                            total,
+                            currency,
+                          )}
+                        </span>
                       ),
                     )}
                   </div>
                 </div>
-              ))}
+              ),
+            )}
+
+            {byCostCenter.size === 0 ? (
+              <p className="py-8 text-center text-sm text-slate-500">
+                No cost-center data is available.
+              </p>
+            ) : null}
           </div>
-        </section>
-      )}
+        </div>
 
-      <section className="rounded-2xl border border-blue-100 bg-blue-50 p-4">
-        <p className="text-xs leading-5 text-blue-800">
-          <strong>Reporting amount:</strong> the report uses Base Amount when
-          available; otherwise it falls back to Gross Amount and then the
-          original Expense Amount. This keeps multi-currency expense records
-          aligned with your stored reporting/base-currency values.
-        </p>
-      </section>
-
-      <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
-        <div className="border-b border-slate-200 p-5">
-          <h2 className="text-lg font-bold text-[#001F3F]">
-            Expense Detail
+        <div className="rounded-2xl border bg-white p-5 shadow-sm">
+          <h2 className="text-lg font-semibold text-[#001F3F]">
+            Expenses by Item
           </h2>
 
           <p className="mt-1 text-sm text-slate-500">
-            Showing {rows.length} expense
-            {rows.length === 1 ? "" : "s"}. Maximum 2,500 records on screen.
+            Expense classification by item and reporting currency.
+          </p>
+
+          <div className="mt-4 space-y-3">
+            {Array.from(
+              byExpenseItem.entries(),
+            ).map(
+              ([item, currencyMap]) => (
+                <div
+                  key={item}
+                  className="rounded-xl border p-4"
+                >
+                  <p className="font-semibold text-[#001F3F]">
+                    {item === "UNASSIGNED"
+                      ? "Unassigned"
+                      : enumLabel(item)}
+                  </p>
+
+                  <div className="mt-2 flex flex-wrap gap-2">
+                    {Array.from(
+                      currencyMap.entries(),
+                    ).map(
+                      ([currency, total]) => (
+                        <span
+                          key={currency}
+                          className="rounded-lg bg-slate-50 px-3 py-1.5 text-sm font-semibold text-slate-700"
+                        >
+                          {money(
+                            total,
+                            currency,
+                          )}
+                        </span>
+                      ),
+                    )}
+                  </div>
+                </div>
+              ),
+            )}
+
+            {byExpenseItem.size === 0 ? (
+              <p className="py-8 text-center text-sm text-slate-500">
+                No expense-item data is available.
+              </p>
+            ) : null}
+          </div>
+        </div>
+      </section>
+
+      {/* EXPENSE REGISTER */}
+
+      <section className="rounded-2xl border bg-white p-5 shadow-sm">
+        <div className="mb-4 flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+          <div>
+            <h2 className="text-lg font-semibold text-[#001F3F]">
+              Expense Register
+            </h2>
+
+            <p className="mt-1 text-sm text-slate-500">
+              Detailed expense records matching the selected filters.
+            </p>
+          </div>
+
+          <p className="text-sm font-medium text-slate-500">
+            {rows.length} record
+            {rows.length === 1 ? "" : "s"}
           </p>
         </div>
 
-        {rows.length === 0 ? (
-          <div className="px-5 py-12 text-center text-sm text-slate-500">
-            No expenses match the selected filters.
-          </div>
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="min-w-[2400px] w-full text-left text-sm">
-              <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
-                <tr>
-                  <th className="px-4 py-3">Expense Date</th>
-                  <th className="px-4 py-3">Title</th>
-                  <th className="px-4 py-3">Supplier / Vendor</th>
-                  <th className="px-4 py-3">Cost Type</th>
-                  <th className="px-4 py-3">Cost Center</th>
-                  <th className="px-4 py-3">Expense Item</th>
-                  <th className="px-4 py-3">Approval</th>
-                  <th className="px-4 py-3">Payment</th>
-                  <th className="px-4 py-3 text-right">Original</th>
-                  <th className="px-4 py-3 text-right">Tax</th>
-                  <th className="px-4 py-3 text-right">Gross</th>
-                  <th className="px-4 py-3 text-right">Base Amount</th>
-                  <th className="px-4 py-3">Tour / Booking</th>
-                  <th className="px-4 py-3">Client / Group</th>
-                  <th className="px-4 py-3">Bank Account</th>
-                  <th className="px-4 py-3">Invoice / Ref</th>
-                  <th className="px-4 py-3">Source</th>
-                  <th className="px-4 py-3">Flags</th>
-                  <th className="px-4 py-3">Created By</th>
-                </tr>
-              </thead>
+        <div className="overflow-x-auto">
+          <table className="w-full min-w-[1700px] text-sm">
+            <thead className="bg-slate-50 text-left text-slate-600">
+              <tr>
+                <th className="px-3 py-3 font-medium">
+                  Date
+                </th>
 
-              <tbody className="divide-y divide-slate-100">
-                {rows.map((row) => (
-                  <tr key={row.id} className="hover:bg-slate-50">
-                    <td className="whitespace-nowrap px-4 py-4">
-                      {formatDate(row.expenseDate)}
-                    </td>
+                <th className="px-3 py-3 font-medium">
+                  Expense
+                </th>
 
-                    <td className="max-w-[280px] px-4 py-4">
-                      <p className="font-semibold text-[#001F3F]">
-                        {row.title}
-                      </p>
+                <th className="px-3 py-3 font-medium">
+                  Supplier / Vendor
+                </th>
 
-                      <p className="mt-0.5 text-xs text-slate-400">
-                        {enumLabel(row.category)}
-                      </p>
-                    </td>
+                <th className="px-3 py-3 font-medium">
+                  Booking / Tour
+                </th>
 
-                    <td className="max-w-[240px] px-4 py-4">
-                      <p className="text-slate-700">
-                        {row.supplier?.name ||
-                          row.vendorName ||
-                          "-"}
-                      </p>
+                <th className="px-3 py-3 font-medium">
+                  Cost Type
+                </th>
 
-                      <p className="mt-0.5 text-xs text-slate-400">
-                        {[row.supplier?.city, row.supplier?.country]
-                          .filter(Boolean)
-                          .join(", ")}
-                      </p>
-                    </td>
+                <th className="px-3 py-3 font-medium">
+                  Cost Center
+                </th>
 
-                    <td className="px-4 py-4">
-                      <span className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-semibold text-slate-700">
-                        {enumLabel(row.costType)}
-                      </span>
-                    </td>
+                <th className="px-3 py-3 font-medium">
+                  Item
+                </th>
 
-                    <td className="px-4 py-4">
-                      {row.costCenter
-                        ? enumLabel(row.costCenter)
-                        : "-"}
-                    </td>
+                <th className="px-3 py-3 font-medium">
+                  Approval
+                </th>
 
-                    <td className="px-4 py-4">
-                      {row.expenseItem
-                        ? enumLabel(row.expenseItem)
-                        : "-"}
-                    </td>
+                <th className="px-3 py-3 font-medium">
+                  Payment
+                </th>
 
-                    <td className="px-4 py-4">
-                      <span className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-semibold text-slate-700">
-                        {enumLabel(row.approvalStatus)}
-                      </span>
-                    </td>
+                <th className="px-3 py-3 font-medium">
+                  Source
+                </th>
 
-                    <td className="px-4 py-4">
-                      <span
-                    className={`rounded-full px-2.5 py-1 text-xs font-semibold ${
-                      row.paymentStatus === ExpensePaymentStatus.PAID
-                        ? "bg-emerald-100 text-emerald-800"
-                        : row.paymentStatus === ExpensePaymentStatus.CANCELLED
-                          ? "bg-slate-100 text-slate-600"
-                          : "bg-amber-100 text-amber-800"
-                    }`}
+                <th className="px-3 py-3 text-right font-medium">
+                  Original
+                </th>
+
+                <th className="px-3 py-3 text-right font-medium">
+                  Reporting Amount
+                </th>
+              </tr>
+            </thead>
+
+            <tbody>
+              {rows.map((row) => {
+                const supplier =
+                  row.supplier?.name ||
+                  row.vendorName ||
+                  "—";
+
+                const bookingReference =
+                  row.booking?.bookingDisplayCode ||
+                  row.booking?.bookingReference ||
+                  "—";
+
+                const tour =
+                  row.tour?.title ||
+                  row.customPackageName ||
+                  "—";
+
+                return (
+                  <tr
+                    key={row.id}
+                    className="border-t align-top"
                   >
-                    {enumLabel(row.paymentStatus)}
+                    <td className="whitespace-nowrap px-3 py-3">
+                      {formatDate(
+                        row.expenseDate,
+                      )}
+                    </td>
+
+                    <td className="px-3 py-3">
+                      <div className="font-semibold text-[#001F3F]">
+                        {row.title}
+                      </div>
+
+                      {row.description ? (
+                        <div className="mt-1 max-w-72 text-xs text-slate-500">
+                          {row.description}
+                        </div>
+                      ) : null}
+                    </td>
+
+                    <td className="px-3 py-3">
+                      <div className="font-medium">
+                        {supplier}
+                      </div>
+
+                      {row.supplierInvoiceNumber ? (
+                        <div className="mt-1 text-xs text-slate-500">
+                          Invoice:{" "}
+                          {row.supplierInvoiceNumber}
+                        </div>
+                      ) : null}
+                    </td>
+
+                    <td className="px-3 py-3">
+                      <div className="font-medium">
+                        {bookingReference}
+                      </div>
+
+                      <div className="mt-1 max-w-64 text-xs text-slate-500">
+                        {tour}
+                      </div>
+                    </td>
+
+                    <td className="px-3 py-3">
+                      {enumLabel(
+                        row.costType,
+                      )}
+                    </td>
+
+                    <td className="px-3 py-3">
+                      {row.costCenter
+                        ? enumLabel(
+                            row.costCenter,
+                          )
+                        : "—"}
+                    </td>
+
+                    <td className="px-3 py-3">
+                      {row.expenseItem
+                        ? enumLabel(
+                            row.expenseItem,
+                          )
+                        : "—"}
+                    </td>
+
+                    <td className="px-3 py-3">
+                      <span
+                        className={`rounded-full px-2.5 py-1 text-xs font-semibold ${approvalClass(
+                          row.approvalStatus,
+                        )}`}
+                      >
+                        {enumLabel(
+                          row.approvalStatus,
+                        )}
                       </span>
                     </td>
 
-                    <td className="whitespace-nowrap px-4 py-4 text-right">
-                      {money(
-                        row.originalAmount || row.amount,
-                        row.originalCurrency || row.currency,
+                    <td className="px-3 py-3">
+                      <span
+                        className={`rounded-full px-2.5 py-1 text-xs font-semibold ${paymentClass(
+                          row.paymentStatus,
+                        )}`}
+                      >
+                        {enumLabel(
+                          row.paymentStatus,
+                        )}
+                      </span>
+                    </td>
+
+                    <td className="px-3 py-3">
+                      {enumLabel(
+                        row.sourceType,
                       )}
                     </td>
 
-                    <td className="whitespace-nowrap px-4 py-4 text-right text-purple-700">
-                      {row.taxAmount && row.taxAmount > 0
-                        ? money(
-                            row.taxAmount,
-                            row.currency,
-                          )
-                        : "-"}
-                    </td>
-
-                    <td className="whitespace-nowrap px-4 py-4 text-right">
+                    <td className="whitespace-nowrap px-3 py-3 text-right">
                       {money(
-                        row.grossAmount ?? row.amount,
-                        row.currency,
+                        row.originalAmount ??
+                          row.amount,
+                        row.originalCurrency ||
+                          row.currency,
                       )}
                     </td>
 
-                    <td className="whitespace-nowrap px-4 py-4 text-right font-bold text-[#001F3F]">
+                    <td className="whitespace-nowrap px-3 py-3 text-right font-semibold text-red-700">
                       {money(
                         row.reportingAmount,
                         row.reportingCurrency,
                       )}
                     </td>
-
-                    <td className="max-w-[300px] px-4 py-4">
-                      <p className="text-slate-700">
-                        {row.tour?.title || row.customPackageName || "-"}
-                      </p>
-
-                      <p className="mt-0.5 text-xs text-slate-400">
-                        {row.booking
-                          ? row.booking.bookingDisplayCode ||
-                            row.booking.bookingReference
-                          : row.departureDate
-                            ? formatDate(row.departureDate.date)
-                            : "-"}
-                      </p>
-                    </td>
-
-                    <td className="max-w-[260px] px-4 py-4">
-                      {row.clientCompanyName ||
-                        row.partnerCompanyName ||
-                        row.groupName ||
-                        row.agentNameSnapshot ||
-                        "-"}
-                    </td>
-
-                    <td className="px-4 py-4">
-                      {row.bankAccount?.name || "-"}
-                    </td>
-
-                    <td className="max-w-[240px] px-4 py-4">
-                      <p className="text-slate-700">
-                        {row.supplierInvoiceNumber || "-"}
-                      </p>
-
-                      <p className="mt-0.5 text-xs text-slate-400">
-                        {row.paymentReference || "-"}
-                      </p>
-                    </td>
-
-                    <td className="px-4 py-4">
-                      {enumLabel(row.sourceType)}
-                    </td>
-
-                    <td className="px-4 py-4">
-                      <div className="flex flex-wrap gap-1">
-                        {row.recurring && (
-                          <span className="rounded-full bg-blue-100 px-2 py-0.5 text-[10px] font-bold text-blue-800">
-                            Recurring
-                          </span>
-                        )}
-
-                        {row.reimbursable && (
-                          <span className="rounded-full bg-purple-100 px-2 py-0.5 text-[10px] font-bold text-purple-800">
-                            Reimbursable
-                          </span>
-                        )}
-
-                        {row.bankTransactions.length > 0 && (
-                          <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-bold text-emerald-800">
-                            Ledger Posted
-                          </span>
-                        )}
-                      </div>
-                    </td>
-
-                    <td className="px-4 py-4 text-slate-500">
-                      {row.createdBy?.fullName ||
-                        row.createdBy?.email ||
-                        "-"}
-                    </td>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
+                );
+              })}
+
+              {rows.length === 0 ? (
+                <tr>
+                  <td
+                    colSpan={12}
+                    className="px-3 py-10 text-center text-slate-500"
+                  >
+                    No expenses match the selected filters.
+                  </td>
+                </tr>
+              ) : null}
+            </tbody>
+          </table>
+        </div>
       </section>
-    </div>
-  );
-}
 
-function FilterField({
-  label,
-  children,
-}: {
-  label: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <div>
-      <label className="mb-1.5 block text-xs font-bold uppercase tracking-wide text-slate-500">
-        {label}
-      </label>
-      {children}
-    </div>
-  );
-}
-
-function SummaryCard({
-  title,
-  value,
-  subtitle,
-  positive = false,
-}: {
-  title: string;
-  value: string;
-  subtitle: string;
-  positive?: boolean;
-}) {
-  return (
-    <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-      <p className="text-xs font-bold uppercase tracking-wide text-slate-500">
-        {title}
-      </p>
-
-      <p
-        className={`mt-2 text-xl font-bold ${
-          positive ? "text-emerald-700" : "text-[#001F3F]"
-        }`}
-      >
-        {value}
-      </p>
-
-      <p className="mt-1 text-xs leading-5 text-slate-500">
-        {subtitle}
+      <p className="text-xs leading-5 text-slate-500">
+        Where a base reporting amount and base currency are available,
+        those values are used for management reporting. Original
+        currency and original amount remain visible for audit and
+        operational reference. Cancelled expenses are excluded from
+        summary totals.
       </p>
     </div>
   );
 }
-
-function MiniCard({
-  label,
-  value,
-}: {
-  label: string;
-  value: string;
-}) {
-  return (
-    <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-      <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-        {label}
-      </p>
-
-      <p className="mt-2 font-bold text-[#001F3F]">
-        {value}
-      </p>
-    </div>
-  );
-}
-
-const secondaryButton =
-  "rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:border-[#8B0000] hover:text-[#8B0000]";
-
-const inputClass =
-  "h-11 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm text-slate-900 outline-none transition focus:border-[#8B0000] focus:ring-4 focus:ring-red-50";

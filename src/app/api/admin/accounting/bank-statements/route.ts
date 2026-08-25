@@ -132,7 +132,8 @@ export async function POST(
       return NextResponse.json(
         {
           ok: false,
-          error: "Unauthorized.",
+          error:
+            "Unauthorized.",
         },
         {
           status: 401,
@@ -143,13 +144,19 @@ export async function POST(
     const formData =
       await request.formData();
 
-    const year = Number(
-      formData.get("year")
-    );
+    const year =
+      Number(
+        formData.get(
+          "year"
+        )
+      );
 
-    const month = Number(
-      formData.get("month")
-    );
+    const month =
+      Number(
+        formData.get(
+          "month"
+        )
+      );
 
     const bankAccountId =
       optionalString(
@@ -167,7 +174,9 @@ export async function POST(
 
     const notes =
       optionalString(
-        formData.get("notes")
+        formData.get(
+          "notes"
+        )
       );
 
     const openingBalance =
@@ -185,10 +194,18 @@ export async function POST(
       );
 
     const fileEntry =
-      formData.get("file");
+      formData.get(
+        "file"
+      );
+
+    // ======================================================
+    // VALIDATE PERIOD
+    // ======================================================
 
     if (
-      !Number.isInteger(year) ||
+      !Number.isInteger(
+        year
+      ) ||
       year < 2000 ||
       year > 2100
     ) {
@@ -205,7 +222,9 @@ export async function POST(
     }
 
     if (
-      !Number.isInteger(month) ||
+      !Number.isInteger(
+        month
+      ) ||
       month < 1 ||
       month > 12
     ) {
@@ -234,10 +253,15 @@ export async function POST(
       );
     }
 
+    // ======================================================
+    // BANK ACCOUNT
+    // ======================================================
+
     const bankAccount =
       await db.bankAccount.findUnique({
         where: {
-          id: bankAccountId,
+          id:
+            bankAccountId,
         },
 
         select: {
@@ -263,8 +287,15 @@ export async function POST(
       );
     }
 
+    /*
+     * Phase 1:
+     * Accounting bank statements are
+     * currently limited to EUR.
+     */
+
     if (
-      bankAccount.currency !== "EUR"
+      bankAccount.currency !==
+      "EUR"
     ) {
       return NextResponse.json(
         {
@@ -277,6 +308,10 @@ export async function POST(
         }
       );
     }
+
+    // ======================================================
+    // STATEMENT DATE
+    // ======================================================
 
     if (!statementDateRaw) {
       return NextResponse.json(
@@ -313,6 +348,10 @@ export async function POST(
       );
     }
 
+    // ======================================================
+    // FILE VALIDATION
+    // ======================================================
+
     if (
       !(fileEntry instanceof File)
     ) {
@@ -329,7 +368,8 @@ export async function POST(
     }
 
     if (
-      fileEntry.size <= 0
+      fileEntry.size <=
+      0
     ) {
       return NextResponse.json(
         {
@@ -361,7 +401,9 @@ export async function POST(
 
     const extension =
       path
-        .extname(fileEntry.name)
+        .extname(
+          fileEntry.name
+        )
         .toLowerCase();
 
     if (
@@ -399,6 +441,10 @@ export async function POST(
       );
     }
 
+    // ======================================================
+    // ACCOUNTING PERIOD
+    // ======================================================
+
     const period =
       await db.accountingPeriod.upsert({
         where: {
@@ -421,6 +467,35 @@ export async function POST(
             ),
         },
       });
+
+    /*
+     * CLOSED accounting periods are
+     * read-only.
+     *
+     * The administrator must reopen the
+     * month before another bank
+     * statement can be uploaded.
+     */
+
+    if (
+      period.status ===
+      "CLOSED"
+    ) {
+      return NextResponse.json(
+        {
+          ok: false,
+          error:
+            "This accounting period is closed. Reopen the period before uploading a bank statement.",
+        },
+        {
+          status: 409,
+        }
+      );
+    }
+
+    // ======================================================
+    // PREPARE FILE STORAGE
+    // ======================================================
 
     const safeFileName =
       sanitizeFileName(
@@ -465,13 +540,23 @@ export async function POST(
         storedFileName
       );
 
+    // ======================================================
+    // SAVE PHYSICAL FILE
+    // ======================================================
+
     const bytes =
       await fileEntry.arrayBuffer();
 
     await writeFile(
       absoluteFilePath,
-      Buffer.from(bytes)
+      Buffer.from(
+        bytes
+      )
     );
+
+    // ======================================================
+    // CREATE BANK STATEMENT
+    // ======================================================
 
     await db.bankStatement.create({
       data: {
@@ -500,11 +585,16 @@ export async function POST(
 
         closingBalance,
 
-        currency: "EUR",
+        currency:
+          "EUR",
 
         notes,
       },
     });
+
+    // ======================================================
+    // RETURN TO ACCOUNTING MONTH
+    // ======================================================
 
     const redirectUrl =
       new URL(

@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import {
   AccountingCategory,
+  AccountingPeriodStatus,
   FinanceDocumentType,
 } from "@prisma/client";
 import { unlink } from "fs/promises";
@@ -104,6 +105,15 @@ async function updateDocument(
     const { id } =
       await context.params;
 
+    /*
+     * Load the document together with
+     * its CURRENT accounting period.
+     *
+     * This prevents a document from
+     * being edited or moved OUT of a
+     * closed accounting month.
+     */
+
     const existing =
       await db.financeDocument.findUnique({
         where: {
@@ -112,6 +122,15 @@ async function updateDocument(
 
         select: {
           id: true,
+
+          accountingPeriod: {
+            select: {
+              id: true,
+              year: true,
+              month: true,
+              status: true,
+            },
+          },
         },
       });
 
@@ -124,6 +143,23 @@ async function updateDocument(
         },
         {
           status: 404,
+        }
+      );
+    }
+
+    if (
+      existing.accountingPeriod
+        ?.status ===
+      AccountingPeriodStatus.CLOSED
+    ) {
+      return NextResponse.json(
+        {
+          ok: false,
+          error:
+            "This accounting period is closed. Reopen the period before editing or moving documents.",
+        },
+        {
+          status: 409,
         }
       );
     }
@@ -329,7 +365,7 @@ async function updateDocument(
       );
 
     /*
-     * Find or create the destination
+     * Find or create the DESTINATION
      * accounting period.
      */
 
@@ -347,6 +383,7 @@ async function updateDocument(
         create: {
           year,
           month,
+
           dueDate:
             getDueDate(
               year,
@@ -356,18 +393,37 @@ async function updateDocument(
       });
 
     /*
-     * Update the FinanceDocument.
+     * A document must not be edited
+     * INTO a closed accounting period.
      *
-     * Notice that we do NOT update:
+     * Together with the earlier check,
+     * this protects both directions:
      *
-     * originalFileName
-     * storedFileName
-     * storagePath
-     * mimeType
-     * fileSize
+     * CLOSED -> another month
+     * another month -> CLOSED
+     */
+
+    if (
+      period.status ===
+      AccountingPeriodStatus.CLOSED
+    ) {
+      return NextResponse.json(
+        {
+          ok: false,
+          error:
+            "The destination accounting period is closed. Reopen the period before making changes.",
+        },
+        {
+          status: 409,
+        }
+      );
+    }
+
+    /*
+     * Update FinanceDocument.
      *
-     * Therefore the existing uploaded
-     * file remains untouched.
+     * The uploaded physical file is
+     * intentionally left unchanged.
      */
 
     await db.financeDocument.update({
@@ -452,13 +508,6 @@ async function updateDocument(
   }
 }
 
-/*
- * Native PATCH support.
- *
- * This is useful later if we update
- * documents through fetch().
- */
-
 export async function PATCH(
   request: Request,
   context: RouteContext
@@ -469,17 +518,6 @@ export async function PATCH(
   );
 }
 
-/*
- * HTML forms submit POST.
- *
- * Our Edit page includes:
- *
- * _method=PATCH
- *
- * so POST delegates to the same
- * update logic.
- */
-
 export async function POST(
   request: Request,
   context: RouteContext
@@ -489,10 +527,6 @@ export async function POST(
     context
   );
 }
-
-/*
- * Existing DELETE functionality.
- */
 
 export async function DELETE(
   _request: Request,
@@ -522,6 +556,12 @@ export async function DELETE(
     const { id } =
       await context.params;
 
+    /*
+     * Load the document together with
+     * its accounting period so CLOSED
+     * periods cannot lose documents.
+     */
+
     const document =
       await db.financeDocument.findUnique({
         where: {
@@ -531,6 +571,12 @@ export async function DELETE(
         select: {
           id: true,
           storagePath: true,
+
+          accountingPeriod: {
+            select: {
+              status: true,
+            },
+          },
         },
       });
 
@@ -543,6 +589,23 @@ export async function DELETE(
         },
         {
           status: 404,
+        }
+      );
+    }
+
+    if (
+      document.accountingPeriod
+        ?.status ===
+      AccountingPeriodStatus.CLOSED
+    ) {
+      return NextResponse.json(
+        {
+          ok: false,
+          error:
+            "This accounting period is closed. Reopen the period before deleting documents.",
+        },
+        {
+          status: 409,
         }
       );
     }
