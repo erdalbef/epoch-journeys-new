@@ -4,7 +4,7 @@ generator client {
 
 datasource db {
   provider = "postgresql"
-  url      = env("DIRECT_URL")
+  url      = env("DATABASE_URL")
 }
 
 model User {
@@ -43,17 +43,18 @@ model User {
   billingCompanyRegNo        String?
   billingPhone               String?
   billingState               String?
+  agentQuotes                Quote[]                  @relation("QuoteAgent")
   AgentCommunication         AgentCommunication[]
   agentTourCommissions       AgentTourCommission[]
   bankReconciliations        BankReconciliation[]
   bankStatements             BankStatement[]
   bankTransactions           BankTransaction[]
   bookings                   Booking[]
+  cashTransactionsCreated    CashTransaction[]
   customRequestNotes         CustomRequestNote[]
   customTourRequests         CustomTourRequest[]
   expensesCreated            Expense[]                @relation("ExpenseCreatedBy")
   financeDocuments           FinanceDocument[]
-  cashTransactionsCreated    CashTransaction[]
   partnerPayouts             PartnerPayout[]          @relation("AgentPayouts")
   processedPartnerPayouts    PartnerPayout[]          @relation("ProcessedPartnerPayouts")
   reviewedPaymentSubmissions PaymentSubmission[]      @relation("PaymentSubmissionReviewer")
@@ -134,11 +135,11 @@ model Tour {
   agentTourCommissions     AgentTourCommission[]
   bankTransactions         BankTransaction[]
   bookings                 Booking[]
+  cashTransactions         CashTransaction[]
   customTourRequests       CustomTourRequest[]
   departureDates           DepartureDate[]
   expenses                 Expense[]
   financeDocuments         FinanceDocument[]
-  cashTransactions         CashTransaction[]
   financeEntries           FinanceEntry[]
   massArrangements         MassArrangement[]
   partnerTourAliases       PartnerTourAlias[]
@@ -262,10 +263,10 @@ model DepartureDate {
   tripleReduction       Float?
   bankTransactions      BankTransaction[]
   bookings              Booking[]
+  cashTransactions      CashTransaction[]
   tour                  Tour              @relation(fields: [tourId], references: [id], onDelete: Cascade)
   expenses              Expense[]
   financeDocuments      FinanceDocument[]
-  cashTransactions      CashTransaction[]
   massArrangements      MassArrangement[]
   quotes                Quote[]
   supplierPayables      SupplierPayable[]
@@ -392,9 +393,9 @@ model Booking {
   user                          User                     @relation(fields: [userId], references: [id], onDelete: Cascade)
   operationControl              BookingOperationControl?
   paymentSchedules              BookingPaymentSchedule[]
+  cashTransactions              CashTransaction[]
   expenses                      Expense[]
   financeDocuments              FinanceDocument[]
-  cashTransactions              CashTransaction[]
   financeEntries                FinanceEntry[]
   massArrangements              MassArrangement[]
   passengers                    Passenger[]
@@ -583,12 +584,14 @@ model Quote {
   paymentPolicy             String?
   agentClientPdfUrl         String?
   agentClientPdfGeneratedAt DateTime?
+  agentId                   String?
   partnerCompanyId          String?
   partnerPackageName        String?
   partnerTourAliasId        String?
   acceptedAt                DateTime?
   acceptedById              String?
   booking                   Booking?
+  agent                     User?               @relation("QuoteAgent", fields: [agentId], references: [id], onDelete: SetNull)
   selectedFor               CustomTourRequest[] @relation("SelectedQuote")
   acceptedBy                User?               @relation("QuoteAcceptedBy", fields: [acceptedById], references: [id])
   departureDate             DepartureDate?      @relation(fields: [departureDateId], references: [id])
@@ -602,6 +605,7 @@ model Quote {
   activities                QuoteActivity[]
   items                     QuoteItem[]
 
+  @@index([agentId])
   @@index([requestId])
   @@index([tourId])
   @@index([departureDateId])
@@ -933,13 +937,13 @@ model Expense {
   paymentReference       String?
   recurring              Boolean                    @default(false)
   reimbursable           Boolean                    @default(false)
+  supplierId             String?
+  supplierInvoiceNumber  String?
   paymentSource          ExpensePaymentSource       @default(COMPANY_BANK)
-  reimbursementStatus    ExpenseReimbursementStatus @default(NOT_APPLICABLE)
   reimbursedAmount       Float                      @default(0)
   reimbursedAt           DateTime?
   reimbursementReference String?
-  supplierId             String?
-  supplierInvoiceNumber  String?
+  reimbursementStatus    ExpenseReimbursementStatus @default(NOT_APPLICABLE)
   bankTransactions       BankTransaction[]
   bankAccount            BankAccount?               @relation(fields: [bankAccountId], references: [id])
   booking                Booking?                   @relation(fields: [bookingId], references: [id])
@@ -1240,8 +1244,8 @@ model AccountingPeriod {
   createdAt        DateTime               @default(now())
   updatedAt        DateTime               @updatedAt
   bankStatements   BankStatement[]
-  documents        FinanceDocument[]
   cashTransactions CashTransaction[]
+  documents        FinanceDocument[]
 
   @@unique([year, month])
   @@index([month])
@@ -1269,11 +1273,11 @@ model CashTransaction {
   createdAt          DateTime                 @default(now())
   updatedAt          DateTime                 @updatedAt
   accountingPeriod   AccountingPeriod         @relation(fields: [accountingPeriodId], references: [id])
-  createdBy          User?                    @relation(fields: [createdById], references: [id])
-  supplier           Supplier?                @relation(fields: [supplierId], references: [id])
   booking            Booking?                 @relation(fields: [bookingId], references: [id])
-  tour               Tour?                    @relation(fields: [tourId], references: [id])
+  createdBy          User?                    @relation(fields: [createdById], references: [id])
   departureDate      DepartureDate?           @relation(fields: [departureDateId], references: [id])
+  supplier           Supplier?                @relation(fields: [supplierId], references: [id])
+  tour               Tour?                    @relation(fields: [tourId], references: [id])
 
   @@index([accountingPeriodId])
   @@index([bookingId])
@@ -1704,9 +1708,9 @@ model Supplier {
   notes             String?
   createdAt         DateTime           @default(now())
   updatedAt         DateTime           @updatedAt
+  cashTransactions  CashTransaction[]
   expenses          Expense[]
   documents         FinanceDocument[]
-  cashTransactions  CashTransaction[]
   massArrangements  MassArrangement[]
   contacts          SupplierContact[]
   contracts         SupplierContract[]

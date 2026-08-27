@@ -1,0 +1,2400 @@
+"use client";
+
+import Image from "next/image";
+import { useMemo, useState } from "react";
+import type { ReactNode } from "react";
+import {
+  BookOpen,
+  Church,
+  Compass,
+  Eye,
+  FileText,
+  ImageIcon,
+  Map,
+  Megaphone,
+  Route,
+  Sparkles,
+  Users,
+  WalletCards,
+} from "lucide-react";
+
+// ============================================================
+// TYPES
+// ============================================================
+
+type TourFormValues = {
+  title?: string;
+  subtitle?: string | null;
+
+  category?: string;
+  duration?: number;
+
+  destinations?: string[];
+  subcategories?: string[];
+  tags?: string[];
+
+  arrivalCity?: string | null;
+  departureCity?: string | null;
+
+  shortDescription?: string | null;
+  overview?: string | null;
+  tourIntroduction?: string | null;
+  tourSignificance?: string | null;
+  whyWeOfferThisTour?: string | null;
+  destinationBriefs?: string | null;
+
+  highlights?: string[];
+  idealFor?: string[];
+  agentSellingPoints?: string[];
+
+  walkingLevel?: string | null;
+  pace?: string | null;
+  massIncluded?: boolean;
+
+  inclusions?: string[];
+  exclusions?: string[];
+  accommodations?: string[];
+
+  hotelStandard?: string | null;
+  mealPlan?: string | null;
+  transportationSummary?: string | null;
+
+  overviewItinerary?: string | null;
+  itinerary?: string | null;
+
+  startingPrice?: number | null;
+  currency?: string | null;
+  startingPriceBasis?: string | null;
+  referenceGroupSize?: number | null;
+  singleSupplementFrom?: number | null;
+
+  isPublished?: boolean;
+  featured?: boolean;
+  requiresQuote?: boolean;
+
+  pricingType?: string | null;
+  privatePricing?: unknown;
+  pricingTiers?: unknown;
+};
+
+type InitialImages = {
+  mainImageUrl?: string | null;
+  imageUrl2?: string | null;
+  imageUrl3?: string | null;
+  imageUrl4?: string | null;
+  mapImageUrl?: string | null;
+  brochureUrl?: string | null;
+};
+
+type TourFormProps = {
+  action: (formData: FormData) => Promise<void>;
+  mode?: "create" | "edit";
+  initialValues?: TourFormValues;
+  initialImages?: InitialImages;
+};
+
+type PreviewState = {
+  main: string | null;
+  image2: string | null;
+  image3: string | null;
+  image4: string | null;
+  map: string | null;
+};
+
+type DeleteFlagsState = {
+  mainImage: boolean;
+  image2: boolean;
+  image3: boolean;
+  image4: boolean;
+  mapImage: boolean;
+  brochure: boolean;
+};
+
+// ============================================================
+// PRESETS
+// ============================================================
+
+const themePresets = [
+  "Catholic Pilgrimage",
+  "Biblical Journey",
+  "Marian Pilgrimage",
+  "Apostolic Heritage",
+  "Saints & Shrines",
+  "Early Christianity",
+  "Church History",
+  "Holy Land",
+  "Sacred Art & Architecture",
+];
+
+const highlightPresets = [
+  "Daily Mass where possible",
+  "Important churches and shrines",
+  "Biblical and early Christian sites",
+  "Licensed expert local guides",
+  "Meaningful spiritual reflection",
+  "Carefully paced touring",
+  "UNESCO World Heritage sites",
+  "Authentic local experiences",
+];
+
+const idealForPresets = [
+  "Parish Groups",
+  "Diocesan Groups",
+  "Catholic Organizations",
+  "Bible Study Groups",
+  "Priests & Parish Leaders",
+  "Christian Universities",
+  "Church Communities",
+  "Multi-generational Groups",
+];
+
+const sellingPointPresets = [
+  "Strong spiritual content",
+  "Daily Mass where possible",
+  "Carefully balanced itinerary",
+  "Excellent first pilgrimage",
+  "Suitable for parish groups",
+  "Strong biblical connection",
+  "Experienced pilgrimage operation",
+  "Comfortable group pacing",
+];
+
+const inclusionPresets = [
+  "Hotel accommodation",
+  "Breakfast daily",
+  "Dinner daily",
+  "Private air-conditioned coach",
+  "Airport transfers",
+  "Entrance fees",
+  "Licensed local guides",
+  "Epoch Journey Manager",
+  "Mass arrangements",
+  "Porterage",
+  "Boat / ferry tickets as specified",
+  "Audio headsets where required",
+];
+
+const exclusionPresets = [
+  "International airfare",
+  "Travel insurance",
+  "Visa fees",
+  "Lunches unless specified",
+  "Drinks with meals",
+  "Personal expenses",
+  "Single room supplement",
+  "Tips and gratuities",
+  "Optional excursions",
+];
+
+const accommodationPresets = [
+  "Carefully selected 4-star hotels",
+  "Centrally located hotels where possible",
+  "Pilgrimage-appropriate accommodation",
+  "Double / twin room basis",
+  "Private bathroom facilities",
+  "Breakfast included",
+  "Group-friendly hotels",
+];
+
+const walkingLevels = [
+  "Easy",
+  "Easy to Moderate",
+  "Moderate",
+  "Moderate to Active",
+  "Active",
+];
+
+const paceOptions = [
+  "Relaxed",
+  "Comfortable",
+  "Balanced",
+  "Active",
+  "Intensive",
+];
+
+const currencyOptions = ["EUR", "USD", "GBP"];
+
+// ============================================================
+// HELPERS
+// ============================================================
+
+function joinArray(
+  value?: string[] | null,
+): string {
+  if (!value || value.length === 0) {
+    return "";
+  }
+
+  return value.join(", ");
+}
+
+function normalizeCommaList(
+  value: string,
+): string {
+  return value
+    .split(",")
+    .map((item) => item.trim())
+    .filter(Boolean)
+    .join(", ");
+}
+
+function appendPreset(
+  current: string,
+  preset: string,
+) {
+  const existing = current
+    .split(",")
+    .map((item) => item.trim())
+    .filter(Boolean);
+
+  if (existing.includes(preset)) {
+    return current;
+  }
+
+  return normalizeCommaList(
+    [...existing, preset].join(", "),
+  );
+}
+
+function formatMoney(
+  value: number | "",
+  currency: string,
+) {
+  if (value === "") {
+    return "—";
+  }
+
+  try {
+    return new Intl.NumberFormat(
+      "en-GB",
+      {
+        style: "currency",
+        currency,
+        maximumFractionDigits: 0,
+      },
+    ).format(value);
+  } catch {
+    return `${currency} ${value}`;
+  }
+}
+
+function renderPreviewImage(
+  src: string | null,
+  alt: string,
+  className: string,
+) {
+  if (!src) {
+    return null;
+  }
+
+  return (
+    <Image
+      src={src}
+      alt={alt}
+      width={1200}
+      height={700}
+      className={className}
+      unoptimized={src.startsWith("blob:")}
+    />
+  );
+}
+
+// ============================================================
+// SECTION COMPONENTS
+// ============================================================
+
+function JourneySection({
+  number,
+  eyebrow,
+  title,
+  description,
+  children,
+}: {
+  number: string;
+  eyebrow: string;
+  title: string;
+  description: string;
+  children: ReactNode;
+}) {
+  return (
+    <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+      <div className="border-b border-slate-100 bg-slate-50/70 px-5 py-5 sm:px-7">
+        <div className="flex gap-4">
+          <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-[#001F3F] text-sm font-bold text-white">
+            {number}
+          </div>
+
+          <div>
+            <p className="text-xs font-bold uppercase tracking-[0.16em] text-[#8B0000]">
+              {eyebrow}
+            </p>
+
+            <h2 className="mt-1 text-xl font-bold text-[#001F3F]">
+              {title}
+            </h2>
+
+            <p className="mt-1 max-w-4xl text-sm leading-6 text-slate-500">
+              {description}
+            </p>
+          </div>
+        </div>
+      </div>
+
+      <div className="p-5 sm:p-7">
+        {children}
+      </div>
+    </section>
+  );
+}
+
+function FieldLabel({
+  children,
+  required = false,
+}: {
+  children: ReactNode;
+  required?: boolean;
+}) {
+  return (
+    <span className="text-sm font-semibold text-slate-700">
+      {children}
+
+      {required && (
+        <span className="ml-1 text-[#8B0000]">
+          *
+        </span>
+      )}
+    </span>
+  );
+}
+
+function HelperText({
+  children,
+}: {
+  children: ReactNode;
+}) {
+  return (
+    <p className="mt-1.5 text-xs leading-5 text-slate-500">
+      {children}
+    </p>
+  );
+}
+
+function PresetButtons({
+  presets,
+  onSelect,
+}: {
+  presets: string[];
+  onSelect: (preset: string) => void;
+}) {
+  return (
+    <div className="mt-3 flex flex-wrap gap-2">
+      {presets.map((preset) => (
+        <button
+          key={preset}
+          type="button"
+          onClick={() =>
+            onSelect(preset)
+          }
+          className="rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-600 transition hover:border-[#8B0000] hover:bg-red-50 hover:text-[#8B0000]"
+        >
+          + {preset}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+// ============================================================
+// GALLERY CONFIG
+// ============================================================
+
+const galleryFieldConfig: Array<{
+  inputName:
+    | "image2"
+    | "image3"
+    | "image4";
+
+  previewKey:
+    | "image2"
+    | "image3"
+    | "image4";
+
+  initialImageKey:
+    | "imageUrl2"
+    | "imageUrl3"
+    | "imageUrl4";
+
+  deleteKey:
+    | "image2"
+    | "image3"
+    | "image4";
+
+  label: string;
+  help: string;
+  alt: string;
+}> = [
+  {
+    inputName: "image2",
+    previewKey: "image2",
+    initialImageKey: "imageUrl2",
+    deleteKey: "image2",
+    label:
+      "Signature / Spiritual Image",
+    help:
+      "Choose an image that communicates the spiritual identity of the journey.",
+    alt:
+      "Signature spiritual image preview",
+  },
+  {
+    inputName: "image3",
+    previewKey: "image3",
+    initialImageKey: "imageUrl3",
+    deleteKey: "image3",
+    label: "Destination Image",
+    help:
+      "Show one of the principal destinations or sacred sites.",
+    alt:
+      "Destination image preview",
+  },
+  {
+    inputName: "image4",
+    previewKey: "image4",
+    initialImageKey: "imageUrl4",
+    deleteKey: "image4",
+    label:
+      "Journey Experience Image",
+    help:
+      "Use an image that helps the agent imagine the pilgrim experience.",
+    alt:
+      "Journey experience image preview",
+  },
+];
+
+// ============================================================
+// FORM
+// ============================================================
+
+export default function TourForm({
+  action,
+  mode = "create",
+  initialValues,
+  initialImages,
+}: TourFormProps) {
+  // ==========================================================
+  // STORY STATES
+  // ==========================================================
+
+  const [
+    themes,
+    setThemes,
+  ] = useState(
+    joinArray(
+      initialValues?.subcategories,
+    ),
+  );
+
+  const [
+    highlights,
+    setHighlights,
+  ] = useState(
+    joinArray(
+      initialValues?.highlights,
+    ),
+  );
+
+  const [
+    idealFor,
+    setIdealFor,
+  ] = useState(
+    joinArray(
+      initialValues?.idealFor,
+    ),
+  );
+
+  const [
+    agentSellingPoints,
+    setAgentSellingPoints,
+  ] = useState(
+    joinArray(
+      initialValues?.agentSellingPoints,
+    ),
+  );
+
+  const [
+    inclusions,
+    setInclusions,
+  ] = useState(
+    joinArray(
+      initialValues?.inclusions,
+    ),
+  );
+
+  const [
+    exclusions,
+    setExclusions,
+  ] = useState(
+    joinArray(
+      initialValues?.exclusions,
+    ),
+  );
+
+  const [
+    accommodations,
+    setAccommodations,
+  ] = useState(
+    joinArray(
+      initialValues?.accommodations,
+    ),
+  );
+
+  // ==========================================================
+  // COMMERCIAL REFERENCE
+  // ==========================================================
+
+  const [
+    startingPrice,
+    setStartingPrice,
+  ] = useState<number | "">(
+    initialValues?.startingPrice ??
+      "",
+  );
+
+  const [
+    currency,
+    setCurrency,
+  ] = useState(
+    initialValues?.currency ??
+      "EUR",
+  );
+
+  const [
+    referenceGroupSize,
+    setReferenceGroupSize,
+  ] = useState<number | "">(
+    initialValues?.referenceGroupSize ??
+      30,
+  );
+
+  const [
+    singleSupplementFrom,
+    setSingleSupplementFrom,
+  ] = useState<number | "">(
+    initialValues?.singleSupplementFrom ??
+      "",
+  );
+
+  // ==========================================================
+  // MEDIA
+  // ==========================================================
+
+  const [
+    preview,
+    setPreview,
+  ] = useState<PreviewState>({
+    main:
+      initialImages?.mainImageUrl ??
+      null,
+
+    image2:
+      initialImages?.imageUrl2 ??
+      null,
+
+    image3:
+      initialImages?.imageUrl3 ??
+      null,
+
+    image4:
+      initialImages?.imageUrl4 ??
+      null,
+
+    map:
+      initialImages?.mapImageUrl ??
+      null,
+  });
+
+  const [
+    deleteFlags,
+    setDeleteFlags,
+  ] = useState<DeleteFlagsState>({
+    mainImage: false,
+    image2: false,
+    image3: false,
+    image4: false,
+    mapImage: false,
+    brochure: false,
+  });
+
+  // ==========================================================
+  // COMMERCIAL PREVIEW
+  // ==========================================================
+
+  const commercialPreview =
+    useMemo(() => {
+      const price =
+        formatMoney(
+          startingPrice,
+          currency,
+        );
+
+      const groupText =
+        referenceGroupSize === ""
+          ? ""
+          : ` and ${referenceGroupSize} paying pilgrims`;
+
+      return {
+        price,
+        basis:
+          `Based on double/twin occupancy${groupText}.`,
+      };
+    }, [
+      startingPrice,
+      currency,
+      referenceGroupSize,
+    ]);
+
+  // ==========================================================
+  // MEDIA HELPERS
+  // ==========================================================
+
+  function handlePreview(
+    file: File | null,
+    key: keyof PreviewState,
+    deleteKey?: keyof DeleteFlagsState,
+  ) {
+    if (!file) {
+      return;
+    }
+
+    const url =
+      URL.createObjectURL(file);
+
+    setPreview(
+      (previous) => ({
+        ...previous,
+        [key]: url,
+      }),
+    );
+
+    if (deleteKey) {
+      setDeleteFlags(
+        (previous) => ({
+          ...previous,
+          [deleteKey]: false,
+        }),
+      );
+    }
+  }
+
+  function toggleDelete(
+    key: keyof DeleteFlagsState,
+    previewKey?: keyof PreviewState,
+    restoreValue?: string | null,
+  ) {
+    setDeleteFlags(
+      (previous) => {
+        const nextValue =
+          !previous[key];
+
+        if (
+          previewKey &&
+          nextValue
+        ) {
+          setPreview(
+            (
+              previousPreview,
+            ) => ({
+              ...previousPreview,
+              [previewKey]: null,
+            }),
+          );
+        }
+
+        if (
+          previewKey &&
+          !nextValue
+        ) {
+          setPreview(
+            (
+              previousPreview,
+            ) => ({
+              ...previousPreview,
+              [previewKey]:
+                restoreValue ??
+                null,
+            }),
+          );
+        }
+
+        return {
+          ...previous,
+          [key]: nextValue,
+        };
+      },
+    );
+  }
+
+  // ==========================================================
+  // RENDER
+  // ==========================================================
+
+  return (
+    <form
+      action={action}
+      className="space-y-7"
+    >
+      {/* ====================================================
+          SYSTEM FIELDS
+      ==================================================== */}
+
+      <input
+        type="hidden"
+        name="category"
+        value={
+          initialValues?.category ||
+          "Pilgrimage"
+        }
+      />
+
+      <input
+        type="hidden"
+        name="pricingType"
+        value="GROUP_BASED"
+      />
+
+      <input
+        type="hidden"
+        name="requiresQuote"
+        value="true"
+      />
+
+      <input
+        type="hidden"
+        name="startingPriceBasis"
+        value="DOUBLE_TWIN"
+      />
+
+      <input
+        type="hidden"
+        name="deleteMainImage"
+        value={String(
+          deleteFlags.mainImage,
+        )}
+      />
+
+      <input
+        type="hidden"
+        name="deleteImage2"
+        value={String(
+          deleteFlags.image2,
+        )}
+      />
+
+      <input
+        type="hidden"
+        name="deleteImage3"
+        value={String(
+          deleteFlags.image3,
+        )}
+      />
+
+      <input
+        type="hidden"
+        name="deleteImage4"
+        value={String(
+          deleteFlags.image4,
+        )}
+      />
+
+      <input
+        type="hidden"
+        name="deleteMapImage"
+        value={String(
+          deleteFlags.mapImage,
+        )}
+      />
+
+      <input
+        type="hidden"
+        name="deleteBrochure"
+        value={String(
+          deleteFlags.brochure,
+        )}
+      />
+
+      {/* ====================================================
+          INTRO
+      ==================================================== */}
+
+      <div className="overflow-hidden rounded-2xl bg-[#001F3F] text-white shadow-sm">
+        <div className="p-6 sm:p-8">
+          <div className="max-w-3xl">
+            <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-[0.18em] text-red-200">
+              <Compass className="h-4 w-4" />
+
+              Epoch Journey Builder
+            </div>
+
+            <h2 className="mt-3 text-2xl font-bold sm:text-3xl">
+              Create the Journey,
+              not just the tour.
+            </h2>
+
+            <p className="mt-3 max-w-2xl text-sm leading-6 text-slate-200">
+              Build the story once and
+              use it throughout the Agent
+              Dashboard, brochures,
+              quotations and future sales
+              materials.
+            </p>
+          </div>
+        </div>
+      </div>
+
+      {/* ====================================================
+          01 JOURNEY IDENTITY
+      ==================================================== */}
+
+      <JourneySection
+        number="01"
+        eyebrow="Journey Identity"
+        title="Give the pilgrimage its identity"
+        description="Define the title, route, duration and themes that will immediately help a travel advisor understand the journey."
+      >
+        <div className="grid gap-5 md:grid-cols-2">
+          <label className="md:col-span-2">
+            <FieldLabel required>
+              Journey Title
+            </FieldLabel>
+
+            <input
+              id="title"
+              name="title"
+              required
+              defaultValue={
+                initialValues?.title ??
+                ""
+              }
+              className={inputClass}
+              placeholder="Footsteps of St. Paul: Greece & Turkey"
+            />
+
+            <HelperText>
+              Use a memorable selling
+              title rather than only a
+              destination name.
+            </HelperText>
+          </label>
+
+          <label className="md:col-span-2">
+            <FieldLabel>
+              Journey Subtitle
+            </FieldLabel>
+
+            <input
+              id="subtitle"
+              name="subtitle"
+              defaultValue={
+                initialValues?.subtitle ??
+                ""
+              }
+              className={inputClass}
+              placeholder="An apostolic journey through the lands where the early Church took root"
+            />
+
+            <HelperText>
+              One emotional sentence that
+              complements the main title.
+            </HelperText>
+          </label>
+
+          <label>
+            <FieldLabel required>
+              Duration
+            </FieldLabel>
+
+            <div className="relative">
+              <input
+                id="duration"
+                name="duration"
+                type="number"
+                min="1"
+                required
+                defaultValue={
+                  initialValues?.duration ??
+                  10
+                }
+                className={inputClass}
+              />
+
+              <span className="pointer-events-none absolute right-3 top-1/2 translate-y-1 text-xs font-medium text-slate-400">
+                days
+              </span>
+            </div>
+          </label>
+
+          <div>
+            <FieldLabel>
+              Journey Type
+            </FieldLabel>
+
+            <div className="mt-2 flex h-11 items-center rounded-xl border border-slate-200 bg-slate-50 px-3 text-sm font-semibold text-[#001F3F]">
+              Private Group Pilgrimage
+            </div>
+
+            <HelperText>
+              All current Epoch pilgrimage
+              programs operate on requested
+              group dates.
+            </HelperText>
+          </div>
+
+          <label>
+            <FieldLabel>
+              Arrival City
+            </FieldLabel>
+
+            <input
+              name="arrivalCity"
+              defaultValue={
+                initialValues?.arrivalCity ??
+                ""
+              }
+              className={inputClass}
+              placeholder="Athens"
+            />
+          </label>
+
+          <label>
+            <FieldLabel>
+              Departure City
+            </FieldLabel>
+
+            <input
+              name="departureCity"
+              defaultValue={
+                initialValues?.departureCity ??
+                ""
+              }
+              className={inputClass}
+              placeholder="Istanbul"
+            />
+          </label>
+
+          <label className="md:col-span-2">
+            <FieldLabel required>
+              Countries / Destinations
+            </FieldLabel>
+
+            <input
+              id="destinations"
+              name="destinations"
+              defaultValue={joinArray(
+                initialValues?.destinations,
+              )}
+              className={inputClass}
+              placeholder="Greece, Turkey"
+            />
+
+            <HelperText>
+              Enter countries or major
+              destinations separated by
+              commas.
+            </HelperText>
+          </label>
+
+          <div className="md:col-span-2">
+            <FieldLabel>
+              Journey Collection & Themes
+            </FieldLabel>
+
+            <textarea
+              id="subcategories"
+              name="subcategories"
+              value={themes}
+              onChange={(event) =>
+                setThemes(
+                  event.target.value,
+                )
+              }
+              className={
+                textareaClass
+              }
+              rows={3}
+              placeholder="Apostolic Heritage, Biblical Journey, Early Christianity"
+            />
+
+            <PresetButtons
+              presets={themePresets}
+              onSelect={(preset) =>
+                setThemes(
+                  (previous) =>
+                    appendPreset(
+                      previous,
+                      preset,
+                    ),
+                )
+              }
+            />
+          </div>
+
+          <label className="md:col-span-2">
+            <FieldLabel>
+              Internal Tags
+            </FieldLabel>
+
+            <input
+              id="tags"
+              name="tags"
+              defaultValue={joinArray(
+                initialValues?.tags,
+              )}
+              className={inputClass}
+              placeholder="St Paul, Greece, Turkey, Catholic, Biblical"
+            />
+
+            <HelperText>
+              Useful for internal search,
+              filtering and future
+              collections.
+            </HelperText>
+          </label>
+        </div>
+      </JourneySection>
+
+      {/* ====================================================
+          02 STORY
+      ==================================================== */}
+
+      <JourneySection
+        number="02"
+        eyebrow="Tell the Story"
+        title="Create the emotional foundation"
+        description="This is the master narrative from which agent pages, brochures and sales material can eventually be generated."
+      >
+        <div className="grid gap-6">
+          <label>
+            <FieldLabel>
+              Short Agent Summary
+            </FieldLabel>
+
+            <textarea
+              id="shortDescription"
+              name="shortDescription"
+              defaultValue={
+                initialValues?.shortDescription ??
+                ""
+              }
+              className={
+                textareaClass
+              }
+              rows={3}
+              placeholder="In two or three sentences, explain what makes this pilgrimage special."
+            />
+
+            <HelperText>
+              This should work on a tour
+              card or agent search result.
+            </HelperText>
+          </label>
+
+          <label>
+            <FieldLabel>
+              Journey Overview
+            </FieldLabel>
+
+            <textarea
+              id="overview"
+              name="overview"
+              defaultValue={
+                initialValues?.overview ??
+                ""
+              }
+              className={
+                textareaClass
+              }
+              rows={5}
+              placeholder="Give the travel advisor a clear, inspiring overview of the pilgrimage."
+            />
+          </label>
+
+          <label>
+            <FieldLabel>
+              The Journey Begins
+            </FieldLabel>
+
+            <textarea
+              id="tourIntroduction"
+              name="tourIntroduction"
+              defaultValue={
+                initialValues?.tourIntroduction ??
+                ""
+              }
+              className={
+                textareaClass
+              }
+              rows={6}
+              placeholder="Open the story. What are the pilgrims about to experience, discover and reflect upon?"
+            />
+
+            <HelperText>
+              Write this as narrative,
+              not as a technical itinerary.
+            </HelperText>
+          </label>
+
+          <label>
+            <FieldLabel>
+              Why This Journey Matters
+            </FieldLabel>
+
+            <textarea
+              id="tourSignificance"
+              name="tourSignificance"
+              defaultValue={
+                initialValues?.tourSignificance ??
+                ""
+              }
+              className={
+                textareaClass
+              }
+              rows={6}
+              placeholder="Explain the biblical, historical, spiritual, Marian or apostolic significance of the journey."
+            />
+          </label>
+
+          <label>
+            <FieldLabel>
+              Why Epoch Offers This Journey
+            </FieldLabel>
+
+            <textarea
+              id="whyWeOfferThisTour"
+              name="whyWeOfferThisTour"
+              defaultValue={
+                initialValues?.whyWeOfferThisTour ??
+                ""
+              }
+              className={
+                textareaClass
+              }
+              rows={5}
+              placeholder="Explain the philosophy behind the itinerary and what Epoch has intentionally designed differently."
+            />
+          </label>
+
+          <label>
+            <FieldLabel>
+              Destination Story & Context
+            </FieldLabel>
+
+            <textarea
+              id="destinationBriefs"
+              name="destinationBriefs"
+              defaultValue={
+                initialValues?.destinationBriefs ??
+                ""
+              }
+              className={
+                textareaClass
+              }
+              rows={5}
+              placeholder="Provide brief context about the principal regions, cities and sacred destinations."
+            />
+          </label>
+        </div>
+      </JourneySection>
+
+      {/* ====================================================
+          03 SPIRITUAL EXPERIENCE
+      ==================================================== */}
+
+      <JourneySection
+        number="03"
+        eyebrow="Spiritual Journey"
+        title="Define the pilgrimage experience"
+        description="Help the advisor understand that the program is designed as a spiritual journey rather than simply sightseeing."
+      >
+        <div className="grid gap-6 lg:grid-cols-3">
+          <div>
+            <FieldLabel>
+              Daily Mass
+            </FieldLabel>
+
+            <div className="mt-2 flex min-h-24 items-center rounded-xl border border-slate-200 bg-slate-50 p-4">
+              <label className="flex cursor-pointer items-start gap-3">
+                <input
+                  type="checkbox"
+                  name="massIncluded"
+                  defaultChecked={
+                    initialValues?.massIncluded ??
+                    true
+                  }
+                  className="mt-1 h-4 w-4"
+                />
+
+                <div>
+                  <p className="font-semibold text-[#001F3F]">
+                    Mass included where
+                    possible
+                  </p>
+
+                  <p className="mt-1 text-xs leading-5 text-slate-500">
+                    Church availability,
+                    liturgical schedules
+                    and local conditions
+                    remain subject to
+                    confirmation.
+                  </p>
+                </div>
+              </label>
+            </div>
+          </div>
+
+          <label>
+            <FieldLabel>
+              Walking Level
+            </FieldLabel>
+
+            <select
+              name="walkingLevel"
+              defaultValue={
+                initialValues?.walkingLevel ??
+                "Moderate"
+              }
+              className={inputClass}
+            >
+              <option value="">
+                Select level
+              </option>
+
+              {walkingLevels.map(
+                (level) => (
+                  <option
+                    key={level}
+                    value={level}
+                  >
+                    {level}
+                  </option>
+                ),
+              )}
+            </select>
+          </label>
+
+          <label>
+            <FieldLabel>
+              Journey Pace
+            </FieldLabel>
+
+            <select
+              name="pace"
+              defaultValue={
+                initialValues?.pace ??
+                "Balanced"
+              }
+              className={inputClass}
+            >
+              <option value="">
+                Select pace
+              </option>
+
+              {paceOptions.map(
+                (pace) => (
+                  <option
+                    key={pace}
+                    value={pace}
+                  >
+                    {pace}
+                  </option>
+                ),
+              )}
+            </select>
+          </label>
+        </div>
+
+        <div className="mt-6 rounded-xl border border-blue-100 bg-blue-50 p-4">
+          <div className="flex gap-3">
+            <Church className="mt-0.5 h-5 w-5 shrink-0 text-blue-700" />
+
+            <div>
+              <p className="font-semibold text-blue-950">
+                Spiritual planning
+                continues in operations
+              </p>
+
+              <p className="mt-1 text-sm leading-6 text-blue-800">
+                Specific churches, Mass
+                times, celebrants and
+                liturgical arrangements
+                can later be managed
+                through the Mass
+                Arrangements module for
+                the confirmed group
+                dates.
+              </p>
+            </div>
+          </div>
+        </div>
+      </JourneySection>
+
+      {/* ====================================================
+          04 SIGNATURE EXPERIENCES
+      ==================================================== */}
+
+      <JourneySection
+        number="04"
+        eyebrow="Signature Experiences"
+        title="Give agents something meaningful to sell"
+        description="Use compelling experience statements rather than generic sightseeing keywords whenever possible."
+      >
+        <textarea
+          id="highlights"
+          name="highlights"
+          value={highlights}
+          onChange={(event) =>
+            setHighlights(
+              event.target.value,
+            )
+          }
+          className={textareaClass}
+          rows={5}
+          placeholder="Stand where St. Paul addressed the Athenians at the Areopagus, Walk through ancient Ephesus, Celebrate Mass at important churches..."
+        />
+
+        <PresetButtons
+          presets={highlightPresets}
+          onSelect={(preset) =>
+            setHighlights(
+              (previous) =>
+                appendPreset(
+                  previous,
+                  preset,
+                ),
+            )
+          }
+        />
+
+        <HelperText>
+          Separate experiences with
+          commas. Later this can become
+          a structured add-and-reorder
+          interface.
+        </HelperText>
+      </JourneySection>
+
+      {/* ====================================================
+          05 JOURNEY AT A GLANCE
+      ==================================================== */}
+
+      <JourneySection
+        number="05"
+        eyebrow="Journey at a Glance"
+        title="Summarize the Epoch experience"
+        description="Capture the practical characteristics an advisor needs when deciding whether the pilgrimage suits a particular group."
+      >
+        <div className="grid gap-5 md:grid-cols-2">
+          <label>
+            <FieldLabel>
+              Hotel Standard
+            </FieldLabel>
+
+            <input
+              name="hotelStandard"
+              defaultValue={
+                initialValues?.hotelStandard ??
+                ""
+              }
+              className={inputClass}
+              placeholder="Carefully selected 4-star hotels"
+            />
+          </label>
+
+          <label>
+            <FieldLabel>
+              Meal Plan
+            </FieldLabel>
+
+            <input
+              name="mealPlan"
+              defaultValue={
+                initialValues?.mealPlan ??
+                ""
+              }
+              className={inputClass}
+              placeholder="Breakfast daily and selected dinners"
+            />
+          </label>
+
+          <label className="md:col-span-2">
+            <FieldLabel>
+              Transportation Summary
+            </FieldLabel>
+
+            <input
+              name="transportationSummary"
+              defaultValue={
+                initialValues?.transportationSummary ??
+                ""
+              }
+              className={inputClass}
+              placeholder="Private air-conditioned coach with internal flights or ferries where required"
+            />
+          </label>
+
+          <label className="md:col-span-2">
+            <FieldLabel>
+              Journey at a Glance
+            </FieldLabel>
+
+            <textarea
+              id="overviewItinerary"
+              name="overviewItinerary"
+              defaultValue={
+                initialValues?.overviewItinerary ??
+                ""
+              }
+              className={
+                textareaClass
+              }
+              rows={5}
+              placeholder="Athens • Corinth • Thessaloniki • Philippi • Kavala • Istanbul • Ephesus..."
+            />
+
+            <HelperText>
+              Keep this compact enough to
+              use as a brochure overview.
+            </HelperText>
+          </label>
+        </div>
+      </JourneySection>
+
+      {/* ====================================================
+          06 DAY BY DAY
+      ==================================================== */}
+
+      <JourneySection
+        number="06"
+        eyebrow="Day-by-Day Journey"
+        title="Tell the pilgrimage day by day"
+        description="For now, keep the full narrative here. Later this can become structured Day 1 / Day 2 / Day 3 records."
+      >
+        <div className="rounded-xl border border-amber-200 bg-amber-50 p-4">
+          <div className="flex gap-3">
+            <BookOpen className="mt-0.5 h-5 w-5 shrink-0 text-amber-700" />
+
+            <div>
+              <p className="font-semibold text-amber-950">
+                Write for the pilgrim,
+                not the database
+              </p>
+
+              <p className="mt-1 text-sm leading-6 text-amber-800">
+                Use descriptive day
+                titles, explain why
+                places matter, and
+                connect the days into a
+                coherent spiritual
+                journey.
+              </p>
+            </div>
+          </div>
+        </div>
+
+        <textarea
+          id="itinerary"
+          name="itinerary"
+          defaultValue={
+            initialValues?.itinerary ??
+            ""
+          }
+          className={`${textareaClass} mt-5`}
+          rows={18}
+          placeholder={`Day 1 — Arrive Athens
+Welcome to Greece and begin the pilgrimage...
+
+Day 2 — Athens: In the Footsteps of St. Paul
+Visit the Acropolis, Mars Hill and the ancient Agora...
+
+Day 3 — Corinth
+Travel to ancient Corinth where Paul lived and preached...`}
+        />
+      </JourneySection>
+
+      {/* ====================================================
+          07 INCLUSIONS
+      ==================================================== */}
+
+      <JourneySection
+        number="07"
+        eyebrow="Journey Inclusions"
+        title="Clarify what Epoch provides"
+        description="Keep the commercial inclusions consistent so agents understand exactly what is normally built into the pilgrimage."
+      >
+        <div className="grid gap-6 lg:grid-cols-2">
+          <div>
+            <FieldLabel>
+              What&apos;s Included
+            </FieldLabel>
+
+            <textarea
+              id="inclusions"
+              name="inclusions"
+              value={inclusions}
+              onChange={(event) =>
+                setInclusions(
+                  event.target.value,
+                )
+              }
+              className={
+                textareaClass
+              }
+              rows={6}
+              placeholder="Hotel accommodation, Breakfast daily, Private coach..."
+            />
+
+            <PresetButtons
+              presets={
+                inclusionPresets
+              }
+              onSelect={(preset) =>
+                setInclusions(
+                  (previous) =>
+                    appendPreset(
+                      previous,
+                      preset,
+                    ),
+                )
+              }
+            />
+          </div>
+
+          <div>
+            <FieldLabel>
+              What&apos;s Not Included
+            </FieldLabel>
+
+            <textarea
+              id="exclusions"
+              name="exclusions"
+              value={exclusions}
+              onChange={(event) =>
+                setExclusions(
+                  event.target.value,
+                )
+              }
+              className={
+                textareaClass
+              }
+              rows={6}
+              placeholder="International airfare, Travel insurance, Personal expenses..."
+            />
+
+            <PresetButtons
+              presets={
+                exclusionPresets
+              }
+              onSelect={(preset) =>
+                setExclusions(
+                  (previous) =>
+                    appendPreset(
+                      previous,
+                      preset,
+                    ),
+                )
+              }
+            />
+          </div>
+        </div>
+      </JourneySection>
+
+      {/* ====================================================
+          08 EPOCH STANDARD
+      ==================================================== */}
+
+      <JourneySection
+        number="08"
+        eyebrow="The Epoch Standard"
+        title="Describe the operating standard"
+        description="Explain the level of accommodation, pacing and service that supports the pilgrimage experience."
+      >
+        <div>
+          <FieldLabel>
+            Accommodation & Journey
+            Standards
+          </FieldLabel>
+
+          <textarea
+            id="accommodations"
+            name="accommodations"
+            value={accommodations}
+            onChange={(event) =>
+              setAccommodations(
+                event.target.value,
+              )
+            }
+            className={textareaClass}
+            rows={5}
+            placeholder="Carefully selected 4-star hotels, Centrally located where possible, Double/twin room basis..."
+          />
+
+          <PresetButtons
+            presets={
+              accommodationPresets
+            }
+            onSelect={(preset) =>
+              setAccommodations(
+                (previous) =>
+                  appendPreset(
+                    previous,
+                    preset,
+                  ),
+              )
+            }
+          />
+
+          <div className="mt-5 rounded-xl bg-slate-50 p-4 text-sm leading-6 text-slate-600">
+            This section can eventually
+            become part of a standardized
+            Epoch operating promise
+            across all pilgrimage
+            products.
+          </div>
+        </div>
+      </JourneySection>
+
+      {/* ====================================================
+          09 AGENT SELLING TOOLS
+      ==================================================== */}
+
+      <JourneySection
+        number="09"
+        eyebrow="Agent Selling Tools"
+        title="Help the advisor sell with confidence"
+        description="These fields are primarily for B2B use and give advisors quick guidance about audience, positioning and strongest selling points."
+      >
+        <div className="grid gap-6">
+          <div>
+            <div className="flex items-center gap-2">
+              <Users className="h-4 w-4 text-[#8B0000]" />
+
+              <FieldLabel>
+                Ideal For
+              </FieldLabel>
+            </div>
+
+            <textarea
+              id="idealFor"
+              name="idealFor"
+              value={idealFor}
+              onChange={(event) =>
+                setIdealFor(
+                  event.target.value,
+                )
+              }
+              className={
+                textareaClass
+              }
+              rows={4}
+              placeholder="Parish Groups, Catholic Organizations, Bible Study Groups..."
+            />
+
+            <PresetButtons
+              presets={
+                idealForPresets
+              }
+              onSelect={(preset) =>
+                setIdealFor(
+                  (previous) =>
+                    appendPreset(
+                      previous,
+                      preset,
+                    ),
+                )
+              }
+            />
+          </div>
+
+          <div>
+            <div className="flex items-center gap-2">
+              <Megaphone className="h-4 w-4 text-[#8B0000]" />
+
+              <FieldLabel>
+                Key Selling Points for
+                Travel Advisors
+              </FieldLabel>
+            </div>
+
+            <textarea
+              id="agentSellingPoints"
+              name="agentSellingPoints"
+              value={
+                agentSellingPoints
+              }
+              onChange={(event) =>
+                setAgentSellingPoints(
+                  event.target.value,
+                )
+              }
+              className={
+                textareaClass
+              }
+              rows={5}
+              placeholder="Strong spiritual content, Suitable for parish groups, Comfortable pacing..."
+            />
+
+            <PresetButtons
+              presets={
+                sellingPointPresets
+              }
+              onSelect={(preset) =>
+                setAgentSellingPoints(
+                  (previous) =>
+                    appendPreset(
+                      previous,
+                      preset,
+                    ),
+                )
+              }
+            />
+          </div>
+        </div>
+      </JourneySection>
+
+      {/* ====================================================
+          10 COMMERCIAL REFERENCE
+      ==================================================== */}
+
+      <JourneySection
+        number="10"
+        eyebrow="Commercial Reference"
+        title="Set the Starting From NET rate"
+        description="This is a reference selling point only. The final NET quotation will depend on the requested dates, season, group size, room configuration, availability and current supplier rates."
+      >
+        <div className="grid gap-6 xl:grid-cols-[1fr_0.9fr]">
+          <div className="grid gap-5 sm:grid-cols-2">
+            <label>
+              <FieldLabel>
+                Starting NET Price
+              </FieldLabel>
+
+              <input
+                name="startingPrice"
+                type="number"
+                min="0"
+                step="0.01"
+                value={startingPrice}
+                onChange={(event) =>
+                  setStartingPrice(
+                    event.target
+                      .value === ""
+                      ? ""
+                      : Number(
+                          event.target
+                            .value,
+                        ),
+                  )
+                }
+                className={inputClass}
+                placeholder="1695"
+              />
+
+              <HelperText>
+                Per person based on
+                double/twin occupancy.
+              </HelperText>
+            </label>
+
+            <label>
+              <FieldLabel>
+                Currency
+              </FieldLabel>
+
+              <select
+                name="currency"
+                value={currency}
+                onChange={(event) =>
+                  setCurrency(
+                    event.target.value,
+                  )
+                }
+                className={inputClass}
+              >
+                {currencyOptions.map(
+                  (item) => (
+                    <option
+                      key={item}
+                      value={item}
+                    >
+                      {item}
+                    </option>
+                  ),
+                )}
+              </select>
+            </label>
+
+            <label>
+              <FieldLabel>
+                Reference Paying Group
+                Size
+              </FieldLabel>
+
+              <input
+                name="referenceGroupSize"
+                type="number"
+                min="1"
+                value={
+                  referenceGroupSize
+                }
+                onChange={(event) =>
+                  setReferenceGroupSize(
+                    event.target
+                      .value === ""
+                      ? ""
+                      : Number(
+                          event.target
+                            .value,
+                        ),
+                  )
+                }
+                className={inputClass}
+                placeholder="30"
+              />
+
+              <HelperText>
+                Example: 30 paying
+                pilgrims.
+              </HelperText>
+            </label>
+
+            <label>
+              <FieldLabel>
+                Single Supplement From
+              </FieldLabel>
+
+              <input
+                name="singleSupplementFrom"
+                type="number"
+                min="0"
+                step="0.01"
+                value={
+                  singleSupplementFrom
+                }
+                onChange={(event) =>
+                  setSingleSupplementFrom(
+                    event.target
+                      .value === ""
+                      ? ""
+                      : Number(
+                          event.target
+                            .value,
+                        ),
+                  )
+                }
+                className={inputClass}
+                placeholder="395"
+              />
+
+              <HelperText>
+                Optional reference only.
+              </HelperText>
+            </label>
+
+            <div className="rounded-xl border border-slate-200 bg-slate-50 p-4 sm:col-span-2">
+              <div className="flex gap-3">
+                <WalletCards className="mt-0.5 h-5 w-5 shrink-0 text-[#001F3F]" />
+
+                <div>
+                  <p className="font-semibold text-[#001F3F]">
+                    Pricing policy
+                  </p>
+
+                  <p className="mt-1 text-sm leading-6 text-slate-600">
+                    All pilgrimage
+                    programs are arranged
+                    on request. Seasonal
+                    pricing provides
+                    guidance; the official
+                    NET quotation confirms
+                    the final commercial
+                    terms.
+                  </p>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div className="rounded-2xl border border-[#001F3F]/10 bg-[#001F3F] p-6 text-white">
+            <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-[0.16em] text-red-200">
+              <Eye className="h-4 w-4" />
+
+              Agent Preview
+            </div>
+
+            <p className="mt-6 text-sm text-slate-300">
+              Starting from
+            </p>
+
+            <p className="mt-1 text-3xl font-bold">
+              {commercialPreview.price}
+            </p>
+
+            <p className="mt-1 font-semibold text-white">
+              NET per person
+            </p>
+
+            <p className="mt-4 text-sm leading-6 text-slate-200">
+              {
+                commercialPreview.basis
+              }
+            </p>
+
+            {singleSupplementFrom !==
+              "" && (
+              <p className="mt-3 text-sm text-slate-200">
+                Single supplement from{" "}
+                <strong className="text-white">
+                  {formatMoney(
+                    singleSupplementFrom,
+                    currency,
+                  )}
+                </strong>
+              </p>
+            )}
+
+            <div className="my-5 h-px bg-white/10" />
+
+            <p className="text-xs leading-5 text-slate-300">
+              Final NET rate varies
+              according to requested
+              travel dates, season, group
+              size, room configuration,
+              availability and current
+              supplier rates.
+            </p>
+          </div>
+        </div>
+      </JourneySection>
+
+      {/* ====================================================
+          11 VISUAL STORYTELLING
+      ==================================================== */}
+
+      <JourneySection
+        number="11"
+        eyebrow="Visual Storytelling"
+        title="Show the journey"
+        description="Use images that communicate the spiritual identity, destination character and actual experience of the pilgrimage."
+      >
+        <div className="grid gap-6 lg:grid-cols-2">
+          <div className="lg:col-span-2">
+            <div className="flex items-center gap-2">
+              <ImageIcon className="h-4 w-4 text-[#8B0000]" />
+
+              <FieldLabel>
+                Hero Image
+              </FieldLabel>
+            </div>
+
+            <HelperText>
+              This is the principal image
+              agents should associate with
+              the journey.
+            </HelperText>
+
+            {preview.main &&
+              !deleteFlags.mainImage &&
+              renderPreviewImage(
+                preview.main,
+                "Hero image preview",
+                "mt-3 h-64 w-full rounded-2xl border border-slate-200 object-cover",
+              )}
+
+            {mode === "edit" &&
+              initialImages?.mainImageUrl && (
+                <label className="mt-3 flex items-center gap-2 text-sm font-medium text-red-700">
+                  <input
+                    type="checkbox"
+                    checked={
+                      deleteFlags.mainImage
+                    }
+                    onChange={() =>
+                      toggleDelete(
+                        "mainImage",
+                        "main",
+                        initialImages?.mainImageUrl ??
+                          null,
+                      )
+                    }
+                  />
+
+                  Delete current hero
+                  image
+                </label>
+              )}
+
+            <input
+              type="file"
+              name="mainImage"
+              accept="image/*"
+              className={
+                fileInputClass
+              }
+              onChange={(event) =>
+                handlePreview(
+                  event.target
+                    .files?.[0] ??
+                    null,
+                  "main",
+                  "mainImage",
+                )
+              }
+            />
+          </div>
+
+          {galleryFieldConfig.map(
+            (field) => (
+              <div
+                key={
+                  field.inputName
+                }
+                className="rounded-xl border border-slate-200 p-4"
+              >
+                <FieldLabel>
+                  {field.label}
+                </FieldLabel>
+
+                <HelperText>
+                  {field.help}
+                </HelperText>
+
+                {preview[
+                  field.previewKey
+                ] &&
+                  !deleteFlags[
+                    field.deleteKey
+                  ] &&
+                  renderPreviewImage(
+                    preview[
+                      field.previewKey
+                    ],
+                    field.alt,
+                    "mt-3 h-44 w-full rounded-xl border border-slate-200 object-cover",
+                  )}
+
+                {mode === "edit" &&
+                  initialImages?.[
+                    field.initialImageKey
+                  ] && (
+                    <label className="mt-3 flex items-center gap-2 text-xs font-medium text-red-700">
+                      <input
+                        type="checkbox"
+                        checked={
+                          deleteFlags[
+                            field.deleteKey
+                          ]
+                        }
+                        onChange={() =>
+                          toggleDelete(
+                            field.deleteKey,
+                            field.previewKey,
+                            initialImages?.[
+                              field.initialImageKey
+                            ] ?? null,
+                          )
+                        }
+                      />
+
+                      Delete current
+                      image
+                    </label>
+                  )}
+
+                <input
+                  type="file"
+                  name={
+                    field.inputName
+                  }
+                  accept="image/*"
+                  className={
+                    fileInputClass
+                  }
+                  onChange={(event) =>
+                    handlePreview(
+                      event.target
+                        .files?.[0] ??
+                        null,
+                      field.previewKey,
+                      field.deleteKey,
+                    )
+                  }
+                />
+              </div>
+            ),
+          )}
+
+          <div className="rounded-xl border border-slate-200 p-4">
+            <div className="flex items-center gap-2">
+              <Map className="h-4 w-4 text-[#8B0000]" />
+
+              <FieldLabel>
+                Journey Map
+              </FieldLabel>
+            </div>
+
+            <HelperText>
+              Upload a clean route map
+              suitable for agent and
+              brochure use.
+            </HelperText>
+
+            {preview.map &&
+              !deleteFlags.mapImage &&
+              renderPreviewImage(
+                preview.map,
+                "Journey map preview",
+                "mt-3 h-44 w-full rounded-xl border border-slate-200 object-cover",
+              )}
+
+            {mode === "edit" &&
+              initialImages?.mapImageUrl && (
+                <label className="mt-3 flex items-center gap-2 text-xs font-medium text-red-700">
+                  <input
+                    type="checkbox"
+                    checked={
+                      deleteFlags.mapImage
+                    }
+                    onChange={() =>
+                      toggleDelete(
+                        "mapImage",
+                        "map",
+                        initialImages?.mapImageUrl ??
+                          null,
+                      )
+                    }
+                  />
+
+                  Delete current map
+                </label>
+              )}
+
+            <input
+              type="file"
+              name="mapImage"
+              accept="image/*"
+              className={
+                fileInputClass
+              }
+              onChange={(event) =>
+                handlePreview(
+                  event.target
+                    .files?.[0] ??
+                    null,
+                  "map",
+                  "mapImage",
+                )
+              }
+            />
+          </div>
+
+          <div className="rounded-xl border border-slate-200 p-4">
+            <div className="flex items-center gap-2">
+              <FileText className="h-4 w-4 text-[#8B0000]" />
+
+              <FieldLabel>
+                Agent Brochure
+              </FieldLabel>
+            </div>
+
+            <HelperText>
+              Upload the current PDF
+              brochure when available.
+            </HelperText>
+
+            {mode === "edit" &&
+              initialImages?.brochureUrl &&
+              !deleteFlags.brochure && (
+                <a
+                  href={
+                    initialImages.brochureUrl
+                  }
+                  target="_blank"
+                  rel="noreferrer"
+                  className="mt-3 inline-flex rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-sm font-semibold text-blue-700"
+                >
+                  View current brochure
+                </a>
+              )}
+
+            {mode === "edit" &&
+              initialImages?.brochureUrl && (
+                <label className="mt-3 flex items-center gap-2 text-xs font-medium text-red-700">
+                  <input
+                    type="checkbox"
+                    checked={
+                      deleteFlags.brochure
+                    }
+                    onChange={() =>
+                      setDeleteFlags(
+                        (previous) => ({
+                          ...previous,
+                          brochure:
+                            !previous.brochure,
+                        }),
+                      )
+                    }
+                  />
+
+                  Delete current brochure
+                </label>
+              )}
+
+            <input
+              type="file"
+              name="brochure"
+              accept="application/pdf"
+              className={
+                fileInputClass
+              }
+              onChange={() =>
+                setDeleteFlags(
+                  (previous) => ({
+                    ...previous,
+                    brochure: false,
+                  }),
+                )
+              }
+            />
+          </div>
+        </div>
+      </JourneySection>
+
+      {/* ====================================================
+          12 REVIEW & PUBLISH
+      ==================================================== */}
+
+      <JourneySection
+        number="12"
+        eyebrow="Review & Publish"
+        title="Control how the journey is released"
+        description="A journey can remain a draft while content, pricing and media are being prepared."
+      >
+        <div className="grid gap-4 md:grid-cols-2">
+          <label className="flex cursor-pointer items-start gap-3 rounded-xl border border-slate-200 p-4 transition hover:border-[#8B0000]">
+            <input
+              type="checkbox"
+              name="isPublished"
+              defaultChecked={
+                initialValues?.isPublished ??
+                false
+              }
+              className="mt-1 h-4 w-4"
+            />
+
+            <div>
+              <p className="font-semibold text-[#001F3F]">
+                Publish to Agents
+              </p>
+
+              <p className="mt-1 text-xs leading-5 text-slate-500">
+                Make this journey
+                available in the B2B
+                tour catalogue when its
+                content is ready.
+              </p>
+            </div>
+          </label>
+
+          <label className="flex cursor-pointer items-start gap-3 rounded-xl border border-slate-200 p-4 transition hover:border-[#8B0000]">
+            <input
+              type="checkbox"
+              name="featured"
+              defaultChecked={
+                initialValues?.featured ??
+                false
+              }
+              className="mt-1 h-4 w-4"
+            />
+
+            <div>
+              <p className="font-semibold text-[#001F3F]">
+                Featured Journey
+              </p>
+
+              <p className="mt-1 text-xs leading-5 text-slate-500">
+                Give the journey
+                additional prominence
+                in agent-facing areas.
+              </p>
+            </div>
+          </label>
+        </div>
+
+        <div className="mt-5 rounded-xl border border-emerald-200 bg-emerald-50 p-4">
+          <div className="flex gap-3">
+            <Sparkles className="mt-0.5 h-5 w-5 shrink-0 text-emerald-700" />
+
+            <div>
+              <p className="font-semibold text-emerald-950">
+                Next commercial step
+              </p>
+
+              <p className="mt-1 text-sm leading-6 text-emerald-800">
+                After the journey is
+                created, seasonal rate
+                guidance can be added
+                before preparing
+                official group
+                quotations.
+              </p>
+            </div>
+          </div>
+        </div>
+      </JourneySection>
+
+      {/* ====================================================
+          SUBMIT
+      ==================================================== */}
+
+      <div className="sticky bottom-4 z-20 rounded-2xl border border-slate-200 bg-white/95 p-4 shadow-xl backdrop-blur">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <p className="font-semibold text-[#001F3F]">
+              {mode === "edit"
+                ? "Ready to update this journey?"
+                : "Ready to create this journey?"}
+            </p>
+
+            <p className="text-xs text-slate-500">
+              You can continue editing
+              content, seasonal rates
+              and media afterward.
+            </p>
+          </div>
+
+          <button
+            type="submit"
+            className="inline-flex min-w-44 items-center justify-center gap-2 rounded-xl bg-[#8B0000] px-6 py-3 text-sm font-bold text-white transition hover:bg-[#6f0000]"
+          >
+            <Route className="h-4 w-4" />
+
+            {mode === "edit"
+              ? "Update Journey"
+              : "Create Journey"}
+          </button>
+        </div>
+      </div>
+    </form>
+  );
+}
+
+// ============================================================
+// SHARED STYLES
+// ============================================================
+
+const inputClass =
+  "mt-2 h-11 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-[#8B0000] focus:ring-4 focus:ring-red-50";
+
+const textareaClass =
+  "mt-2 w-full rounded-xl border border-slate-200 bg-white px-3 py-3 text-sm leading-6 text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-[#8B0000] focus:ring-4 focus:ring-red-50";
+
+const fileInputClass =
+  "mt-3 block w-full rounded-xl border border-slate-200 bg-slate-50 p-3 text-sm text-slate-600 file:mr-4 file:rounded-lg file:border-0 file:bg-[#001F3F] file:px-3 file:py-2 file:text-xs file:font-semibold file:text-white hover:file:bg-[#102d50]";

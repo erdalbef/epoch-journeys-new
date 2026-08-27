@@ -264,6 +264,100 @@ export async function POST(
     const body =
       (await req.json()) as QuotePayload;
 
+    const agentId =
+      body.agentId?.trim() ||
+      null;
+
+    const agentMaster = agentId
+      ? await db.user.findFirst({
+          where: {
+            id: agentId,
+            role: "AGENT",
+            status: "ACTIVE",
+          },
+          select: {
+            id: true,
+            agentCode: true,
+            fullName: true,
+            email: true,
+            phone: true,
+            travelAgency: true,
+            website: true,
+            billingCompanyName: true,
+            billingCompanyRegNo: true,
+            billingTaxNumber: true,
+            billingVatNumber: true,
+            billingAddress: true,
+            billingCity: true,
+            billingState: true,
+            billingPostalCode: true,
+            billingCountry: true,
+            billingContactName: true,
+            billingEmail: true,
+            billingEmailSecondary: true,
+            billingPhone: true,
+          },
+        })
+      : null;
+
+    if (agentId && !agentMaster) {
+      return NextResponse.json(
+        {
+          ok: false,
+          error:
+            "Selected agent could not be found or is not active.",
+        },
+        {
+          status: 400,
+        }
+      );
+    }
+
+    const agentSnapshot:
+      Prisma.JsonObject = agentMaster
+      ? {
+          id: agentMaster.id,
+          agentCode:
+            agentMaster.agentCode,
+          fullName:
+            agentMaster.fullName,
+          email:
+            agentMaster.email,
+          phone:
+            agentMaster.phone,
+          travelAgency:
+            agentMaster.travelAgency,
+          website:
+            agentMaster.website,
+          billingCompanyName:
+            agentMaster.billingCompanyName,
+          billingCompanyRegNo:
+            agentMaster.billingCompanyRegNo,
+          billingTaxNumber:
+            agentMaster.billingTaxNumber,
+          billingVatNumber:
+            agentMaster.billingVatNumber,
+          billingAddress:
+            agentMaster.billingAddress,
+          billingCity:
+            agentMaster.billingCity,
+          billingState:
+            agentMaster.billingState,
+          billingPostalCode:
+            agentMaster.billingPostalCode,
+          billingCountry:
+            agentMaster.billingCountry,
+          billingContactName:
+            agentMaster.billingContactName,
+          billingEmail:
+            agentMaster.billingEmail,
+          billingEmailSecondary:
+            agentMaster.billingEmailSecondary,
+          billingPhone:
+            agentMaster.billingPhone,
+        }
+      : {};
+
     const currency =
       body.currency || "EUR";
 
@@ -409,6 +503,20 @@ export async function POST(
         "B2B_NET_AGENT_MARKUP",
 
       /*
+       * Historical Agent Master snapshot.
+       * This preserves the agency legal/billing details
+       * used when this quotation was created, even if the
+       * Agent master record changes later.
+       */
+      agentSnapshot,
+
+      agentCompany:
+        agentMaster?.billingCompanyName?.trim() ||
+        agentMaster?.travelAgency?.trim() ||
+        body.agentCompany?.trim() ||
+        "",
+
+      /*
        * Current builder data
        */
       paxPricingRows:
@@ -514,12 +622,24 @@ export async function POST(
             body.title?.trim() ||
             "Untitled Quote",
 
+          agentId,
+
+          agentName:
+            agentMaster?.billingCompanyName?.trim() ||
+            agentMaster?.travelAgency?.trim() ||
+            body.agentCompany?.trim() ||
+            null,
+
           recipientName:
             body.recipientName?.trim() ||
+            agentMaster?.billingContactName?.trim() ||
+            agentMaster?.fullName?.trim() ||
             null,
 
           recipientEmail:
             body.recipientEmail?.trim() ||
+            agentMaster?.billingEmail?.trim() ||
+            agentMaster?.email?.trim() ||
             null,
 
           internalNotes:

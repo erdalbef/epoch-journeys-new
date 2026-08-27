@@ -36,6 +36,13 @@ export default async function EditQuotePage({ params }: PageProps) {
 
   const tours = await getToursForQuoteForm();
 
+  /*
+   * AGENT MASTER DATA
+   *
+   * Keep the edit flow aligned with New Quote.
+   * Permanent legal, contact, and billing information is
+   * loaded from the Agent master record rather than re-entered.
+   */
   const agents = await db.user.findMany({
     where: {
       role: "AGENT",
@@ -44,12 +51,39 @@ export default async function EditQuotePage({ params }: PageProps) {
     },
     select: {
       id: true,
+
+      agentCode: true,
+
       fullName: true,
       email: true,
+      phone: true,
+
       travelAgency: true,
+      website: true,
+
       commissionRate: true,
+      partnerType: true,
+
+      billingCompanyName: true,
+      billingCompanyRegNo: true,
+      billingTaxNumber: true,
+      billingVatNumber: true,
+
+      billingAddress: true,
+      billingCity: true,
+      billingState: true,
+      billingPostalCode: true,
+      billingCountry: true,
+
+      billingContactName: true,
+      billingEmail: true,
+      billingEmailSecondary: true,
+      billingPhone: true,
     },
     orderBy: [
+      {
+        travelAgency: "asc",
+      },
       {
         fullName: "asc",
       },
@@ -61,17 +95,38 @@ export default async function EditQuotePage({ params }: PageProps) {
 
   const initialData = {
     id: quote.id,
+
     title: quote.title,
+
     recipientName: quote.recipientName,
     recipientEmail: quote.recipientEmail,
+
+    /*
+     * Direct Agent relationship.
+     * This allows Edit Quote to reopen the correct Agent
+     * without trying to identify it only by email or name.
+     */
+    agentId: quote.agentId,
+
+    /*
+     * Historical company-name snapshot saved on Quote.
+     */
+    agentCompany: quote.agentName,
+
     internalNotes: quote.internalNotes,
     termsAndNotes: quote.termsAndNotes,
+
     currency: quote.currency,
+
     purpose: quote.purpose,
+
     tourId: quote.tourId,
     departureDateId: quote.departureDateId,
+
     templateId: quote.templateId,
+
     quoteBuilderSummary: quote.quoteBuilderSummary,
+
     items: quote.items.map((item) => ({
       id: item.id,
       title: item.title,
@@ -87,23 +142,32 @@ export default async function EditQuotePage({ params }: PageProps) {
     })),
 
     clientDocumentTitle: quote.clientDocumentTitle,
+
     clientSinglePrice: quote.clientSinglePrice,
     clientDoubleTwinPrice: quote.clientDoubleTwinPrice,
     clientTriplePrice: quote.clientTriplePrice,
+
     clientIncludes: quote.clientIncludes,
     clientExcludes: quote.clientExcludes,
+
     paymentPolicy: quote.paymentPolicy,
     cancellationPolicy: quote.cancellationPolicy,
+
     clientOfferNotes: quote.clientOfferNotes,
+
     validUntil: quote.validUntil,
   };
 
   return (
     <div className="mx-auto max-w-7xl p-6">
       <div className="mb-6">
-        <h1 className="text-2xl font-semibold">Edit Quote</h1>
+        <h1 className="text-2xl font-semibold">
+          Edit Quote
+        </h1>
+
         <p className="text-sm text-gray-600">
-          Update the quote pricing, recipient, and client-facing content.
+          Update the quote pricing, recipient, and client-facing content. Permanent
+          agency information is loaded from Agent Master.
         </p>
       </div>
 

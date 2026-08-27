@@ -70,10 +70,27 @@ type SeasonalRateReference = {
 
 type AgentOption = {
   id: string;
+  agentCode: string | null;
   fullName: string | null;
   email: string;
+  phone: string | null;
   travelAgency: string | null;
+  website: string | null;
   commissionRate: number | null;
+  partnerType: string;
+  billingCompanyName: string | null;
+  billingCompanyRegNo: string | null;
+  billingTaxNumber: string | null;
+  billingVatNumber: string | null;
+  billingAddress: string | null;
+  billingCity: string | null;
+  billingState: string | null;
+  billingPostalCode: string | null;
+  billingCountry: string | null;
+  billingContactName: string | null;
+  billingEmail: string | null;
+  billingEmailSecondary: string | null;
+  billingPhone: string | null;
 };
 
 type QuoteItemRecord = {
@@ -234,6 +251,9 @@ type InitialQuoteData = {
 
   recipientName: string | null;
   recipientEmail: string | null;
+
+  agentId?: string | null;
+  agentName?: string | null;
 
   internalNotes: string | null;
   termsAndNotes: string | null;
@@ -1628,17 +1648,22 @@ export default function QuoteCreateForm({
     group.endDate,
   ]);
 
-  useEffect(() => {
-    if (!agentId) {
-      setAgentCompany("");
+  function handleAgentChange(
+    nextAgentId: string
+  ) {
+    setAgentId(nextAgentId);
 
+    if (!nextAgentId) {
+      setRecipientName("");
+      setRecipientEmail("");
+      setAgentCompany("");
       return;
     }
 
     const agent =
       agents.find(
         (item) =>
-          item.id === agentId
+          item.id === nextAgentId
       );
 
     if (!agent) {
@@ -1646,21 +1671,23 @@ export default function QuoteCreateForm({
     }
 
     setRecipientName(
-      agent.fullName || ""
+      agent.billingContactName ||
+        agent.fullName ||
+        ""
     );
 
     setRecipientEmail(
-      agent.email || ""
+      agent.billingEmail ||
+        agent.email ||
+        ""
     );
 
     setAgentCompany(
-      agent.travelAgency ||
+      agent.billingCompanyName ||
+        agent.travelAgency ||
         ""
     );
-  }, [
-    agentId,
-    agents,
-  ]);
+  }
 
   useEffect(() => {
     if (!tourId) {
@@ -1803,8 +1830,20 @@ export default function QuoteCreateForm({
     const matchedAgent =
       agents.find(
         (agent) =>
+          agent.id ===
+            (initialData.agentId ||
+              "")
+      ) ??
+      agents.find(
+        (agent) =>
+          agent.billingEmail ===
+            (initialData.recipientEmail ||
+              "") ||
           agent.email ===
             (initialData.recipientEmail ||
+              "") ||
+          agent.billingContactName ===
+            (initialData.recipientName ||
               "") ||
           agent.fullName ===
             (initialData.recipientName ||
@@ -1817,7 +1856,9 @@ export default function QuoteCreateForm({
       );
 
       setAgentCompany(
-        matchedAgent.travelAgency ||
+        initialData.agentName ||
+          matchedAgent.billingCompanyName ||
+          matchedAgent.travelAgency ||
           ""
       );
     }
@@ -4275,7 +4316,7 @@ export default function QuoteCreateForm({
         recipientName={recipientName}
         recipientEmail={recipientEmail}
         agentCompany={agentCompany}
-        onAgentChange={setAgentId}
+        onAgentChange={handleAgentChange}
         onContactNameChange={setRecipientName}
         onContactEmailChange={setRecipientEmail}
         onCompanyChange={setAgentCompany}
