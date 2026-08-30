@@ -1,0 +1,738 @@
+import Link from "next/link";
+import { notFound, redirect } from "next/navigation";
+import { getServerSession } from "next-auth";
+import { BookingStatus, PaymentStatus } from "@prisma/client";
+
+import { db } from "@/lib/db";
+import { authOptions } from "@/lib/authOptions";
+import BookingDetailClient from "@/components/bookings/BookingDetailClient";
+import BookingPaymentSchedule from "@/components/admin/bookings/BookingPaymentSchedule";
+import RecordCustomerPayment from "@/components/admin/bookings/RecordCustomerPayment";
+import ActionButton from "@/components/shared/button/ActionButton";
+
+type PageProps = {
+  params: Promise<{
+    id: string;
+  }>;
+};
+
+function formatCurrency(value: number | null | undefined, currency = "EUR") {
+  return new Intl.NumberFormat("en-US", {
+    style: "currency",
+    currency,
+    maximumFractionDigits: 2,
+  }).format(value ?? 0);
+}
+
+function formatDate(value?: Date | string | null) {
+  if (!value) return "-";
+
+  const date = value instanceof Date ? value : new Date(value);
+
+  if (Number.isNaN(date.getTime())) return "-";
+
+  return date.toLocaleDateString("en-GB", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+  });
+}
+
+function getStatusBadgeClass(status: BookingStatus) {
+  switch (status) {
+    case "CONFIRMED":
+      return "bg-green-100 text-green-800";
+    case "PENDING":
+      return "bg-amber-100 text-amber-800";
+    case "ON_REQUEST":
+      return "bg-blue-100 text-blue-800";
+    case "WAITLIST":
+      return "bg-purple-100 text-purple-800";
+    case "CANCELLED":
+      return "bg-red-100 text-red-800";
+    default:
+      return "bg-gray-100 text-gray-800";
+  }
+}
+
+function getPaymentBadgeClass(status: PaymentStatus) {
+  switch (status) {
+    case "PAID":
+      return "bg-green-100 text-green-800";
+    case "PARTIALLY_PAID":
+      return "bg-amber-100 text-amber-800";
+    case "UNPAID":
+      return "bg-red-100 text-red-800";
+    case "REFUNDED":
+      return "bg-slate-200 text-slate-800";
+    default:
+      return "bg-gray-100 text-gray-800";
+  }
+}
+
+function getOperationBadgeClass(status?: string | null) {
+  switch (status) {
+    case "READY":
+      return "bg-green-100 text-green-800";
+    case "IN_PROGRESS":
+      return "bg-yellow-100 text-yellow-800";
+    default:
+      return "bg-red-100 text-red-800";
+  }
+}
+
+function getFinancialStatus(params: {
+  totalPrice: number;
+  amountPaid: number;
+  paymentDueDate?: Date | null;
+}) {
+  const { totalPrice, amountPaid, paymentDueDate } = params;
+  const now = new Date();
+
+  if (amountPaid === 0) {
+    if (paymentDueDate && paymentDueDate < now) {
+      return "OVERDUE";
+    }
+
+    return "UNPAID";
+  }
+
+  if (amountPaid < totalPrice) {
+    if (paymentDueDate && paymentDueDate < now) {
+      return "OVERDUE";
+    }
+
+    return "PARTIAL";
+  }
+
+  return "PAID";
+}
+
+function getFinancialBadgeClass(status: string) {
+  switch (status) {
+    case "PAID":
+      return "bg-green-100 text-green-800";
+    case "PARTIAL":
+      return "bg-amber-100 text-amber-800";
+    case "UNPAID":
+      return "bg-red-100 text-red-800";
+    case "OVERDUE":
+      return "bg-red-200 text-red-900 font-semibold";
+    default:
+      return "bg-gray-100 text-gray-800";
+  }
+}
+
+function InfoCard({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-xl border bg-white p-4 shadow-sm">
+      <p className="text-xs font-medium uppercase tracking-wide text-gray-500">
+        {label}
+      </p>
+      <p className="mt-2 text-sm font-semibold text-gray-900">{value}</p>
+    </div>
+  );
+}
+
+function Section({
+  title,
+  children,
+}: {
+  title: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <section className="rounded-2xl border bg-white p-6 shadow-sm">
+      <h2 className="mb-4 text-lg font-semibold text-gray-900">{title}</h2>
+      {children}
+    </section>
+  );
+}
+
+function DataRow({
+  label,
+  value,
+}: {
+  label: string;
+  value: React.ReactNode;
+}) {
+  return (
+    <div className="grid grid-cols-1 gap-1 border-b py-3 last:border-b-0 md:grid-cols-[220px_1fr]">
+      <div className="text-sm font-medium text-gray-500">{label}</div>
+      <div className="text-sm text-gray-900">{value}</div>
+    </div>
+  );
+}
+
+export default async function AdminBookingDetailPage({ params }: PageProps) {
+  const session = await getServerSession(authOptions);
+
+  if (!session?.user || session.user.role !== "ADMIN") {
+    redirect("/admin-login");
+  }
+
+  const { id } = await params;
+
+  const booking = await db.booking.findUnique({
+    where: { id },
+    include: {
+      quote: {
+        select: {
+          id: true,
+          quoteNumber: true,
+          status: true,
+        },
+      },
+      user: {
+        select: {
+          id: true,
+          fullName: true,
+          email: true,
+        },
+      },
+      departureDate: {
+        select: {
+          id: true,
+          date: true,
+          season: true,
+          status: true,
+        },
+      },
+      tour: {
+        select: {
+          id: true,
+          title: true,
+        },
+      },
+      operationControl: true,
+      paymentSchedules: {
+        orderBy: { dueDate: "asc" },
+        include: {
+          allocations: {
+            select: {
+              id: true,
+              amount: true,
+            },
+          },
+        },
+      },
+      payments: {
+        orderBy: {
+          createdAt: "desc",
+        },
+        include: {
+          allocations: {
+            select: {
+              id: true,
+              amount: true,
+              paymentScheduleId: true,
+            },
+          },
+          bankTransactions: {
+            where: {
+              status: "POSTED",
+            },
+            select: {
+              id: true,
+              bankAccountId: true,
+              transactionDate: true,
+            },
+          },
+        },
+      },
+    },
+  });
+
+  if (!booking) {
+    notFound();
+  }
+
+  const due = booking.totalPrice - booking.amountPaid;
+
+  const financialStatus = getFinancialStatus({
+    totalPrice: booking.totalPrice,
+    amountPaid: booking.amountPaid,
+    paymentDueDate: booking.paymentDueDate,
+  });
+
+  const operationStatus = booking.operationControl?.status || "PENDING";
+
+  const bankAccounts = await db.bankAccount.findMany({
+    where: {
+      isActive: true,
+      currency: booking.currency,
+    },
+    orderBy: {
+      name: "asc",
+    },
+    select: {
+      id: true,
+      name: true,
+      currency: true,
+    },
+  });
+
+  return (
+    <div className="mx-auto max-w-7xl space-y-6 p-8">
+      <div className="flex flex-wrap items-start justify-between gap-4">
+        <div>
+          <p className="text-sm font-medium text-gray-500">Booking</p>
+
+          <h1 className="text-3xl font-bold text-gray-900">
+            {booking.bookingReference}
+          </h1>
+
+          <p className="mt-2 text-sm text-gray-600">
+            {booking.tourTitleSnapshot || booking.tour?.title || "Tour not set"}
+          </p>
+
+          <div className="mt-3 flex flex-wrap gap-2">
+            <span
+              className={`rounded px-2 py-1 text-xs font-medium ${getStatusBadgeClass(
+                booking.status
+              )}`}
+            >
+              Booking: {booking.status}
+            </span>
+
+            <span
+              className={`rounded px-2 py-1 text-xs font-medium ${getOperationBadgeClass(
+                operationStatus
+              )}`}
+            >
+              Operation: {operationStatus}
+            </span>
+          </div>
+        </div>
+
+        <div className="flex flex-wrap gap-3">
+          <Link
+            href="/admin/bookings"
+            className="rounded-md border px-4 py-2 text-sm font-medium hover:bg-gray-50"
+          >
+            Back to Bookings
+          </Link>
+
+          <ActionButton
+            label="Operation Control"
+            href={`/admin/bookings/${booking.id}/control`}
+            variant="secondary"
+          />
+
+          {booking.quoteId ? (
+            <Link
+              href={`/admin/quotes/${booking.quoteId}`}
+              className="rounded-md bg-black px-4 py-2 text-sm font-medium text-white hover:bg-gray-800"
+            >
+              Open Quote
+            </Link>
+          ) : null}
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-6">
+        <InfoCard label="Status" value={booking.status} />
+        <InfoCard label="Operation" value={operationStatus} />
+        <InfoCard label="Payment" value={booking.paymentStatus} />
+        <InfoCard label="Guests" value={String(booking.numberOfGuests ?? 0)} />
+        <InfoCard
+          label="Departure"
+          value={formatDate(
+            booking.departureDateSnapshot || booking.departureDate?.date
+          )}
+        />
+        <InfoCard
+          label="Outstanding"
+          value={formatCurrency(due, booking.currency)}
+        />
+      </div>
+
+      <BookingDetailClient
+        booking={{
+          id: booking.id,
+          bookingReference: booking.bookingReference,
+          status: booking.status,
+          paymentStatus: booking.paymentStatus,
+          totalPrice: booking.totalPrice,
+          amountPaid: booking.amountPaid,
+          amountDue: booking.amountDue,
+          currency: booking.currency,
+        }}
+      />
+
+      <BookingPaymentSchedule
+        bookingId={booking.id}
+        bookingReference={booking.bookingReference}
+        currency={booking.currency}
+        totalPrice={booking.totalPrice}
+        amountPaid={booking.amountPaid}
+        schedules={booking.paymentSchedules.map((item) => ({
+          id: item.id,
+          type: item.type,
+          title: item.title,
+          dueDate: item.dueDate.toISOString(),
+          amount: item.amount,
+          amountPaid: item.amountPaid,
+          status: item.status,
+          paidAt: item.paidAt?.toISOString() ?? null,
+          notes: item.notes,
+          allocationCount: item.allocations.length,
+          allocatedAmount: item.allocations.reduce(
+            (sum, allocation) => sum + allocation.amount,
+            0,
+          ),
+        }))}
+      />
+
+      <RecordCustomerPayment
+        bookingId={booking.id}
+        bookingReference={booking.bookingReference}
+        currency={booking.currency}
+        totalPrice={booking.totalPrice}
+        currentAmountPaid={booking.amountPaid}
+        bankAccounts={bankAccounts}
+        schedules={booking.paymentSchedules.map((item) => ({
+          id: item.id,
+          type: item.type,
+          title: item.title,
+          dueDate: item.dueDate.toISOString(),
+          amount: item.amount,
+          amountPaid: item.amountPaid,
+          status: item.status,
+        }))}
+        payments={booking.payments.map((payment) => ({
+          id: payment.id,
+          amount: payment.amount,
+          currency: payment.currency,
+          method: payment.method,
+          status: payment.status,
+          reference: payment.reference,
+          paidAt: payment.paidAt?.toISOString() ?? null,
+          createdAt: payment.createdAt.toISOString(),
+          allocatedAmount: payment.allocations.reduce(
+            (sum, allocation) => sum + allocation.amount,
+            0,
+          ),
+          bankAccountId:
+            payment.bankTransactions[0]?.bankAccountId ?? null,
+        }))}
+      />
+
+
+
+      <div className="grid grid-cols-1 gap-6 xl:grid-cols-3">
+        <div className="space-y-6 xl:col-span-2">
+          <Section title="Booking Overview">
+            <DataRow
+              label="Booking Reference"
+              value={booking.bookingReference || "-"}
+            />
+
+            <DataRow
+              label="Display Code"
+              value={booking.bookingDisplayCode || "-"}
+            />
+
+            <DataRow
+              label="Booking Status"
+              value={
+                <span
+                  className={`rounded px-2 py-1 text-xs font-medium ${getStatusBadgeClass(
+                    booking.status
+                  )}`}
+                >
+                  {booking.status}
+                </span>
+              }
+            />
+
+            <DataRow
+              label="Operation Status"
+              value={
+                <span
+                  className={`rounded px-2 py-1 text-xs font-medium ${getOperationBadgeClass(
+                    operationStatus
+                  )}`}
+                >
+                  {operationStatus}
+                </span>
+              }
+            />
+
+            <DataRow
+              label="Payment Status"
+              value={
+                <span
+                  className={`rounded px-2 py-1 text-xs font-medium ${getPaymentBadgeClass(
+                    booking.paymentStatus
+                  )}`}
+                >
+                  {booking.paymentStatus}
+                </span>
+              }
+            />
+
+            <DataRow
+              label="Financial Status"
+              value={
+                <span
+                  className={`rounded px-2 py-1 text-xs ${getFinancialBadgeClass(
+                    financialStatus
+                  )}`}
+                >
+                  {financialStatus}
+                </span>
+              }
+            />
+
+            <DataRow label="Created" value={formatDate(booking.createdAt)} />
+            <DataRow label="Updated" value={formatDate(booking.updatedAt)} />
+
+            <DataRow
+              label="Payment Due Date"
+              value={formatDate(booking.paymentDueDate)}
+            />
+
+            <DataRow
+              label="Quote"
+              value={
+                booking.quote ? (
+                  <Link
+                    href={`/admin/quotes/${booking.quote.id}`}
+                    className="text-blue-600 hover:underline"
+                  >
+                    Quote #{booking.quote.quoteNumber}
+                  </Link>
+                ) : (
+                  "-"
+                )
+              }
+            />
+          </Section>
+
+          <Section title="Customer & Lead Information">
+            <DataRow label="Customer Name" value={booking.customerName || "-"} />
+            <DataRow label="Customer Email" value={booking.customerEmail || "-"} />
+            <DataRow label="Customer Phone" value={booking.customerPhone || "-"} />
+            <DataRow label="Lead First Name" value={booking.leadFirstName || "-"} />
+            <DataRow label="Lead Last Name" value={booking.leadLastName || "-"} />
+            <DataRow label="Lead Email" value={booking.leadEmail || "-"} />
+            <DataRow label="Lead Phone" value={booking.leadPhone || "-"} />
+
+            <DataRow
+              label="Linked User"
+              value={
+                booking.user ? (
+                  <div>
+                    <div>{booking.user.fullName || booking.user.email || "-"}</div>
+                    <div className="text-xs text-gray-500">
+                      {booking.user.email || "-"}
+                    </div>
+                  </div>
+                ) : (
+                  "-"
+                )
+              }
+            />
+          </Section>
+
+          <Section title="Tour & Departure Snapshot">
+            <DataRow
+              label="Tour"
+              value={booking.tourTitleSnapshot || booking.tour?.title || "-"}
+            />
+
+            <DataRow label="Category" value={booking.categorySnapshot || "-"} />
+
+            <DataRow
+              label="Duration"
+              value={
+                booking.durationSnapshot != null
+                  ? `${booking.durationSnapshot} days`
+                  : "-"
+              }
+            />
+
+            <DataRow
+              label="Departure Date"
+              value={formatDate(
+                booking.departureDateSnapshot || booking.departureDate?.date
+              )}
+            />
+
+            <DataRow
+              label="Season"
+              value={booking.seasonSnapshot || booking.departureDate?.season || "-"}
+            />
+
+            <DataRow
+              label="Departure Status"
+              value={booking.departureDate?.status || "-"}
+            />
+
+            <DataRow
+              label="Price Per Person Snapshot"
+              value={formatCurrency(
+                booking.pricePerPersonSnapshot,
+                booking.currency
+              )}
+            />
+
+            <DataRow
+              label="Early Discount %"
+              value={
+                booking.earlyDiscountPercentSnapshot != null
+                  ? `${booking.earlyDiscountPercentSnapshot}%`
+                  : "-"
+              }
+            />
+
+            <DataRow
+              label="Early Discount Deadline"
+              value={formatDate(booking.earlyDiscountDeadlineSnapshot)}
+            />
+
+            <DataRow
+              label="Brochure"
+              value={
+                booking.brochureUrlSnapshot ? (
+                  <a
+                    href={booking.brochureUrlSnapshot}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="text-blue-600 hover:underline"
+                  >
+                    Open brochure
+                  </a>
+                ) : (
+                  "-"
+                )
+              }
+            />
+          </Section>
+
+          <Section title="Passengers & Rooming">
+            <DataRow
+              label="Number of Guests"
+              value={String(booking.numberOfGuests ?? 0)}
+            />
+
+            <DataRow
+              label="Estimated Pax"
+              value={
+                booking.estimatedPax != null ? String(booking.estimatedPax) : "-"
+              }
+            />
+
+            <DataRow label="Adults" value={String(booking.adults ?? 0)} />
+            <DataRow label="Children" value={String(booking.children ?? 0)} />
+            <DataRow label="Infants" value={String(booking.infants ?? 0)} />
+            <DataRow label="Single Rooms" value={String(booking.singleRooms ?? 0)} />
+            <DataRow label="Double Rooms" value={String(booking.doubleRooms ?? 0)} />
+            <DataRow label="Twin Rooms" value={String(booking.twinRooms ?? 0)} />
+            <DataRow label="Triple Rooms" value={String(booking.tripleRooms ?? 0)} />
+            <DataRow label="Land Only" value={booking.landOnly ? "Yes" : "No"} />
+            <DataRow label="Needs Flights" value={booking.needsFlights ? "Yes" : "No"} />
+            <DataRow label="Group Name" value={booking.groupName || "-"} />
+            <DataRow label="Group Leader" value={booking.groupLeaderName || "-"} />
+          </Section>
+
+          <Section title="Requests & Notes">
+            <DataRow
+              label="Special Requests"
+              value={booking.specialRequests?.trim() ? booking.specialRequests : "-"}
+            />
+
+            <DataRow
+              label="Notes"
+              value={booking.notes?.trim() ? booking.notes : "-"}
+            />
+
+            <DataRow
+              label="Internal Notes"
+              value={booking.internalNotes?.trim() ? booking.internalNotes : "-"}
+            />
+          </Section>
+        </div>
+
+        <div className="space-y-6">
+          <Section title="Financial Summary">
+            <DataRow label="Currency" value={booking.currency || "EUR"} />
+
+            <DataRow
+              label="Total Price"
+              value={formatCurrency(booking.totalPrice, booking.currency)}
+            />
+
+            <DataRow
+              label="Gross Amount"
+              value={formatCurrency(booking.grossAmount, booking.currency)}
+            />
+
+            <DataRow
+              label="Commission"
+              value={formatCurrency(booking.commissionAmount, booking.currency)}
+            />
+
+            <DataRow
+              label="Net Amount"
+              value={formatCurrency(booking.netAmount, booking.currency)}
+            />
+
+            <DataRow
+              label="Amount Paid"
+              value={formatCurrency(booking.amountPaid, booking.currency)}
+            />
+
+            <DataRow
+              label="Amount Due"
+              value={formatCurrency(booking.amountDue, booking.currency)}
+            />
+
+            <DataRow
+              label="Outstanding Calculated"
+              value={formatCurrency(due, booking.currency)}
+            />
+          </Section>
+
+          <Section title="Quick Links">
+            <div className="space-y-3">
+              <ActionButton
+                label="Operation Control"
+                href={`/admin/bookings/${booking.id}/control`}
+                variant="secondary"
+              />
+
+              {booking.tourId ? (
+                <Link
+                  href={`/admin/tours/${booking.tourId}/edit`}
+                  className="block rounded-lg border px-4 py-3 text-sm font-medium hover:bg-gray-50"
+                >
+                  Open Tour
+                </Link>
+              ) : null}
+
+              {booking.departureDateId && booking.tourId ? (
+                <Link
+                  href={`/admin/tours/${booking.tourId}/departures`}
+                  className="block rounded-lg border px-4 py-3 text-sm font-medium hover:bg-gray-50"
+                >
+                  Open Departures
+                </Link>
+              ) : null}
+
+              {booking.quoteId ? (
+                <Link
+                  href={`/admin/quotes/${booking.quoteId}`}
+                  className="block rounded-lg border px-4 py-3 text-sm font-medium hover:bg-gray-50"
+                >
+                  Open Source Quote
+                </Link>
+              ) : null}
+            </div>
+          </Section>
+        </div>
+      </div>
+    </div>
+  );
+}

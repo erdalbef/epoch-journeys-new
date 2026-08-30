@@ -74,7 +74,7 @@ export default async function AdminFinanceDashboardPage() {
     redirect("/admin-login");
   }
 
-  const [financeEntries, bookings, bankAccounts, supplierPayables] =
+  const [financeEntries, bookings, bankAccounts, supplierPayables, customerPayments] =
     await Promise.all([
       db.expense.findMany({
         orderBy: [{ expenseDate: "desc" }, { createdAt: "desc" }],
@@ -213,6 +213,47 @@ export default async function AdminFinanceDashboardPage() {
             select: {
               id: true,
               name: true,
+            },
+          },
+        },
+      }),
+
+      db.payment.findMany({
+        where: {
+          currency: REPORTING_CURRENCY,
+          status: {
+            in: [
+              PaymentRecordStatus.RECEIVED,
+              PaymentRecordStatus.REFUNDED,
+            ],
+          },
+        },
+        orderBy: [{ paidAt: "desc" }, { createdAt: "desc" }],
+        select: {
+          id: true,
+          amount: true,
+          currency: true,
+          method: true,
+          status: true,
+          reference: true,
+          paidAt: true,
+          createdAt: true,
+          agencyGroupName: true,
+          tour: {
+            select: {
+              id: true,
+              title: true,
+            },
+          },
+          booking: {
+            select: {
+              id: true,
+              bookingReference: true,
+              bookingDisplayCode: true,
+              agencyNameSnapshot: true,
+              agentNameSnapshot: true,
+              groupName: true,
+              tourTitleSnapshot: true,
             },
           },
         },
@@ -378,7 +419,38 @@ export default async function AdminFinanceDashboardPage() {
     0,
   );
 
-  const totalIncome = automaticIncome + manualIncome;
+  /*
+   * Standalone customer receipts have no Booking.totalPrice to provide a
+   * confirmed sales value. Until they are linked to a booking, use their net
+   * received amount as the best available confirmed income fallback.
+   *
+   * Booking-linked customer payments are NOT added here because their booking
+   * total already feeds automaticIncome and adding the receipt again would
+   * double-count revenue.
+   */
+  const standaloneCustomerIncome = customerPayments.reduce(
+    (sum, payment) => {
+      if (payment.booking) {
+        return sum;
+      }
+
+      if (payment.status === PaymentRecordStatus.RECEIVED) {
+        return sum + payment.amount;
+      }
+
+      if (payment.status === PaymentRecordStatus.REFUNDED) {
+        return sum - payment.amount;
+      }
+
+      return sum;
+    },
+    0,
+  );
+
+  const totalIncome =
+    automaticIncome +
+    standaloneCustomerIncome +
+    manualIncome;
 
   const automaticExpenses = automaticSupplierFinance.reduce(
     (sum, payable) => sum + payable.recognizedExpense,
@@ -392,8 +464,13 @@ export default async function AdminFinanceDashboardPage() {
 
   const totalExpenses = automaticExpenses + manualExpenses;
 
-  const automaticPaidIncome = automaticBookingFinance.reduce(
-    (sum, booking) => sum + booking.actualPaid,
+  const automaticPaidIncome = customerPayments.reduce(
+    (sum, payment) =>
+      payment.status === PaymentRecordStatus.RECEIVED
+        ? sum + payment.amount
+        : payment.status === PaymentRecordStatus.REFUNDED
+          ? sum - payment.amount
+          : sum,
     0,
   );
 
@@ -598,8 +675,66 @@ export default async function AdminFinanceDashboardPage() {
     );
   }
 
+  /*
+   * Standalone customer receipts should also feed management summaries.
+   * They are excluded once linked to a booking to avoid double counting.
+   */
+  for (const payment of customerPayments) {
+    if (payment.booking) {
+      continue;
+    }
+
+    const amount =
+      payment.status === PaymentRecordStatus.RECEIVED
+        ? payment.amount
+        : payment.status === PaymentRecordStatus.REFUNDED
+          ? -payment.amount
+          : 0;
+
+    if (amount === 0) {
+      continue;
+    }
+
+    const agencyLabel =
+      payment.agencyGroupName ||
+      "Unassigned";
+
+    addToSummary(
+      agencyMap,
+      agencyLabel,
+      agencyLabel,
+      "INCOME",
+      amount,
+    );
+
+    const tourLabel =
+      payment.tour?.title ||
+      "Unlinked Tour / Package";
+
+    addToSummary(
+      tourMap,
+      tourLabel,
+      tourLabel,
+      "INCOME",
+      amount,
+    );
+
+    const groupLabel =
+      payment.agencyGroupName ||
+      "Unassigned Group";
+
+    addToSummary(
+      groupMap,
+      groupLabel,
+      groupLabel,
+      "INCOME",
+      amount,
+    );
+  }
+
   for (const payable of automaticSupplierFinance) {
     const agencyLabel =
+      payable.agencyGroupName ||
       payable.booking?.agencyNameSnapshot ||
       payable.booking?.agentNameSnapshot ||
       "Unassigned";
@@ -628,6 +763,7 @@ export default async function AdminFinanceDashboardPage() {
     );
 
     const groupLabel =
+      payable.agencyGroupName ||
       payable.booking?.groupName ||
       payable.booking?.bookingDisplayCode ||
       payable.booking?.bookingReference ||
@@ -692,6 +828,8 @@ export default async function AdminFinanceDashboardPage() {
       (sum, payable) => sum + payable.pendingPayable,
       0,
     );
+
+  const recentCustomerPayments = customerPayments.slice(0, 8);
 
   const recentAutomaticBookings =
     [...automaticBookingFinance]
@@ -1111,6 +1249,106 @@ export default async function AdminFinanceDashboardPage() {
                   REPORTING_CURRENCY,
                 )}
           </p>
+        </div>
+      </section>
+
+      {/* RECENT CUSTOMER PAYMENTS */}
+
+      <section className="rounded-2xl border bg-white p-5 shadow-sm">
+        <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <h2 className="text-lg font-semibold text-[#001F3F]">
+              Recent Customer Payments
+            </h2>
+            <p className="text-sm text-slate-500">
+              Received customer payments posted to the Finance Ledger and Paid Income.
+            </p>
+          </div>
+          <Link
+            href="/admin/payments"
+            className="text-sm font-medium text-[#8B0000] hover:underline"
+          >
+            Open Customer Payments
+          </Link>
+        </div>
+
+        <div className="overflow-x-auto">
+          <table className="w-full min-w-[850px] text-sm">
+            <thead className="bg-slate-50 text-left text-slate-600">
+              <tr>
+                <th className="px-3 py-3 font-medium">Date</th>
+                <th className="px-3 py-3 font-medium">Booking / Group</th>
+                <th className="px-3 py-3 font-medium">Reference</th>
+                <th className="px-3 py-3 font-medium">Method</th>
+                <th className="px-3 py-3 font-medium">Status</th>
+                <th className="px-3 py-3 text-right font-medium">Amount</th>
+              </tr>
+            </thead>
+            <tbody>
+              {recentCustomerPayments.map((payment) => {
+                const bookingRef =
+                  payment.booking?.bookingDisplayCode ||
+                  payment.booking?.bookingReference ||
+                  "-";
+                const party =
+                  payment.agencyGroupName ||
+                  payment.booking?.agencyNameSnapshot ||
+                  payment.booking?.agentNameSnapshot ||
+                  payment.booking?.groupName ||
+                  payment.booking?.tourTitleSnapshot ||
+                  payment.tour?.title ||
+                  "-";
+                const isRefunded =
+                  payment.status === PaymentRecordStatus.REFUNDED;
+
+                return (
+                  <tr key={payment.id} className="border-t">
+                    <td className="whitespace-nowrap px-3 py-3">
+                      {formatDate(payment.paidAt || payment.createdAt)}
+                    </td>
+                    <td className="px-3 py-3">
+                      <div className="font-semibold text-[#001F3F]">{bookingRef}</div>
+                      <div className="mt-1 text-xs text-slate-500">{party}</div>
+                    </td>
+                    <td className="px-3 py-3">{payment.reference || "-"}</td>
+                    <td className="px-3 py-3">
+                      {payment.method.replaceAll("_", " ")}
+                    </td>
+                    <td className="px-3 py-3">
+                      <span
+                        className={`rounded-full px-2.5 py-1 text-xs font-semibold ${
+                          isRefunded
+                            ? "bg-slate-200 text-slate-700"
+                            : "bg-green-100 text-green-700"
+                        }`}
+                      >
+                        {payment.status}
+                      </span>
+                    </td>
+                    <td
+                      className={`px-3 py-3 text-right font-semibold ${
+                        isRefunded ? "text-red-700" : "text-green-700"
+                      }`}
+                    >
+                      {isRefunded ? "-" : "+"}
+                      {formatCurrency(payment.amount, payment.currency)}
+                    </td>
+                  </tr>
+                );
+              })}
+
+              {recentCustomerPayments.length === 0 ? (
+                <tr>
+                  <td
+                    colSpan={6}
+                    className="px-3 py-8 text-center text-sm text-slate-500"
+                  >
+                    No received customer payments yet.
+                  </td>
+                </tr>
+              ) : null}
+            </tbody>
+          </table>
         </div>
       </section>
 

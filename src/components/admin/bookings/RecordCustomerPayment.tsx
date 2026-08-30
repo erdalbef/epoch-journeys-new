@@ -7,6 +7,8 @@ import {
   CreditCard,
   Plus,
   Receipt,
+  Upload,
+  FileText,
   X,
 } from "lucide-react";
 
@@ -60,6 +62,8 @@ type Props = {
   bankAccounts: BankAccount[];
   schedules: Schedule[];
   payments: PaymentHistoryItem[];
+  startOpen?: boolean;
+  redirectAfterSuccess?: string;
 };
 
 function formatCurrency(value: number, currency: string) {
@@ -116,11 +120,13 @@ export default function RecordCustomerPayment({
   bankAccounts,
   schedules,
   payments,
+  startOpen = false,
+  redirectAfterSuccess,
 }: Props) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
 
-  const [showForm, setShowForm] = useState(false);
+  const [showForm, setShowForm] = useState(startOpen);
   const [amount, setAmount] = useState("");
   const [bankAccountId, setBankAccountId] = useState("");
   const [method, setMethod] = useState("BANK_TRANSFER");
@@ -129,6 +135,7 @@ export default function RecordCustomerPayment({
   );
   const [reference, setReference] = useState("");
   const [notes, setNotes] = useState("");
+  const [paymentProof, setPaymentProof] = useState<File | null>(null);
   const [allocations, setAllocations] = useState<AllocationRow[]>([]);
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
@@ -169,6 +176,7 @@ export default function RecordCustomerPayment({
     setPaidAt(new Date().toISOString().slice(0, 10));
     setReference("");
     setNotes("");
+    setPaymentProof(null);
     setAllocations([]);
     setError("");
   }
@@ -242,6 +250,33 @@ export default function RecordCustomerPayment({
         )} could not be allocated because the open installment balances are smaller than this payment.`,
       );
     }
+  }
+
+  function handlePaymentProof(file: File | null) {
+    if (!file) {
+      setPaymentProof(null);
+      return;
+    }
+
+    const allowed = [
+      "application/pdf",
+      "image/jpeg",
+      "image/png",
+      "image/webp",
+    ];
+
+    if (!allowed.includes(file.type)) {
+      setError("Payment proof must be PDF, JPG, PNG or WEBP.");
+      return;
+    }
+
+    if (file.size > 10 * 1024 * 1024) {
+      setError("Payment proof must be smaller than 10 MB.");
+      return;
+    }
+
+    setPaymentProof(file);
+    setError("");
   }
 
   function submit() {
@@ -332,6 +367,8 @@ export default function RecordCustomerPayment({
           | {
               error?: string;
               success?: boolean;
+              payment?: { id: string };
+              accountingWarning?: string | null;
             }
           | null;
 
@@ -340,9 +377,46 @@ export default function RecordCustomerPayment({
           return;
         }
 
-        setMessage("Customer payment recorded and allocated successfully.");
+        let proofWarning = "";
+
+        if (paymentProof && data?.payment?.id) {
+          const proofData = new FormData();
+          proofData.set("file", paymentProof);
+
+          const proofResponse = await fetch(
+            `/api/admin/bookings/${bookingId}/payments/${data.payment.id}/proof`,
+            {
+              method: "POST",
+              body: proofData,
+            },
+          );
+
+          const proofResult = (await proofResponse.json().catch(() => null)) as
+            | { error?: string; success?: boolean }
+            | null;
+
+          if (!proofResponse.ok || !proofResult?.success) {
+            proofWarning =
+              proofResult?.error ||
+              "Payment was recorded, but the optional proof could not be uploaded.";
+          }
+        }
+
+        setMessage(
+          proofWarning
+            ? `Customer payment recorded successfully. ${proofWarning}`
+            : paymentProof
+              ? "Customer payment recorded and proof saved in Finance Documents."
+              : "Customer payment recorded and allocated successfully.",
+        );
         setShowForm(false);
         resetForm();
+        if (redirectAfterSuccess) {
+          router.push(redirectAfterSuccess);
+          router.refresh();
+          return;
+        }
+
         router.refresh();
       } catch (submitError) {
         console.error(submitError);
@@ -474,8 +548,6 @@ export default function RecordCustomerPayment({
                 className={inputClass}
               >
                 <option value="BANK_TRANSFER">Bank Transfer</option>
-                <option value="STRIPE">Stripe</option>
-                <option value="PAYPAL">PayPal</option>
                 <option value="CASH">Cash</option>
                 <option value="OTHER">Other</option>
               </select>
@@ -506,6 +578,66 @@ export default function RecordCustomerPayment({
                 className={inputClass}
               />
             </Field>
+          </div>
+
+          <div className="mt-5 rounded-xl border border-dashed border-slate-300 bg-white p-4">
+            <div className="flex items-start gap-3">
+              <FileText className="mt-0.5 h-5 w-5 text-[#8B0000]" />
+              <div>
+                <p className="text-sm font-semibold text-slate-800">
+                  Payment Proof <span className="font-normal text-slate-500">(optional)</span>
+                </p>
+                <p className="mt-1 text-xs text-slate-500">
+                  Upload a bank transfer confirmation, receipt or other proof. PDF, JPG, PNG or WEBP, maximum 10 MB.
+                </p>
+              </div>
+            </div>
+
+            {!paymentProof ? (
+              <label className="mt-4 inline-flex cursor-pointer items-center gap-2 rounded-lg border px-3 py-2 text-sm font-semibold text-[#001F3F] hover:bg-slate-50">
+                <Upload className="h-4 w-4" />
+                Select Proof
+                <input
+                  type="file"
+                  accept=".pdf,.jpg,.jpeg,.png,.webp,application/pdf,image/jpeg,image/png,image/webp"
+                  onChange={(event) =>
+                    handlePaymentProof(event.target.files?.[0] ?? null)
+                  }
+                  className="sr-only"
+                />
+              </label>
+            ) : (
+              <div className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-lg border bg-slate-50 p-3">
+                <div className="min-w-0">
+                  <p className="truncate text-sm font-semibold text-slate-800">
+                    {paymentProof.name}
+                  </p>
+                  <p className="text-xs text-slate-500">
+                    {(paymentProof.size / 1024 / 1024).toFixed(2)} MB
+                  </p>
+                </div>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const url = URL.createObjectURL(paymentProof);
+                      window.open(url, "_blank", "noopener,noreferrer");
+                      window.setTimeout(() => URL.revokeObjectURL(url), 60000);
+                    }}
+                    className="rounded-lg border px-3 py-2 text-xs font-semibold text-blue-700 hover:bg-blue-50"
+                  >
+                    View Proof
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setPaymentProof(null)}
+                    className="rounded-lg border border-red-200 px-3 py-2 text-xs font-semibold text-red-700 hover:bg-red-50"
+                  >
+                    Remove
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
 
           {activeSchedules.length > 0 ? (

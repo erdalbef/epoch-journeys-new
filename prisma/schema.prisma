@@ -3,8 +3,10 @@ generator client {
 }
 
 datasource db {
-  provider = "postgresql"
-  url      = env("DATABASE_URL")
+  provider          = "postgresql"
+  url               = env("DATABASE_URL")
+  directUrl         = env("DIRECT_URL")
+  shadowDatabaseUrl = env("SHADOW_DATABASE_URL")
 }
 
 model User {
@@ -143,6 +145,7 @@ model Tour {
   financeEntries           FinanceEntry[]
   massArrangements         MassArrangement[]
   partnerTourAliases       PartnerTourAlias[]
+  payments                  Payment[]
   pricingTiers             PricingTier[]
   privateGroupPricingPlans PrivateGroupPricingPlan[]
   quotes                   Quote[]
@@ -738,7 +741,9 @@ model Payment {
   id                   String              @id @default(cuid())
   createdAt            DateTime            @default(now())
   updatedAt            DateTime            @updatedAt
-  bookingId            String
+  bookingId            String?
+  tourId               String?
+  agencyGroupName      String?
   amount               Float
   currency             String              @default("EUR")
   method               PaymentMethod
@@ -751,12 +756,15 @@ model Payment {
   allocationLockedAt   DateTime?
   bankTransactions     BankTransaction[]
   financeDocument      FinanceDocument?
-  booking              Booking             @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  booking              Booking?            @relation(fields: [bookingId], references: [id], onDelete: SetNull)
+  tour                 Tour?               @relation(fields: [tourId], references: [id])
   allocations          PaymentAllocation[]
   refunds              Refund[]
   salesDocuments       SalesDocument[]
 
   @@index([bookingId])
+  @@index([tourId])
+  @@index([agencyGroupName])
   @@index([status])
   @@index([paidAt])
   @@index([allocationLockedAt])
@@ -1773,12 +1781,15 @@ model SupplierContract {
 
 model SupplierPayable {
   id                    String                        @id @default(cuid())
+  internalReference     String?                       @unique
+  documentType          SupplierPayableDocumentType   @default(FINAL_INVOICE)
   supplierId            String
   serviceId             String?
   rateId                String?
   tourId                String?
   departureDateId       String?
   bookingId             String?
+  agencyGroupName       String?
   createdById           String?
   approvedById          String?
   title                 String
@@ -1816,6 +1827,8 @@ model SupplierPayable {
   tour                  Tour?                         @relation(fields: [tourId], references: [id])
   payments              SupplierPayablePayment[]
 
+
+  @@index([agencyGroupName])
   @@index([approvalStatus])
   @@index([approvedById])
   @@index([bookingId])
@@ -1829,6 +1842,7 @@ model SupplierPayable {
   @@index([serviceId])
   @@index([supplierId])
   @@index([tourId])
+  
 }
 
 model SupplierPayablePayment {
@@ -1986,6 +2000,7 @@ enum PaymentStatus {
 
 enum PaymentMethod {
   BANK_TRANSFER
+  COMPANY_CREDIT_CARD
   STRIPE
   PAYPAL
   CASH
@@ -2420,6 +2435,13 @@ enum SupplierContractStatus {
   EXPIRED
   TERMINATED
   ARCHIVED
+}
+
+enum SupplierPayableDocumentType {
+  PROFORMA
+  DEPOSIT_INVOICE
+  FINAL_INVOICE
+  CREDIT_NOTE
 }
 
 enum SupplierPayableApprovalStatus {

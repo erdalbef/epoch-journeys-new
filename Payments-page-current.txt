@@ -1,0 +1,537 @@
+import Link from "next/link";
+import { redirect } from "next/navigation";
+import { getServerSession } from "next-auth";
+import {
+  PaymentRecordStatus,
+  PaymentSubmissionStatus,
+  Role,
+} from "@prisma/client";
+
+import { authOptions } from "@/lib/authOptions";
+import { db } from "@/lib/db";
+import AdminPaymentReviewActions from "@/components/admin/payments/AdminPaymentReviewActions";
+
+function formatCurrency(value: number, currency: string) {
+  return new Intl.NumberFormat("en-US", {
+    style: "currency",
+    currency,
+    maximumFractionDigits: 2,
+  }).format(value);
+}
+
+function formatDate(value: Date | null) {
+  if (!value) return "-";
+
+  return value.toLocaleDateString("en-GB", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+  });
+}
+
+function statusClass(status: string) {
+  switch (status) {
+    case "RECEIVED":
+      return "bg-green-100 text-green-800";
+    case "APPROVED":
+      return "bg-green-100 text-green-800";
+    case "REFUNDED":
+      return "bg-slate-200 text-slate-700";
+    case "REJECTED":
+      return "bg-red-100 text-red-800";
+    case "PENDING":
+      return "bg-amber-100 text-amber-800";
+    default:
+      return "bg-blue-100 text-blue-800";
+  }
+}
+
+export default async function AdminPaymentsPage() {
+  const session = await getServerSession(authOptions);
+
+  if (!session?.user || session.user.role !== Role.ADMIN) {
+    redirect("/admin-login");
+  }
+
+  const [submissions, payments] = await Promise.all([
+    db.paymentSubmission.findMany({
+      include: {
+        booking: {
+          select: {
+            id: true,
+            bookingReference: true,
+            bookingDisplayCode: true,
+            amountPaid: true,
+            amountDue: true,
+            totalPrice: true,
+            currency: true,
+          },
+        },
+        user: {
+          select: {
+            id: true,
+            fullName: true,
+            email: true,
+          },
+        },
+      },
+      orderBy: {
+        createdAt: "desc",
+      },
+    }),
+
+    db.payment.findMany({
+      include: {
+        booking: {
+          select: {
+            id: true,
+            bookingReference: true,
+            bookingDisplayCode: true,
+            tourTitleSnapshot: true,
+            customerName: true,
+            agentNameSnapshot: true,
+            agencyNameSnapshot: true,
+            groupName: true,
+            currency: true,
+          },
+        },
+        tour: {
+          select: {
+            id: true,
+            title: true,
+          },
+        },
+        allocations: {
+          select: {
+            amount: true,
+          },
+        },
+        bankTransactions: {
+          where: {
+            status: "POSTED",
+          },
+          select: {
+            id: true,
+            bankAccount: {
+              select: {
+                id: true,
+                name: true,
+                currency: true,
+              },
+            },
+          },
+        },
+      },
+      orderBy: {
+        createdAt: "desc",
+      },
+    }),
+  ]);
+
+  const receivedPayments = payments.filter(
+    (payment) => payment.status === PaymentRecordStatus.RECEIVED,
+  );
+
+  const pendingReviews = submissions.filter(
+    (submission) =>
+      submission.status === PaymentSubmissionStatus.PENDING,
+  ).length;
+
+  const receivedByCurrency = receivedPayments.reduce<
+    Record<string, number>
+  >((totals, payment) => {
+    totals[payment.currency] =
+      (totals[payment.currency] || 0) + payment.amount;
+
+    return totals;
+  }, {});
+
+  const receivedSummary =
+    Object.entries(receivedByCurrency).length === 0
+      ? "-"
+      : Object.entries(receivedByCurrency)
+          .sort(([currencyA], [currencyB]) =>
+            currencyA.localeCompare(currencyB),
+          )
+          .map(([currency, amount]) =>
+            formatCurrency(amount, currency),
+          )
+          .join(" · ");
+
+  return (
+    <div className="space-y-8 p-6">
+      <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+        <div>
+          <p className="text-xs font-bold uppercase tracking-[0.16em] text-[#8B0000]">
+            Finance
+          </p>
+
+          <h1 className="mt-1 text-2xl font-bold tracking-tight text-[#001F3F]">
+            Payments
+          </h1>
+
+          <p className="mt-1 text-sm text-muted-foreground">
+            Review submitted payments and manage customer payment history.
+          </p>
+        </div>
+
+        <Link
+          href="/admin/payments/new"
+          className="inline-flex items-center justify-center rounded-xl bg-[#8B0000] px-5 py-3 text-sm font-semibold text-white transition hover:bg-[#6f0000]"
+        >
+          + Record Payment
+        </Link>
+      </div>
+
+      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        <SummaryCard
+          label="Recorded Payments"
+          value={String(payments.length)}
+        />
+
+        <SummaryCard
+          label="Received Payments"
+          value={String(receivedPayments.length)}
+        />
+
+        <SummaryCard
+          label="Pending Reviews"
+          value={String(pendingReviews)}
+        />
+
+        <SummaryCard
+          label="Total Received"
+          value={receivedSummary}
+          note="Totals are kept separately by original currency."
+        />
+      </div>
+
+      <section className="rounded-2xl border bg-white shadow-sm">
+        <div className="border-b px-6 py-5">
+          <h2 className="text-lg font-semibold text-[#001F3F]">
+            Payment History
+          </h2>
+
+          <p className="mt-1 text-sm text-slate-500">
+            Payments recorded through the controlled booking payment workflow.
+          </p>
+        </div>
+
+        <div className="overflow-x-auto">
+          <table className="w-full min-w-[1050px] text-sm">
+            <thead className="border-b bg-slate-50">
+              <tr>
+                <th className="px-4 py-3 text-left">Date</th>
+                <th className="px-4 py-3 text-left">Booking</th>
+                <th className="px-4 py-3 text-left">
+                  Partner / Customer
+                </th>
+                <th className="px-4 py-3 text-left">Method</th>
+                <th className="px-4 py-3 text-left">Bank</th>
+                <th className="px-4 py-3 text-left">Reference</th>
+                <th className="px-4 py-3 text-right">Amount</th>
+                <th className="px-4 py-3 text-right">
+                  Allocated
+                </th>
+                <th className="px-4 py-3 text-left">Status</th>
+                <th className="px-4 py-3 text-right">Action</th>
+              </tr>
+            </thead>
+
+            <tbody>
+              {payments.length === 0 ? (
+                <tr>
+                  <td
+                    colSpan={10}
+                    className="px-4 py-8 text-center text-slate-500"
+                  >
+                    No recorded customer payments yet.
+                  </td>
+                </tr>
+              ) : (
+                payments.map((payment) => {
+                  const bookingRef =
+                    payment.booking?.bookingDisplayCode ||
+                    payment.booking?.bookingReference ||
+                    "No booking";
+
+                  const party =
+                    payment.agencyGroupName ||
+                    payment.booking?.agencyNameSnapshot ||
+                    payment.booking?.agentNameSnapshot ||
+                    payment.booking?.groupName ||
+                    payment.booking?.customerName ||
+                    "-";
+
+                  const tourTitle =
+                    payment.booking?.tourTitleSnapshot ||
+                    payment.tour?.title ||
+                    "-";
+
+                  const allocated = payment.allocations.reduce(
+                    (sum, allocation) =>
+                      sum + allocation.amount,
+                    0,
+                  );
+
+                  const bank =
+                    payment.bankTransactions[0]?.bankAccount?.name ||
+                    "-";
+
+                  return (
+                    <tr
+                      key={payment.id}
+                      className="border-b last:border-0"
+                    >
+                      <td className="px-4 py-3">
+                        {formatDate(
+                          payment.paidAt || payment.createdAt,
+                        )}
+                      </td>
+
+                      <td className="px-4 py-3">
+                        <div className="font-semibold text-[#001F3F]">
+                          {bookingRef}
+                        </div>
+
+                        <div className="mt-1 max-w-56 truncate text-xs text-slate-500">
+                          {tourTitle}
+                        </div>
+                      </td>
+
+                      <td className="px-4 py-3">
+                        {party}
+                      </td>
+
+                      <td className="px-4 py-3">
+                        {payment.method.replaceAll("_", " ")}
+                      </td>
+
+                      <td className="px-4 py-3">
+                        {bank}
+                      </td>
+
+                      <td className="px-4 py-3">
+                        {payment.reference || "-"}
+                      </td>
+
+                      <td className="px-4 py-3 text-right font-semibold">
+                        {formatCurrency(
+                          payment.amount,
+                          payment.currency,
+                        )}
+                      </td>
+
+                      <td className="px-4 py-3 text-right">
+                        {formatCurrency(
+                          allocated,
+                          payment.currency,
+                        )}
+                      </td>
+
+                      <td className="px-4 py-3">
+                        <span
+                          className={`rounded-full px-2.5 py-1 text-xs font-semibold ${statusClass(
+                            payment.status,
+                          )}`}
+                        >
+                          {payment.status}
+                        </span>
+                      </td>
+
+                      <td className="px-4 py-3 text-right">
+                        {payment.booking ? (
+                          <Link
+                            href={`/admin/bookings/${payment.booking.id}`}
+                            className="font-semibold text-blue-700 hover:underline"
+                          >
+                            Open Booking
+                          </Link>
+                        ) : payment.tour ? (
+                          <Link
+                            href={`/admin/tours/${payment.tour.id}/edit`}
+                            className="font-semibold text-blue-700 hover:underline"
+                          >
+                            Open Tour
+                          </Link>
+                        ) : (
+                          <span className="text-xs text-slate-400">
+                            Standalone receipt
+                          </span>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })
+              )}
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section className="rounded-2xl border bg-white shadow-sm">
+        <div className="border-b px-6 py-5">
+          <h2 className="text-lg font-semibold text-[#001F3F]">
+            Payment Review
+          </h2>
+
+          <p className="mt-1 text-sm text-slate-500">
+            Review payment submissions sent by agents through the B2B portal.
+          </p>
+        </div>
+
+        <div className="overflow-x-auto">
+          <table className="w-full min-w-[900px] text-sm">
+            <thead className="border-b bg-slate-50">
+              <tr>
+                <th className="px-4 py-3 text-left">Booking</th>
+                <th className="px-4 py-3 text-left">Agent</th>
+                <th className="px-4 py-3 text-left">Amount</th>
+                <th className="px-4 py-3 text-left">Balance</th>
+                <th className="px-4 py-3 text-left">Status</th>
+                <th className="px-4 py-3 text-left">
+                  Submitted
+                </th>
+                <th className="px-4 py-3 text-right">
+                  Actions
+                </th>
+              </tr>
+            </thead>
+
+            <tbody>
+              {submissions.length === 0 ? (
+                <tr>
+                  <td
+                    colSpan={7}
+                    className="px-4 py-8 text-center text-slate-500"
+                  >
+                    No payment submissions found.
+                  </td>
+                </tr>
+              ) : (
+                submissions.map((submission) => {
+                  const bookingRef =
+                    submission.booking.bookingDisplayCode ||
+                    submission.booking.bookingReference;
+
+                  return (
+                    <tr
+                      key={submission.id}
+                      className="border-b last:border-0"
+                    >
+                      <td className="px-4 py-3">
+                        <Link
+                          href={`/admin/bookings/${submission.booking.id}`}
+                          className="font-semibold text-[#001F3F] hover:underline"
+                        >
+                          {bookingRef}
+                        </Link>
+                      </td>
+
+                      <td className="px-4 py-3">
+                        <div className="flex flex-col">
+                          <span>
+                            {submission.user?.fullName || "-"}
+                          </span>
+
+                          <span className="text-xs text-slate-500">
+                            {submission.user?.email || "-"}
+                          </span>
+                        </div>
+                      </td>
+
+                      <td className="px-4 py-3">
+                        {formatCurrency(
+                          submission.amount,
+                          submission.currency,
+                        )}
+                      </td>
+
+                      <td className="px-4 py-3">
+                        <div className="text-xs">
+                          <div>
+                            Paid:{" "}
+                            {formatCurrency(
+                              submission.booking.amountPaid,
+                              submission.booking.currency,
+                            )}
+                          </div>
+
+                          <div>
+                            Due:{" "}
+                            {formatCurrency(
+                              submission.booking.amountDue,
+                              submission.booking.currency,
+                            )}
+                          </div>
+                        </div>
+                      </td>
+
+                      <td className="px-4 py-3">
+                        <span
+                          className={`rounded-full px-2.5 py-1 text-xs font-semibold ${statusClass(
+                            submission.status,
+                          )}`}
+                        >
+                          {submission.status}
+                        </span>
+                      </td>
+
+                      <td className="px-4 py-3 text-xs text-slate-500">
+                        {formatDate(submission.createdAt)}
+                      </td>
+
+                      <td className="px-4 py-3 text-right">
+                        <AdminPaymentReviewActions
+                          submissionId={submission.id}
+                          bookingId={submission.booking.id}
+                          bookingAmountPaid={
+                            submission.booking.amountPaid
+                          }
+                          bookingAmountDue={
+                            submission.booking.amountDue
+                          }
+                          submissionAmount={submission.amount}
+                          currentStatus={submission.status}
+                        />
+                      </td>
+                    </tr>
+                  );
+                })
+              )}
+            </tbody>
+          </table>
+        </div>
+      </section>
+    </div>
+  );
+}
+
+function SummaryCard({
+  label,
+  value,
+  note,
+}: {
+  label: string;
+  value: string;
+  note?: string;
+}) {
+  return (
+    <div className="rounded-2xl border bg-white p-5 shadow-sm">
+      <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+        {label}
+      </p>
+
+      <p className="mt-2 text-2xl font-bold text-[#001F3F]">
+        {value}
+      </p>
+
+      {note ? (
+        <p className="mt-2 text-xs leading-5 text-slate-500">
+          {note}
+        </p>
+      ) : null}
+    </div>
+  );
+}
+

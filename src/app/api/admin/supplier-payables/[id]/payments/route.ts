@@ -13,17 +13,11 @@ import {
   SupplierServiceType,
 } from "@prisma/client";
 
-import {
-  mkdir,
-  unlink,
-  writeFile,
-} from "node:fs/promises";
-
 import path from "node:path";
-import crypto from "node:crypto";
 
 import { authOptions } from "@/lib/authOptions";
 import { db } from "@/lib/db";
+import { deleteFinanceFile, saveFinanceFile } from "@/lib/storage/finansFileStorage";
 
 type Context = {
   params: Promise<{
@@ -265,7 +259,7 @@ export async function POST(
   request: Request,
   { params }: Context,
 ) {
-  let absoluteUploadedFilePath:
+  let uploadedStoragePath:
     | string
     | null = null;
 
@@ -735,7 +729,7 @@ export async function POST(
       );
 
     // ======================================================
-    // STORE PAYMENT PROOF LOCALLY
+    // STORE PAYMENT PROOF (VERCEL BLOB IN PRODUCTION)
     // ======================================================
 
     let originalFileName:
@@ -751,75 +745,32 @@ export async function POST(
       | null = null;
 
     if (paymentProof) {
-      originalFileName =
-        paymentProof.name ||
-        "supplier-payment-proof";
+      const savedFile =
+        await saveFinanceFile({
+          file:
+            paymentProof,
+          year:
+            accountingYear,
+          month:
+            accountingMonth,
+          safeFileName:
+            sanitizeFileName(
+              paymentProof.name ||
+                "supplier-payment-proof",
+            ),
+        });
 
-      const safeOriginalName =
-        sanitizeFileName(
-          originalFileName,
-        );
+      originalFileName =
+        savedFile.originalFileName;
 
       storedFileName =
-        `${Date.now()}-${crypto.randomUUID()}-${safeOriginalName}`;
-
-      const monthFolder =
-        String(
-          accountingMonth,
-        ).padStart(
-          2,
-          "0",
-        );
-
-      const relativeFolder =
-        path.join(
-          "uploads",
-          "accounting",
-          String(
-            accountingYear,
-          ),
-          monthFolder,
-        );
-
-      const absoluteFolder =
-        path.join(
-          process.cwd(),
-          "public",
-          relativeFolder,
-        );
-
-      await mkdir(
-        absoluteFolder,
-        {
-          recursive:
-            true,
-        },
-      );
-
-      absoluteUploadedFilePath =
-        path.join(
-          absoluteFolder,
-          storedFileName,
-        );
-
-      const bytes =
-        await paymentProof.arrayBuffer();
-
-      await writeFile(
-        absoluteUploadedFilePath,
-        Buffer.from(
-          bytes,
-        ),
-      );
+        savedFile.storedFileName;
 
       storagePath =
-        `/${relativeFolder
-          .split(
-            path.sep,
-          )
-          .join(
-            "/",
-          )}/${storedFileName}`;
+        savedFile.storagePath;
+
+      uploadedStoragePath =
+        savedFile.storagePath;
     }
 
     // ======================================================
@@ -1125,7 +1076,7 @@ export async function POST(
      * Database transaction succeeded.
      * Do not remove the physical file.
      */
-    absoluteUploadedFilePath =
+    uploadedStoragePath =
       null;
 
     // ======================================================
@@ -1205,11 +1156,11 @@ export async function POST(
     // ======================================================
 
     if (
-      absoluteUploadedFilePath
+      uploadedStoragePath
     ) {
       try {
-        await unlink(
-          absoluteUploadedFilePath,
+        await deleteFinanceFile(
+          uploadedStoragePath,
         );
       } catch (
         cleanupError

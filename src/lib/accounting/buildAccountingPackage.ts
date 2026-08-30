@@ -12,6 +12,7 @@ import path from "path";
 import { PassThrough } from "stream";
 
 import { db } from "@/lib/db";
+import { readFinanceFile } from "@/lib/storage/finansFileStorage";
 
 export type AccountingPackagePart = 1 | 2;
 
@@ -960,28 +961,6 @@ export async function buildAccountingPackage({
         document,
       );
 
-    const absolutePath =
-      resolvePublicFile(
-        document.storagePath,
-      );
-
-    if (
-      !absolutePath ||
-      !existsSync(
-        absolutePath,
-      )
-    ) {
-      missingFiles.push(
-        document.originalFileName,
-      );
-
-      console.warn(
-        `Accounting file missing: ${document.storagePath}`,
-      );
-
-      continue;
-    }
-
     const folderName =
       CATEGORY_FOLDER_NAMES[
         document
@@ -993,13 +972,73 @@ export async function buildAccountingPackage({
         document.originalFileName,
       );
 
-    archive.file(
-      absolutePath,
-      {
-        name:
-          `${folderName}/${archiveFileName}`,
-      },
-    );
+    if (
+      /^https:\/\//i.test(
+        document.storagePath,
+      )
+    ) {
+      try {
+        const remoteFile =
+          await readFinanceFile(
+            document.storagePath,
+          );
+
+        if (!remoteFile) {
+          throw new Error(
+            "Stored file could not be read.",
+          );
+        }
+
+        archive.append(
+          remoteFile,
+          {
+            name:
+              `${folderName}/${archiveFileName}`,
+          },
+        );
+      } catch (error) {
+        missingFiles.push(
+          document.originalFileName,
+        );
+
+        console.warn(
+          `Accounting file missing: ${document.storagePath}`,
+          error,
+        );
+
+        continue;
+      }
+    } else {
+      const absolutePath =
+        resolvePublicFile(
+          document.storagePath,
+        );
+
+      if (
+        !absolutePath ||
+        !existsSync(
+          absolutePath,
+        )
+      ) {
+        missingFiles.push(
+          document.originalFileName,
+        );
+
+        console.warn(
+          `Accounting file missing: ${document.storagePath}`,
+        );
+
+        continue;
+      }
+
+      archive.file(
+        absolutePath,
+        {
+          name:
+            `${folderName}/${archiveFileName}`,
+        },
+      );
+    }
 
     includedFileCount +=
       1;

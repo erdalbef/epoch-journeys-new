@@ -53,6 +53,39 @@ type Booking = {
   tourTitleSnapshot: string;
 };
 
+type SupplierDocumentType =
+  | "PROFORMA"
+  | "DEPOSIT_INVOICE"
+  | "FINAL_INVOICE"
+  | "CREDIT_NOTE";
+
+const DOCUMENT_TYPE_OPTIONS: Array<{
+  value: SupplierDocumentType;
+  label: string;
+  help: string;
+}> = [
+  {
+    value: "PROFORMA",
+    label: "Proforma",
+    help: "Operational payment request; kept outside final purchase invoices in Accounting.",
+  },
+  {
+    value: "DEPOSIT_INVOICE",
+    label: "Deposit Invoice",
+    help: "Supplier invoice/request for an advance or deposit payment.",
+  },
+  {
+    value: "FINAL_INVOICE",
+    label: "Final Invoice",
+    help: "Final supplier liability for the service or group.",
+  },
+  {
+    value: "CREDIT_NOTE",
+    label: "Credit Note",
+    help: "Records a supplier credit. No payment will be due on this record.",
+  },
+];
+
 const MAX_FILE_SIZE =
   10 * 1024 * 1024;
 
@@ -328,6 +361,13 @@ export default function SupplierPayableForm({
   ] = useState("");
 
   const [
+    documentType,
+    setDocumentType,
+  ] = useState<SupplierDocumentType>(
+    "FINAL_INVOICE",
+  );
+
+  const [
     currency,
     setCurrency,
   ] = useState(
@@ -423,6 +463,13 @@ export default function SupplierPayableForm({
             0,
         );
 
+      if (
+        documentType ===
+        "CREDIT_NOTE"
+      ) {
+        return 0;
+      }
+
       return Math.max(
         0,
         approved -
@@ -431,6 +478,7 @@ export default function SupplierPayableForm({
     }, [
       approvedAmount,
       creditAmount,
+      documentType,
     ]);
 
   function chooseSupplier(
@@ -535,7 +583,7 @@ export default function SupplierPayableForm({
       MAX_FILE_SIZE
     ) {
       toast.error(
-        "Invoice file must be smaller than 10 MB.",
+        "Supplier document file must be smaller than 10 MB.",
       );
 
       return;
@@ -616,6 +664,31 @@ export default function SupplierPayableForm({
      * YYYY-MM-DD
      */
     form.set(
+      "documentType",
+      documentType,
+    );
+
+    /*
+     * These linkage fields are controlled React selects.
+     * Set them explicitly so the selected operational links
+     * are always included in the multipart request.
+     */
+    form.set(
+      "tourId",
+      tourId,
+    );
+
+    form.set(
+      "departureDateId",
+      departureDateId,
+    );
+
+    form.set(
+      "bookingId",
+      bookingId,
+    );
+
+    form.set(
       "invoiceDate",
       parsedInvoiceDate ||
         "",
@@ -684,10 +757,8 @@ export default function SupplierPayableForm({
 
       toast.success(
         invoiceFile
-          ? `Supplier payable created. Invoice added to 03 - Expenses / Purchases${
-              data
-                .accounting
-                ?.subcategory
+          ? `Supplier payable created. Document added to Accounting${
+              data.accounting?.subcategory
                 ? ` / ${data.accounting.subcategory}`
                 : ""
             }.`
@@ -861,60 +932,6 @@ export default function SupplierPayableForm({
           )}
         </FieldLabel>
 
-        <FieldLabel label="Contracted rate">
-          <select
-            name="rateId"
-            value={
-              rateId
-            }
-            onChange={(
-              event,
-            ) =>
-              chooseRate(
-                event
-                  .target
-                  .value,
-              )
-            }
-            disabled={
-              !supplierId
-            }
-            className="input"
-          >
-            <option value="">
-              No rate /
-              manual cost
-            </option>
-
-            {rates.map(
-              (rate) => (
-                <option
-                  key={
-                    rate.id
-                  }
-                  value={
-                    rate.id
-                  }
-                >
-                  {
-                    rate.name
-                  }{" "}
-                  -{" "}
-                  {
-                    rate.currency
-                  }{" "}
-                  {
-                    rate.amount
-                  }{" "}
-                  /{" "}
-                  {rateUnitLabel(
-                    rate.unit,
-                  )}
-                </option>
-              ),
-            )}
-          </select>
-        </FieldLabel>
 
         <FieldLabel label="Currency *">
           <input
@@ -936,6 +953,50 @@ export default function SupplierPayableForm({
             className="input"
           />
         </FieldLabel>
+      </div>
+
+      <div className="grid gap-4 md:grid-cols-2">
+        <FieldLabel label="Agency / Parish / Group">
+          <input name="agencyGroupName" placeholder="e.g. GLORY TOURS / JOSSIE or St. Mary's Parish" className="input" />
+        </FieldLabel>
+      </div>
+
+      <div className="rounded-2xl border border-slate-200 bg-slate-50/70 p-5">
+        <div className="grid gap-4 md:grid-cols-[minmax(0,1fr)_minmax(0,2fr)]">
+          <FieldLabel label="Supplier document type *">
+            <select
+              name="documentType"
+              value={documentType}
+              onChange={(event) => {
+                const next = event.target.value as SupplierDocumentType;
+                setDocumentType(next);
+                if (next === "CREDIT_NOTE") {
+                  setCreditAmount(approvedAmount || "0");
+                }
+              }}
+              className="input"
+              required
+            >
+              {DOCUMENT_TYPE_OPTIONS.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
+          </FieldLabel>
+
+          <div className="rounded-xl bg-white p-4 text-sm text-slate-600 shadow-sm">
+            <p className="font-semibold text-slate-900">
+              {DOCUMENT_TYPE_OPTIONS.find((item) => item.value === documentType)?.label}
+            </p>
+            <p className="mt-1">
+              {DOCUMENT_TYPE_OPTIONS.find((item) => item.value === documentType)?.help}
+            </p>
+            <p className="mt-2 text-xs text-slate-500">
+              Epoch will assign the internal supplier-payable reference automatically after saving.
+            </p>
+          </div>
+        </div>
       </div>
 
       {/* ============================================== */}
@@ -965,7 +1026,13 @@ export default function SupplierPayableForm({
           />
         </FieldLabel>
 
-        <FieldLabel label="Approved amount *">
+        <FieldLabel
+          label={
+            documentType === "CREDIT_NOTE"
+              ? "Credit note amount *"
+              : "Approved amount *"
+          }
+        >
           <input
             name="approvedAmount"
             type="number"
@@ -975,15 +1042,12 @@ export default function SupplierPayableForm({
             value={
               approvedAmount
             }
-            onChange={(
-              event,
-            ) =>
-              setApprovedAmount(
-                event
-                  .target
-                  .value,
-              )
-            }
+            onChange={(event) => {
+              setApprovedAmount(event.target.value);
+              if (documentType === "CREDIT_NOTE") {
+                setCreditAmount(event.target.value || "0");
+              }
+            }}
             className="input"
           />
         </FieldLabel>
@@ -995,18 +1059,15 @@ export default function SupplierPayableForm({
             min="0"
             step="0.01"
             value={
-              creditAmount
+              documentType === "CREDIT_NOTE"
+                ? approvedAmount || "0"
+                : creditAmount
             }
-            onChange={(
-              event,
-            ) =>
-              setCreditAmount(
-                event
-                  .target
-                  .value,
-              )
+            onChange={(event) =>
+              setCreditAmount(event.target.value)
             }
-            className="input"
+            disabled={documentType === "CREDIT_NOTE"}
+            className="input disabled:bg-slate-100"
           />
         </FieldLabel>
       </div>
@@ -1051,21 +1112,22 @@ export default function SupplierPayableForm({
           />
         </FieldLabel>
 
-        <FieldLabel label="Supplier invoice number">
+        <FieldLabel label="Supplier document number">
           <input
             name="supplierInvoiceNumber"
             className="input"
           />
         </FieldLabel>
 
-        <FieldLabel label="Supplier reference">
+        <FieldLabel label="Supplier reference (optional)">
           <input
             name="supplierReference"
+            placeholder="Reservation / confirmation / order reference"
             className="input"
           />
         </FieldLabel>
 
-        <FieldLabel label="Invoice date">
+        <FieldLabel label="Document date">
           <EuropeanDateInput
             value={
               invoiceDate
@@ -1101,13 +1163,13 @@ export default function SupplierPayableForm({
           <div>
             <h3 className="font-bold text-slate-950">
               Supplier
-              Invoice
+              Document
             </h3>
 
             <p className="mt-1 text-sm text-slate-500">
               Upload the
               supplier
-              invoice once.
+              document once.
               It will
               automatically
               appear in
@@ -1180,18 +1242,19 @@ export default function SupplierPayableForm({
               </div>
             </div>
 
-            <button
-              type="button"
-              onClick={() =>
-                setInvoiceFile(
-                  null,
-                )
-              }
-              className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-slate-400 transition hover:bg-red-50 hover:text-[#8B0000]"
-              title="Remove file"
-            >
-              <X className="h-4 w-4" />
-            </button>
+            <div className="flex shrink-0 items-center gap-2">
+              <button type="button" onClick={() => {
+                const url = URL.createObjectURL(invoiceFile);
+                window.open(url, "_blank", "noopener,noreferrer");
+                window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
+              }} className="inline-flex h-9 items-center rounded-lg border border-slate-200 px-3 text-sm font-semibold text-[#001F3F] hover:bg-slate-50">
+                View Document
+              </button>
+              <button type="button" onClick={() => setInvoiceFile(null)}
+                className="inline-flex h-9 w-9 items-center justify-center rounded-lg text-slate-400 hover:bg-red-50 hover:text-[#8B0000]" title="Remove file">
+                <X className="h-4 w-4" />
+              </button>
+            </div>
           </div>
         )}
       </div>

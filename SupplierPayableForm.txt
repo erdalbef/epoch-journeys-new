@@ -1,0 +1,1651 @@
+"use client";
+
+import {
+  useMemo,
+  useRef,
+  useState,
+} from "react";
+import { useRouter } from "next/navigation";
+import {
+  CalendarDays,
+  FileText,
+  Upload,
+  X,
+} from "lucide-react";
+import { toast } from "sonner";
+
+type Service = {
+  id: string;
+  name: string;
+  type: string;
+};
+
+type Rate = {
+  id: string;
+  serviceId: string | null;
+  name: string;
+  amount: string;
+  currency: string;
+  unit: string;
+};
+
+type Supplier = {
+  id: string;
+  name: string;
+  defaultCurrency: string;
+  services: Service[];
+  rates: Rate[];
+};
+
+type Tour = {
+  id: string;
+  title: string;
+  departureDates: Array<{
+    id: string;
+    date: string;
+  }>;
+};
+
+type Booking = {
+  id: string;
+  bookingReference: string;
+  bookingDisplayCode: string | null;
+  tourTitleSnapshot: string;
+};
+
+type SupplierDocumentType =
+  | "PROFORMA"
+  | "DEPOSIT_INVOICE"
+  | "FINAL_INVOICE"
+  | "CREDIT_NOTE";
+
+const DOCUMENT_TYPE_OPTIONS: Array<{
+  value: SupplierDocumentType;
+  label: string;
+  help: string;
+}> = [
+  {
+    value: "PROFORMA",
+    label: "Proforma",
+    help: "Operational payment request; kept outside final purchase invoices in Accounting.",
+  },
+  {
+    value: "DEPOSIT_INVOICE",
+    label: "Deposit Invoice",
+    help: "Supplier invoice/request for an advance or deposit payment.",
+  },
+  {
+    value: "FINAL_INVOICE",
+    label: "Final Invoice",
+    help: "Final supplier liability for the service or group.",
+  },
+  {
+    value: "CREDIT_NOTE",
+    label: "Credit Note",
+    help: "Records a supplier credit. No payment will be due on this record.",
+  },
+];
+
+const MAX_FILE_SIZE =
+  10 * 1024 * 1024;
+
+const ALLOWED_FILE_TYPES = [
+  "application/pdf",
+  "image/jpeg",
+  "image/png",
+  "image/webp",
+];
+
+function serviceTypeLabel(
+  type: string,
+) {
+  switch (type) {
+    case "ACCOMMODATION":
+      return "Accommodation / Hotel";
+
+    case "TRANSPORT":
+      return "Transport / Transfers";
+
+    case "GUIDE":
+      return "Guide";
+
+    case "TOUR_MANAGER":
+      return "Tour Manager";
+
+    case "MEAL":
+      return "Restaurant / Meals";
+
+    case "MASS_ARRANGEMENT":
+      return "Mass Arrangement";
+
+    case "CHURCH_RESERVATION":
+      return "Church / Shrine Reservation";
+
+    case "ENTRANCE":
+      return "Entrance Fee";
+
+    case "TICKET":
+      return "Ticket";
+
+    case "FLIGHT":
+      return "Flight";
+
+    case "CRUISE":
+      return "Cruise";
+
+    case "FERRY":
+      return "Ferry";
+
+    case "RAIL":
+      return "Rail";
+
+    case "INSURANCE":
+      return "Insurance";
+
+    case "DMC_SERVICE":
+      return "DMC / Ground Services";
+
+    case "OTHER":
+      return "Other";
+
+    default:
+      return type
+        .replaceAll("_", " ")
+        .toLowerCase()
+        .replace(
+          /\b\w/g,
+          (value) =>
+            value.toUpperCase(),
+        );
+  }
+}
+
+function rateUnitLabel(
+  unit: string,
+) {
+  return unit
+    .replaceAll("_", " ")
+    .toLowerCase()
+    .replace(
+      /\b\w/g,
+      (value) =>
+        value.toUpperCase(),
+    );
+}
+
+function parseEuropeanDate(
+  value: string,
+) {
+  const trimmed =
+    value.trim();
+
+  if (!trimmed) {
+    return "";
+  }
+
+  const match =
+    trimmed.match(
+      /^(\d{2})\/(\d{2})\/(\d{4})$/,
+    );
+
+  if (!match) {
+    return null;
+  }
+
+  const day =
+    Number(match[1]);
+
+  const month =
+    Number(match[2]);
+
+  const year =
+    Number(match[3]);
+
+  const date =
+    new Date(
+      Date.UTC(
+        year,
+        month - 1,
+        day,
+        12,
+        0,
+        0,
+      ),
+    );
+
+  if (
+    date.getUTCFullYear() !==
+      year ||
+    date.getUTCMonth() !==
+      month - 1 ||
+    date.getUTCDate() !==
+      day
+  ) {
+    return null;
+  }
+
+  return `${String(
+    year,
+  ).padStart(
+    4,
+    "0",
+  )}-${String(
+    month,
+  ).padStart(
+    2,
+    "0",
+  )}-${String(
+    day,
+  ).padStart(
+    2,
+    "0",
+  )}`;
+}
+
+function europeanDateFromIso(
+  value: string,
+) {
+  const directMatch =
+    value.match(
+      /^(\d{4})-(\d{2})-(\d{2})/,
+    );
+
+  if (directMatch) {
+    return `${directMatch[3]}/${directMatch[2]}/${directMatch[1]}`;
+  }
+
+  const date =
+    new Date(value);
+
+  if (
+    Number.isNaN(
+      date.getTime(),
+    )
+  ) {
+    return value;
+  }
+
+  return new Intl.DateTimeFormat(
+    "en-GB",
+    {
+      day: "2-digit",
+      month: "2-digit",
+      year: "numeric",
+      timeZone: "UTC",
+    },
+  ).format(date);
+}
+
+function formatDateTyping(
+  value: string,
+) {
+  const digits =
+    value
+      .replace(
+        /\D/g,
+        "",
+      )
+      .slice(
+        0,
+        8,
+      );
+
+  if (
+    digits.length <= 2
+  ) {
+    return digits;
+  }
+
+  if (
+    digits.length <= 4
+  ) {
+    return `${digits.slice(
+      0,
+      2,
+    )}/${digits.slice(
+      2,
+    )}`;
+  }
+
+  return `${digits.slice(
+    0,
+    2,
+  )}/${digits.slice(
+    2,
+    4,
+  )}/${digits.slice(
+    4,
+  )}`;
+}
+
+export default function SupplierPayableForm({
+  suppliers,
+  tours,
+  bookings,
+}: {
+  suppliers: Supplier[];
+  tours: Tour[];
+  bookings: Booking[];
+}) {
+  const router =
+    useRouter();
+
+  const [
+    supplierId,
+    setSupplierId,
+  ] = useState("");
+
+  const [
+    serviceId,
+    setServiceId,
+  ] = useState("");
+
+  const [
+    rateId,
+    setRateId,
+  ] = useState("");
+
+  const [
+    tourId,
+    setTourId,
+  ] = useState("");
+
+  const [
+    departureDateId,
+    setDepartureDateId,
+  ] = useState("");
+
+  const [
+    bookingId,
+    setBookingId,
+  ] = useState("");
+
+  const [
+    documentType,
+    setDocumentType,
+  ] = useState<SupplierDocumentType>(
+    "FINAL_INVOICE",
+  );
+
+  const [
+    currency,
+    setCurrency,
+  ] = useState(
+    "EUR",
+  );
+
+  const [
+    contractedAmount,
+    setContractedAmount,
+  ] = useState("");
+
+  const [
+    approvedAmount,
+    setApprovedAmount,
+  ] = useState("");
+
+  const [
+    creditAmount,
+    setCreditAmount,
+  ] = useState(
+    "0",
+  );
+
+  const [
+    invoiceDate,
+    setInvoiceDate,
+  ] = useState("");
+
+  const [
+    dueDate,
+    setDueDate,
+  ] = useState("");
+
+  const [
+    invoiceFile,
+    setInvoiceFile,
+  ] =
+    useState<File | null>(
+      null,
+    );
+
+  const [
+    loading,
+    setLoading,
+  ] =
+    useState(false);
+
+  const supplier =
+    suppliers.find(
+      (item) =>
+        item.id ===
+        supplierId,
+    );
+
+  const selectedTour =
+    tours.find(
+      (item) =>
+        item.id ===
+        tourId,
+    );
+
+  const selectedService =
+    supplier?.services.find(
+      (item) =>
+        item.id ===
+        serviceId,
+    ) ?? null;
+
+  const services =
+    supplier?.services ??
+    [];
+
+  const rates =
+    supplier?.rates.filter(
+      (rate) =>
+        !serviceId ||
+        !rate.serviceId ||
+        rate.serviceId ===
+          serviceId,
+    ) ?? [];
+
+  const balancePreview =
+    useMemo(() => {
+      const approved =
+        Number(
+          approvedAmount ||
+            0,
+        );
+
+      const credit =
+        Number(
+          creditAmount ||
+            0,
+        );
+
+      if (
+        documentType ===
+        "CREDIT_NOTE"
+      ) {
+        return 0;
+      }
+
+      return Math.max(
+        0,
+        approved -
+          credit,
+      );
+    }, [
+      approvedAmount,
+      creditAmount,
+      documentType,
+    ]);
+
+  function chooseSupplier(
+    value: string,
+  ) {
+    setSupplierId(
+      value,
+    );
+
+    setServiceId(
+      "",
+    );
+
+    setRateId(
+      "",
+    );
+
+    const selected =
+      suppliers.find(
+        (item) =>
+          item.id ===
+          value,
+      );
+
+    if (selected) {
+      setCurrency(
+        selected.defaultCurrency ||
+          "EUR",
+      );
+    }
+  }
+
+  function chooseRate(
+    value: string,
+  ) {
+    setRateId(
+      value,
+    );
+
+    const selected =
+      rates.find(
+        (item) =>
+          item.id ===
+          value,
+      );
+
+    if (!selected) {
+      return;
+    }
+
+    setCurrency(
+      selected.currency,
+    );
+
+    setContractedAmount(
+      selected.amount,
+    );
+
+    if (
+      !approvedAmount
+    ) {
+      setApprovedAmount(
+        selected.amount,
+      );
+    }
+
+    if (
+      selected.serviceId
+    ) {
+      setServiceId(
+        selected.serviceId,
+      );
+    }
+  }
+
+  function handleInvoiceFile(
+    file:
+      | File
+      | null,
+  ) {
+    if (!file) {
+      setInvoiceFile(
+        null,
+      );
+      return;
+    }
+
+    if (
+      !ALLOWED_FILE_TYPES.includes(
+        file.type,
+      )
+    ) {
+      toast.error(
+        "Only PDF, JPG, PNG and WEBP files are allowed.",
+      );
+
+      return;
+    }
+
+    if (
+      file.size >
+      MAX_FILE_SIZE
+    ) {
+      toast.error(
+        "Supplier document file must be smaller than 10 MB.",
+      );
+
+      return;
+    }
+
+    setInvoiceFile(
+      file,
+    );
+  }
+
+  async function submit(
+    event:
+      React.FormEvent<HTMLFormElement>,
+  ) {
+    event.preventDefault();
+
+    if (loading) {
+      return;
+    }
+
+    if (
+      invoiceFile &&
+      !serviceId
+    ) {
+      toast.error(
+        "Please select the supplier service so the invoice can be classified correctly in Accounting.",
+      );
+
+      return;
+    }
+
+    const parsedInvoiceDate =
+      parseEuropeanDate(
+        invoiceDate,
+      );
+
+    if (
+      invoiceDate &&
+      !parsedInvoiceDate
+    ) {
+      toast.error(
+        "Invoice date must use DD/MM/YYYY format.",
+      );
+
+      return;
+    }
+
+    const parsedDueDate =
+      parseEuropeanDate(
+        dueDate,
+      );
+
+    if (
+      dueDate &&
+      !parsedDueDate
+    ) {
+      toast.error(
+        "Due date must use DD/MM/YYYY format.",
+      );
+
+      return;
+    }
+
+    setLoading(
+      true,
+    );
+
+    const form =
+      new FormData(
+        event.currentTarget,
+      );
+
+    /*
+     * Visible form:
+     * DD/MM/YYYY
+     *
+     * API:
+     * YYYY-MM-DD
+     */
+    form.set(
+      "documentType",
+      documentType,
+    );
+
+    form.set(
+      "invoiceDate",
+      parsedInvoiceDate ||
+        "",
+    );
+
+    form.set(
+      "dueDate",
+      parsedDueDate ||
+        "",
+    );
+
+    if (
+      invoiceFile
+    ) {
+      form.set(
+        "invoiceFile",
+        invoiceFile,
+      );
+    }
+
+    try {
+      const response =
+        await fetch(
+          "/api/admin/supplier-payables",
+          {
+            method:
+              "POST",
+            body:
+              form,
+          },
+        );
+
+      const data =
+        (await response
+          .json()
+          .catch(
+            () =>
+              null,
+          )) as {
+          error?: string;
+
+          payable?: {
+            id: string;
+          };
+
+          financeDocument?: {
+            id: string;
+          } | null;
+
+          accounting?: {
+            category?: string;
+            subcategory?: string;
+          };
+        } | null;
+
+      if (
+        !response.ok ||
+        !data?.payable
+          ?.id
+      ) {
+        throw new Error(
+          data?.error ||
+            "Failed to create supplier payable.",
+        );
+      }
+
+      toast.success(
+        invoiceFile
+          ? `Supplier payable created. Document added to Accounting${
+              data.accounting?.subcategory
+                ? ` / ${data.accounting.subcategory}`
+                : ""
+            }.`
+          : "Supplier payable created successfully.",
+      );
+
+      router.push(
+        `/admin/supplier-payables/${data.payable.id}`,
+      );
+
+      router.refresh();
+    } catch (error) {
+      toast.error(
+        error instanceof
+          Error
+          ? error.message
+          : "Failed to create supplier payable.",
+      );
+
+      setLoading(
+        false,
+      );
+    }
+  }
+
+  return (
+    <form
+      onSubmit={
+        submit
+      }
+      className="space-y-6 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6"
+    >
+      {/* ============================================== */}
+      {/* SUPPLIER / SERVICE */}
+      {/* ============================================== */}
+
+      <div className="grid gap-4 md:grid-cols-2">
+        <FieldLabel label="Supplier *">
+          <select
+            name="supplierId"
+            required
+            value={
+              supplierId
+            }
+            onChange={(
+              event,
+            ) =>
+              chooseSupplier(
+                event
+                  .target
+                  .value,
+              )
+            }
+            className="input"
+          >
+            <option value="">
+              Select
+              supplier...
+            </option>
+
+            {suppliers.map(
+              (item) => (
+                <option
+                  key={
+                    item.id
+                  }
+                  value={
+                    item.id
+                  }
+                >
+                  {
+                    item.name
+                  }
+                </option>
+              ),
+            )}
+          </select>
+        </FieldLabel>
+
+        <FieldLabel label="Supplier service">
+          <select
+            name="serviceId"
+            value={
+              serviceId
+            }
+            onChange={(
+              event,
+            ) => {
+              setServiceId(
+                event
+                  .target
+                  .value,
+              );
+
+              setRateId(
+                "",
+              );
+            }}
+            disabled={
+              !supplierId
+            }
+            className="input"
+          >
+            <option value="">
+              {supplierId
+                ? services.length >
+                  0
+                  ? "Select service..."
+                  : "No services configured for this supplier"
+                : "Select supplier first..."}
+            </option>
+
+            {services.map(
+              (
+                service,
+              ) => (
+                <option
+                  key={
+                    service.id
+                  }
+                  value={
+                    service.id
+                  }
+                >
+                  {serviceTypeLabel(
+                    service.type,
+                  )}{" "}
+                  -{" "}
+                  {
+                    service.name
+                  }
+                </option>
+              ),
+            )}
+          </select>
+
+          {supplierId &&
+            services.length ===
+              0 && (
+              <p className="mt-1.5 text-xs text-amber-700">
+                This
+                supplier has
+                no active
+                services.
+                Add a
+                service to
+                the supplier
+                before
+                attaching
+                an invoice
+                that should
+                be
+                classified
+                automatically.
+              </p>
+            )}
+
+          {selectedService && (
+            <p className="mt-1.5 text-xs text-slate-500">
+              Accounting
+              classification
+              will be based
+              on{" "}
+              <span className="font-semibold text-slate-700">
+                {serviceTypeLabel(
+                  selectedService.type,
+                )}
+              </span>
+              .
+            </p>
+          )}
+        </FieldLabel>
+
+        <FieldLabel label="Contracted rate">
+          <select
+            name="rateId"
+            value={
+              rateId
+            }
+            onChange={(
+              event,
+            ) =>
+              chooseRate(
+                event
+                  .target
+                  .value,
+              )
+            }
+            disabled={
+              !supplierId
+            }
+            className="input"
+          >
+            <option value="">
+              No rate /
+              manual cost
+            </option>
+
+            {rates.map(
+              (rate) => (
+                <option
+                  key={
+                    rate.id
+                  }
+                  value={
+                    rate.id
+                  }
+                >
+                  {
+                    rate.name
+                  }{" "}
+                  -{" "}
+                  {
+                    rate.currency
+                  }{" "}
+                  {
+                    rate.amount
+                  }{" "}
+                  /{" "}
+                  {rateUnitLabel(
+                    rate.unit,
+                  )}
+                </option>
+              ),
+            )}
+          </select>
+        </FieldLabel>
+
+        <FieldLabel label="Currency *">
+          <input
+            name="currency"
+            required
+            value={
+              currency
+            }
+            onChange={(
+              event,
+            ) =>
+              setCurrency(
+                event.target.value.toUpperCase(),
+              )
+            }
+            maxLength={
+              3
+            }
+            className="input"
+          />
+        </FieldLabel>
+      </div>
+
+      <div className="rounded-2xl border border-slate-200 bg-slate-50/70 p-5">
+        <div className="grid gap-4 md:grid-cols-[minmax(0,1fr)_minmax(0,2fr)]">
+          <FieldLabel label="Supplier document type *">
+            <select
+              name="documentType"
+              value={documentType}
+              onChange={(event) => {
+                const next = event.target.value as SupplierDocumentType;
+                setDocumentType(next);
+                if (next === "CREDIT_NOTE") {
+                  setCreditAmount(approvedAmount || "0");
+                }
+              }}
+              className="input"
+              required
+            >
+              {DOCUMENT_TYPE_OPTIONS.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
+          </FieldLabel>
+
+          <div className="rounded-xl bg-white p-4 text-sm text-slate-600 shadow-sm">
+            <p className="font-semibold text-slate-900">
+              {DOCUMENT_TYPE_OPTIONS.find((item) => item.value === documentType)?.label}
+            </p>
+            <p className="mt-1">
+              {DOCUMENT_TYPE_OPTIONS.find((item) => item.value === documentType)?.help}
+            </p>
+            <p className="mt-2 text-xs text-slate-500">
+              Epoch will assign the internal supplier-payable reference automatically after saving.
+            </p>
+          </div>
+        </div>
+      </div>
+
+      {/* ============================================== */}
+      {/* AMOUNTS */}
+      {/* ============================================== */}
+
+      <div className="grid gap-4 md:grid-cols-3">
+        <FieldLabel label="Contracted amount">
+          <input
+            name="contractedAmount"
+            type="number"
+            min="0"
+            step="0.01"
+            value={
+              contractedAmount
+            }
+            onChange={(
+              event,
+            ) =>
+              setContractedAmount(
+                event
+                  .target
+                  .value,
+              )
+            }
+            className="input"
+          />
+        </FieldLabel>
+
+        <FieldLabel
+          label={
+            documentType === "CREDIT_NOTE"
+              ? "Credit note amount *"
+              : "Approved amount *"
+          }
+        >
+          <input
+            name="approvedAmount"
+            type="number"
+            min="0.01"
+            step="0.01"
+            required
+            value={
+              approvedAmount
+            }
+            onChange={(event) => {
+              setApprovedAmount(event.target.value);
+              if (documentType === "CREDIT_NOTE") {
+                setCreditAmount(event.target.value || "0");
+              }
+            }}
+            className="input"
+          />
+        </FieldLabel>
+
+        <FieldLabel label="Credit / reduction">
+          <input
+            name="creditAmount"
+            type="number"
+            min="0"
+            step="0.01"
+            value={
+              documentType === "CREDIT_NOTE"
+                ? approvedAmount || "0"
+                : creditAmount
+            }
+            onChange={(event) =>
+              setCreditAmount(event.target.value)
+            }
+            disabled={documentType === "CREDIT_NOTE"}
+            className="input disabled:bg-slate-100"
+          />
+        </FieldLabel>
+      </div>
+
+      <div className="rounded-xl bg-slate-50 p-4">
+        <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+          Initial
+          balance after
+          credit
+        </p>
+
+        <p className="mt-1 text-2xl font-bold text-[#001F3F]">
+          {currency}{" "}
+          {balancePreview.toFixed(
+            2,
+          )}
+        </p>
+
+        <p className="mt-1 text-xs text-slate-500">
+          Payments
+          recorded later
+          will reduce
+          this balance
+          without
+          creating
+          another
+          supplier cost.
+        </p>
+      </div>
+
+      {/* ============================================== */}
+      {/* INVOICE DETAILS */}
+      {/* ============================================== */}
+
+      <div className="grid gap-4 md:grid-cols-2">
+        <FieldLabel label="Payable title *">
+          <input
+            name="title"
+            required
+            placeholder="e.g. Rome Hotel - May 2027 group"
+            className="input"
+          />
+        </FieldLabel>
+
+        <FieldLabel label="Supplier document number">
+          <input
+            name="supplierInvoiceNumber"
+            className="input"
+          />
+        </FieldLabel>
+
+        <FieldLabel label="Supplier reference">
+          <input
+            name="supplierReference"
+            className="input"
+          />
+        </FieldLabel>
+
+        <FieldLabel label="Document date">
+          <EuropeanDateInput
+            value={
+              invoiceDate
+            }
+            onChange={
+              setInvoiceDate
+            }
+          />
+        </FieldLabel>
+
+        <FieldLabel label="Due date">
+          <EuropeanDateInput
+            value={
+              dueDate
+            }
+            onChange={
+              setDueDate
+            }
+          />
+        </FieldLabel>
+      </div>
+
+      {/* ============================================== */}
+      {/* SUPPLIER INVOICE UPLOAD */}
+      {/* ============================================== */}
+
+      <div className="rounded-2xl border border-slate-200 bg-slate-50/70 p-5">
+        <div className="flex items-start gap-3">
+          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-white text-[#8B0000] shadow-sm">
+            <FileText className="h-5 w-5" />
+          </div>
+
+          <div>
+            <h3 className="font-bold text-slate-950">
+              Supplier
+              Document
+            </h3>
+
+            <p className="mt-1 text-sm text-slate-500">
+              Upload the
+              supplier
+              document once.
+              It will
+              automatically
+              appear in
+              Finance
+              Documents and
+              in the monthly
+              Accounting
+              package.
+            </p>
+          </div>
+        </div>
+
+        {!invoiceFile ? (
+          <label className="mt-4 flex cursor-pointer flex-col items-center justify-center rounded-xl border-2 border-dashed border-slate-300 bg-white px-5 py-7 text-center transition hover:border-[#001F3F]/40 hover:bg-slate-50">
+            <Upload className="h-6 w-6 text-slate-400" />
+
+            <span className="mt-2 text-sm font-semibold text-slate-700">
+              Select invoice
+              or supporting
+              document
+            </span>
+
+            <span className="mt-1 text-xs text-slate-500">
+              PDF, JPG, PNG
+              or WEBP -
+              Maximum 10 MB
+            </span>
+
+            <input
+              name="invoiceFile"
+              type="file"
+              accept=".pdf,.jpg,.jpeg,.png,.webp,application/pdf,image/jpeg,image/png,image/webp"
+              onChange={(
+                event,
+              ) =>
+                handleInvoiceFile(
+                  event
+                    .target
+                    .files?.[0] ??
+                    null,
+                )
+              }
+              className="sr-only"
+            />
+          </label>
+        ) : (
+          <div className="mt-4 flex items-center justify-between gap-4 rounded-xl border border-slate-200 bg-white p-4">
+            <div className="flex min-w-0 items-center gap-3">
+              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-red-50 text-[#8B0000]">
+                <FileText className="h-5 w-5" />
+              </div>
+
+              <div className="min-w-0">
+                <p className="truncate text-sm font-semibold text-slate-900">
+                  {
+                    invoiceFile.name
+                  }
+                </p>
+
+                <p className="mt-0.5 text-xs text-slate-500">
+                  {(
+                    invoiceFile.size /
+                    1024 /
+                    1024
+                  ).toFixed(
+                    2,
+                  )}{" "}
+                  MB
+                </p>
+              </div>
+            </div>
+
+            <button
+              type="button"
+              onClick={() =>
+                setInvoiceFile(
+                  null,
+                )
+              }
+              className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-slate-400 transition hover:bg-red-50 hover:text-[#8B0000]"
+              title="Remove file"
+            >
+              <X className="h-4 w-4" />
+            </button>
+          </div>
+        )}
+      </div>
+
+      {/* ============================================== */}
+      {/* TOUR / DEPARTURE / BOOKING */}
+      {/* ============================================== */}
+
+      <div className="grid gap-4 md:grid-cols-3">
+        <FieldLabel label="Tour">
+          <select
+            name="tourId"
+            value={
+              tourId
+            }
+            onChange={(
+              event,
+            ) => {
+              setTourId(
+                event
+                  .target
+                  .value,
+              );
+
+              setDepartureDateId(
+                "",
+              );
+            }}
+            className="input"
+          >
+            <option value="">
+              Not linked to
+              a tour
+            </option>
+
+            {tours.map(
+              (tour) => (
+                <option
+                  key={
+                    tour.id
+                  }
+                  value={
+                    tour.id
+                  }
+                >
+                  {
+                    tour.title
+                  }
+                </option>
+              ),
+            )}
+          </select>
+        </FieldLabel>
+
+        <FieldLabel label="Departure">
+          <select
+            name="departureDateId"
+            value={
+              departureDateId
+            }
+            onChange={(
+              event,
+            ) =>
+              setDepartureDateId(
+                event
+                  .target
+                  .value,
+              )
+            }
+            disabled={
+              !tourId
+            }
+            className="input"
+          >
+            <option value="">
+              Not linked to
+              a departure
+            </option>
+
+            {selectedTour?.departureDates.map(
+              (
+                departure,
+              ) => (
+                <option
+                  key={
+                    departure.id
+                  }
+                  value={
+                    departure.id
+                  }
+                >
+                  {europeanDateFromIso(
+                    departure.date,
+                  )}
+                </option>
+              ),
+            )}
+          </select>
+        </FieldLabel>
+
+        <FieldLabel label="Booking">
+          <select
+            name="bookingId"
+            value={
+              bookingId
+            }
+            onChange={(
+              event,
+            ) =>
+              setBookingId(
+                event
+                  .target
+                  .value,
+              )
+            }
+            className="input"
+          >
+            <option value="">
+              Not linked to
+              a booking
+            </option>
+
+            {bookings.map(
+              (
+                booking,
+              ) => (
+                <option
+                  key={
+                    booking.id
+                  }
+                  value={
+                    booking.id
+                  }
+                >
+                  {booking.bookingDisplayCode ||
+                    booking.bookingReference}{" "}
+                  -{" "}
+                  {
+                    booking.tourTitleSnapshot
+                  }
+                </option>
+              ),
+            )}
+          </select>
+        </FieldLabel>
+      </div>
+
+      {/* ============================================== */}
+      {/* NOTES */}
+      {/* ============================================== */}
+
+      <FieldLabel label="Description">
+        <textarea
+          name="description"
+          rows={3}
+          className="input py-2"
+        />
+      </FieldLabel>
+
+      <FieldLabel label="Internal notes">
+        <textarea
+          name="internalNotes"
+          rows={4}
+          className="input py-2"
+        />
+      </FieldLabel>
+
+      {/* ============================================== */}
+      {/* ACTIONS */}
+      {/* ============================================== */}
+
+      <div className="flex flex-wrap gap-3">
+        <button
+          type="submit"
+          disabled={
+            loading
+          }
+          className="rounded-xl bg-[#8B0000] px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-[#760000] disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          {loading
+            ? "Creating..."
+            : "Create Payable"}
+        </button>
+
+        <button
+          type="submit"
+          name="submitForApproval"
+          value="true"
+          disabled={
+            loading
+          }
+          className="rounded-xl bg-[#001F3F] px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-[#002d59] disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          {loading
+            ? "Creating..."
+            : "Create & Submit for Approval"}
+        </button>
+      </div>
+
+      <style jsx>{`
+        .input {
+          height: 44px;
+          width: 100%;
+          border-radius: 0.75rem;
+          border: 1px solid
+            rgb(226 232 240);
+          background: white;
+          padding-left: 0.75rem;
+          padding-right: 0.75rem;
+          font-size: 0.875rem;
+          outline: none;
+        }
+
+        textarea.input {
+          height: auto;
+        }
+
+        .input:focus {
+          border-color: #001f3f;
+        }
+
+        .input:disabled {
+          background: rgb(
+            248 250 252
+          );
+          color: rgb(
+            148 163 184
+          );
+        }
+      `}</style>
+    </form>
+  );
+}
+
+function EuropeanDateInput({
+  value,
+  onChange,
+}: {
+  value: string;
+  onChange: (
+    value: string,
+  ) => void;
+}) {
+  const pickerRef =
+    useRef<HTMLInputElement>(
+      null,
+    );
+
+  const isoValue =
+    parseEuropeanDate(
+      value,
+    ) || "";
+
+  function openCalendar() {
+    const picker =
+      pickerRef.current;
+
+    if (!picker) {
+      return;
+    }
+
+    if (
+      typeof picker.showPicker ===
+      "function"
+    ) {
+      picker.showPicker();
+      return;
+    }
+
+    picker.click();
+  }
+
+  return (
+    <div className="relative">
+      <input
+        type="text"
+        inputMode="numeric"
+        placeholder="DD/MM/YYYY"
+        value={value}
+        maxLength={10}
+        onChange={(
+          event,
+        ) =>
+          onChange(
+            formatDateTyping(
+              event
+                .target
+                .value,
+            ),
+          )
+        }
+        className="input pr-12"
+      />
+
+      <button
+        type="button"
+        onClick={
+          openCalendar
+        }
+        className="absolute right-1.5 top-1/2 inline-flex h-9 w-9 -translate-y-1/2 items-center justify-center rounded-lg text-slate-500 transition hover:bg-slate-100 hover:text-[#001F3F]"
+        title="Open calendar"
+        aria-label="Open calendar"
+      >
+        <CalendarDays className="h-4 w-4" />
+      </button>
+
+      <input
+        ref={
+          pickerRef
+        }
+        type="date"
+        tabIndex={-1}
+        value={
+          isoValue
+        }
+        onChange={(
+          event,
+        ) => {
+          const value =
+            event
+              .target
+              .value;
+
+          if (!value) {
+            onChange(
+              "",
+            );
+            return;
+          }
+
+          const [
+            year,
+            month,
+            day,
+          ] =
+            value.split(
+              "-",
+            );
+
+          onChange(
+            `${day}/${month}/${year}`,
+          );
+        }}
+        className="pointer-events-none absolute h-0 w-0 opacity-0"
+        aria-hidden="true"
+      />
+    </div>
+  );
+}
+
+function FieldLabel({
+  label,
+  children,
+}: {
+  label: string;
+  children:
+    React.ReactNode;
+}) {
+  return (
+    <label className="block">
+      <span className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-slate-500">
+        {label}
+      </span>
+
+      {children}
+    </label>
+  );
+}

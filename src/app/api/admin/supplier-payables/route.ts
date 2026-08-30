@@ -4,17 +4,14 @@ import {
   AccountingCategory,
   FinanceDocumentType,
   Prisma,
+  SupplierPayableDocumentType,
   SupplierServiceType,
 } from "@prisma/client";
-import {
-  mkdir,
-  unlink,
-  writeFile,
-} from "fs/promises";
 import path from "path";
 
 import { authOptions } from "@/lib/authOptions";
 import { db } from "@/lib/db";
+import { deleteFinanceFile, saveFinanceFile } from "@/lib/storage/finansFileStorage";
 
 export const runtime = "nodejs";
 
@@ -229,10 +226,28 @@ function accountingSubcategoryForService(
   }
 }
 
+function createInternalReference() {
+  const year =
+    new Date().getUTCFullYear();
+
+  const stamp =
+    Date.now()
+      .toString(36)
+      .toUpperCase();
+
+  const random =
+    crypto.randomUUID()
+      .replaceAll("-", "")
+      .slice(0, 6)
+      .toUpperCase();
+
+  return `SP-${year}-${stamp}-${random}`;
+}
+
 export async function POST(
   request: Request,
 ) {
-  let absoluteUploadedFilePath:
+  let uploadedStoragePath:
     | string
     | null = null;
 
@@ -299,6 +314,30 @@ export async function POST(
       )?.toUpperCase() ||
       "EUR";
 
+    const documentTypeText =
+      stringValue(
+        form.get(
+          "documentType",
+        ),
+      ) ||
+      SupplierPayableDocumentType.FINAL_INVOICE;
+
+    if (
+      !Object.values(
+        SupplierPayableDocumentType,
+      ).includes(
+        documentTypeText as SupplierPayableDocumentType,
+      )
+    ) {
+      return NextResponse.json(
+        { error: "Invalid supplier document type." },
+        { status: 400 },
+      );
+    }
+
+    const documentType =
+      documentTypeText as SupplierPayableDocumentType;
+
     if (
       !supplierId ||
       !title
@@ -348,13 +387,21 @@ export async function POST(
         ),
       );
 
-    const creditAmount =
+    let creditAmount =
       decimalValue(
         form.get(
           "creditAmount",
         ),
       ) ??
       new Prisma.Decimal(0);
+
+    if (
+      documentType ===
+      SupplierPayableDocumentType.CREDIT_NOTE
+    ) {
+      creditAmount =
+        approvedAmount;
+    }
 
     if (
       creditAmount.gt(
@@ -624,6 +671,13 @@ export async function POST(
         ),
       );
 
+    const agencyGroupName =
+      stringValue(
+        form.get(
+          "agencyGroupName",
+        ),
+      );
+
     const internalNotes =
       stringValue(
         form.get(
@@ -759,13 +813,34 @@ export async function POST(
       accountingDate.getUTCMonth() +
       1;
 
-    const accountingSubcategory =
+    const baseAccountingSubcategory =
       accountingSubcategoryForService(
         service?.type ?? null,
       );
 
+    const accountingSubcategory =
+      documentType === SupplierPayableDocumentType.PROFORMA
+        ? `Supplier Proforma / ${baseAccountingSubcategory}`
+        : documentType === SupplierPayableDocumentType.DEPOSIT_INVOICE
+          ? `Supplier Deposit Invoice / ${baseAccountingSubcategory}`
+          : documentType === SupplierPayableDocumentType.CREDIT_NOTE
+            ? `Supplier Credit Note / ${baseAccountingSubcategory}`
+            : baseAccountingSubcategory;
+
+    const financeDocumentType =
+      documentType === SupplierPayableDocumentType.CREDIT_NOTE
+        ? FinanceDocumentType.SUPPLIER_CREDIT_NOTE
+        : documentType === SupplierPayableDocumentType.PROFORMA
+          ? FinanceDocumentType.OTHER
+          : FinanceDocumentType.SUPPLIER_INVOICE;
+
+    const accountingCategory =
+      documentType === SupplierPayableDocumentType.PROFORMA
+        ? AccountingCategory.OTHER_DOCUMENTS
+        : AccountingCategory.EXPENSES_PURCHASES;
+
     // ========================================================
-    // STORE FILE LOCALLY
+    // STORE FILE (VERCEL BLOB IN PRODUCTION)
     // ========================================================
 
     let originalFileName:
@@ -781,73 +856,31 @@ export async function POST(
       | null = null;
 
     if (file) {
-      originalFileName =
-        file.name ||
-        "supplier-invoice";
+      const savedFile =
+        await saveFinanceFile({
+          file,
+          year:
+            accountingYear,
+          month:
+            accountingMonth,
+          safeFileName:
+            sanitizeFileName(
+              file.name ||
+                "supplier-invoice",
+            ),
+        });
 
-      const safeOriginalName =
-        sanitizeFileName(
-          originalFileName,
-        );
+      originalFileName =
+        savedFile.originalFileName;
 
       storedFileName =
-        `${Date.now()}-${crypto.randomUUID()}-${safeOriginalName}`;
-
-      const monthFolder =
-        String(
-          accountingMonth,
-        ).padStart(
-          2,
-          "0",
-        );
-
-      /*
-       * Use exactly the same physical
-       * accounting storage family as
-       * manual Accounting uploads.
-       */
-      const relativeFolder =
-        path.join(
-          "uploads",
-          "accounting",
-          String(
-            accountingYear,
-          ),
-          monthFolder,
-        );
-
-      const absoluteFolder =
-        path.join(
-          process.cwd(),
-          "public",
-          relativeFolder,
-        );
-
-      await mkdir(
-        absoluteFolder,
-        {
-          recursive: true,
-        },
-      );
-
-      absoluteUploadedFilePath =
-        path.join(
-          absoluteFolder,
-          storedFileName,
-        );
-
-      const bytes =
-        await file.arrayBuffer();
-
-      await writeFile(
-        absoluteUploadedFilePath,
-        Buffer.from(bytes),
-      );
+        savedFile.storedFileName;
 
       storagePath =
-        `/${relativeFolder
-          .split(path.sep)
-          .join("/")}/${storedFileName}`;
+        savedFile.storagePath;
+
+      uploadedStoragePath =
+        savedFile.storagePath;
     }
 
     // ========================================================
@@ -877,8 +910,14 @@ export async function POST(
                 createdById:
                   session.user.id,
 
+                internalReference:
+                  createInternalReference(),
+
+                documentType,
+
                 title,
                 description,
+                agencyGroupName,
 
                 supplierInvoiceNumber,
                 supplierReference,
@@ -981,12 +1020,12 @@ export async function POST(
               await tx.financeDocument.create({
                 data: {
                   type:
-                    FinanceDocumentType.SUPPLIER_INVOICE,
+                    financeDocumentType,
 
                   title:
                     supplierInvoiceNumber
-                      ? `Supplier Invoice ${supplierInvoiceNumber} - ${title}`
-                      : `Supplier Invoice - ${title}`,
+                      ? `${documentType.replaceAll("_", " ")} ${supplierInvoiceNumber} - ${title}`
+                      : `${documentType.replaceAll("_", " ")} - ${title}`,
 
                   description,
 
@@ -1011,8 +1050,7 @@ export async function POST(
                     supplierInvoiceNumber ??
                     supplierReference,
 
-                  accountingCategory:
-                    AccountingCategory.EXPENSES_PURCHASES,
+                  accountingCategory,
 
                   accountingSubcategory,
 
@@ -1053,7 +1091,7 @@ export async function POST(
      * the created FinanceDocument, so
      * prevent catch cleanup.
      */
-    absoluteUploadedFilePath =
+    uploadedStoragePath =
       null;
 
     return NextResponse.json(
@@ -1096,11 +1134,11 @@ export async function POST(
      * remove the orphaned file.
      */
     if (
-      absoluteUploadedFilePath
+      uploadedStoragePath
     ) {
       try {
-        await unlink(
-          absoluteUploadedFilePath,
+        await deleteFinanceFile(
+          uploadedStoragePath,
         );
       } catch (
         cleanupError
@@ -1130,3 +1168,4 @@ export async function POST(
     );
   }
 }
+

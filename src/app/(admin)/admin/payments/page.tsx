@@ -91,7 +91,14 @@ export default async function AdminPaymentsPage() {
             customerName: true,
             agentNameSnapshot: true,
             agencyNameSnapshot: true,
+            groupName: true,
             currency: true,
+          },
+        },
+        tour: {
+          select: {
+            id: true,
+            title: true,
           },
         },
         allocations: {
@@ -244,13 +251,21 @@ export default async function AdminPaymentsPage() {
               ) : (
                 payments.map((payment) => {
                   const bookingRef =
-                    payment.booking.bookingDisplayCode ||
-                    payment.booking.bookingReference;
+                    payment.booking?.bookingDisplayCode ||
+                    payment.booking?.bookingReference ||
+                    "No booking";
 
                   const party =
-                    payment.booking.agencyNameSnapshot ||
-                    payment.booking.agentNameSnapshot ||
-                    payment.booking.customerName ||
+                    payment.agencyGroupName ||
+                    payment.booking?.agencyNameSnapshot ||
+                    payment.booking?.agentNameSnapshot ||
+                    payment.booking?.groupName ||
+                    payment.booking?.customerName ||
+                    "-";
+
+                  const tourTitle =
+                    payment.booking?.tourTitleSnapshot ||
+                    payment.tour?.title ||
                     "-";
 
                   const allocated = payment.allocations.reduce(
@@ -280,7 +295,7 @@ export default async function AdminPaymentsPage() {
                         </div>
 
                         <div className="mt-1 max-w-56 truncate text-xs text-slate-500">
-                          {payment.booking.tourTitleSnapshot}
+                          {tourTitle}
                         </div>
                       </td>
 
@@ -326,10 +341,10 @@ export default async function AdminPaymentsPage() {
 
                       <td className="px-4 py-3 text-right">
                         <Link
-                          href={`/admin/bookings/${payment.booking.id}`}
+                          href={`/admin/payments/${payment.id}`}
                           className="font-semibold text-blue-700 hover:underline"
                         >
-                          Open Booking
+                          Open Payment
                         </Link>
                       </td>
                     </tr>

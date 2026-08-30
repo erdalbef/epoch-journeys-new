@@ -951,7 +951,7 @@ export default async function SupplierPayablesPage({
                 </th>
 
                 <th className="px-5 py-3">
-                  Invoice
+                  Document
                 </th>
 
                 <th className="px-5 py-3">
@@ -1015,9 +1015,18 @@ export default async function SupplierPayablesPage({
                     </td>
 
                     <td className="px-5 py-4 text-slate-600">
-                      {item.supplierInvoiceNumber ||
-                        item.supplierReference ||
-                        "—"}
+                      <p className="font-medium text-slate-800">
+                        {item.documentType
+                          .replaceAll("_", " ")
+                          .toLowerCase()
+                          .replace(/\b\w/g, (value) => value.toUpperCase())}
+                      </p>
+                      <p className="mt-1 text-xs text-slate-500">
+                        {item.supplierInvoiceNumber || item.supplierReference || "—"}
+                      </p>
+                      <p className="mt-1 font-mono text-[11px] text-slate-400">
+                        {item.internalReference || "—"}
+                      </p>
                     </td>
 
                     <td className="px-5 py-4 text-slate-600">

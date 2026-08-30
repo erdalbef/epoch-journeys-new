@@ -234,7 +234,9 @@ export async function POST(request: Request, context: RouteContext) {
       );
 
       const effectiveTotal =
-        totalScheduledAmount > 0 ? totalScheduledAmount : payment.booking.totalPrice;
+        totalScheduledAmount > 0
+        ? totalScheduledAmount
+        : payment.booking?.totalPrice ?? payment.amount;
 
       const amountDue = Math.max(effectiveTotal - totalPaidFromSchedules, 0);
 

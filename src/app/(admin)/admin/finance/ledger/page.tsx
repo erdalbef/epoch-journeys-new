@@ -224,6 +224,56 @@ export default async function FinanceLedgerPage({
             },
           },
         },
+        {
+          supplierPayablePayment: {
+            payable: {
+              agencyGroupName: {
+                contains: q,
+                mode: Prisma.QueryMode.insensitive,
+              },
+            },
+          },
+        },
+        {
+          supplierPayablePayment: {
+            payable: {
+              title: {
+                contains: q,
+                mode: Prisma.QueryMode.insensitive,
+              },
+            },
+          },
+        },
+        {
+          supplierPayablePayment: {
+            payable: {
+              internalReference: {
+                contains: q,
+                mode: Prisma.QueryMode.insensitive,
+              },
+            },
+          },
+        },
+        {
+          supplierPayablePayment: {
+            payable: {
+              supplierInvoiceNumber: {
+                contains: q,
+                mode: Prisma.QueryMode.insensitive,
+              },
+            },
+          },
+        },
+        {
+          supplierPayablePayment: {
+            payable: {
+              supplierReference: {
+                contains: q,
+                mode: Prisma.QueryMode.insensitive,
+              },
+            },
+          },
+        },
       ]
     : [];
 
@@ -316,6 +366,7 @@ export default async function FinanceLedgerPage({
                   id: true,
                   title: true,
                   supplierNameSnapshot: true,
+                  agencyGroupName: true,
                   booking: {
                     select: {
                       id: true,
@@ -564,7 +615,7 @@ export default async function FinanceLedgerPage({
             <input
               name="q"
               defaultValue={q}
-              placeholder="Reference, booking, tour, customer, supplier..."
+              placeholder="Supplier, agency/group, tour, booking, invoice or reference..."
               className="w-full rounded-xl border px-4 py-2.5 text-sm outline-none transition focus:border-[#8B0000]"
             />
           </div>
@@ -727,6 +778,7 @@ export default async function FinanceLedgerPage({
 
                 const party =
                   supplierName ||
+                  transaction.supplierPayablePayment?.payable?.agencyGroupName ||
                   booking?.agencyNameSnapshot ||
                   booking?.customerName ||
                   booking?.groupName ||

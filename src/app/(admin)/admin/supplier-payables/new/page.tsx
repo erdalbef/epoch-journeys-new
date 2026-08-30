@@ -73,8 +73,8 @@ export default async function NewSupplierPayablePage() {
           Create Supplier Payable
         </h1>
         <p className="mt-2 text-sm text-slate-500">
-          Record the supplier liability first. Payment is recorded only after
-          the payable is approved.
+          Record a supplier proforma, deposit invoice, final invoice or credit note.
+          Epoch assigns the internal payable reference automatically.
         </p>
       </div>
 

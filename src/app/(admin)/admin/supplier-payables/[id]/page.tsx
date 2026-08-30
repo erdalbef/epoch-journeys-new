@@ -89,13 +89,19 @@ export default async function SupplierPayableDetailPage({ params }: Props) {
         <div className="flex flex-col gap-5 lg:flex-row lg:items-start lg:justify-between">
           <div>
             <p className="text-xs font-semibold uppercase tracking-[0.16em] text-red-200">
-              Supplier payable
+              {payable.documentType
+                .replaceAll("_", " ")
+                .toLowerCase()
+                .replace(/\b\w/g, (value) => value.toUpperCase())}
             </p>
             <h1 className="mt-2 text-3xl font-bold">{payable.title}</h1>
             <p className="mt-2 text-sm text-slate-300">
               {payable.supplierNameSnapshot}
               {payable.supplierInvoiceNumber
-                ? ` · Invoice ${payable.supplierInvoiceNumber}`
+                ? ` · ${payable.supplierInvoiceNumber}`
+                : ""}
+              {payable.internalReference
+                ? ` · ${payable.internalReference}`
                 : ""}
             </p>
           </div>
@@ -159,9 +165,18 @@ export default async function SupplierPayableDetailPage({ params }: Props) {
                     : "—"
                 }
               />
-              <Row label="Invoice number" value={payable.supplierInvoiceNumber || "—"} />
+              <Row
+                label="Document type"
+                value={payable.documentType
+                  .replaceAll("_", " ")
+                  .toLowerCase()
+                  .replace(/\b\w/g, (value) => value.toUpperCase())}
+              />
+              <Row label="Agency / Parish / Group" value={payable.agencyGroupName || "—"} />
+              <Row label="Epoch internal reference" value={payable.internalReference || "—"} />
+              <Row label="Supplier document number" value={payable.supplierInvoiceNumber || "—"} />
               <Row label="Supplier reference" value={payable.supplierReference || "—"} />
-              <Row label="Invoice date" value={date(payable.invoiceDate)} />
+              <Row label="Document date" value={date(payable.invoiceDate)} />
               <Row label="Due date" value={date(payable.dueDate)} />
               <Row
                 label="Tour"
@@ -222,7 +237,7 @@ export default async function SupplierPayableDetailPage({ params }: Props) {
                   rel="noreferrer"
                   className="text-sm font-semibold text-[#8B0000] hover:underline"
                 >
-                  Open supplier document
+                  View Document
                 </a>
               </div>
             )}

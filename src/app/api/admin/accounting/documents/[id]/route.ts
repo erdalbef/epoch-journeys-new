@@ -5,10 +5,9 @@ import {
   AccountingPeriodStatus,
   FinanceDocumentType,
 } from "@prisma/client";
-import { unlink } from "fs/promises";
-import path from "path";
 
 import { db } from "@/lib/db";
+import { deleteFinanceFile } from "@/lib/storage/finansFileStorage";
 import { authOptions } from "@/lib/authOptions";
 
 export const runtime = "nodejs";
@@ -617,65 +616,19 @@ export async function DELETE(
     });
 
     /*
-     * Delete physical files only from
-     * the accounting upload directory.
+     * Remove the physical file from its configured
+     * storage provider. Supports legacy local files
+     * and Vercel Blob URLs.
      */
-
-    if (
-      document.storagePath.startsWith(
-        "/uploads/accounting/"
-      )
-    ) {
-      const relativePath =
-        document.storagePath.replace(
-          /^\/+/,
-          ""
-        );
-
-      const absolutePath =
-        path.resolve(
-          process.cwd(),
-          "public",
-          relativePath
-        );
-
-      const accountingRoot =
-        path.resolve(
-          process.cwd(),
-          "public",
-          "uploads",
-          "accounting"
-        );
-
-      const relativeToRoot =
-        path.relative(
-          accountingRoot,
-          absolutePath
-        );
-
-      const isInsideAccountingRoot =
-        relativeToRoot !== "" &&
-        !relativeToRoot.startsWith(
-          ".."
-        ) &&
-        !path.isAbsolute(
-          relativeToRoot
-        );
-
-      if (
-        isInsideAccountingRoot
-      ) {
-        try {
-          await unlink(
-            absolutePath
-          );
-        } catch (fileError) {
-          console.warn(
-            "Unable to remove accounting file:",
-            fileError
-          );
-        }
-      }
+    try {
+      await deleteFinanceFile(
+        document.storagePath,
+      );
+    } catch (fileError) {
+      console.warn(
+        "Unable to remove accounting file:",
+        fileError,
+      );
     }
 
     return NextResponse.json({

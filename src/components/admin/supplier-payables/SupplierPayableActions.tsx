@@ -244,19 +244,35 @@ export default function SupplierPayableActions({
           },
         );
 
-      const data =
-        (await response.json()) as {
-          error?: string;
-        };
+      const responseText = await response.text();
 
-      if (
-        !response.ok
-      ) {
+      let data: { error?: string } = {};
+
+      if (responseText.trim()) {
+        try {
+          data = JSON.parse(responseText) as { error?: string };
+        } catch {
+          // Some Next.js/Vercel responses can be empty or non-JSON after
+          // a successful mutation/revalidation. Do not let JSON parsing
+          // hide the real HTTP result from the user.
+        }
+      }
+
+      if (!response.ok) {
         throw new Error(
-          data.error ||
-            "Update failed.",
+          data.error || `Update failed (${response.status}).`,
         );
       }
+
+      toast.success(
+        action === "submit"
+          ? "Payable submitted for approval."
+          : action === "approve"
+            ? "Payable approved."
+            : action === "reject"
+              ? "Payable rejected."
+              : "Payable cancelled.",
+      );
 
       router.refresh();
     } catch (error) {
@@ -264,6 +280,54 @@ export default function SupplierPayableActions({
         error instanceof Error
           ? error.message
           : "Update failed.",
+      );
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function deleteCancelledPayable() {
+    const confirmed = window.confirm(
+      "Permanently delete this cancelled payable and all of its related supplier payments, ledger transactions and finance documents? This cannot be undone.",
+    );
+
+    if (!confirmed) {
+      return;
+    }
+
+    setLoading(true);
+
+    try {
+      const response = await fetch(
+        `/api/admin/supplier-payables/${payableId}`,
+        { method: "DELETE" },
+      );
+
+      const responseText = await response.text();
+      let data: { error?: string } = {};
+
+      if (responseText.trim()) {
+        try {
+          data = JSON.parse(responseText) as { error?: string };
+        } catch {
+          // Preserve the actual HTTP result if the response body is empty/non-JSON.
+        }
+      }
+
+      if (!response.ok) {
+        throw new Error(
+          data.error || `Delete failed (${response.status}).`,
+        );
+      }
+
+      toast.success("Cancelled supplier payable permanently deleted.");
+      router.push("/admin/supplier-payables");
+      router.refresh();
+    } catch (error) {
+      toast.error(
+        error instanceof Error
+          ? error.message
+          : "Delete failed.",
       );
     } finally {
       setLoading(false);
@@ -547,9 +611,7 @@ export default function SupplierPayableActions({
             "REJECTED",
           ].includes(
             approvalStatus,
-          ) &&
-            paymentStatus !==
-              "PAID" && (
+          ) && (
               <Button
                 disabled={
                   loading
@@ -564,6 +626,20 @@ export default function SupplierPayableActions({
               />
             )}
         </div>
+
+        {approvalStatus === "CANCELLED" && (
+          <div className="mt-5 border-t border-red-100 pt-5">
+            <p className="mb-3 text-sm text-red-700">
+              This payable is cancelled. If it was entered incorrectly, you can permanently remove it together with its related payment and finance records.
+            </p>
+            <Button
+              disabled={loading}
+              onClick={deleteCancelledPayable}
+              label="Delete Cancelled Payable"
+              danger
+            />
+          </div>
+        )}
       </section>
 
       {approvalStatus ===
@@ -686,8 +762,7 @@ export default function SupplierPayableActions({
                 >
                   {[
                     "BANK_TRANSFER",
-                    "STRIPE",
-                    "PAYPAL",
+                    "COMPANY_CREDIT_CARD",
                     "CASH",
                     "OTHER",
                   ].map(
@@ -908,18 +983,19 @@ export default function SupplierPayableActions({
                     </p>
                   </div>
 
-                  <button
-                    type="button"
-                    onClick={() =>
-                      setPaymentProof(
-                        null,
-                      )
-                    }
-                    className="inline-flex h-9 w-9 items-center justify-center rounded-lg text-slate-400 hover:bg-red-50 hover:text-[#8B0000]"
-                    aria-label="Remove payment proof"
-                  >
-                    <X className="h-4 w-4" />
-                  </button>
+                  <div className="flex items-center gap-2">
+                    <button type="button" onClick={() => {
+                      const url = URL.createObjectURL(paymentProof);
+                      window.open(url, "_blank", "noopener,noreferrer");
+                      window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
+                    }} className="inline-flex h-9 items-center rounded-lg border border-slate-200 px-3 text-sm font-semibold text-[#001F3F] hover:bg-slate-50">
+                      View Document
+                    </button>
+                    <button type="button" onClick={() => setPaymentProof(null)}
+                      className="inline-flex h-9 w-9 items-center justify-center rounded-lg text-slate-400 hover:bg-red-50 hover:text-[#8B0000]" aria-label="Remove payment proof">
+                      <X className="h-4 w-4" />
+                    </button>
+                  </div>
                 </div>
               )}
             </div>

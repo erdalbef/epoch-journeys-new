@@ -5,24 +5,7 @@ import { Role } from "@prisma/client";
 
 import { authOptions } from "@/lib/authOptions";
 import { db } from "@/lib/db";
-
-function formatCurrency(value: number, currency: string) {
-  return new Intl.NumberFormat("en-US", {
-    style: "currency",
-    currency,
-    maximumFractionDigits: 2,
-  }).format(value);
-}
-
-function formatDate(value: Date | null) {
-  if (!value) return "Date TBC";
-
-  return value.toLocaleDateString("en-GB", {
-    day: "2-digit",
-    month: "short",
-    year: "numeric",
-  });
-}
+import CustomerPaymentForm from "@/components/admin/payments/CustomerPaymentForm";
 
 export default async function AdminNewPaymentPage() {
   const session = await getServerSession(authOptions);
@@ -31,39 +14,50 @@ export default async function AdminNewPaymentPage() {
     redirect("/admin-login");
   }
 
-  const bookings = await db.booking.findMany({
-    where: {
-      amountDue: {
-        gt: 0,
+  const [tours, bookings, bankAccounts] = await Promise.all([
+    db.tour.findMany({
+      orderBy: { title: "asc" },
+      select: {
+        id: true,
+        title: true,
+        tourCode: true,
+        currency: true,
       },
-      status: {
-        not: "CANCELLED",
+    }),
+
+    db.booking.findMany({
+      where: {
+        status: { not: "CANCELLED" },
+        amountDue: { gt: 0 },
       },
-    },
-    orderBy: [
-      {
-        paymentDueDate: "asc",
+      orderBy: [{ paymentDueDate: "asc" }, { createdAt: "desc" }],
+      select: {
+        id: true,
+        bookingReference: true,
+        bookingDisplayCode: true,
+        tourId: true,
+        tourTitleSnapshot: true,
+        agencyNameSnapshot: true,
+        agentNameSnapshot: true,
+        groupName: true,
+        customerName: true,
+        currency: true,
+        totalPrice: true,
+        amountPaid: true,
+        amountDue: true,
       },
-      {
-        createdAt: "desc",
+    }),
+
+    db.bankAccount.findMany({
+      where: { isActive: true },
+      orderBy: [{ currency: "asc" }, { name: "asc" }],
+      select: {
+        id: true,
+        name: true,
+        currency: true,
       },
-    ],
-    select: {
-      id: true,
-      bookingReference: true,
-      bookingDisplayCode: true,
-      tourTitleSnapshot: true,
-      agencyNameSnapshot: true,
-      agentNameSnapshot: true,
-      customerName: true,
-      totalPrice: true,
-      amountPaid: true,
-      amountDue: true,
-      currency: true,
-      paymentStatus: true,
-      paymentDueDate: true,
-    },
-  });
+    }),
+  ]);
 
   return (
     <div className="mx-auto max-w-6xl space-y-6 p-6">
@@ -77,9 +71,9 @@ export default async function AdminNewPaymentPage() {
             Record Customer Payment
           </h1>
 
-          <p className="mt-1 text-sm text-slate-500">
-            Select the booking that received the payment; the booking page will
-            open directly at its controlled payment-recording section.
+          <p className="mt-1 max-w-3xl text-sm text-slate-500">
+            Record customer income directly. Booking is optional; Tour /
+            Package and Agency / Parish / Group can be linked independently.
           </p>
         </div>
 
@@ -91,118 +85,11 @@ export default async function AdminNewPaymentPage() {
         </Link>
       </div>
 
-      <div className="rounded-2xl border bg-white shadow-sm">
-        <div className="border-b px-6 py-5">
-          <h2 className="font-semibold text-[#001F3F]">
-            Open Booking Balances
-          </h2>
-
-          <p className="mt-1 text-sm text-slate-500">
-            Only bookings with an outstanding customer balance are shown.
-          </p>
-        </div>
-
-        <div className="overflow-x-auto">
-          <table className="w-full min-w-[900px] text-sm">
-            <thead className="border-b bg-slate-50">
-              <tr>
-                <th className="px-4 py-3 text-left">Booking</th>
-                <th className="px-4 py-3 text-left">Partner / Customer</th>
-                <th className="px-4 py-3 text-left">Next Due</th>
-                <th className="px-4 py-3 text-right">Total</th>
-                <th className="px-4 py-3 text-right">Paid</th>
-                <th className="px-4 py-3 text-right">Outstanding</th>
-                <th className="px-4 py-3 text-left">Payment Status</th>
-                <th className="px-4 py-3 text-right">Action</th>
-              </tr>
-            </thead>
-
-            <tbody>
-              {bookings.length === 0 ? (
-                <tr>
-                  <td
-                    colSpan={8}
-                    className="px-4 py-8 text-center text-slate-500"
-                  >
-                    No bookings currently have an outstanding balance.
-                  </td>
-                </tr>
-              ) : (
-                bookings.map((booking) => {
-                  const bookingRef =
-                    booking.bookingDisplayCode ||
-                    booking.bookingReference;
-
-                  const party =
-                    booking.agencyNameSnapshot ||
-                    booking.agentNameSnapshot ||
-                    booking.customerName ||
-                    "-";
-
-                  return (
-                    <tr
-                      key={booking.id}
-                      className="border-b last:border-0"
-                    >
-                      <td className="px-4 py-3">
-                        <div className="font-semibold text-[#001F3F]">
-                          {bookingRef}
-                        </div>
-
-                        <div className="mt-1 max-w-64 truncate text-xs text-slate-500">
-                          {booking.tourTitleSnapshot}
-                        </div>
-                      </td>
-
-                      <td className="px-4 py-3">
-                        {party}
-                      </td>
-
-                      <td className="px-4 py-3">
-                        {formatDate(booking.paymentDueDate)}
-                      </td>
-
-                      <td className="px-4 py-3 text-right">
-                        {formatCurrency(
-                          booking.totalPrice,
-                          booking.currency,
-                        )}
-                      </td>
-
-                      <td className="px-4 py-3 text-right">
-                        {formatCurrency(
-                          booking.amountPaid,
-                          booking.currency,
-                        )}
-                      </td>
-
-                      <td className="px-4 py-3 text-right font-semibold">
-                        {formatCurrency(
-                          booking.amountDue,
-                          booking.currency,
-                        )}
-                      </td>
-
-                      <td className="px-4 py-3">
-                        {booking.paymentStatus.replaceAll("_", " ")}
-                      </td>
-
-                      <td className="px-4 py-3 text-right">
-                        <Link
-                          href={`/admin/bookings/${booking.id}#record-payment`}
-                          className="inline-flex rounded-lg bg-[#8B0000] px-3 py-2 text-xs font-semibold text-white hover:bg-[#6f0000]"
-                        >
-                          Record Payment
-                        </Link>
-                      </td>
-                    </tr>
-                  );
-                })
-              )}
-            </tbody>
-          </table>
-        </div>
-      </div>
+      <CustomerPaymentForm
+        tours={tours}
+        bookings={bookings}
+        bankAccounts={bankAccounts}
+      />
     </div>
   );
 }
