@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
-import { FinanceDocumentType, Role } from "@prisma/client";
+import { AccountingCategory, FinanceDocumentType, Role } from "@prisma/client";
 import { put } from "@vercel/blob";
 import path from "path";
 import crypto from "crypto";
@@ -99,6 +99,15 @@ function buildStorageFolder(type: FinanceDocumentType) {
     default:
       return "other";
   }
+}
+
+function accountingPeriodParts(value: Date | null) {
+  const source = value ?? new Date();
+
+  return {
+    year: source.getUTCFullYear(),
+    month: source.getUTCMonth() + 1,
+  };
 }
 
 async function validateLinkedRecords({
@@ -376,6 +385,34 @@ export async function POST(request: Request) {
     const type =
       typeRaw as FinanceDocumentType;
 
+    const accountingCategoryRaw = cleanString(
+      formData.get("accountingCategory"),
+    );
+
+    const allowedAccountingCategories = new Set<AccountingCategory>([
+      AccountingCategory.OTHER_DOCUMENTS,
+      AccountingCategory.TRIP_GROUP_DOCUMENTATION,
+    ]);
+
+    if (
+      !allowedAccountingCategories.has(
+        accountingCategoryRaw as AccountingCategory,
+      )
+    ) {
+      return NextResponse.json(
+        {
+          error:
+            "Accounting destination must be 07 - Other Documents or 08 - Trip / Group Documentation.",
+        },
+        {
+          status: 400,
+        },
+      );
+    }
+
+    const accountingCategory =
+      accountingCategoryRaw as AccountingCategory;
+
     const title = cleanString(
       formData.get("title"),
     );
@@ -605,6 +642,27 @@ export async function POST(request: Request) {
      * Store the Vercel Blob pathname rather
      * than a local filesystem path.
      */
+    const { year, month } =
+      accountingPeriodParts(documentDate);
+
+    const accountingPeriod =
+      await db.accountingPeriod.upsert({
+        where: {
+          year_month: {
+            year,
+            month,
+          },
+        },
+        update: {},
+        create: {
+          year,
+          month,
+        },
+        select: {
+          id: true,
+        },
+      });
+
     const document =
       await db.financeDocument.create({
         data: {
@@ -627,6 +685,15 @@ export async function POST(request: Request) {
           documentDate,
           referenceNumber,
           notes,
+
+          accountingCategory,
+          accountingPeriodId:
+            accountingPeriod.id,
+          accountingSubcategory:
+            accountingCategory ===
+            AccountingCategory.OTHER_DOCUMENTS
+              ? "Other Documents"
+              : "Trip / Group Documentation",
 
           expenseId,
           supplierPayableId,
@@ -669,6 +736,12 @@ export async function POST(request: Request) {
 
           referenceNumber:
             document.referenceNumber,
+
+          accountingCategory:
+            document.accountingCategory,
+
+          accountingPeriodId:
+            document.accountingPeriodId,
 
           bankAccountId:
             document.bankAccountId,

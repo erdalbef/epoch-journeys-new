@@ -420,6 +420,13 @@ export default function FinanceDocumentManager({
   );
 
   const [
+    accountingDestination,
+    setAccountingDestination,
+  ] = useState<
+    "OTHER_DOCUMENTS" | "TRIP_GROUP_DOCUMENTATION"
+  >("OTHER_DOCUMENTS");
+
+  const [
     description,
     setDescription,
   ] = useState("");
@@ -670,6 +677,11 @@ export default function FinanceDocumentManager({
     );
 
     formData.set(
+      "accountingCategory",
+      accountingDestination,
+    );
+
+    formData.set(
       "title",
       title.trim(),
     );
@@ -813,7 +825,7 @@ export default function FinanceDocumentManager({
       }
 
       toast.success(
-        "Finance document uploaded successfully.",
+        "Additional accounting document uploaded successfully.",
       );
 
       setTitle("");
@@ -912,16 +924,13 @@ export default function FinanceDocumentManager({
           </p>
 
           <h1 className="mt-1 text-3xl font-bold text-[#001F3F]">
-            Finance Documents
+            Additional Accounting Documents
           </h1>
 
           <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-500">
-            Securely store invoices,
-            receipts, payment proofs,
-            bank statements, refund
-            documentation and other
-            finance records in private
-            Vercel Blob storage.
+            Upload accounting-support documents that were not already collected
+            through Supplier Payables, Additional Expenses, Customer Payments,
+            or Bank Statements.
           </p>
         </div>
 
@@ -938,16 +947,22 @@ export default function FinanceDocumentManager({
       <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
         <div className="mb-5">
           <h2 className="text-lg font-bold text-[#001F3F]">
-            Upload Finance Document
+            Upload Additional Accounting Document
           </h2>
 
           <p className="mt-1 text-sm text-slate-500">
-            Files are stored securely
-            in private Vercel Blob
-            storage and may be linked
-            to the appropriate finance
-            or operational record.
+            Use this page mainly for contracts, agreements, accountant-requested
+            documents, official notices, and trip/group supporting documents
+            that were not uploaded through another finance workflow.
           </p>
+
+          <div className="mt-4 rounded-xl border border-blue-100 bg-blue-50 p-4 text-sm leading-6 text-blue-900">
+            <strong>Do not upload duplicates.</strong>{" "}
+            Supplier invoices belong in Supplier Payables, additional-expense
+            receipts in Additional Expenses, customer payment proofs in Customer
+            Payments, and full bank statements in Bank Statements. Use this form
+            only when an additional accounting document still needs to be filed.
+          </div>
         </div>
 
         <form
@@ -955,6 +970,33 @@ export default function FinanceDocumentManager({
           className="space-y-6"
         >
           <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-4">
+            <Field label="Accounting Destination *">
+              <select
+                value={accountingDestination}
+                onChange={(event) =>
+                  setAccountingDestination(
+                    event.target.value as
+                      | "OTHER_DOCUMENTS"
+                      | "TRIP_GROUP_DOCUMENTATION",
+                  )
+                }
+                className={inputClass}
+                required
+              >
+                <option value="OTHER_DOCUMENTS">
+                  07 - Other Documents
+                </option>
+                <option value="TRIP_GROUP_DOCUMENTATION">
+                  08 - Trip / Group Documentation
+                </option>
+              </select>
+
+              <p className="mt-1.5 text-xs text-slate-500">
+                Select where this manually uploaded document should appear in
+                the monthly accounting package.
+              </p>
+            </Field>
+
             <Field label="Document Type *">
               <select
                 value={
@@ -1002,7 +1044,7 @@ export default function FinanceDocumentManager({
                   )
                 }
                 required
-                placeholder="Example: July bank statement"
+                placeholder="Example: Hotel contract / Final group voucher"
                 className={
                   inputClass
                 }
@@ -1668,7 +1710,7 @@ export default function FinanceDocumentManager({
         <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
           <div>
             <h2 className="text-lg font-bold text-[#001F3F]">
-              Stored Documents
+              Stored Accounting Documents
             </h2>
 
             <p className="mt-1 text-sm text-slate-500">

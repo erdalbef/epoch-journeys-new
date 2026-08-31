@@ -67,12 +67,21 @@ function addToSummary(
   map.set(key, existing);
 }
 
-export default async function AdminFinanceDashboardPage() {
+export default async function AdminFinanceDashboardPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ view?: string; agency?: string; tour?: string }>;
+}) {
   const session = await getServerSession(authOptions);
 
   if (!session?.user || session.user.role !== Role.ADMIN) {
     redirect("/admin-login");
   }
+
+  const params = await searchParams;
+  const requestedView = params.view === "agency" || params.view === "tour" ? params.view : "overall";
+  const selectedAgency = (params.agency || "").trim();
+  const selectedTour = (params.tour || "").trim();
 
   const [financeEntries, bookings, bankAccounts, supplierPayables, customerPayments] =
     await Promise.all([
@@ -377,15 +386,20 @@ export default async function AdminFinanceDashboardPage() {
         0,
       );
 
-      const recognizedIncome =
-        scheduledTotal > 0
-          ? Math.max(scheduledTotal, actualPaid)
-          : actualPaid;
+      /*
+       * Expected income is the confirmed booking sales value.
+       * Payment schedules determine collection timing, not the total sale.
+       */
+      const recognizedIncome = Math.max(booking.totalPrice, 0);
 
-      const pendingReceivable =
-        scheduledTotal > 0
-          ? Math.max(scheduledTotal - schedulePaid, 0)
-          : 0;
+      /*
+       * Outstanding receivable is what remains to be collected against
+       * the confirmed booking value after actual customer receipts.
+       */
+      const pendingReceivable = Math.max(
+        recognizedIncome - actualPaid,
+        0,
+      );
 
       const nextOpenSchedule = booking.paymentSchedules.find(
         (schedule) =>
@@ -791,6 +805,116 @@ export default async function AdminFinanceDashboardPage() {
     );
   }
 
+  type FinancialPosition = {
+    key: string;
+    label: string;
+    expectedIncome: number;
+    paidIncome: number;
+    pendingIncome: number;
+    expectedExpenses: number;
+    paidExpenses: number;
+    pendingExpenses: number;
+  };
+
+  const ensurePosition = (map: Map<string, FinancialPosition>, label: string) => {
+    const key = label || "Unassigned";
+    const existing = map.get(key);
+    if (existing) return existing;
+    const created: FinancialPosition = {
+      key,
+      label: key,
+      expectedIncome: 0,
+      paidIncome: 0,
+      pendingIncome: 0,
+      expectedExpenses: 0,
+      paidExpenses: 0,
+      pendingExpenses: 0,
+    };
+    map.set(key, created);
+    return created;
+  };
+
+  const bookingAgencyLabel = (booking: (typeof automaticBookingFinance)[number]) =>
+    booking.agencyNameSnapshot || booking.agentNameSnapshot || booking.groupName || "Unassigned Agency / Parish / Group";
+  const bookingTourLabel = (booking: (typeof automaticBookingFinance)[number]) =>
+    booking.tourTitleSnapshot || "Unlinked Tour / Package";
+  const paymentAgencyLabel = (payment: (typeof customerPayments)[number]) =>
+    payment.agencyGroupName || payment.booking?.agencyNameSnapshot || payment.booking?.agentNameSnapshot || payment.booking?.groupName || "Unassigned Agency / Parish / Group";
+  const paymentTourLabel = (payment: (typeof customerPayments)[number]) =>
+    payment.tour?.title || payment.booking?.tourTitleSnapshot || "Unlinked Tour / Package";
+  const payableAgencyLabel = (payable: (typeof automaticSupplierFinance)[number]) =>
+    payable.agencyGroupName || payable.booking?.agencyNameSnapshot || payable.booking?.agentNameSnapshot || payable.booking?.groupName || "Unassigned Agency / Parish / Group";
+  const payableTourLabel = (payable: (typeof automaticSupplierFinance)[number]) =>
+    payable.tour ? (payable.tour.tourCode ? `${payable.tour.tourCode} — ${payable.tour.title}` : payable.tour.title) : payable.booking?.tourTitleSnapshot || "Unlinked Tour / Package";
+  const entryAgencyLabel = (entry: (typeof financeEntries)[number]) =>
+    entry.partnerCompanyName || entry.agentNameSnapshot || entry.groupName || entry.customPackageName || "Unassigned Agency / Parish / Group";
+  const entryTourLabel = (entry: (typeof financeEntries)[number]) =>
+    entry.tour ? (entry.tour.tourCode ? `${entry.tour.tourCode} — ${entry.tour.title}` : entry.tour.title) : entry.customPackageName || "Unlinked Tour / Package";
+
+  const agencyPositions = new Map<string, FinancialPosition>();
+  const tourPositions = new Map<string, FinancialPosition>();
+
+  for (const booking of automaticBookingFinance) {
+    for (const position of [ensurePosition(agencyPositions, bookingAgencyLabel(booking)), ensurePosition(tourPositions, bookingTourLabel(booking))]) {
+      position.expectedIncome += booking.recognizedIncome;
+      position.paidIncome += booking.actualPaid;
+      position.pendingIncome += booking.pendingReceivable;
+    }
+  }
+
+  for (const payment of customerPayments) {
+    if (payment.booking) continue;
+    const amount = payment.status === PaymentRecordStatus.RECEIVED ? payment.amount : payment.status === PaymentRecordStatus.REFUNDED ? -payment.amount : 0;
+    if (!amount) continue;
+    for (const position of [ensurePosition(agencyPositions, paymentAgencyLabel(payment)), ensurePosition(tourPositions, paymentTourLabel(payment))]) {
+      position.expectedIncome += amount;
+      position.paidIncome += amount;
+    }
+  }
+
+  for (const payable of automaticSupplierFinance) {
+    for (const position of [ensurePosition(agencyPositions, payableAgencyLabel(payable)), ensurePosition(tourPositions, payableTourLabel(payable))]) {
+      position.expectedExpenses += payable.recognizedExpense;
+      position.paidExpenses += payable.paidAmount;
+      position.pendingExpenses += payable.pendingPayable;
+    }
+  }
+
+  for (const entry of [...manualIncomeEntries, ...manualExpenseEntries]) {
+    const amount = getReportingAmount(entry);
+    const positions = [ensurePosition(agencyPositions, entryAgencyLabel(entry)), ensurePosition(tourPositions, entryTourLabel(entry))];
+    for (const position of positions) {
+      if (entry.direction === "INCOME") {
+        position.expectedIncome += amount;
+        if (entry.paymentStatus === ExpensePaymentStatus.PAID) position.paidIncome += amount;
+        if (entry.paymentStatus === ExpensePaymentStatus.PENDING) position.pendingIncome += amount;
+      } else {
+        position.expectedExpenses += amount;
+        if (entry.paymentStatus === ExpensePaymentStatus.PAID) position.paidExpenses += amount;
+        if (entry.paymentStatus === ExpensePaymentStatus.PENDING) position.pendingExpenses += amount;
+      }
+    }
+  }
+
+  const agencyPositionList = Array.from(agencyPositions.values()).sort((a, b) => a.label.localeCompare(b.label));
+  const tourPositionList = Array.from(tourPositions.values()).sort((a, b) => a.label.localeCompare(b.label));
+  const selectedPosition = requestedView === "agency" ? agencyPositions.get(selectedAgency) : requestedView === "tour" ? tourPositions.get(selectedTour) : undefined;
+  const selectedLabel = requestedView === "agency" ? selectedAgency || "All Agencies / Parishes / Groups" : requestedView === "tour" ? selectedTour || "All Tours / Packages" : "Overall Company";
+
+  const filteredCustomerPayments = requestedView === "overall" || !selectedPosition ? customerPayments : customerPayments.filter((p) => requestedView === "agency" ? paymentAgencyLabel(p) === selectedPosition.key : paymentTourLabel(p) === selectedPosition.key);
+  const filteredBookings = requestedView === "overall" || !selectedPosition ? automaticBookingFinance : automaticBookingFinance.filter((b) => requestedView === "agency" ? bookingAgencyLabel(b) === selectedPosition.key : bookingTourLabel(b) === selectedPosition.key);
+  const filteredPayables = requestedView === "overall" || !selectedPosition ? automaticSupplierFinance : automaticSupplierFinance.filter((p) => requestedView === "agency" ? payableAgencyLabel(p) === selectedPosition.key : payableTourLabel(p) === selectedPosition.key);
+  const filteredEntries = requestedView === "overall" || !selectedPosition ? financeEntries : financeEntries.filter((e) => requestedView === "agency" ? entryAgencyLabel(e) === selectedPosition.key : entryTourLabel(e) === selectedPosition.key);
+
+  const viewExpectedIncome = selectedPosition?.expectedIncome ?? totalIncome;
+  const viewPaidIncome = selectedPosition?.paidIncome ?? paidIncome;
+  const viewPendingIncome = selectedPosition?.pendingIncome ?? pendingIncome;
+  const viewExpectedExpenses = selectedPosition?.expectedExpenses ?? totalExpenses;
+  const viewPaidExpenses = selectedPosition?.paidExpenses ?? paidExpenses;
+  const viewPendingExpenses = selectedPosition?.pendingExpenses ?? pendingExpenses;
+  const viewExpectedNetProfit = viewExpectedIncome - viewExpectedExpenses;
+  const viewCashMovement = viewPaidIncome - viewPaidExpenses;
+
   const topAgency = getTopItem(agencyMap);
   const topTour = getTopItem(tourMap);
   const topGroup = getTopItem(groupMap);
@@ -800,11 +924,11 @@ export default async function AdminFinanceDashboardPage() {
       (a, b) => b.expenses - a.expenses,
     )[0];
 
-  const recentEntries =
-    financeEntries.slice(0, 8);
+  const recentEntries = filteredEntries.slice(0, requestedView === "overall" ? 8 : 50);
 
   const recentSupplierPayables =
-    [...automaticSupplierFinance]
+    filteredPayables
+      .filter((payable) => payable.pendingPayable > 0)
       .sort((a, b) => {
         const aDate =
           a.dueDate?.getTime() ??
@@ -829,10 +953,11 @@ export default async function AdminFinanceDashboardPage() {
       0,
     );
 
-  const recentCustomerPayments = customerPayments.slice(0, 8);
+  const recentCustomerPayments = filteredCustomerPayments.slice(0, requestedView === "overall" ? 8 : 50);
 
   const recentAutomaticBookings =
-    [...automaticBookingFinance]
+    filteredBookings
+      .filter((booking) => booking.pendingReceivable > 0)
       .sort((a, b) => {
         const aDate =
           a.nextDueDate?.getTime() ?? 0;
@@ -899,13 +1024,47 @@ export default async function AdminFinanceDashboardPage() {
         <strong>
           Automatic finance is active:
         </strong>{" "}
-        booking payment schedules feed Total Income and Pending
-        Receivables; received customer payments feed Paid Income;
-        approved supplier payables feed Total Expenses and Pending
-        Payables; supplier payments feed Paid Expenses. Matching
+        confirmed booking sales values feed Expected Income; received
+        customer payments feed Paid Income and reduce Pending Income;
+        approved supplier payables feed Expected Expenses and Pending
+        Expenses; supplier payments feed Paid Expenses. Matching
         manual booking/supplier expenses are excluded to prevent
         double counting, while standalone additional expenses remain
         active.
+      </div>
+
+      <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+        <div className="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
+          <div>
+            <h2 className="text-lg font-semibold text-[#001F3F]">Financial View</h2>
+            <p className="mt-1 text-sm text-slate-500">Review the whole company, an Agency / Parish / Group, or a Tour / Package.</p>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <Link href="/admin/finance" className={`rounded-xl border px-4 py-2 text-sm font-semibold ${requestedView === "overall" ? "border-[#001F3F] bg-[#001F3F] text-white" : "bg-white text-[#001F3F]"}`}>Overall Company</Link>
+            <Link href="/admin/finance?view=agency" className={`rounded-xl border px-4 py-2 text-sm font-semibold ${requestedView === "agency" ? "border-[#001F3F] bg-[#001F3F] text-white" : "bg-white text-[#001F3F]"}`}>Agency / Parish / Group</Link>
+            <Link href="/admin/finance?view=tour" className={`rounded-xl border px-4 py-2 text-sm font-semibold ${requestedView === "tour" ? "border-[#001F3F] bg-[#001F3F] text-white" : "bg-white text-[#001F3F]"}`}>Tour / Package</Link>
+          </div>
+        </div>
+        {requestedView === "agency" ? <form method="get" className="mt-5 grid gap-3 md:grid-cols-[1fr_auto]"><input type="hidden" name="view" value="agency"/><select name="agency" defaultValue={selectedAgency} className="rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm"><option value="">Select Agency / Parish / Group</option>{agencyPositionList.map((item) => <option key={item.key} value={item.key}>{item.label}</option>)}</select><button type="submit" className="rounded-xl bg-[#8B0000] px-5 py-2.5 text-sm font-semibold text-white">View Financial Position</button></form> : null}
+        {requestedView === "tour" ? <form method="get" className="mt-5 grid gap-3 md:grid-cols-[1fr_auto]"><input type="hidden" name="view" value="tour"/><select name="tour" defaultValue={selectedTour} className="rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm"><option value="">Select Tour / Package</option>{tourPositionList.map((item) => <option key={item.key} value={item.key}>{item.label}</option>)}</select><button type="submit" className="rounded-xl bg-[#8B0000] px-5 py-2.5 text-sm font-semibold text-white">View Financial Position</button></form> : null}
+        <div className="mt-4 rounded-xl bg-slate-50 px-4 py-3"><p className="text-xs font-medium uppercase tracking-wide text-slate-500">Current View</p><p className="mt-1 font-semibold text-[#001F3F]">{selectedLabel}</p>{requestedView !== "overall" && !selectedPosition ? <p className="mt-1 text-xs text-amber-700">Select a record above to display its individual financial position.</p> : null}</div>
+      </section>
+
+      <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+        <div className="flex flex-col gap-2 lg:flex-row lg:items-center lg:justify-between">
+          <div>
+            <h2 className="text-lg font-semibold text-[#001F3F]">
+              Real Financial Position — {selectedLabel}
+            </h2>
+            <p className="mt-1 text-sm text-slate-500">
+              Expected figures show the final commercial result. Paid and pending figures show what has actually moved and what is still outstanding.
+            </p>
+          </div>
+
+          <div className="text-sm font-semibold text-[#001F3F]">
+            Expected Net Profit = Expected Income - Expected Expenses
+          </div>
+        </div>
       </div>
 
       {/* MAIN KPI CARDS */}
@@ -930,30 +1089,30 @@ export default async function AdminFinanceDashboardPage() {
 
         <div className="rounded-2xl border bg-green-50 p-5 shadow-sm">
           <p className="text-sm font-medium text-green-700">
-            Total Income
+            Expected Income
           </p>
 
           <p className="mt-2 text-3xl font-bold text-green-800">
             {formatCurrency(
-              totalIncome,
+              viewExpectedIncome,
               REPORTING_CURRENCY,
             )}
           </p>
 
           <p className="mt-2 text-xs text-green-700">
-            Automatic scheduled booking income + historical
-            exceptional income
+            Confirmed booking sales + standalone received income +
+            historical exceptional income
           </p>
         </div>
 
         <div className="rounded-2xl border bg-red-50 p-5 shadow-sm">
           <p className="text-sm font-medium text-red-700">
-            Total Expenses
+            Expected Expenses
           </p>
 
           <p className="mt-2 text-3xl font-bold text-red-800">
             {formatCurrency(
-              totalExpenses,
+              viewExpectedExpenses,
               REPORTING_CURRENCY,
             )}
           </p>
@@ -966,18 +1125,18 @@ export default async function AdminFinanceDashboardPage() {
 
         <div className="rounded-2xl border bg-blue-50 p-5 shadow-sm">
           <p className="text-sm font-medium text-blue-700">
-            Net Profit
+            Expected Net Profit
           </p>
 
           <p
             className={`mt-2 text-3xl font-bold ${
-              netProfit >= 0
+              viewExpectedNetProfit >= 0
                 ? "text-blue-800"
                 : "text-red-700"
             }`}
           >
             {formatCurrency(
-              netProfit,
+              viewExpectedNetProfit,
               REPORTING_CURRENCY,
             )}
           </p>
@@ -1032,7 +1191,7 @@ export default async function AdminFinanceDashboardPage() {
 
           <p className="mt-2 text-2xl font-bold text-green-700">
             {formatCurrency(
-              paidIncome,
+              viewPaidIncome,
               REPORTING_CURRENCY,
             )}
           </p>
@@ -1050,7 +1209,7 @@ export default async function AdminFinanceDashboardPage() {
 
           <p className="mt-2 text-2xl font-bold text-red-700">
             {formatCurrency(
-              paidExpenses,
+              viewPaidExpenses,
               REPORTING_CURRENCY,
             )}
           </p>
@@ -1067,13 +1226,13 @@ export default async function AdminFinanceDashboardPage() {
 
           <p
             className={`mt-2 text-2xl font-bold ${
-              paidIncome - paidExpenses >= 0
+              viewCashMovement >= 0
                 ? "text-green-700"
                 : "text-red-700"
             }`}
           >
             {formatCurrency(
-              paidIncome - paidExpenses,
+              viewCashMovement,
               REPORTING_CURRENCY,
             )}
           </p>
@@ -1085,19 +1244,19 @@ export default async function AdminFinanceDashboardPage() {
       <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
         <div className="rounded-2xl border bg-white p-5 shadow-sm">
           <p className="text-sm text-slate-500">
-            Pending Receivables
+            Pending Income
           </p>
 
           <p className="mt-2 text-2xl font-bold text-amber-700">
             {formatCurrency(
-              pendingIncome,
+              viewPendingIncome,
               REPORTING_CURRENCY,
             )}
           </p>
 
           <p className="mt-1 text-xs text-slate-500">
-            Open booking installments + historical pending exceptional
-            income
+            Confirmed customer balances still to collect + historical
+            pending exceptional income
           </p>
 
           <Link
@@ -1110,12 +1269,12 @@ export default async function AdminFinanceDashboardPage() {
 
         <div className="rounded-2xl border bg-white p-5 shadow-sm">
           <p className="text-sm text-slate-500">
-            Pending Payables
+            Pending Expenses
           </p>
 
           <p className="mt-2 text-2xl font-bold text-amber-700">
             {formatCurrency(
-              pendingExpenses,
+              viewPendingExpenses,
               REPORTING_CURRENCY,
             )}
           </p>
@@ -1358,11 +1517,11 @@ export default async function AdminFinanceDashboardPage() {
         <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div>
             <h2 className="text-lg font-semibold text-[#001F3F]">
-              Automatic Booking Receivables
+              Outstanding Customer Receivables
             </h2>
 
             <p className="text-sm text-slate-500">
-              Booking payment schedules now feed Finance automatically.
+              Confirmed booking balances still to be collected; schedules show due timing.
             </p>
           </div>
 
@@ -1400,7 +1559,7 @@ export default async function AdminFinanceDashboardPage() {
                 </th>
 
                 <th className="px-3 py-3 text-right font-medium">
-                  Scheduled
+                  Expected Sale
                 </th>
 
                 <th className="px-3 py-3 text-right font-medium">
@@ -1456,7 +1615,7 @@ export default async function AdminFinanceDashboardPage() {
 
                     <td className="px-3 py-3 text-right">
                       {formatCurrency(
-                        booking.scheduledTotal,
+                        booking.recognizedIncome,
                         REPORTING_CURRENCY,
                       )}
                     </td>
@@ -1493,7 +1652,7 @@ export default async function AdminFinanceDashboardPage() {
                     colSpan={7}
                     className="px-3 py-8 text-center text-sm text-slate-500"
                   >
-                    No automatic booking receivables yet.
+                    No outstanding customer receivables.
                   </td>
                 </tr>
               ) : null}
@@ -1508,12 +1667,11 @@ export default async function AdminFinanceDashboardPage() {
         <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div>
             <h2 className="text-lg font-semibold text-[#001F3F]">
-              Automatic Supplier Payables
+              Outstanding Supplier Payables
             </h2>
 
             <p className="text-sm text-slate-500">
-              Approved supplier payables feed expenses automatically;
-              recorded supplier payments feed Paid Expenses.
+              Approved supplier liabilities still to be paid; recorded supplier payments reduce the outstanding balance.
             </p>
           </div>
 
@@ -1680,7 +1838,7 @@ export default async function AdminFinanceDashboardPage() {
                     colSpan={8}
                     className="px-3 py-8 text-center text-sm text-slate-500"
                   >
-                    No approved automatic supplier payables yet.
+                    No outstanding approved supplier payables.
                   </td>
                 </tr>
               ) : null}
@@ -1906,10 +2064,10 @@ export default async function AdminFinanceDashboardPage() {
               className="rounded-xl border p-4 transition hover:border-[#8B0000] hover:bg-red-50"
             >
               <p className="font-semibold text-[#001F3F]">
-                Finance Documents
+                Other Accounting Documents
               </p>
               <p className="mt-1 text-sm text-slate-500">
-                Supplier invoices, receipts and accounting documents.
+                Upload only documents not already captured through payables, expenses, customer payments or bank statements.
               </p>
             </Link>
 
