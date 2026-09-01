@@ -106,9 +106,17 @@ export default async function SupplierPayableDetailPage({ params }: Props) {
             </p>
           </div>
 
-          <div className="flex flex-wrap gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             <Badge value={payable.approvalStatus} />
             <Badge value={paymentStatus} />
+            {payable.approvalStatus !== "CANCELLED" ? (
+              <Link
+                href={`/admin/supplier-payables/${payable.id}/edit`}
+                className="rounded-full bg-white px-3 py-1 text-xs font-bold text-[#001F3F] transition hover:bg-slate-100"
+              >
+                Edit Payable
+              </Link>
+            ) : null}
           </div>
         </div>
       </section>
