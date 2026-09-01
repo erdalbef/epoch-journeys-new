@@ -20,30 +20,25 @@ type SavedFinanceFile = {
   localAbsolutePath: string | null;
 };
 
-function isActualVercelRuntime() {
-  /*
-   * VERCEL may sometimes exist in a local environment.
-   *
-   * Only treat the application as a real Vercel runtime when:
-   *
-   * - VERCEL === "1"
-   * - and we are not running the local development server.
-   *
-   * This allows npm run dev to continue using:
-   *
-   * public/uploads/accounting/...
-   *
-   * while deployed Vercel environments continue using Blob storage.
-   */
-  return (
-    process.env.VERCEL === "1" &&
-    process.env.NODE_ENV === "production"
-  );
-}
-
 function blobStorageEnabled() {
   return Boolean(
     process.env.BLOB_READ_WRITE_TOKEN?.trim(),
+  );
+}
+
+function isActualVercelDeployment() {
+  /*
+   * Do not use process.env.VERCEL alone.
+   *
+   * In this project it is proving unreliable during local
+   * development.
+   *
+   * Actual Vercel deployments normally expose deployment-specific
+   * values such as VERCEL_URL or VERCEL_REGION.
+   */
+  return Boolean(
+    process.env.VERCEL_URL ||
+      process.env.VERCEL_REGION,
   );
 }
 
@@ -70,10 +65,7 @@ export async function saveFinanceFile({
    * VERCEL BLOB
    * ============================================================
    *
-   * If Blob storage is configured, always prefer it.
-   *
-   * This works in both production and local development if the
-   * token is intentionally available locally.
+   * If Blob is configured, use it regardless of environment.
    */
 
   if (blobStorageEnabled()) {
@@ -103,16 +95,13 @@ export async function saveFinanceFile({
 
   /*
    * ============================================================
-   * VERCEL WITHOUT BLOB
+   * ACTUAL VERCEL DEPLOYMENT WITHOUT BLOB
    * ============================================================
    *
-   * Do not try to write into /var/task/public on Vercel.
-   *
-   * That filesystem is read-only and caused the previous EROFS
-   * error.
+   * Vercel's deployed filesystem is read-only.
    */
 
-  if (isActualVercelRuntime()) {
+  if (isActualVercelDeployment()) {
     throw new Error(
       "File storage is not configured for this Vercel deployment. Add a Vercel Blob store and BLOB_READ_WRITE_TOKEN before uploading finance documents.",
     );
@@ -120,10 +109,10 @@ export async function saveFinanceFile({
 
   /*
    * ============================================================
-   * LOCAL DEVELOPMENT STORAGE
+   * LOCAL DEVELOPMENT / LOCAL SERVER
    * ============================================================
    *
-   * npm run dev uses:
+   * Save files into:
    *
    * public/uploads/accounting/YYYY/MM/
    */
@@ -185,7 +174,7 @@ export async function deleteFinanceFile(
 ) {
   /*
    * ============================================================
-   * BLOB FILE
+   * VERCEL BLOB FILE
    * ============================================================
    */
 
@@ -194,9 +183,7 @@ export async function deleteFinanceFile(
       storagePath,
     )
   ) {
-    if (
-      !blobStorageEnabled()
-    ) {
+    if (!blobStorageEnabled()) {
       console.warn(
         "Unable to delete Blob file because BLOB_READ_WRITE_TOKEN is not configured.",
       );
@@ -204,9 +191,7 @@ export async function deleteFinanceFile(
       return;
     }
 
-    await del(
-      storagePath,
-    );
+    await del(storagePath);
 
     return;
   }
@@ -257,11 +242,6 @@ export async function deleteFinanceFile(
       absolutePath,
     );
 
-  /*
-   * Security protection:
-   * never allow deletion outside the accounting upload directory.
-   */
-
   if (
     relativeToRoot.startsWith(
       "..",
@@ -285,7 +265,7 @@ export async function readFinanceFile(
 ) {
   /*
    * ============================================================
-   * BLOB FILE
+   * VERCEL BLOB FILE
    * ============================================================
    */
 
@@ -298,14 +278,11 @@ export async function readFinanceFile(
       await fetch(
         storagePath,
         {
-          cache:
-            "no-store",
+          cache: "no-store",
         },
       );
 
-    if (
-      !response.ok
-    ) {
+    if (!response.ok) {
       throw new Error(
         `Unable to read stored accounting file (${response.status}).`,
       );
@@ -317,13 +294,7 @@ export async function readFinanceFile(
   }
 
   /*
-   * Local files are already publicly available through Next.js at:
-   *
-   * /uploads/accounting/...
-   *
-   * Existing callers do not currently require the raw Buffer for
-   * local files.
+   * Local files under /public are served directly by Next.js.
    */
-
   return null;
 }
