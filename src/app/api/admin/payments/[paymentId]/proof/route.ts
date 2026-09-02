@@ -164,43 +164,38 @@ export async function GET(
     const encodedName = encodeURIComponent(downloadName);
 
     if (isHttpUrl(document.storagePath)) {
-      if (!process.env.BLOB_READ_WRITE_TOKEN) {
-        return NextResponse.json(
-          {
-            error:
-              "Private Blob access is not configured for this deployment.",
-          },
-          { status: 500 },
-        );
-      }
+  const blobResult = await get(document.storagePath, {
+    access: "private",
+  });
 
-      const blobResult = await get(document.storagePath, {
-        access: "private",
-      });
+  if (
+    !blobResult ||
+    blobResult.statusCode !== 200 ||
+    !blobResult.stream
+  ) {
+    return NextResponse.json(
+      { error: "Payment proof file could not be found." },
+      { status: 404 },
+    );
+  }
 
-      if (!blobResult || blobResult.statusCode !== 200 || !blobResult.stream) {
-        return NextResponse.json(
-          { error: "Payment proof file could not be found." },
-          { status: 404 },
-        );
-      }
+  return new Response(blobResult.stream, {
+    status: 200,
+    headers: {
+      "Content-Type":
+        blobResult.blob.contentType ||
+        document.mimeType ||
+        "application/octet-stream",
+      "Content-Disposition":
+        `inline; filename="${downloadName}"; filename*=UTF-8''${encodedName}`,
+      "Cache-Control": "private, no-store, max-age=0",
+      Pragma: "no-cache",
+      Expires: "0",
+      "X-Content-Type-Options": "nosniff",
+    },
+  });
+}
 
-      return new Response(blobResult.stream, {
-        status: 200,
-        headers: {
-          "Content-Type":
-            blobResult.blob.contentType ||
-            document.mimeType ||
-            "application/octet-stream",
-          "Content-Disposition":
-            `inline; filename="${downloadName}"; filename*=UTF-8''${encodedName}`,
-          "Cache-Control": "private, no-store, max-age=0",
-          Pragma: "no-cache",
-          Expires: "0",
-          "X-Content-Type-Options": "nosniff",
-        },
-      });
-    }
 
     const localPath = resolveLocalAccountingPath(document.storagePath);
 
