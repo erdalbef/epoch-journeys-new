@@ -33,11 +33,38 @@ export default async function SupplierPayableDetailPage({ params }: Props) {
     db.supplierPayable.findUnique({
       where: { id },
       include: {
-        supplier: { select: { id: true, name: true } },
-        service: { select: { id: true, name: true, type: true } },
-        rate: { select: { id: true, name: true, unit: true } },
-        tour: { select: { id: true, title: true } },
-        departureDate: { select: { id: true, date: true } },
+        supplier: {
+          select: {
+            id: true,
+            name: true,
+          },
+        },
+        service: {
+          select: {
+            id: true,
+            name: true,
+            type: true,
+          },
+        },
+        rate: {
+          select: {
+            id: true,
+            name: true,
+            unit: true,
+          },
+        },
+        tour: {
+          select: {
+            id: true,
+            title: true,
+          },
+        },
+        departureDate: {
+          select: {
+            id: true,
+            date: true,
+          },
+        },
         booking: {
           select: {
             id: true,
@@ -45,27 +72,75 @@ export default async function SupplierPayableDetailPage({ params }: Props) {
             bookingDisplayCode: true,
           },
         },
-        createdBy: { select: { fullName: true, email: true } },
-        approvedBy: { select: { fullName: true, email: true } },
+        createdBy: {
+          select: {
+            fullName: true,
+            email: true,
+          },
+        },
+        approvedBy: {
+          select: {
+            fullName: true,
+            email: true,
+          },
+        },
         payments: {
-          orderBy: [{ paymentDate: "desc" }, { createdAt: "desc" }],
+          orderBy: [
+            { paymentDate: "desc" },
+            { createdAt: "desc" },
+          ],
           include: {
-            bankAccount: { select: { name: true, currency: true } },
-            recordedBy: { select: { fullName: true, email: true } },
+            bankAccount: {
+              select: {
+                name: true,
+                currency: true,
+              },
+            },
+            recordedBy: {
+              select: {
+                fullName: true,
+                email: true,
+              },
+            },
+            documents: {
+              where: {
+                type: "SUPPLIER_PAYMENT_PROOF",
+              },
+              orderBy: {
+                createdAt: "desc",
+              },
+              take: 1,
+              select: {
+                id: true,
+                originalFileName: true,
+              },
+            },
           },
         },
       },
     }),
+
     db.bankAccount.findMany({
-      where: { isActive: true },
-      orderBy: { name: "asc" },
-      select: { id: true, name: true, currency: true },
+      where: {
+        isActive: true,
+      },
+      orderBy: {
+        name: "asc",
+      },
+      select: {
+        id: true,
+        name: true,
+        currency: true,
+      },
     }),
   ]);
 
-  if (!payable) notFound();
+  if (!payable) {
+    notFound();
+  }
 
   const balance = Number(payable.balance);
+
   const paymentStatus =
     payable.approvalStatus === "APPROVED" &&
     balance > 0 &&
@@ -94,7 +169,11 @@ export default async function SupplierPayableDetailPage({ params }: Props) {
                 .toLowerCase()
                 .replace(/\b\w/g, (value) => value.toUpperCase())}
             </p>
-            <h1 className="mt-2 text-3xl font-bold">{payable.title}</h1>
+
+            <h1 className="mt-2 text-3xl font-bold">
+              {payable.title}
+            </h1>
+
             <p className="mt-2 text-sm text-slate-300">
               {payable.supplierNameSnapshot}
               {payable.supplierInvoiceNumber
@@ -109,6 +188,7 @@ export default async function SupplierPayableDetailPage({ params }: Props) {
           <div className="flex flex-wrap items-center gap-2">
             <Badge value={payable.approvalStatus} />
             <Badge value={paymentStatus} />
+
             {payable.approvalStatus !== "CANCELLED" ? (
               <Link
                 href={`/admin/supplier-payables/${payable.id}/edit`}
@@ -126,14 +206,17 @@ export default async function SupplierPayableDetailPage({ params }: Props) {
           label="Approved"
           value={money(payable.approvedAmount, payable.currency)}
         />
+
         <Metric
           label="Credit"
           value={money(payable.creditAmount, payable.currency)}
         />
+
         <Metric
           label="Paid"
           value={money(payable.amountPaid, payable.currency)}
         />
+
         <Metric
           label="Balance"
           value={money(payable.balance, payable.currency)}
@@ -144,7 +227,10 @@ export default async function SupplierPayableDetailPage({ params }: Props) {
       <div className="grid gap-6 xl:grid-cols-[1.35fr_.65fr]">
         <div className="space-y-6">
           <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-            <h2 className="text-lg font-bold text-slate-950">Payable details</h2>
+            <h2 className="text-lg font-bold text-slate-950">
+              Payable details
+            </h2>
+
             <div className="mt-4 divide-y divide-slate-100 text-sm">
               <Row
                 label="Supplier"
@@ -157,35 +243,77 @@ export default async function SupplierPayableDetailPage({ params }: Props) {
                   </Link>
                 }
               />
+
               <Row
                 label="Service"
-                value={payable.serviceNameSnapshot || payable.service?.name || "—"}
+                value={
+                  payable.serviceNameSnapshot ||
+                  payable.service?.name ||
+                  "—"
+                }
               />
+
               <Row
                 label="Contracted rate"
-                value={payable.rateNameSnapshot || payable.rate?.name || "—"}
+                value={
+                  payable.rateNameSnapshot ||
+                  payable.rate?.name ||
+                  "—"
+                }
               />
+
               <Row
                 label="Contracted amount"
                 value={
                   payable.contractedAmount
-                    ? money(payable.contractedAmount, payable.currency)
+                    ? money(
+                        payable.contractedAmount,
+                        payable.currency,
+                      )
                     : "—"
                 }
               />
+
               <Row
                 label="Document type"
                 value={payable.documentType
                   .replaceAll("_", " ")
                   .toLowerCase()
-                  .replace(/\b\w/g, (value) => value.toUpperCase())}
+                  .replace(/\b\w/g, (value) =>
+                    value.toUpperCase(),
+                  )}
               />
-              <Row label="Agency / Parish / Group" value={payable.agencyGroupName || "—"} />
-              <Row label="Epoch internal reference" value={payable.internalReference || "—"} />
-              <Row label="Supplier document number" value={payable.supplierInvoiceNumber || "—"} />
-              <Row label="Supplier reference" value={payable.supplierReference || "—"} />
-              <Row label="Document date" value={date(payable.invoiceDate)} />
-              <Row label="Due date" value={date(payable.dueDate)} />
+
+              <Row
+                label="Agency / Parish / Group"
+                value={payable.agencyGroupName || "—"}
+              />
+
+              <Row
+                label="Epoch internal reference"
+                value={payable.internalReference || "—"}
+              />
+
+              <Row
+                label="Supplier document number"
+                value={payable.supplierInvoiceNumber || "—"}
+              />
+
+              <Row
+                label="Supplier reference"
+                value={payable.supplierReference || "—"}
+              />
+
+              <Row
+                label="Document date"
+                value={date(payable.invoiceDate)}
+              />
+
+              <Row
+                label="Due date"
+                value={date(payable.dueDate)}
+              />
+
               <Row
                 label="Tour"
                 value={
@@ -201,10 +329,16 @@ export default async function SupplierPayableDetailPage({ params }: Props) {
                   )
                 }
               />
+
               <Row
                 label="Departure"
-                value={payable.departureDate ? date(payable.departureDate.date) : "—"}
+                value={
+                  payable.departureDate
+                    ? date(payable.departureDate.date)
+                    : "—"
+                }
               />
+
               <Row
                 label="Booking"
                 value={
@@ -221,23 +355,41 @@ export default async function SupplierPayableDetailPage({ params }: Props) {
                   )
                 }
               />
+
               <Row
                 label="Created by"
-                value={payable.createdBy?.fullName || payable.createdBy?.email || "—"}
+                value={
+                  payable.createdBy?.fullName ||
+                  payable.createdBy?.email ||
+                  "—"
+                }
               />
+
               <Row
                 label="Approved by"
-                value={payable.approvedBy?.fullName || payable.approvedBy?.email || "—"}
+                value={
+                  payable.approvedBy?.fullName ||
+                  payable.approvedBy?.email ||
+                  "—"
+                }
               />
             </div>
 
-            {payable.description && (
-              <TextBlock title="Description" value={payable.description} />
-            )}
-            {payable.internalNotes && (
-              <TextBlock title="Internal notes" value={payable.internalNotes} />
-            )}
-            {payable.documentUrl && (
+            {payable.description ? (
+              <TextBlock
+                title="Description"
+                value={payable.description}
+              />
+            ) : null}
+
+            {payable.internalNotes ? (
+              <TextBlock
+                title="Internal notes"
+                value={payable.internalNotes}
+              />
+            ) : null}
+
+            {payable.documentUrl ? (
               <div className="mt-5">
                 <a
                   href={payable.documentUrl}
@@ -248,48 +400,95 @@ export default async function SupplierPayableDetailPage({ params }: Props) {
                   View Document
                 </a>
               </div>
-            )}
+            ) : null}
           </section>
 
           <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
             <div className="border-b border-slate-100 px-5 py-4">
-              <h2 className="font-bold text-slate-950">Payment history</h2>
+              <h2 className="font-bold text-slate-950">
+                Payment history
+              </h2>
+
               <p className="text-sm text-slate-500">
-                Every supplier payment is retained as a separate record.
+                Every supplier payment is retained as a separate
+                record and can be corrected when necessary.
               </p>
             </div>
 
             <div className="divide-y divide-slate-100">
-              {payable.payments.map((payment) => (
-                <div
-                  key={payment.id}
-                  className="grid gap-3 px-5 py-4 md:grid-cols-[1fr_auto]"
-                >
-                  <div>
-                    <p className="font-semibold text-slate-900">
-                      {money(payment.amount, payment.currency)}
-                    </p>
-                    <p className="mt-1 text-sm text-slate-500">
-                      {date(payment.paymentDate)} ·{" "}
-                      {payment.method.replaceAll("_", " ")}
-                      {payment.reference ? ` · ${payment.reference}` : ""}
-                    </p>
-                    <p className="mt-1 text-xs text-slate-400">
-                      {payment.bankAccount?.name || "No bank account selected"}
-                      {" · "}
-                      {payment.recordedBy?.fullName ||
-                        payment.recordedBy?.email ||
-                        "Admin"}
-                    </p>
-                  </div>
-                </div>
-              ))}
+              {payable.payments.map((payment) => {
+                const proof =
+                  payment.documents[0] ?? null;
 
-              {payable.payments.length === 0 && (
+                return (
+                  <div
+                    key={payment.id}
+                    className="grid gap-3 px-5 py-4 md:grid-cols-[1fr_auto]"
+                  >
+                    <div>
+                      <p className="font-semibold text-slate-900">
+                        {money(
+                          payment.amount,
+                          payment.currency,
+                        )}
+                      </p>
+
+                      <p className="mt-1 text-sm text-slate-500">
+                        {date(payment.paymentDate)} ·{" "}
+                        {payment.method.replaceAll("_", " ")}
+                        {payment.reference
+                          ? ` · ${payment.reference}`
+                          : ""}
+                      </p>
+
+                      <p className="mt-1 text-xs text-slate-400">
+                        {payment.bankAccount?.name ||
+                          "No bank account selected"}
+                        {" · "}
+                        {payment.recordedBy?.fullName ||
+                          payment.recordedBy?.email ||
+                          "Admin"}
+                      </p>
+
+                      {proof ? (
+                        <p className="mt-2 text-xs text-slate-500">
+                          Proof: {proof.originalFileName}
+                        </p>
+                      ) : (
+                        <p className="mt-2 text-xs font-medium text-amber-700">
+                          No payment proof attached
+                        </p>
+                      )}
+                    </div>
+
+                    <div className="flex flex-wrap items-start gap-2">
+                      {proof ? (
+                        <a
+                          href={`/api/admin/supplier-payables/${payable.id}/payments/${payment.id}`}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="rounded-lg border border-slate-200 px-3 py-2 text-xs font-semibold text-[#001F3F] hover:bg-slate-50"
+                        >
+                          View Proof
+                        </a>
+                      ) : null}
+
+                      <Link
+                        href={`/admin/supplier-payables/${payable.id}/payments/${payment.id}/edit`}
+                        className="rounded-lg bg-[#001F3F] px-3 py-2 text-xs font-semibold text-white hover:bg-[#00172f]"
+                      >
+                        Edit Payment
+                      </Link>
+                    </div>
+                  </div>
+                );
+              })}
+
+              {payable.payments.length === 0 ? (
                 <div className="px-5 py-10 text-center text-sm text-slate-500">
                   No supplier payments recorded yet.
                 </div>
-              )}
+              ) : null}
             </div>
           </section>
         </div>
@@ -318,10 +517,15 @@ function Metric({
 }) {
   return (
     <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-      <p className="text-xs uppercase tracking-wide text-slate-500">{label}</p>
+      <p className="text-xs uppercase tracking-wide text-slate-500">
+        {label}
+      </p>
+
       <p
         className={`mt-2 text-2xl font-bold ${
-          strong ? "text-[#8B0000]" : "text-slate-950"
+          strong
+            ? "text-[#8B0000]"
+            : "text-slate-950"
         }`}
       >
         {value}
@@ -330,7 +534,11 @@ function Metric({
   );
 }
 
-function Badge({ value }: { value: string }) {
+function Badge({
+  value,
+}: {
+  value: string;
+}) {
   return (
     <span className="rounded-full bg-white/10 px-3 py-1 text-xs font-semibold">
       {value.replaceAll("_", " ")}
@@ -347,17 +555,33 @@ function Row({
 }) {
   return (
     <div className="grid gap-2 py-3 sm:grid-cols-[180px_1fr]">
-      <span className="text-slate-500">{label}</span>
-      <span className="font-medium text-slate-900">{value}</span>
+      <span className="text-slate-500">
+        {label}
+      </span>
+
+      <span className="font-medium text-slate-900">
+        {value}
+      </span>
     </div>
   );
 }
 
-function TextBlock({ title, value }: { title: string; value: string }) {
+function TextBlock({
+  title,
+  value,
+}: {
+  title: string;
+  value: string;
+}) {
   return (
     <div className="mt-5 rounded-xl bg-slate-50 p-4">
-      <p className="text-sm font-semibold text-slate-800">{title}</p>
-      <p className="mt-1 whitespace-pre-wrap text-sm text-slate-600">{value}</p>
+      <p className="text-sm font-semibold text-slate-800">
+        {title}
+      </p>
+
+      <p className="mt-1 whitespace-pre-wrap text-sm text-slate-600">
+        {value}
+      </p>
     </div>
   );
 }
