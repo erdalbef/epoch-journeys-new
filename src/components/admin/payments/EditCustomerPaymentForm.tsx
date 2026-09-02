@@ -46,6 +46,7 @@ type InitialPayment = {
   notes: string | null;
   status: string;
   proofUrl: string | null;
+  proofFileName: string | null;
 };
 
 type Props = {
@@ -65,12 +66,17 @@ export default function EditCustomerPaymentForm({
   bankAccounts,
 }: Props) {
   const router = useRouter();
+
   const [bookingId, setBookingId] = useState(payment.bookingId || "");
   const [tourId, setTourId] = useState(payment.tourId || "");
-  const [agencyGroupName, setAgencyGroupName] = useState(payment.agencyGroupName || "");
+  const [agencyGroupName, setAgencyGroupName] = useState(
+    payment.agencyGroupName || "",
+  );
   const [amount, setAmount] = useState(String(payment.amount));
   const [currency, setCurrency] = useState(payment.currency);
-  const [bankAccountId, setBankAccountId] = useState(payment.bankAccountId);
+  const [bankAccountId, setBankAccountId] = useState(
+    payment.bankAccountId,
+  );
   const [method, setMethod] = useState(payment.method);
   const [paidAt, setPaidAt] = useState(payment.paidAt);
   const [reference, setReference] = useState(payment.reference || "");
@@ -91,8 +97,12 @@ export default function EditCustomerPaymentForm({
 
   function chooseBooking(value: string) {
     setBookingId(value);
+
     const booking = bookings.find((item) => item.id === value);
-    if (!booking) return;
+
+    if (!booking) {
+      return;
+    }
 
     setTourId(booking.tourId);
     setCurrency(booking.currency);
@@ -108,7 +118,9 @@ export default function EditCustomerPaymentForm({
 
   function chooseTour(value: string) {
     setTourId(value);
+
     const tour = tours.find((item) => item.id === value);
+
     if (tour && !bookingId) {
       setCurrency(tour.currency || "EUR");
       setBankAccountId("");
@@ -117,16 +129,19 @@ export default function EditCustomerPaymentForm({
 
   async function submit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
+
     const numericAmount = Number(amount);
 
     if (!Number.isFinite(numericAmount) || numericAmount <= 0) {
       toast.error("Enter a valid payment amount.");
       return;
     }
+
     if (!bankAccountId) {
       toast.error("Select the Epoch bank account that received the payment.");
       return;
     }
+
     if (!bookingId && !tourId && !agencyGroupName.trim()) {
       toast.error(
         "Enter an Agency / Parish / Group / Customer or select a Tour / Package.",
@@ -135,10 +150,13 @@ export default function EditCustomerPaymentForm({
     }
 
     setLoading(true);
+
     try {
       const response = await fetch(`/api/admin/payments/${payment.id}`, {
         method: "PATCH",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+        },
         body: JSON.stringify({
           bookingId: bookingId || null,
           tourId: tourId || null,
@@ -158,7 +176,9 @@ export default function EditCustomerPaymentForm({
         | null;
 
       if (!response.ok || !data?.success) {
-        throw new Error(data?.error || "Failed to update customer payment.");
+        throw new Error(
+          data?.error || "Failed to update customer payment.",
+        );
       }
 
       if (paymentProof) {
@@ -196,7 +216,9 @@ export default function EditCustomerPaymentForm({
       router.refresh();
     } catch (error) {
       toast.error(
-        error instanceof Error ? error.message : "Failed to update customer payment.",
+        error instanceof Error
+          ? error.message
+          : "Failed to update customer payment.",
       );
     } finally {
       setLoading(false);
@@ -213,10 +235,12 @@ export default function EditCustomerPaymentForm({
     }
 
     setDeleting(true);
+
     try {
       const response = await fetch(`/api/admin/payments/${payment.id}`, {
         method: "DELETE",
       });
+
       const data = (await response.json().catch(() => null)) as
         | { success?: boolean; error?: string }
         | null;
@@ -230,7 +254,9 @@ export default function EditCustomerPaymentForm({
       router.refresh();
     } catch (error) {
       toast.error(
-        error instanceof Error ? error.message : "Failed to delete customer payment.",
+        error instanceof Error
+          ? error.message
+          : "Failed to delete customer payment.",
       );
     } finally {
       setDeleting(false);
@@ -238,28 +264,45 @@ export default function EditCustomerPaymentForm({
   }
 
   return (
-    <form onSubmit={submit} className="space-y-6 rounded-2xl border bg-white p-6 shadow-sm">
+    <form
+      onSubmit={submit}
+      className="space-y-6 rounded-2xl border bg-white p-6 shadow-sm"
+    >
       <div>
-        <h2 className="text-lg font-bold text-[#001F3F]">Payment Details</h2>
+        <h2 className="text-lg font-bold text-[#001F3F]">
+          Payment Details
+        </h2>
+
         <p className="mt-1 text-sm text-slate-500">
-          Changes to financial fields are synchronized with the linked Finance Ledger transaction.
+          Changes to financial fields are synchronized with the linked Finance
+          Ledger transaction.
         </p>
       </div>
 
       <div className="grid gap-4 md:grid-cols-2">
         <Field label="Tour / Package">
-          <select value={tourId} onChange={(e) => chooseTour(e.target.value)} className={inputClass} disabled={Boolean(selectedBooking)}>
+          <select
+            value={tourId}
+            onChange={(event) => chooseTour(event.target.value)}
+            className={inputClass}
+            disabled={Boolean(selectedBooking)}
+          >
             <option value="">Not linked to a tour / package</option>
             {tours.map((tour) => (
               <option key={tour.id} value={tour.id}>
-                {tour.title}{tour.tourCode ? ` — ${tour.tourCode}` : ""}
+                {tour.title}
+                {tour.tourCode ? ` — ${tour.tourCode}` : ""}
               </option>
             ))}
           </select>
         </Field>
 
         <Field label="Booking (optional)">
-          <select value={bookingId} onChange={(e) => chooseBooking(e.target.value)} className={inputClass}>
+          <select
+            value={bookingId}
+            onChange={(event) => chooseBooking(event.target.value)}
+            className={inputClass}
+          >
             <option value="">No booking selected</option>
             {bookings.map((booking) => (
               <option key={booking.id} value={booking.id}>
@@ -270,37 +313,70 @@ export default function EditCustomerPaymentForm({
         </Field>
 
         <Field label="Agency / Parish / Group / Customer">
-          <input value={agencyGroupName} onChange={(e) => setAgencyGroupName(e.target.value)} className={inputClass} />
+          <input
+            value={agencyGroupName}
+            onChange={(event) => setAgencyGroupName(event.target.value)}
+            className={inputClass}
+          />
         </Field>
 
         <Field label="Currency *">
           <select
             value={currency}
-            onChange={(e) => { setCurrency(e.target.value); setBankAccountId(""); }}
+            onChange={(event) => {
+              setCurrency(event.target.value);
+              setBankAccountId("");
+            }}
             className={inputClass}
             disabled={Boolean(selectedBooking)}
           >
-            {Array.from(new Set(["EUR", "USD", "GBP", ...bankAccounts.map((a) => a.currency)])).map((item) => (
-              <option key={item} value={item}>{item}</option>
+            {Array.from(
+              new Set([
+                "EUR",
+                "USD",
+                "GBP",
+                ...bankAccounts.map((account) => account.currency),
+              ]),
+            ).map((item) => (
+              <option key={item} value={item}>
+                {item}
+              </option>
             ))}
           </select>
         </Field>
 
         <Field label={`Amount (${currency}) *`}>
-          <input type="number" min="0.01" step="0.01" value={amount} onChange={(e) => setAmount(e.target.value)} className={inputClass} />
+          <input
+            type="number"
+            min="0.01"
+            step="0.01"
+            value={amount}
+            onChange={(event) => setAmount(event.target.value)}
+            className={inputClass}
+          />
         </Field>
 
         <Field label="Receiving Bank Account *">
-          <select value={bankAccountId} onChange={(e) => setBankAccountId(e.target.value)} className={inputClass}>
+          <select
+            value={bankAccountId}
+            onChange={(event) => setBankAccountId(event.target.value)}
+            className={inputClass}
+          >
             <option value="">Select receiving account</option>
             {matchingBanks.map((account) => (
-              <option key={account.id} value={account.id}>{account.name} — {account.currency}</option>
+              <option key={account.id} value={account.id}>
+                {account.name} — {account.currency}
+              </option>
             ))}
           </select>
         </Field>
 
         <Field label="Payment Method *">
-          <select value={method} onChange={(e) => setMethod(e.target.value)} className={inputClass}>
+          <select
+            value={method}
+            onChange={(event) => setMethod(event.target.value)}
+            className={inputClass}
+          >
             <option value="BANK_TRANSFER">Bank Transfer</option>
             <option value="CASH">Cash</option>
             <option value="OTHER">Other</option>
@@ -308,31 +384,54 @@ export default function EditCustomerPaymentForm({
         </Field>
 
         <Field label="Payment Date *">
-          <input type="date" value={paidAt} onChange={(e) => setPaidAt(e.target.value)} className={inputClass} />
+          <input
+            type="date"
+            value={paidAt}
+            onChange={(event) => setPaidAt(event.target.value)}
+            className={inputClass}
+          />
         </Field>
 
         <Field label="Bank / Payment Reference">
-          <input value={reference} onChange={(e) => setReference(e.target.value)} className={inputClass} />
+          <input
+            value={reference}
+            onChange={(event) => setReference(event.target.value)}
+            className={inputClass}
+          />
         </Field>
 
         <Field label="Internal Notes">
-          <input value={notes} onChange={(e) => setNotes(e.target.value)} className={inputClass} />
+          <input
+            value={notes}
+            onChange={(event) => setNotes(event.target.value)}
+            className={inputClass}
+          />
         </Field>
       </div>
 
       <div className="rounded-xl border bg-slate-50 p-4">
-        <div className="text-sm font-semibold text-slate-700">Payment Proof</div>
+        <div className="text-sm font-semibold text-slate-700">
+          Payment Proof
+        </div>
 
         {payment.proofUrl ? (
-          <a
-            href={payment.proofUrl}
-            target="_blank"
-            rel="noreferrer"
-            className="mt-2 inline-flex items-center gap-2 text-sm font-semibold text-blue-700 hover:underline"
-          >
-            <ExternalLink className="h-4 w-4" />
-            Open Current Proof
-          </a>
+          <div className="mt-2">
+            <a
+              href={payment.proofUrl}
+              target="_blank"
+              rel="noreferrer"
+              className="inline-flex items-center gap-2 text-sm font-semibold text-blue-700 hover:underline"
+            >
+              <ExternalLink className="h-4 w-4" />
+              Open Current Proof
+            </a>
+
+            {payment.proofFileName ? (
+              <p className="mt-1 text-xs text-slate-500">
+                {payment.proofFileName}
+              </p>
+            ) : null}
+          </div>
         ) : (
           <p className="mt-2 text-sm text-slate-500">
             No proof document is attached.
@@ -341,7 +440,9 @@ export default function EditCustomerPaymentForm({
 
         <div className="mt-4">
           <label className="block text-sm font-semibold text-slate-700">
-            {payment.proofUrl ? "Replace Proof (optional)" : "Upload Proof (optional)"}
+            {payment.proofUrl
+              ? "Replace Proof (optional)"
+              : "Upload Proof (optional)"}
           </label>
 
           <input
@@ -414,10 +515,19 @@ export default function EditCustomerPaymentForm({
         </button>
 
         <div className="flex gap-3">
-          <button type="button" onClick={() => router.push("/admin/payments")} className="rounded-xl border px-4 py-2.5 text-sm font-semibold">
+          <button
+            type="button"
+            onClick={() => router.push("/admin/payments")}
+            className="rounded-xl border px-4 py-2.5 text-sm font-semibold"
+          >
             Back
           </button>
-          <button type="submit" disabled={loading || deleting} className="rounded-xl bg-[#8B0000] px-5 py-2.5 text-sm font-bold text-white hover:bg-[#6f0000] disabled:opacity-50">
+
+          <button
+            type="submit"
+            disabled={loading || deleting}
+            className="rounded-xl bg-[#8B0000] px-5 py-2.5 text-sm font-bold text-white hover:bg-[#6f0000] disabled:opacity-50"
+          >
             {loading ? "Saving..." : "Save Changes"}
           </button>
         </div>
@@ -426,7 +536,13 @@ export default function EditCustomerPaymentForm({
   );
 }
 
-function Field({ label, children }: { label: string; children: React.ReactNode }) {
+function Field({
+  label,
+  children,
+}: {
+  label: string;
+  children: React.ReactNode;
+}) {
   return (
     <label className="block">
       <span className="text-sm font-semibold text-slate-700">{label}</span>

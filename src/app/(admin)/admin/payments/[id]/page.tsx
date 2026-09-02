@@ -35,7 +35,8 @@ export default async function PaymentDetailPage({ params }: PageProps) {
         },
         financeDocument: {
           select: {
-            storagePath: true,
+            id: true,
+            originalFileName: true,
           },
         },
       },
@@ -79,12 +80,16 @@ export default async function PaymentDetailPage({ params }: PageProps) {
     }),
   ]);
 
-  if (!payment) notFound();
+  if (!payment) {
+    notFound();
+  }
 
   const ledger = payment.bankTransactions[0];
 
   if (!ledger) {
-    throw new Error("This payment has no active posted Finance Ledger transaction.");
+    throw new Error(
+      "This payment has no active posted Finance Ledger transaction.",
+    );
   }
 
   return (
@@ -94,15 +99,20 @@ export default async function PaymentDetailPage({ params }: PageProps) {
           <p className="text-xs font-bold uppercase tracking-[0.16em] text-[#8B0000]">
             Finance
           </p>
+
           <h1 className="mt-1 text-2xl font-bold tracking-tight text-[#001F3F]">
             Customer Payment
           </h1>
+
           <p className="mt-1 text-sm text-slate-500">
             View and update the customer receipt and its linked financial record.
           </p>
         </div>
 
-        <Link href="/admin/payments" className="text-sm font-semibold text-blue-700 hover:underline">
+        <Link
+          href="/admin/payments"
+          className="text-sm font-semibold text-blue-700 hover:underline"
+        >
           Back to Payments
         </Link>
       </div>
@@ -117,11 +127,17 @@ export default async function PaymentDetailPage({ params }: PageProps) {
           currency: payment.currency,
           bankAccountId: ledger.bankAccountId,
           method: payment.method,
-          paidAt: (payment.paidAt || payment.createdAt).toISOString().slice(0, 10),
+          paidAt: (payment.paidAt || payment.createdAt)
+            .toISOString()
+            .slice(0, 10),
           reference: payment.reference,
           notes: payment.notes,
           status: payment.status,
-          proofUrl: payment.financeDocument?.storagePath ?? null,
+          proofUrl: payment.financeDocument
+            ? `/api/admin/payments/${payment.id}/proof`
+            : null,
+          proofFileName:
+            payment.financeDocument?.originalFileName ?? null,
         }}
         tours={tours}
         bookings={bookings}
