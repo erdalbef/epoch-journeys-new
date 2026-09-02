@@ -178,7 +178,7 @@ export async function POST(
         `accounting/${year}/${monthFolder}/02-sales-income/${storedFileName}`;
 
       const blob = await put(blobPath, bytes, {
-        access: "public",
+        access: "private",
         contentType: uploaded.type || undefined,
         addRandomSuffix: false,
       });

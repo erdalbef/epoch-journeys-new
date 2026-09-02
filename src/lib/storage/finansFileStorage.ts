@@ -24,6 +24,14 @@ type SavedFinanceFile = {
   localAbsolutePath: string | null;
 };
 
+console.log("BLOB_STORAGE_CHECK", {
+  hasStoreId: Boolean(process.env.BLOB_STORE_ID),
+  hasOidcToken: Boolean(process.env.VERCEL_OIDC_TOKEN),
+  hasLegacyReadWriteToken: Boolean(
+    process.env.BLOB_READ_WRITE_TOKEN,
+  ),
+});
+
 function blobStorageEnabled() {
   return Boolean(
     process.env.BLOB_READ_WRITE_TOKEN?.trim(),
