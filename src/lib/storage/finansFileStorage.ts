@@ -2,7 +2,11 @@ import crypto from "node:crypto";
 import { mkdir, unlink, writeFile } from "node:fs/promises";
 import path from "node:path";
 
-import { del, put } from "@vercel/blob";
+import {
+  del,
+  get,
+  put,
+} from "@vercel/blob";
 
 type SaveFinanceFileInput = {
   file: File;
@@ -27,18 +31,36 @@ function blobStorageEnabled() {
 }
 
 function isActualVercelDeployment() {
-  /*
-   * Do not use process.env.VERCEL alone.
-   *
-   * In this project it is proving unreliable during local
-   * development.
-   *
-   * Actual Vercel deployments normally expose deployment-specific
-   * values such as VERCEL_URL or VERCEL_REGION.
-   */
   return Boolean(
     process.env.VERCEL_URL ||
       process.env.VERCEL_REGION,
+  );
+}
+
+function isPrivateBlobUrl(
+  storagePath: string,
+) {
+  try {
+    const url =
+      new URL(storagePath);
+
+    return (
+      url.hostname.endsWith(
+        ".private.blob.vercel-storage.com",
+      ) ||
+      url.hostname ===
+        "private.blob.vercel-storage.com"
+    );
+  } catch {
+    return false;
+  }
+}
+
+function isHttpUrl(
+  storagePath: string,
+) {
+  return /^https?:\/\//i.test(
+    storagePath,
   );
 }
 
@@ -55,7 +77,10 @@ export async function saveFinanceFile({
     `${Date.now()}-${crypto.randomUUID()}-${safeFileName}`;
 
   const monthFolder =
-    String(month).padStart(2, "0");
+    String(month).padStart(
+      2,
+      "0",
+    );
 
   const blobPath =
     `accounting/${year}/${monthFolder}/${storedFileName}`;
@@ -65,31 +90,47 @@ export async function saveFinanceFile({
    * VERCEL BLOB
    * ============================================================
    *
-   * If Blob is configured, use it regardless of environment.
+   * Epoch Journeys uses a PRIVATE Blob store because these files
+   * contain supplier invoices, customer payment proofs, bank
+   * confirmations and accounting documents.
    */
 
   if (blobStorageEnabled()) {
-    const blob = await put(
-      blobPath,
-      file,
-      {
-        access: "public",
-        addRandomSuffix: false,
-        contentType:
-          file.type ||
-          "application/octet-stream",
-      },
-    );
+    const blob =
+      await put(
+        blobPath,
+        file,
+        {
+          access: "private",
+          addRandomSuffix: false,
+          contentType:
+            file.type ||
+            "application/octet-stream",
+        },
+      );
 
     return {
       originalFileName,
       storedFileName,
-      storagePath: blob.url,
+
+      /*
+       * Store the private Blob URL in the database.
+       *
+       * It must not normally be opened directly in the browser.
+       * Server download routes should use readFinanceFile().
+       */
+      storagePath:
+        blob.url,
+
       mimeType:
         file.type ||
         "application/octet-stream",
-      fileSize: file.size,
-      localAbsolutePath: null,
+
+      fileSize:
+        file.size,
+
+      localAbsolutePath:
+        null,
     };
   }
 
@@ -98,21 +139,26 @@ export async function saveFinanceFile({
    * ACTUAL VERCEL DEPLOYMENT WITHOUT BLOB
    * ============================================================
    *
-   * Vercel's deployed filesystem is read-only.
+   * Never attempt to write to /var/task/public on Vercel.
+   * That filesystem is read-only.
    */
 
-  if (isActualVercelDeployment()) {
+  if (
+    isActualVercelDeployment()
+  ) {
     throw new Error(
-      "File storage is not configured for this Vercel deployment. Add a Vercel Blob store and BLOB_READ_WRITE_TOKEN before uploading finance documents.",
+      "Private finance file storage is not configured for this Vercel deployment. Check the connected Blob store and BLOB_READ_WRITE_TOKEN.",
     );
   }
 
   /*
    * ============================================================
-   * LOCAL DEVELOPMENT / LOCAL SERVER
+   * LOCAL DEVELOPMENT STORAGE
    * ============================================================
    *
-   * Save files into:
+   * Used only when Blob credentials are not available.
+   *
+   * Files are stored at:
    *
    * public/uploads/accounting/YYYY/MM/
    */
@@ -160,11 +206,13 @@ export async function saveFinanceFile({
   return {
     originalFileName,
     storedFileName,
-    storagePath: publicPath,
+    storagePath:
+      publicPath,
     mimeType:
       file.type ||
       "application/octet-stream",
-    fileSize: file.size,
+    fileSize:
+      file.size,
     localAbsolutePath,
   };
 }
@@ -174,16 +222,18 @@ export async function deleteFinanceFile(
 ) {
   /*
    * ============================================================
-   * VERCEL BLOB FILE
+   * VERCEL BLOB
    * ============================================================
    */
 
   if (
-    /^https:\/\//i.test(
+    isHttpUrl(
       storagePath,
     )
   ) {
-    if (!blobStorageEnabled()) {
+    if (
+      !blobStorageEnabled()
+    ) {
       console.warn(
         "Unable to delete Blob file because BLOB_READ_WRITE_TOKEN is not configured.",
       );
@@ -191,7 +241,9 @@ export async function deleteFinanceFile(
       return;
     }
 
-    await del(storagePath);
+    await del(
+      storagePath,
+    );
 
     return;
   }
@@ -242,6 +294,12 @@ export async function deleteFinanceFile(
       absolutePath,
     );
 
+  /*
+   * Security:
+   * never permit deleting outside
+   * public/uploads/accounting.
+   */
+
   if (
     relativeToRoot.startsWith(
       "..",
@@ -265,12 +323,69 @@ export async function readFinanceFile(
 ) {
   /*
    * ============================================================
-   * VERCEL BLOB FILE
+   * PRIVATE VERCEL BLOB
    * ============================================================
+   *
+   * Private Blob URLs cannot be fetched anonymously.
+   *
+   * Use the authenticated Blob SDK get() call and return the file
+   * contents to our protected server download route.
    */
 
   if (
-    /^https:\/\//i.test(
+    isPrivateBlobUrl(
+      storagePath,
+    )
+  ) {
+    if (
+      !blobStorageEnabled()
+    ) {
+      throw new Error(
+        "Unable to read private finance document because BLOB_READ_WRITE_TOKEN is not configured.",
+      );
+    }
+
+    const result =
+      await get(
+        storagePath,
+        {
+          access:
+            "private",
+        },
+      );
+
+    if (
+      !result ||
+      result.statusCode !==
+        200 ||
+      !result.stream
+    ) {
+      throw new Error(
+        "Unable to read the private accounting file.",
+      );
+    }
+
+    const arrayBuffer =
+      await new Response(
+        result.stream,
+      ).arrayBuffer();
+
+    return Buffer.from(
+      arrayBuffer,
+    );
+  }
+
+  /*
+   * ============================================================
+   * LEGACY PUBLIC BLOB
+   * ============================================================
+   *
+   * Keep support for files that may already have been stored in a
+   * public Blob store before the switch to private storage.
+   */
+
+  if (
+    isHttpUrl(
       storagePath,
     )
   ) {
@@ -278,11 +393,14 @@ export async function readFinanceFile(
       await fetch(
         storagePath,
         {
-          cache: "no-store",
+          cache:
+            "no-store",
         },
       );
 
-    if (!response.ok) {
+    if (
+      !response.ok
+    ) {
       throw new Error(
         `Unable to read stored accounting file (${response.status}).`,
       );
@@ -294,7 +412,9 @@ export async function readFinanceFile(
   }
 
   /*
-   * Local files under /public are served directly by Next.js.
+   * Local files under /public can continue to be served directly
+   * by Next.js.
    */
+
   return null;
 }
