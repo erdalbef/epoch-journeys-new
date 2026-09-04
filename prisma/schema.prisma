@@ -2379,6 +2379,7 @@ enum FinanceDocumentType {
   AGREEMENT
   CREDIT_NOTE
   INVOICE
+  PERSONAL_WITHDRAWAL
   OTHER
 }
 
