@@ -423,7 +423,9 @@ export default function FinanceDocumentManager({
     accountingDestination,
     setAccountingDestination,
   ] = useState<
-    "OTHER_DOCUMENTS" | "TRIP_GROUP_DOCUMENTATION"
+    | "OWNER_PERSONAL_PAYMENTS"
+    | "OTHER_DOCUMENTS"
+    | "TRIP_GROUP_DOCUMENTATION"
   >("OTHER_DOCUMENTS");
 
   const [
@@ -976,6 +978,7 @@ export default function FinanceDocumentManager({
                 onChange={(event) =>
                   setAccountingDestination(
                     event.target.value as
+                      | "OWNER_PERSONAL_PAYMENTS"
                       | "OTHER_DOCUMENTS"
                       | "TRIP_GROUP_DOCUMENTATION",
                   )
@@ -983,6 +986,9 @@ export default function FinanceDocumentManager({
                 className={inputClass}
                 required
               >
+                <option value="OWNER_PERSONAL_PAYMENTS">
+                  06 - Owner / Personal Payments
+                </option>
                 <option value="OTHER_DOCUMENTS">
                   07 - Other Documents
                 </option>
@@ -993,9 +999,23 @@ export default function FinanceDocumentManager({
 
               <p className="mt-1.5 text-xs text-slate-500">
                 Select where this manually uploaded document should appear in
-                the monthly accounting package.
+                the monthly accounting package. Use 06 for owner/shareholder
+                personal withdrawals or owner-paid company items that need to be
+                reported to the accountant without treating them as operating expenses.
               </p>
             </Field>
+
+            {accountingDestination === "OWNER_PERSONAL_PAYMENTS" ? (
+              <div className="md:col-span-2 xl:col-span-4 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm leading-6 text-amber-900">
+                <strong>Owner / Personal Payments:</strong>{" "}
+                Use this destination for personal withdrawals from a company
+                bank account, owner-paid company costs, reimbursements to the
+                owner, or similar shareholder transactions that the accountant
+                must review. These documents are filed for accounting purposes
+                and should not be treated as normal operating expenses unless
+                the accountant confirms that treatment.
+              </div>
+            ) : null}
 
             <Field label="Document Type *">
               <select

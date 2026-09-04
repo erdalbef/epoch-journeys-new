@@ -390,6 +390,7 @@ export async function POST(request: Request) {
     );
 
     const allowedAccountingCategories = new Set<AccountingCategory>([
+      AccountingCategory.OWNER_PERSONAL_PAYMENTS,
       AccountingCategory.OTHER_DOCUMENTS,
       AccountingCategory.TRIP_GROUP_DOCUMENTATION,
     ]);
@@ -402,7 +403,7 @@ export async function POST(request: Request) {
       return NextResponse.json(
         {
           error:
-            "Accounting destination must be 07 - Other Documents or 08 - Trip / Group Documentation.",
+            "Accounting destination must be 06 - Owner / Personal Payments, 07 - Other Documents, or 08 - Trip / Group Documentation.",
         },
         {
           status: 400,
@@ -691,9 +692,12 @@ export async function POST(request: Request) {
             accountingPeriod.id,
           accountingSubcategory:
             accountingCategory ===
-            AccountingCategory.OTHER_DOCUMENTS
-              ? "Other Documents"
-              : "Trip / Group Documentation",
+            AccountingCategory.OWNER_PERSONAL_PAYMENTS
+              ? "Owner / Personal Payments"
+              : accountingCategory ===
+                  AccountingCategory.OTHER_DOCUMENTS
+                ? "Other Documents"
+                : "Trip / Group Documentation",
 
           expenseId,
           supplierPayableId,
