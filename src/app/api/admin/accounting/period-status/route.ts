@@ -1,29 +1,55 @@
-import { NextRequest, NextResponse } from "next/server";
-import { getServerSession } from "next-auth";
+import {
+  NextRequest,
+  NextResponse,
+} from "next/server";
+
+import {
+  getServerSession,
+} from "next-auth";
+
 import {
   AccountingPeriodStatus,
   CashTransactionStatus,
   Role,
 } from "@prisma/client";
 
-import { authOptions } from "@/lib/authOptions";
-import { db } from "@/lib/db";
+import {
+  authOptions,
+} from "@/lib/authOptions";
+
+import {
+  db,
+} from "@/lib/db";
 
 type RequestBody = {
   year?: number;
   month?: number;
-  action?: "START_REVIEW" | "MARK_READY" | "CLOSE" | "REOPEN";
+  action?:
+    | "START_REVIEW"
+    | "MARK_READY"
+    | "CLOSE"
+    | "REOPEN";
 };
 
-export async function POST(request: NextRequest) {
+export async function POST(
+  request: NextRequest,
+) {
   try {
-    const session = await getServerSession(authOptions);
+    const session =
+      await getServerSession(
+        authOptions,
+      );
 
-    if (!session?.user || session.user.role !== Role.ADMIN) {
+    if (
+      !session?.user ||
+      session.user.role !==
+        Role.ADMIN
+    ) {
       return NextResponse.json(
         {
           ok: false,
-          error: "Unauthorized.",
+          error:
+            "Unauthorized.",
         },
         {
           status: 401,
@@ -31,11 +57,17 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const body = (await request.json()) as RequestBody;
+    const body =
+      (await request.json()) as RequestBody;
 
-    const year = Number(body.year);
-    const month = Number(body.month);
-    const action = body.action;
+    const year =
+      Number(body.year);
+
+    const month =
+      Number(body.month);
+
+    const action =
+      body.action;
 
     if (
       !Number.isInteger(year) ||
@@ -48,7 +80,8 @@ export async function POST(request: NextRequest) {
       return NextResponse.json(
         {
           ok: false,
-          error: "Invalid accounting period.",
+          error:
+            "Invalid accounting period.",
         },
         {
           status: 400,
@@ -60,7 +93,8 @@ export async function POST(request: NextRequest) {
       return NextResponse.json(
         {
           ok: false,
-          error: "Accounting period action is required.",
+          error:
+            "Accounting period action is required.",
         },
         {
           status: 400,
@@ -68,43 +102,52 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const period = await db.accountingPeriod.findUnique({
-      where: {
-        year_month: {
-          year,
-          month,
-        },
-      },
-      include: {
-        documents: {
-          select: {
-            accountingCategory: true,
+    const period =
+      await db.accountingPeriod.findUnique({
+        where: {
+          year_month: {
+            year,
+            month,
           },
         },
-        bankStatements: {
-          where: {
-            currency: "EUR",
+
+        include: {
+          documents: {
+            select: {
+              accountingCategory:
+                true,
+            },
           },
-          select: {
-            id: true,
+
+          bankStatements: {
+            where: {
+              currency: "EUR",
+            },
+
+            select: {
+              id: true,
+            },
+          },
+
+          cashTransactions: {
+            where: {
+              status:
+                CashTransactionStatus.POSTED,
+            },
+
+            select: {
+              id: true,
+            },
           },
         },
-        cashTransactions: {
-          where: {
-            status: CashTransactionStatus.POSTED,
-          },
-          select: {
-            id: true,
-          },
-        },
-      },
-    });
+      });
 
     if (!period) {
       return NextResponse.json(
         {
           ok: false,
-          error: "Accounting period not found.",
+          error:
+            "Accounting period not found.",
         },
         {
           status: 404,
@@ -112,12 +155,23 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    if (action === "START_REVIEW") {
-      if (period.status !== AccountingPeriodStatus.OPEN) {
+    // ======================================================
+    // START REVIEW
+    // ======================================================
+
+    if (
+      action ===
+      "START_REVIEW"
+    ) {
+      if (
+        period.status !==
+        AccountingPeriodStatus.OPEN
+      ) {
         return NextResponse.json(
           {
             ok: false,
-            error: "Only an open accounting period can be moved to review.",
+            error:
+              "Only an open accounting period can be moved to review.",
           },
           {
             status: 409,
@@ -129,23 +183,37 @@ export async function POST(request: NextRequest) {
         where: {
           id: period.id,
         },
+
         data: {
-          status: AccountingPeriodStatus.REVIEW,
+          status:
+            AccountingPeriodStatus.REVIEW,
         },
       });
 
       return NextResponse.json({
         ok: true,
-        message: "Accounting period moved to review.",
+        message:
+          "Accounting period moved to review.",
       });
     }
 
-    if (action === "MARK_READY") {
-      if (period.status !== AccountingPeriodStatus.REVIEW) {
+    // ======================================================
+    // MARK READY
+    // ======================================================
+
+    if (
+      action ===
+      "MARK_READY"
+    ) {
+      if (
+        period.status !==
+        AccountingPeriodStatus.REVIEW
+      ) {
         return NextResponse.json(
           {
             ok: false,
-            error: "Only a period under review can be marked ready.",
+            error:
+              "Only a period under review can be marked ready.",
           },
           {
             status: 409,
@@ -153,29 +221,38 @@ export async function POST(request: NextRequest) {
         );
       }
 
-      const uncategorizedCount = period.documents.filter(
-        (document) => !document.accountingCategory,
-      ).length;
+      const uncategorizedCount =
+        period.documents.filter(
+          (document) =>
+            !document.accountingCategory,
+        ).length;
 
-      const part1Categories = new Set([
-        "BANK_STATEMENTS",
-        "SALES_INCOME",
-        "EXPENSES_PURCHASES",
-        "CASH",
-      ]);
+      const part1Categories =
+        new Set([
+          "BANK_STATEMENTS",
+          "SALES_INCOME",
+          "EXPENSES_PURCHASES",
+          "CASH",
+        ]);
 
-      const part1FinanceDocumentCount = period.documents.filter(
-        (document) =>
-          document.accountingCategory !== null &&
-          part1Categories.has(document.accountingCategory),
-      ).length;
+      const part1FinanceDocumentCount =
+        period.documents.filter(
+          (document) =>
+            document.accountingCategory !==
+              null &&
+            part1Categories.has(
+              document.accountingCategory,
+            ),
+        ).length;
 
       const part1ItemCount =
         part1FinanceDocumentCount +
         period.bankStatements.length +
         period.cashTransactions.length;
 
-      const hasEurBankStatement = period.bankStatements.length > 0;
+      const hasEurBankStatement =
+        period.bankStatements.length >
+        0;
 
       const ready =
         hasEurBankStatement &&
@@ -199,23 +276,37 @@ export async function POST(request: NextRequest) {
         where: {
           id: period.id,
         },
+
         data: {
-          status: AccountingPeriodStatus.READY,
+          status:
+            AccountingPeriodStatus.READY,
         },
       });
 
       return NextResponse.json({
         ok: true,
-        message: "Accounting period marked Ready for Accountant.",
+        message:
+          "Accounting period marked Ready for Accountant.",
       });
     }
 
-    if (action === "CLOSE") {
-      if (period.status !== AccountingPeriodStatus.SUBMITTED) {
+    // ======================================================
+    // CLOSE
+    // ======================================================
+
+    if (
+      action ===
+      "CLOSE"
+    ) {
+      if (
+        period.status !==
+        AccountingPeriodStatus.SUBMITTED
+      ) {
         return NextResponse.json(
           {
             ok: false,
-            error: "Only a submitted accounting period can be closed.",
+            error:
+              "Only a submitted accounting period can be closed.",
           },
           {
             status: 409,
@@ -227,24 +318,45 @@ export async function POST(request: NextRequest) {
         where: {
           id: period.id,
         },
+
         data: {
-          status: AccountingPeriodStatus.CLOSED,
-          closedAt: new Date(),
+          status:
+            AccountingPeriodStatus.CLOSED,
+
+          closedAt:
+            new Date(),
         },
       });
 
       return NextResponse.json({
         ok: true,
-        message: "Accounting period closed.",
+        message:
+          "Accounting period closed.",
       });
     }
 
-    if (action === "REOPEN") {
-      if (period.status !== AccountingPeriodStatus.CLOSED) {
+    // ======================================================
+    // RETURN / REOPEN TO OPEN
+    //
+    // REVIEW -> OPEN
+    // CLOSED -> OPEN
+    // ======================================================
+
+    if (
+      action ===
+      "REOPEN"
+    ) {
+      if (
+        period.status !==
+          AccountingPeriodStatus.REVIEW &&
+        period.status !==
+          AccountingPeriodStatus.CLOSED
+      ) {
         return NextResponse.json(
           {
             ok: false,
-            error: "Only a closed accounting period can be reopened.",
+            error:
+              "Only a period under review or a closed period can be returned to open.",
           },
           {
             status: 409,
@@ -252,34 +364,55 @@ export async function POST(request: NextRequest) {
         );
       }
 
+      const wasClosed =
+        period.status ===
+        AccountingPeriodStatus.CLOSED;
+
       await db.accountingPeriod.update({
         where: {
           id: period.id,
         },
+
         data: {
-          status: AccountingPeriodStatus.OPEN,
-          closedAt: null,
-          submittedAt: null,
+          status:
+            AccountingPeriodStatus.OPEN,
+
+          closedAt:
+            null,
+
+          ...(wasClosed
+            ? {
+                submittedAt:
+                  null,
+              }
+            : {}),
         },
       });
 
       return NextResponse.json({
         ok: true,
-        message: "Accounting period reopened.",
+
+        message: wasClosed
+          ? "Accounting period reopened."
+          : "Accounting period returned to Open.",
       });
     }
 
     return NextResponse.json(
       {
         ok: false,
-        error: "Unsupported accounting period action.",
+        error:
+          "Unsupported accounting period action.",
       },
       {
         status: 400,
       },
     );
   } catch (error) {
-    console.error("POST accounting period status error:", error);
+    console.error(
+      "POST accounting period status error:",
+      error,
+    );
 
     const message =
       error instanceof Error
@@ -289,7 +422,8 @@ export async function POST(request: NextRequest) {
     return NextResponse.json(
       {
         ok: false,
-        error: message,
+        error:
+          message,
       },
       {
         status: 500,

@@ -36,22 +36,16 @@ export default function AccountingPeriodActions({
   const router = useRouter();
 
   const [busy, setBusy] =
-    useState<Action | null>(
-      null
-    );
+    useState<Action | null>(null);
 
   const [message, setMessage] =
-    useState<string | null>(
-      null
-    );
+    useState<string | null>(null);
 
   const [error, setError] =
-    useState<string | null>(
-      null
-    );
+    useState<string | null>(null);
 
   async function runAction(
-    action: Action
+    action: Action,
   ) {
     setBusy(action);
     setMessage(null);
@@ -69,13 +63,12 @@ export default function AccountingPeriodActions({
                 "application/json",
             },
 
-            body:
-              JSON.stringify({
-                year,
-                month,
-                action,
-              }),
-          }
+            body: JSON.stringify({
+              year,
+              month,
+              action,
+            }),
+          },
         );
 
       const result =
@@ -91,23 +84,21 @@ export default function AccountingPeriodActions({
       ) {
         throw new Error(
           result.error ||
-            "Unable to update accounting period."
+            "Unable to update accounting period.",
         );
       }
 
       setMessage(
         result.message ||
-          "Accounting period updated successfully."
+          "Accounting period updated successfully.",
       );
 
       router.refresh();
-    } catch (
-      caughtError
-    ) {
+    } catch (caughtError) {
       setError(
         caughtError instanceof Error
           ? caughtError.message
-          : "Unable to update accounting period."
+          : "Unable to update accounting period.",
       );
     } finally {
       setBusy(null);
@@ -121,12 +112,10 @@ export default function AccountingPeriodActions({
           AccountingPeriodStatus.OPEN && (
           <button
             type="button"
-            disabled={
-              busy !== null
-            }
+            disabled={busy !== null}
             onClick={() =>
               runAction(
-                "START_REVIEW"
+                "START_REVIEW",
               )
             }
             className="inline-flex items-center gap-2 rounded-lg border border-amber-300 bg-amber-50 px-3.5 py-2 text-sm font-semibold text-amber-800 transition hover:bg-amber-100 disabled:cursor-not-allowed disabled:opacity-60"
@@ -142,28 +131,47 @@ export default function AccountingPeriodActions({
 
         {status ===
           AccountingPeriodStatus.REVIEW && (
-          <button
-            type="button"
-            disabled={
-              busy !== null ||
-              !monthlyReady
-            }
-            onClick={() =>
-              runAction(
-                "MARK_READY"
-              )
-            }
-            className="inline-flex items-center gap-2 rounded-lg bg-emerald-700 px-3.5 py-2 text-sm font-semibold text-white transition hover:bg-emerald-800 disabled:cursor-not-allowed disabled:bg-slate-300"
-          >
-            <CheckCircle2 className="h-4 w-4" />
+          <>
+            <button
+              type="button"
+              disabled={busy !== null}
+              onClick={() =>
+                runAction(
+                  "REOPEN",
+                )
+              }
+              className="inline-flex items-center gap-2 rounded-lg border border-slate-300 bg-white px-3.5 py-2 text-sm font-semibold text-slate-700 transition hover:border-[#8B0000] hover:text-[#8B0000] disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              <RotateCcw className="h-4 w-4" />
 
-            {busy ===
-            "MARK_READY"
-              ? "Updating..."
-              : monthlyReady
-                ? "Mark Ready"
-                : "Not Ready Yet"}
-          </button>
+              {busy === "REOPEN"
+                ? "Returning..."
+                : "Return to Open"}
+            </button>
+
+            <button
+              type="button"
+              disabled={
+                busy !== null ||
+                !monthlyReady
+              }
+              onClick={() =>
+                runAction(
+                  "MARK_READY",
+                )
+              }
+              className="inline-flex items-center gap-2 rounded-lg bg-emerald-700 px-3.5 py-2 text-sm font-semibold text-white transition hover:bg-emerald-800 disabled:cursor-not-allowed disabled:bg-slate-300"
+            >
+              <CheckCircle2 className="h-4 w-4" />
+
+              {busy ===
+              "MARK_READY"
+                ? "Updating..."
+                : monthlyReady
+                  ? "Mark Ready"
+                  : "Not Ready Yet"}
+            </button>
+          </>
         )}
 
         {status ===
@@ -179,12 +187,10 @@ export default function AccountingPeriodActions({
           AccountingPeriodStatus.SUBMITTED && (
           <button
             type="button"
-            disabled={
-              busy !== null
-            }
+            disabled={busy !== null}
             onClick={() =>
               runAction(
-                "CLOSE"
+                "CLOSE",
               )
             }
             className="inline-flex items-center gap-2 rounded-lg bg-[#0B1F3A] px-3.5 py-2 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60"
@@ -202,12 +208,10 @@ export default function AccountingPeriodActions({
           AccountingPeriodStatus.CLOSED && (
           <button
             type="button"
-            disabled={
-              busy !== null
-            }
+            disabled={busy !== null}
             onClick={() =>
               runAction(
-                "REOPEN"
+                "REOPEN",
               )
             }
             className="inline-flex items-center gap-2 rounded-lg border border-slate-300 bg-white px-3.5 py-2 text-sm font-semibold text-slate-700 transition hover:border-[#8B0000] hover:text-[#8B0000] disabled:cursor-not-allowed disabled:opacity-60"
