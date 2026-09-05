@@ -1,6 +1,7 @@
 import {
   AccountingCategory,
   BankTransactionDirection,
+  BookingStatus,
   ExpenseApprovalStatus,
   ExpensePaymentStatus,
   PaymentRecordStatus,
@@ -592,16 +593,12 @@ export async function buildAccountingPackage({
     );
   }
 
-  const periodStart = new Date(Date.UTC(year, month - 1, 1));
-  const periodEnd = new Date(Date.UTC(year, month, 1));
-
   // ========================================================
   // ACCOUNTING PERIOD
   // ========================================================
 
-  const [period, monthlyCustomerPayments, monthlyAdditionalExpenses] =
-    await Promise.all([
-    db.accountingPeriod.findUnique({
+  const period =
+    await db.accountingPeriod.findUnique({
       where: {
         year_month: {
           year,
@@ -834,77 +831,7 @@ export async function buildAccountingPackage({
           },
         },
       },
-    }),
-
-      db.payment.findMany({
-        where: {
-          currency: "EUR",
-          status: PaymentRecordStatus.RECEIVED,
-          paidAt: {
-            gte: periodStart,
-            lt: periodEnd,
-          },
-        },
-        select: {
-          id: true,
-          paidAt: true,
-          createdAt: true,
-          amount: true,
-          currency: true,
-          reference: true,
-          agencyGroupName: true,
-          booking: {
-            select: {
-              agencyNameSnapshot: true,
-              customerName: true,
-              groupName: true,
-              agentNameSnapshot: true,
-              partnerCompany: { select: { name: true } },
-              user: {
-                select: {
-                  fullName: true,
-                  email: true,
-                  travelAgency: true,
-                },
-              },
-            },
-          },
-        },
-        orderBy: [{ paidAt: "asc" }, { createdAt: "asc" }],
-      }),
-
-      db.expense.findMany({
-        where: {
-          currency: "EUR",
-          expenseDate: {
-            gte: periodStart,
-            lt: periodEnd,
-          },
-          paymentStatus: {
-            not: ExpensePaymentStatus.CANCELLED,
-          },
-          approvalStatus: {
-            notIn: [
-              ExpenseApprovalStatus.REJECTED,
-              ExpenseApprovalStatus.CANCELLED,
-            ],
-          },
-        },
-        select: {
-          id: true,
-          expenseDate: true,
-          vendorName: true,
-          category: true,
-          amount: true,
-          currency: true,
-          paymentStatus: true,
-          taxAmount: true,
-          paymentReference: true,
-          description: true,
-        },
-        orderBy: [{ expenseDate: "asc" }, { createdAt: "asc" }],
-      }),
-    ]);
+    });
 
   if (!period) {
     throw new Error(
@@ -1485,133 +1412,564 @@ export async function buildAccountingPackage({
     );
 
     // ======================================================
-    // 2. CUSTOMER PAYMENT SUMMARY
+    // 2. CUSTOMER / AGENT SUMMARY
     //
-    // Source of truth: Payment records for this accounting
-    // month. This avoids requiring a separate FinanceDocument
-    // link before a genuine customer receipt appears here.
+    // Primary source: Booking.
+    //
+    // If a sales document is not linked to a booking,
+    // it is included separately using its recipient.
     // ======================================================
 
-    const customerPaymentRows =
-      monthlyCustomerPayments.map(
-        (payment) => {
-          const payer =
-            payment.agencyGroupName ||
-            payment.booking?.agencyNameSnapshot ||
-            payment.booking?.partnerCompany?.name ||
-            payment.booking?.user.travelAgency ||
-            payment.booking?.customerName ||
-            payment.booking?.groupName ||
-            payment.booking?.agentNameSnapshot ||
-            payment.booking?.user.fullName ||
-            payment.booking?.user.email ||
-            "Unspecified Customer / Agent";
+    type CustomerSummary = {
+      payer: string;
+      currency: string;
+      recordCount: number;
+      sales: number;
+      received: number;
+      outstanding: number;
+    };
 
-          return [
-            (payment.paidAt ?? payment.createdAt)
-              .toISOString()
-              .slice(0, 10),
-            payer,
-            payment.reference ?? "",
-            Number(payment.amount ?? 0).toFixed(2),
-            payment.currency,
-          ];
-        },
+    const customerSummaryMap =
+      new Map<
+        string,
+        CustomerSummary
+      >();
+
+    const uniqueBookings =
+      new Map<
+        string,
+        NonNullable<
+          (typeof selectedDocuments)[number]["booking"]
+        >
+      >();
+
+    for (
+      const document of
+      selectedDocuments
+    ) {
+      if (
+        document.booking
+      ) {
+        uniqueBookings.set(
+          document.booking.id,
+          document.booking,
+        );
+      }
+    }
+
+    for (
+      const booking of
+      uniqueBookings.values()
+    ) {
+      if (
+        booking.status ===
+        BookingStatus.CANCELLED
+      ) {
+        continue;
+      }
+
+      const payer =
+        booking.agencyNameSnapshot ||
+        booking.partnerCompany
+          ?.name ||
+        booking.user
+          .travelAgency ||
+        booking.customerName ||
+        booking.groupName ||
+        booking.agentNameSnapshot ||
+        booking.user
+          .fullName ||
+        booking.user
+          .email ||
+        "Unspecified Customer / Agent";
+
+      const currency =
+        booking.currency ||
+        "EUR";
+
+      const receivedFromPayments =
+        booking.payments.reduce(
+          (
+            sum,
+            payment,
+          ) =>
+            sum +
+            Number(
+              payment.amount ??
+                0,
+            ),
+          0,
+        );
+
+      const received =
+        Number(
+          booking.amountPaid ??
+            0,
+        ) > 0
+          ? Number(
+              booking.amountPaid,
+            )
+          : receivedFromPayments;
+
+      const sales =
+        Number(
+          booking.totalPrice ??
+            0,
+        );
+
+      const outstanding =
+        Math.max(
+          sales -
+            received,
+          0,
+        );
+
+      const key =
+        `${payer}::${currency}`;
+
+      const existing =
+        customerSummaryMap.get(
+          key,
+        ) ?? {
+          payer,
+          currency,
+          recordCount: 0,
+          sales: 0,
+          received: 0,
+          outstanding: 0,
+        };
+
+      existing.recordCount +=
+        1;
+
+      existing.sales +=
+        sales;
+
+      existing.received +=
+        received;
+
+      existing.outstanding +=
+        outstanding;
+
+      customerSummaryMap.set(
+        key,
+        existing,
       );
+    }
 
-    const customerPaymentSummaryCsv =
+    /*
+     * Include unlinked sales documents.
+     *
+     * They are excluded when the FinanceDocument
+     * already has a Booking relation because that
+     * booking has already been summarized above.
+     */
+    const uniqueUnlinkedSalesDocuments =
+      new Map<
+        string,
+        NonNullable<
+          (typeof selectedDocuments)[number]["salesDocument"]
+        >
+      >();
+
+    for (
+      const document of
+      selectedDocuments
+    ) {
+      if (
+        document.salesDocument &&
+        !document.booking
+      ) {
+        uniqueUnlinkedSalesDocuments.set(
+          document
+            .salesDocument
+            .id,
+
+          document.salesDocument,
+        );
+      }
+    }
+
+    for (
+      const salesDocument of
+      uniqueUnlinkedSalesDocuments.values()
+    ) {
+      const payer =
+        salesDocument.recipientCompany ||
+        salesDocument.recipientName ||
+        "Unspecified Customer / Agent";
+
+      const currency =
+        salesDocument.currency ||
+        "EUR";
+
+      const sales =
+        Number(
+          salesDocument.totalAmount ??
+            0,
+        );
+
+      const received =
+        Number(
+          salesDocument.amountPaid ??
+            0,
+        );
+
+      const outstanding =
+        Number(
+          salesDocument.balance ??
+            Math.max(
+              sales -
+                received,
+              0,
+            ),
+        );
+
+      const key =
+        `${payer}::${currency}`;
+
+      const existing =
+        customerSummaryMap.get(
+          key,
+        ) ?? {
+          payer,
+          currency,
+          recordCount: 0,
+          sales: 0,
+          received: 0,
+          outstanding: 0,
+        };
+
+      existing.recordCount +=
+        1;
+
+      existing.sales +=
+        sales;
+
+      existing.received +=
+        received;
+
+      existing.outstanding +=
+        Math.max(
+          outstanding,
+          0,
+        );
+
+      customerSummaryMap.set(
+        key,
+        existing,
+      );
+    }
+
+    const customerRows =
+      Array.from(
+        customerSummaryMap.values(),
+      )
+        .sort(
+          (
+            a,
+            b,
+          ) => {
+            if (
+              a.currency !==
+              b.currency
+            ) {
+              return a.currency.localeCompare(
+                b.currency,
+              );
+            }
+
+            if (
+              a.outstanding !==
+              b.outstanding
+            ) {
+              return (
+                b.outstanding -
+                a.outstanding
+              );
+            }
+
+            return a.payer.localeCompare(
+              b.payer,
+            );
+          },
+        )
+        .map(
+          (
+            summary,
+          ) => [
+            summary.payer,
+
+            summary.currency,
+
+            summary.recordCount,
+
+            summary.sales.toFixed(
+              2,
+            ),
+
+            summary.received.toFixed(
+              2,
+            ),
+
+            summary.outstanding.toFixed(
+              2,
+            ),
+
+            summary.outstanding <=
+            0.005
+              ? "SETTLED"
+              : "OUTSTANDING",
+          ],
+        );
+
+    const customerSummaryCsv =
       buildCsv(
         [
-          "Date",
           "Customer / Agent",
-          "Reference",
-          "Amount Received",
           "Currency",
+          "Bookings / Sales Records",
+          "Sales",
+          "Received",
+          "Outstanding",
+          "Position",
         ],
-        customerPaymentRows,
+        customerRows,
       );
 
     archive.append(
-      `\uFEFF${customerPaymentSummaryCsv}`,
+      `\uFEFF${customerSummaryCsv}`,
       {
         name:
-          "SUMMARY/Customer-Payments-Summary.csv",
+          "SUMMARY/Customer-Agent-Summary.csv",
       },
     );
 
     // ======================================================
     // 3. ADDITIONAL EXPENSE SUMMARY
     //
-    // Source of truth: Expense records for this accounting
-    // month. Supporting FinanceDocuments remain in the ZIP,
-    // but they are not required for an Expense to appear here.
+    // Group by:
+    // Vendor / Payee + Category + Currency
+    //
+    // Each Expense ID is counted only once even if more than
+    // one supporting FinanceDocument points to it.
     // ======================================================
 
-    const additionalExpenseRows =
-      monthlyAdditionalExpenses.map(
-        (expense) => {
-          const category =
-            String(expense.category)
-              .replaceAll("_", " ")
-              .toLowerCase()
-              .replace(
-                /\b\w/g,
-                (letter) =>
-                  letter.toUpperCase(),
-              );
+    type AdditionalExpenseSummary = {
+      vendorName: string;
+      category: string;
+      currency: string;
+      expenseCount: number;
+      total: number;
+      paid: number;
+      pending: number;
+      tax: number;
+    };
 
-          const amount =
-            Number(expense.amount ?? 0);
+    const uniqueExpenses =
+      new Map<
+        string,
+        NonNullable<
+          (typeof selectedDocuments)[number]["expense"]
+        >
+      >();
 
-          const paid =
-            expense.paymentStatus ===
-            ExpensePaymentStatus.PAID
-              ? amount
-              : 0;
+    for (
+      const document of
+      selectedDocuments
+    ) {
+      if (
+        document.expense
+      ) {
+        uniqueExpenses.set(
+          document.expense.id,
+          document.expense,
+        );
+      }
+    }
 
-          const pending =
-            expense.paymentStatus ===
-            ExpensePaymentStatus.PENDING
-              ? amount
-              : 0;
+    const additionalExpenseSummaryMap =
+      new Map<
+        string,
+        AdditionalExpenseSummary
+      >();
 
-          return [
-            expense.expenseDate
-              .toISOString()
-              .slice(0, 10),
-            expense.vendorName ||
-              "Unspecified Payee",
-            category,
-            expense.paymentReference ?? "",
-            expense.description ?? "",
-            amount.toFixed(2),
-            paid.toFixed(2),
-            pending.toFixed(2),
-            Number(
-              expense.taxAmount ?? 0,
-            ).toFixed(2),
-            expense.currency,
-            String(
-              expense.paymentStatus,
-            ).replaceAll("_", " "),
-          ];
-        },
+    for (
+      const expense of
+      uniqueExpenses.values()
+    ) {
+      if (
+        expense.paymentStatus ===
+          ExpensePaymentStatus.CANCELLED ||
+        expense.approvalStatus ===
+          ExpenseApprovalStatus.REJECTED ||
+        expense.approvalStatus ===
+          ExpenseApprovalStatus.CANCELLED
+      ) {
+        continue;
+      }
+
+      const vendorName =
+        expense.vendorName ||
+        "Unspecified Payee";
+
+      const category =
+        String(
+          expense.category,
+        )
+          .replaceAll(
+            "_",
+            " ",
+          )
+          .toLowerCase()
+          .replace(
+            /\b\w/g,
+            (
+              letter,
+            ) =>
+              letter.toUpperCase(),
+          );
+
+      const currency =
+        expense.currency ||
+        "EUR";
+
+      const key =
+        `${vendorName}::${expense.category}::${currency}`;
+
+      const existing =
+        additionalExpenseSummaryMap.get(
+          key,
+        ) ?? {
+          vendorName,
+          category,
+          currency,
+          expenseCount: 0,
+          total: 0,
+          paid: 0,
+          pending: 0,
+          tax: 0,
+        };
+
+      const amount =
+        Number(
+          expense.amount ??
+            0,
+        );
+
+      existing.expenseCount +=
+        1;
+
+      existing.total +=
+        amount;
+
+      existing.tax +=
+        Number(
+          expense.taxAmount ??
+            0,
+        );
+
+      if (
+        expense.paymentStatus ===
+        ExpensePaymentStatus.PAID
+      ) {
+        existing.paid +=
+          amount;
+      }
+
+      if (
+        expense.paymentStatus ===
+        ExpensePaymentStatus.PENDING
+      ) {
+        existing.pending +=
+          amount;
+      }
+
+      additionalExpenseSummaryMap.set(
+        key,
+        existing,
       );
+    }
+
+    const additionalExpenseRows =
+      Array.from(
+        additionalExpenseSummaryMap.values(),
+      )
+        .sort(
+          (
+            a,
+            b,
+          ) => {
+            if (
+              a.currency !==
+              b.currency
+            ) {
+              return a.currency.localeCompare(
+                b.currency,
+              );
+            }
+
+            if (
+              a.vendorName !==
+              b.vendorName
+            ) {
+              return a.vendorName.localeCompare(
+                b.vendorName,
+              );
+            }
+
+            return a.category.localeCompare(
+              b.category,
+            );
+          },
+        )
+        .map(
+          (
+            summary,
+          ) => [
+            summary.vendorName,
+
+            summary.category,
+
+            summary.currency,
+
+            summary.expenseCount,
+
+            summary.total.toFixed(
+              2,
+            ),
+
+            summary.paid.toFixed(
+              2,
+            ),
+
+            summary.pending.toFixed(
+              2,
+            ),
+
+            summary.tax.toFixed(
+              2,
+            ),
+
+            summary.pending >
+            0.005
+              ? "OUTSTANDING"
+              : "SETTLED",
+          ],
+        );
 
     const additionalExpenseSummaryCsv =
       buildCsv(
         [
-          "Date",
           "Vendor / Payee",
           "Category",
-          "Reference",
-          "Description",
+          "Currency",
+          "Expenses",
           "Total",
           "Paid",
           "Pending",
           "VAT / Tax",
-          "Currency",
-          "Payment Status",
+          "Position",
         ],
         additionalExpenseRows,
       );
@@ -1649,26 +2007,23 @@ export async function buildAccountingPackage({
   // DETAILED INDEX
   // ========================================================
 
-  // The index is a generated aid, not an accounting document.
-  // Do not add a header-only / empty index to the ZIP.
-  if (indexRows.length > 1) {
-    const indexFileName =
-      `Epoch-Journeys-Accounting-${year}-${String(
-        month,
-      ).padStart(
-        2,
-        "0",
-      )}-Part-${part}-Index.csv`;
+  const indexFileName =
+    `Epoch-Journeys-Accounting-${year}-${String(
+      month,
+    ).padStart(
+      2,
+      "0",
+    )}-Part-${part}-Index.csv`;
 
-    archive.append(
-      `\uFEFF${indexRows.join(
-        "\n",
-      )}`,
-      {
-        name: indexFileName,
-      },
-    );
-  }
+  archive.append(
+    `\uFEFF${indexRows.join(
+      "\n",
+    )}`,
+    {
+      name:
+        indexFileName,
+    },
+  );
 
   // ========================================================
   // FINALIZE
