@@ -1912,6 +1912,13 @@ export default function FinanceDocumentManager({
                             Download
                           </a>
 
+                          <Link
+                            href={`/admin/finance/documents/${document.id}/edit`}
+                            className="rounded-lg border border-blue-200 bg-white px-3 py-2 text-xs font-semibold text-blue-700 hover:bg-blue-50"
+                          >
+                            Edit
+                          </Link>
+
                           <button
                             type="button"
                             disabled={

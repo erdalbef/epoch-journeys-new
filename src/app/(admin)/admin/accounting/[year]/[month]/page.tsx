@@ -5,8 +5,6 @@ import {
   AccountingPeriodStatus,
   CashTransactionDirection,
   CashTransactionStatus,
-  ExpensePaymentSource,
-  ExpenseReimbursementStatus,
 } from "@prisma/client";
 import AccountingDocumentActions from "@/components/admin/accounting/AccountingDocumentActions";
 import AccountingPeriodActions from "@/components/admin/accounting/AccountingPeriodActions";
@@ -20,6 +18,7 @@ import {
   CheckCircle2,
   CircleDollarSign,
   FileArchive,
+  FileSpreadsheet,
   FileText,
   FileUp,
   FolderOpen,
@@ -326,59 +325,6 @@ export default async function AccountingMonthPage({
     },
   });
 
-  const periodStart = new Date(Date.UTC(year, month - 1, 1));
-  const periodEnd = new Date(Date.UTC(year, month, 1));
-
-  const personalExpenses = await db.expense.findMany({
-    where: {
-      expenseDate: {
-        gte: periodStart,
-        lt: periodEnd,
-      },
-      paymentSource: {
-        in: [
-          ExpensePaymentSource.EMPLOYEE_PERSONAL,
-          ExpensePaymentSource.OWNER_PERSONAL,
-        ],
-      },
-    },
-    orderBy: [{ expenseDate: "desc" }, { createdAt: "desc" }],
-    select: {
-      id: true,
-      title: true,
-      vendorName: true,
-      expenseDate: true,
-      amount: true,
-      currency: true,
-      spenderName: true,
-      paymentSource: true,
-      reimbursementStatus: true,
-      reimbursedAmount: true,
-      reimbursementReference: true,
-      booking: {
-        select: {
-          bookingReference: true,
-          groupName: true,
-        },
-      },
-      tour: {
-        select: {
-          title: true,
-        },
-      },
-    },
-  });
-
-  const employeeExpenses = personalExpenses.filter(
-    (expense) =>
-      expense.paymentSource === ExpensePaymentSource.EMPLOYEE_PERSONAL,
-  );
-
-  const ownerExpenses = personalExpenses.filter(
-    (expense) =>
-      expense.paymentSource === ExpensePaymentSource.OWNER_PERSONAL,
-  );
-
   const isClosed = period.status === AccountingPeriodStatus.CLOSED;
 
   const postedCashTransactions = period.cashTransactions.filter(
@@ -410,20 +356,6 @@ export default async function AccountingMonthPage({
     cashDocumentCount + postedCashTransactions.length,
   );
 
-  const employeeDocumentCount =
-    categoryCounts.get(AccountingCategory.EMPLOYEES_ACCOUNTABLE_PERSONS) ?? 0;
-  categoryCounts.set(
-    AccountingCategory.EMPLOYEES_ACCOUNTABLE_PERSONS,
-    employeeDocumentCount + employeeExpenses.length,
-  );
-
-  const ownerDocumentCount =
-    categoryCounts.get(AccountingCategory.OWNER_PERSONAL_PAYMENTS) ?? 0;
-  categoryCounts.set(
-    AccountingCategory.OWNER_PERSONAL_PAYMENTS,
-    ownerDocumentCount + ownerExpenses.length,
-  );
-
   const totalDocuments = period.documents.length + period.bankStatements.length;
 
   const uncategorizedCount = period.documents.filter(
@@ -445,14 +377,6 @@ export default async function AccountingMonthPage({
 
   const showCash =
     !selectedCategory || selectedCategory === AccountingCategory.CASH;
-
-  const showEmployeeExpenses =
-    !selectedCategory ||
-    selectedCategory === AccountingCategory.EMPLOYEES_ACCOUNTABLE_PERSONS;
-
-  const showOwnerExpenses =
-    !selectedCategory ||
-    selectedCategory === AccountingCategory.OWNER_PERSONAL_PAYMENTS;
 
   const selectedDefinition = selectedCategory
     ? getCategoryDefinition(selectedCategory)
@@ -485,14 +409,11 @@ export default async function AccountingMonthPage({
       part1Categories.has(document.accountingCategory),
   ).length;
 
-  const part2FinanceDocumentCount = period.documents.filter(
+  const part2DocumentCount = period.documents.filter(
     (document) =>
       document.accountingCategory !== null &&
       part2Categories.has(document.accountingCategory),
   ).length;
-
-  const part2DocumentCount =
-    part2FinanceDocumentCount + employeeExpenses.length + ownerExpenses.length;
 
   const part1DocumentCount =
     part1FinanceDocumentCount +
@@ -582,6 +503,14 @@ export default async function AccountingMonthPage({
               {formatDate(period.dueDate)}
             </span>
           </p>
+
+          <a
+            href={`/api/admin/accounting/export/${year}/${month}/eur-excel`}
+            className="inline-flex items-center justify-center gap-2 rounded-lg border border-emerald-700 bg-white px-4 py-2.5 text-sm font-semibold text-emerald-800 transition hover:bg-emerald-50"
+          >
+            <FileSpreadsheet className="h-4 w-4" />
+            Download EUR Accounting Excel
+          </a>
 
           {isClosed ? (
             <div className="inline-flex items-center justify-center rounded-lg border border-slate-200 bg-slate-100 px-4 py-2.5 text-sm font-semibold text-slate-600">
@@ -823,9 +752,7 @@ export default async function AccountingMonthPage({
             const count = categoryCounts.get(definition.category) ?? 0;
             const active = selectedCategory === definition.category;
             const countLabel =
-              definition.category === AccountingCategory.CASH ||
-              definition.category === AccountingCategory.EMPLOYEES_ACCOUNTABLE_PERSONS ||
-              definition.category === AccountingCategory.OWNER_PERSONAL_PAYMENTS
+              definition.category === AccountingCategory.CASH
                 ? count === 1
                   ? "record"
                   : "records"
@@ -897,18 +824,6 @@ export default async function AccountingMonthPage({
               >
                 <Banknote className="h-4 w-4" />
                 Open Cash Register
-              </Link>
-            ) : null}
-
-            {selectedCategory ===
-              AccountingCategory.EMPLOYEES_ACCOUNTABLE_PERSONS ||
-            selectedCategory === AccountingCategory.OWNER_PERSONAL_PAYMENTS ? (
-              <Link
-                href="/admin/finance/expenses/create"
-                className="inline-flex items-center gap-2 text-sm font-semibold text-[#0B1F3A]"
-              >
-                <ReceiptText className="h-4 w-4" />
-                Add Personal-Paid Expense
               </Link>
             ) : null}
           </div>
@@ -991,24 +906,6 @@ export default async function AccountingMonthPage({
             </div>
           )}
         </section>
-      ) : null}
-
-      {showEmployeeExpenses ? (
-        <PersonalExpenseRegister
-          title="Employees / Accountable Persons"
-          description="Company expenses paid personally by employees or accountable persons, including reimbursement tracking."
-          expenses={employeeExpenses}
-          icon={BriefcaseBusiness}
-        />
-      ) : null}
-
-      {showOwnerExpenses ? (
-        <PersonalExpenseRegister
-          title="Owner / Personal Payments"
-          description="Company expenses paid personally by the owner, with reimbursement and settlement tracking."
-          expenses={ownerExpenses}
-          icon={UserRound}
-        />
       ) : null}
 
       <section className="rounded-2xl border bg-white shadow-sm">
@@ -1109,8 +1006,7 @@ export default async function AccountingMonthPage({
                         </p>
 
                         <div className="mt-3 flex flex-wrap gap-2">
-                          <span className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-medium text-slate-700">
-                            {getDocumentTypeLabel(document.type)}
+                          <span className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-medium text-slate-700">{getDocumentTypeLabel(document.type)}
                           </span>
                           {document.accountingSubcategory ? (
                             <span className="rounded-full bg-blue-50 px-2.5 py-1 text-xs font-medium text-blue-700">
@@ -1280,180 +1176,6 @@ export default async function AccountingMonthPage({
   );
 }
 
-
-function PersonalExpenseRegister({
-  title,
-  description,
-  expenses,
-  icon: Icon,
-}: {
-  title: string;
-  description: string;
-  expenses: Array<{
-    id: string;
-    title: string;
-    vendorName: string | null;
-    expenseDate: Date;
-    amount: number;
-    currency: string;
-    spenderName: string | null;
-    reimbursementStatus: ExpenseReimbursementStatus;
-    reimbursedAmount: number;
-    reimbursementReference: string | null;
-    booking: {
-      bookingReference: string;
-      groupName: string | null;
-    } | null;
-    tour: {
-      title: string;
-    } | null;
-  }>;
-  icon: typeof FileText;
-}) {
-  const total = expenses.reduce((sum, expense) => sum + expense.amount, 0);
-  const reimbursed = expenses.reduce(
-    (sum, expense) => sum + expense.reimbursedAmount,
-    0,
-  );
-  const outstanding = Math.max(0, total - reimbursed);
-
-  return (
-    <section className="rounded-2xl border bg-white shadow-sm">
-      <div className="border-b px-6 py-5">
-        <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-          <div className="flex items-center gap-3">
-            <div className="rounded-xl bg-[#0B1F3A] p-2.5 text-white">
-              <Icon className="h-5 w-5" />
-            </div>
-            <div>
-              <h2 className="text-lg font-semibold text-[#0B1F3A]">{title}</h2>
-              <p className="mt-1 text-sm text-slate-600">{description}</p>
-            </div>
-          </div>
-
-          <Link
-            href="/admin/finance/expenses/create"
-            className="inline-flex items-center justify-center gap-2 rounded-lg bg-[#8B0000] px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-[#6f0000]"
-          >
-            <ReceiptText className="h-4 w-4" />
-            Add Expense
-          </Link>
-        </div>
-      </div>
-
-      {expenses.length === 0 ? (
-        <div className="px-6 py-10 text-center">
-          <Icon className="mx-auto h-9 w-9 text-slate-300" />
-          <p className="mt-3 font-medium text-slate-700">
-            No applicable personal-paid expenses for this month.
-          </p>
-          <p className="mt-1 text-sm text-slate-500">
-            This is acceptable when no employee, accountable person or owner paid
-            company expenses personally.
-          </p>
-        </div>
-      ) : (
-        <>
-          <div className="grid gap-3 border-b p-6 sm:grid-cols-3">
-            <div className="rounded-xl bg-slate-50 p-4">
-              <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-                Expense Total
-              </p>
-              <p className="mt-1 text-lg font-bold text-[#0B1F3A]">
-                {formatMoney(total, "EUR")}
-              </p>
-            </div>
-            <div className="rounded-xl bg-emerald-50 p-4">
-              <p className="text-xs font-semibold uppercase tracking-wide text-emerald-700">
-                Reimbursed
-              </p>
-              <p className="mt-1 text-lg font-bold text-emerald-800">
-                {formatMoney(reimbursed, "EUR")}
-              </p>
-            </div>
-            <div className="rounded-xl bg-amber-50 p-4">
-              <p className="text-xs font-semibold uppercase tracking-wide text-amber-700">
-                Outstanding
-              </p>
-              <p className="mt-1 text-lg font-bold text-amber-800">
-                {formatMoney(outstanding, "EUR")}
-              </p>
-            </div>
-          </div>
-
-          <div className="divide-y">
-            {expenses.map((expense) => {
-              const outstandingAmount = Math.max(
-                0,
-                expense.amount - expense.reimbursedAmount,
-              );
-
-              return (
-                <div key={expense.id} className="px-6 py-5">
-                  <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-                    <div>
-                      <p className="font-semibold text-slate-900">
-                        {expense.title}
-                      </p>
-                      <p className="mt-1 text-sm text-slate-500">
-                        {expense.spenderName || "Person not specified"}
-                        {expense.vendorName ? ` • ${expense.vendorName}` : ""}
-                      </p>
-                      <div className="mt-3 flex flex-wrap gap-x-5 gap-y-1 text-xs text-slate-500">
-                        <span>Date: {formatDate(expense.expenseDate)}</span>
-                        {expense.booking ? (
-                          <span>
-                            Booking:{" "}
-                            {expense.booking.groupName ||
-                              expense.booking.bookingReference}
-                          </span>
-                        ) : null}
-                        {expense.tour ? <span>Tour: {expense.tour.title}</span> : null}
-                        {expense.reimbursementReference ? (
-                          <span>Ref: {expense.reimbursementReference}</span>
-                        ) : null}
-                      </div>
-                    </div>
-
-                    <div className="grid min-w-[300px] grid-cols-3 gap-3 text-right">
-                      <div>
-                        <p className="text-xs text-slate-500">Expense</p>
-                        <p className="mt-1 text-sm font-semibold text-slate-900">
-                          {formatMoney(expense.amount, expense.currency)}
-                        </p>
-                      </div>
-                      <div>
-                        <p className="text-xs text-slate-500">Reimbursed</p>
-                        <p className="mt-1 text-sm font-semibold text-emerald-700">
-                          {formatMoney(
-                            expense.reimbursedAmount,
-                            expense.currency,
-                          )}
-                        </p>
-                      </div>
-                      <div>
-                        <p className="text-xs text-slate-500">Outstanding</p>
-                        <p className="mt-1 text-sm font-semibold text-amber-700">
-                          {formatMoney(outstandingAmount, expense.currency)}
-                        </p>
-                      </div>
-                      <div className="col-span-3">
-                        <span className="inline-flex rounded-full bg-slate-100 px-2.5 py-1 text-xs font-semibold text-slate-700">
-                          {getDocumentTypeLabel(expense.reimbursementStatus)}
-                        </span>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        </>
-      )}
-    </section>
-  );
-}
-
 function SuccessNotice({
   title,
   detail,
@@ -1553,4 +1275,3 @@ function ReadinessItem({
     </div>
   );
 }
-
