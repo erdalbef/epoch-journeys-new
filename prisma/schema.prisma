@@ -45,7 +45,6 @@ model User {
   billingCompanyRegNo        String?
   billingPhone               String?
   billingState               String?
-  agentQuotes                Quote[]                  @relation("QuoteAgent")
   AgentCommunication         AgentCommunication[]
   agentTourCommissions       AgentTourCommission[]
   bankReconciliations        BankReconciliation[]
@@ -62,6 +61,7 @@ model User {
   reviewedPaymentSubmissions PaymentSubmission[]      @relation("PaymentSubmissionReviewer")
   paymentSubmissions         PaymentSubmission[]      @relation("PaymentSubmissionUser")
   acceptedQuotes             Quote[]                  @relation("QuoteAcceptedBy")
+  agentQuotes                Quote[]                  @relation("QuoteAgent")
   quotesFinalized            Quote[]                  @relation("QuoteFinalizedBy")
   quotesSent                 Quote[]                  @relation("QuoteSentBy")
   quoteActivities            QuoteActivity[]
@@ -145,7 +145,7 @@ model Tour {
   financeEntries           FinanceEntry[]
   massArrangements         MassArrangement[]
   partnerTourAliases       PartnerTourAlias[]
-  payments                  Payment[]
+  payments                 Payment[]
   pricingTiers             PricingTier[]
   privateGroupPricingPlans PrivateGroupPricingPlan[]
   quotes                   Quote[]
@@ -587,16 +587,16 @@ model Quote {
   paymentPolicy             String?
   agentClientPdfUrl         String?
   agentClientPdfGeneratedAt DateTime?
-  agentId                   String?
   partnerCompanyId          String?
   partnerPackageName        String?
   partnerTourAliasId        String?
   acceptedAt                DateTime?
   acceptedById              String?
+  agentId                   String?
   booking                   Booking?
-  agent                     User?               @relation("QuoteAgent", fields: [agentId], references: [id], onDelete: SetNull)
   selectedFor               CustomTourRequest[] @relation("SelectedQuote")
   acceptedBy                User?               @relation("QuoteAcceptedBy", fields: [acceptedById], references: [id])
+  agent                     User?               @relation("QuoteAgent", fields: [agentId], references: [id])
   departureDate             DepartureDate?      @relation(fields: [departureDateId], references: [id])
   finalizedBy               User?               @relation("QuoteFinalizedBy", fields: [finalizedById], references: [id])
   partnerCompany            PartnerCompany?     @relation(fields: [partnerCompanyId], references: [id])
@@ -742,8 +742,6 @@ model Payment {
   createdAt            DateTime            @default(now())
   updatedAt            DateTime            @updatedAt
   bookingId            String?
-  tourId               String?
-  agencyGroupName      String?
   amount               Float
   currency             String              @default("EUR")
   method               PaymentMethod
@@ -754,9 +752,11 @@ model Payment {
   receivedBy           String?
   allocationLockReason String?
   allocationLockedAt   DateTime?
+  agencyGroupName      String?
+  tourId               String?
   bankTransactions     BankTransaction[]
   financeDocument      FinanceDocument?
-  booking              Booking?            @relation(fields: [bookingId], references: [id], onDelete: SetNull)
+  booking              Booking?            @relation(fields: [bookingId], references: [id])
   tour                 Tour?               @relation(fields: [tourId], references: [id])
   allocations          PaymentAllocation[]
   refunds              Refund[]
@@ -1781,15 +1781,12 @@ model SupplierContract {
 
 model SupplierPayable {
   id                    String                        @id @default(cuid())
-  internalReference     String?                       @unique
-  documentType          SupplierPayableDocumentType   @default(FINAL_INVOICE)
   supplierId            String
   serviceId             String?
   rateId                String?
   tourId                String?
   departureDateId       String?
   bookingId             String?
-  agencyGroupName       String?
   createdById           String?
   approvedById          String?
   title                 String
@@ -1816,6 +1813,9 @@ model SupplierPayable {
   rateNameSnapshot      String?
   createdAt             DateTime                      @default(now())
   updatedAt             DateTime                      @updatedAt
+  documentType          SupplierPayableDocumentType   @default(FINAL_INVOICE)
+  internalReference     String?                       @unique
+  agencyGroupName       String?
   documents             FinanceDocument[]
   approvedBy            User?                         @relation("SupplierPayable_approvedByIdToUser", fields: [approvedById], references: [id])
   booking               Booking?                      @relation(fields: [bookingId], references: [id])
@@ -1826,7 +1826,6 @@ model SupplierPayable {
   supplier              Supplier                      @relation(fields: [supplierId], references: [id])
   tour                  Tour?                         @relation(fields: [tourId], references: [id])
   payments              SupplierPayablePayment[]
-
 
   @@index([agencyGroupName])
   @@index([approvalStatus])
@@ -1842,7 +1841,6 @@ model SupplierPayable {
   @@index([serviceId])
   @@index([supplierId])
   @@index([tourId])
-  
 }
 
 model SupplierPayablePayment {
@@ -2000,11 +1998,11 @@ enum PaymentStatus {
 
 enum PaymentMethod {
   BANK_TRANSFER
-  COMPANY_CREDIT_CARD
   STRIPE
   PAYPAL
   CASH
   OTHER
+  COMPANY_CREDIT_CARD
 }
 
 enum PaymentRecordStatus {
@@ -2379,8 +2377,8 @@ enum FinanceDocumentType {
   AGREEMENT
   CREDIT_NOTE
   INVOICE
-  PERSONAL_WITHDRAWAL
   OTHER
+  PERSONAL_WITHDRAWAL
 }
 
 enum MassArrangementStatus {

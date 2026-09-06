@@ -10,9 +10,6 @@ import { db } from "@/lib/db";
 
 import FinanceDocumentManager from "./FinanceDocumentManager";
 
-export const dynamic = "force-dynamic";
-export const revalidate = 0;
-
 export default async function FinanceDocumentsPage() {
   const session =
     await getServerSession(authOptions);
@@ -38,14 +35,11 @@ export default async function FinanceDocumentsPage() {
     bankTransactions,
   ] = await Promise.all([
     db.financeDocument.findMany({
-      orderBy: [
-        {
-          createdAt: "desc",
-        },
-        {
-          title: "asc",
-        },
-      ],
+      orderBy: {
+        createdAt: "desc",
+      },
+
+      take: 250,
 
       select: {
         id: true,
@@ -351,40 +345,6 @@ export default async function FinanceDocumentsPage() {
       },
     }),
   ]);
-
-  console.log(
-    `[Finance Documents] Loaded ${documents.length} documents`,
-  );
-
-  console.log(
-    "[Finance Documents] August bank statement:",
-    documents
-      .filter((document) =>
-        document.title
-          .toUpperCase()
-          .includes("AUGUST BANK STATEMENT"),
-      )
-      .map((document) => ({
-        id: document.id,
-        title: document.title,
-        type: document.type,
-      })),
-  );
-
-  console.log(
-    "[Finance Documents] Erdal withdrawal:",
-    documents
-      .filter((document) =>
-        document.title
-          .toUpperCase()
-          .includes("ERDAL VARDARLI"),
-      )
-      .map((document) => ({
-        id: document.id,
-        title: document.title,
-        type: document.type,
-      })),
-  );
 
   return (
     <FinanceDocumentManager
