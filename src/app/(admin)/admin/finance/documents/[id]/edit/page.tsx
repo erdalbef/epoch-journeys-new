@@ -12,7 +12,7 @@ import { db } from "@/lib/db";
 
 type Props = {
   params: Promise<{ id: string }>;
-  searchParams?: Promise<{ error?: string }>;
+  searchParams?: Promise<{ error?: string; saved?: string; confirmDelete?: string }>;
 };
 
 function enumLabel(value: string) {
@@ -66,6 +66,7 @@ export default async function EditFinanceDocumentPage({
         title: true,
         description: true,
         originalFileName: true,
+        storagePath: true,
         documentDate: true,
         referenceNumber: true,
         notes: true,
@@ -243,6 +244,12 @@ export default async function EditFinanceDocumentPage({
         </Link>
       </div>
 
+      {query.saved === "1" ? (
+        <div className="rounded-xl border border-green-200 bg-green-50 p-4 text-sm font-semibold text-green-800">
+          Finance document updated successfully.
+        </div>
+      ) : null}
+
       {query.error ? (
         <div className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm font-medium text-red-800">
           {query.error}
@@ -315,8 +322,18 @@ export default async function EditFinanceDocumentPage({
           </Field>
 
           <Field label="Current File">
-            <div className="flex h-11 items-center rounded-xl border border-slate-200 bg-slate-50 px-3 text-sm text-slate-700">
-              {document.originalFileName}
+            <div className="space-y-2">
+              <div className="flex h-11 items-center rounded-xl border border-slate-200 bg-slate-50 px-3 text-sm text-slate-700">
+                {document.originalFileName}
+              </div>
+              <a
+                href={`/api/admin/finance/documents/${document.id}/edit?view=1`}
+                target="_blank"
+                rel="noreferrer"
+                className="inline-flex rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 hover:border-[#8B0000] hover:text-[#8B0000]"
+              >
+                View Document
+              </a>
             </div>
           </Field>
 
@@ -530,6 +547,38 @@ export default async function EditFinanceDocumentPage({
           </Link>
         </div>
       </form>
+
+      <div className="rounded-2xl border border-red-200 bg-red-50 p-5">
+        <h2 className="text-sm font-bold text-red-900">Delete Finance Document</h2>
+        <p className="mt-1 text-sm text-red-700">
+          Delete only incorrect or duplicate documents. Linked finance documents are protected.
+        </p>
+        {query.confirmDelete === "1" ? (
+          <div className="mt-4 rounded-xl border border-red-300 bg-white p-4">
+            <p className="text-sm font-semibold text-red-900">
+              Are you sure you want to permanently delete “{document.title}”?
+            </p>
+            <div className="mt-3 flex flex-wrap gap-3">
+              <form action={`/api/admin/finance/documents/${document.id}/edit`} method="POST">
+                <input type="hidden" name="_action" value="delete-confirmed" />
+                <button type="submit" className="rounded-xl bg-red-700 px-5 py-2.5 text-sm font-semibold text-white hover:bg-red-800">
+                  Yes, Delete Permanently
+                </button>
+              </form>
+              <Link href={`/admin/finance/documents/${document.id}/edit`} className="rounded-xl border border-slate-200 bg-white px-5 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50">
+                Keep Document
+              </Link>
+            </div>
+          </div>
+        ) : (
+          <form action={`/api/admin/finance/documents/${document.id}/edit`} method="POST" className="mt-4">
+            <input type="hidden" name="_action" value="delete" />
+            <button type="submit" className="rounded-xl border border-red-300 bg-white px-5 py-2.5 text-sm font-semibold text-red-700 hover:bg-red-100">
+              Delete Document
+            </button>
+          </form>
+        )}
+      </div>
     </div>
   );
 }

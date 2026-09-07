@@ -88,7 +88,7 @@ export async function GET(
         month,
         part:
           accountingPart,
-        strict: false,
+        strict: true,
       });
 
     return new Response(
