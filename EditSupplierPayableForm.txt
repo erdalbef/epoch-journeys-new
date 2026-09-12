@@ -78,14 +78,6 @@ type Payable = {
     originalFileName: string;
     storagePath: string;
   } | null;
-  documents: Array<{
-    id: string;
-    originalFileName: string;
-    storagePath: string;
-    createdAt: string;
-    title: string;
-    accountingSubcategory: string | null;
-  }>;
 };
 
 const DOCUMENT_TYPE_OPTIONS: Array<{
@@ -196,7 +188,6 @@ export default function EditSupplierPayableForm({
     payable.departureDateId || "",
   );
   const [bookingId, setBookingId] = useState(payable.bookingId || "");
-  const originalDocumentType = payable.documentType;
   const [documentType, setDocumentType] = useState<SupplierDocumentType>(
     payable.documentType,
   );
@@ -223,7 +214,6 @@ export default function EditSupplierPayableForm({
     ) ?? [];
 
   const paidAmount = Number(payable.amountPaid || 0);
-  const documentTypeChanged = documentType !== originalDocumentType;
 
   const balancePreview = useMemo(() => {
     const approved = Number(approvedAmount || 0);
@@ -289,13 +279,6 @@ export default function EditSupplierPayableForm({
     if (invoiceFile && !serviceId) {
       toast.error(
         "Please select the supplier service so the replacement document can be classified correctly in Accounting.",
-      );
-      return;
-    }
-
-    if (documentTypeChanged && !invoiceFile) {
-      toast.error(
-        "Please upload the new supplier document when changing the document type. The previous document will be retained in history.",
       );
       return;
     }
@@ -379,13 +362,11 @@ export default function EditSupplierPayableForm({
       }
 
       toast.success(
-        invoiceFile && documentTypeChanged
-          ? "Supplier payable updated. New document added; previous document retained in history."
-          : invoiceFile
-            ? "Supplier payable updated and document replaced."
-            : removeExistingDocument
-              ? "Supplier payable updated and current document removed."
-              : "Supplier payable updated successfully.",
+        invoiceFile
+          ? "Supplier payable updated and document replaced."
+          : removeExistingDocument
+            ? "Supplier payable updated and document removed."
+            : "Supplier payable updated successfully.",
       );
 
       router.push(`/admin/supplier-payables/${payable.id}`);
@@ -502,6 +483,7 @@ export default function EditSupplierPayableForm({
                 setCreditAmount(approvedAmount || "0");
               }
             }}
+            disabled={paidAmount > 0 && documentType !== "CREDIT_NOTE"}
             className="input"
           >
             {DOCUMENT_TYPE_OPTIONS.map((option) => (
@@ -512,12 +494,6 @@ export default function EditSupplierPayableForm({
           </select>
         </FieldLabel>
       </div>
-
-      {documentTypeChanged ? (
-        <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm leading-6 text-amber-900">
-          <strong>Document progression:</strong> the new document will become current, while the previous supplier document remains in history. Existing payments remain attached to this payable.
-        </div>
-      ) : null}
 
       <div className="grid gap-4 md:grid-cols-3">
         <FieldLabel label="Contracted amount">
@@ -626,8 +602,8 @@ export default function EditSupplierPayableForm({
           <div>
             <h3 className="font-bold text-slate-950">Supplier Document</h3>
             <p className="mt-1 text-sm text-slate-500">
-              Keep the current file, replace a correction, or add the next supplier document.
-              When the document type changes, the previous document is retained in history.
+              Keep the existing file, replace it with the correct invoice, or remove it.
+              Replacing the file also updates the Finance / Accounting document record.
             </p>
           </div>
         </div>
@@ -677,11 +653,7 @@ export default function EditSupplierPayableForm({
           <label className="mt-4 flex cursor-pointer flex-col items-center justify-center rounded-xl border-2 border-dashed border-slate-300 bg-white px-5 py-7 text-center transition hover:border-[#001F3F]/40 hover:bg-slate-50">
             <Upload className="h-6 w-6 text-slate-400" />
             <span className="mt-2 text-sm font-semibold text-slate-700">
-              {documentTypeChanged
-                ? "Select new supplier document"
-                : payable.document
-                  ? "Select replacement document"
-                  : "Select supplier document"}
+              {payable.document ? "Select replacement document" : "Select supplier document"}
             </span>
             <span className="mt-1 text-xs text-slate-500">
               PDF, JPG, PNG or WEBP - Maximum 10 MB
@@ -702,7 +674,7 @@ export default function EditSupplierPayableForm({
                 {invoiceFile.name}
               </p>
               <p className="mt-1 text-xs text-slate-500">
-                {(invoiceFile.size / 1024 / 1024).toFixed(2)} MB - {documentTypeChanged ? "new document" : "replacement file"}
+                {(invoiceFile.size / 1024 / 1024).toFixed(2)} MB - replacement file
               </p>
             </div>
             <button
@@ -716,31 +688,6 @@ export default function EditSupplierPayableForm({
           </div>
         )}
       </div>
-
-      {payable.documents.length > 0 ? (
-        <div className="rounded-2xl border border-slate-200 bg-white p-5">
-          <h3 className="font-bold text-slate-950">Document History</h3>
-          <p className="mt-1 text-sm text-slate-500">Newest supplier document first.</p>
-          <div className="mt-4 space-y-3">
-            {payable.documents.map((document, index) => (
-              <div key={document.id} className="flex flex-col gap-3 rounded-xl border border-slate-200 bg-slate-50/70 p-4 sm:flex-row sm:items-center sm:justify-between">
-                <div className="min-w-0">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <p className="truncate text-sm font-semibold text-slate-900">{document.originalFileName}</p>
-                    <span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${index === 0 ? "bg-blue-100 text-blue-800" : "bg-slate-200 text-slate-700"}`}>
-                      {index === 0 ? "Current" : "Previous"}
-                    </span>
-                  </div>
-                  <p className="mt-1 text-xs text-slate-500">
-                    {document.title}{document.accountingSubcategory ? ` · ${document.accountingSubcategory}` : ""}
-                  </p>
-                </div>
-                <a href={document.storagePath} target="_blank" rel="noreferrer" className="shrink-0 rounded-lg border bg-white px-3 py-2 text-sm font-semibold text-[#001F3F] hover:bg-slate-50">View</a>
-              </div>
-            ))}
-          </div>
-        </div>
-      ) : null}
 
       <div className="grid gap-4 md:grid-cols-3">
         <FieldLabel label="Tour">

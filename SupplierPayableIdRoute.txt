@@ -1263,7 +1263,6 @@ export async function PUT(
           id: true,
           supplierId: true,
           currency: true,
-          documentType: true,
           approvalStatus: true,
           amountPaid: true,
           payments: {
@@ -1716,19 +1715,6 @@ export async function PUT(
       );
     }
 
-    const documentTypeChanged =
-      documentType !== existing.documentType;
-
-    if (documentTypeChanged && !file) {
-      return NextResponse.json(
-        {
-          error:
-            "Please upload the new supplier document when changing the document type. The previous document will be retained in history.",
-        },
-        { status: 400 },
-      );
-    }
-
     if (file) {
       const extension =
         path.extname(file.name)
@@ -1926,35 +1912,6 @@ export async function PUT(
             : `${documentType.replaceAll("_", " ")} - ${title}`;
 
         if (
-          documentTypeChanged &&
-          file &&
-          savedFile
-        ) {
-          // Document progression: preserve the previous FinanceDocument as history.
-          await tx.financeDocument.create({
-            data: {
-              type: financeDocumentType,
-              title: documentTitle,
-              description,
-              originalFileName: savedFile.originalFileName,
-              storedFileName: savedFile.storedFileName,
-              storagePath: savedFile.storagePath,
-              mimeType: file.type || "application/octet-stream",
-              fileSize: file.size,
-              documentDate: invoiceDate ?? accountingDate,
-              referenceNumber: supplierInvoiceNumber ?? supplierReference,
-              accountingCategory,
-              accountingSubcategory,
-              accountingPeriodId: accountingPeriod.id,
-              supplierPayableId: id,
-              supplierId,
-              bookingId,
-              tourId,
-              departureDateId,
-              uploadedById: session.user.id,
-            },
-          });
-        } else if (
           removeExistingDocument &&
           !file &&
           currentDocument
