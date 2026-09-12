@@ -105,7 +105,8 @@ export default async function EditSupplierPaymentPage({
         </h1>
 
         <p className="mt-1 text-sm text-slate-500">
-          {payable.supplierNameSnapshot} · {payable.title}
+          {payable.supplierNameSnapshot} ·{" "}
+          {payable.title}
         </p>
       </div>
 
@@ -113,21 +114,29 @@ export default async function EditSupplierPaymentPage({
         payable={{
           id: payable.id,
           currency: payable.currency,
-          approvedAmount: Number(payable.approvedAmount),
-          creditAmount: Number(payable.creditAmount),
+          approvedAmount: Number(
+            payable.approvedAmount,
+          ),
+          creditAmount: Number(
+            payable.creditAmount,
+          ),
         }}
         payment={{
           id: payment.id,
           amount: Number(payment.amount),
           currency: payment.currency,
-          bankAccountId: payment.bankAccountId,
-          paymentDate: payment.paymentDate.toISOString(),
+          bankAccountId:
+            payment.bankAccountId,
+          paymentDate:
+            payment.paymentDate
+              .toISOString()
+              .slice(0, 10),
           method: payment.method,
           reference: payment.reference,
           notes: payment.notes,
           hasProof: Boolean(proof),
-          proofDocumentId: proof?.id ?? null,
-          proofFileName: proof?.originalFileName ?? null,
+          proofFileName:
+            proof?.originalFileName ?? null,
         }}
         bankAccounts={bankAccounts}
       />

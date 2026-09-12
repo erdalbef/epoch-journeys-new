@@ -1,7 +1,7 @@
 "use client";
 
-import { useState, type ReactNode } from "react";
-import { ExternalLink } from "lucide-react";
+import { useRef, useState, type ReactNode } from "react";
+import { CalendarDays, ExternalLink } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 
@@ -22,6 +22,7 @@ type Props = {
     reference: string | null;
     notes: string | null;
     hasProof: boolean;
+    proofDocumentId: string | null;
     proofFileName: string | null;
   };
   bankAccounts: Array<{
@@ -31,8 +32,135 @@ type Props = {
   }>;
 };
 
+
+function formatDateTyping(value: string) {
+  const digits = value.replace(/\D/g, "").slice(0, 8);
+
+  if (digits.length <= 2) return digits;
+  if (digits.length <= 4) {
+    return `${digits.slice(0, 2)}/${digits.slice(2)}`;
+  }
+
+  return `${digits.slice(0, 2)}/${digits.slice(2, 4)}/${digits.slice(4)}`;
+}
+
+function parseEuropeanDate(value: string) {
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+
+  const match = trimmed.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+  if (!match) return null;
+
+  const day = Number(match[1]);
+  const month = Number(match[2]);
+  const year = Number(match[3]);
+
+  const date = new Date(Date.UTC(year, month - 1, day, 12, 0, 0));
+
+  if (
+    date.getUTCFullYear() !== year ||
+    date.getUTCMonth() !== month - 1 ||
+    date.getUTCDate() !== day
+  ) {
+    return null;
+  }
+
+  return `${String(year).padStart(4, "0")}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+}
+
+function europeanDateFromIso(value: string) {
+  const match = value.match(/^(\d{4})-(\d{2})-(\d{2})/);
+
+  if (match) {
+    return `${match[3]}/${match[2]}/${match[1]}`;
+  }
+
+  const date = new Date(value);
+
+  if (Number.isNaN(date.getTime())) {
+    return "";
+  }
+
+  return new Intl.DateTimeFormat("en-GB", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+    timeZone: "UTC",
+  }).format(date);
+}
+
 const inputClass =
   "h-11 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm outline-none transition focus:border-[#8B0000] focus:ring-4 focus:ring-red-50";
+
+
+function EuropeanDateInput({
+  value,
+  onChange,
+}: {
+  value: string;
+  onChange: (value: string) => void;
+}) {
+  const pickerRef = useRef<HTMLInputElement>(null);
+  const isoValue = parseEuropeanDate(value) || "";
+
+  function openCalendar() {
+    const picker = pickerRef.current;
+    if (!picker) return;
+
+    if (typeof picker.showPicker === "function") {
+      picker.showPicker();
+      return;
+    }
+
+    picker.click();
+  }
+
+  return (
+    <div className="relative">
+      <input
+        type="text"
+        inputMode="numeric"
+        placeholder="DD/MM/YYYY"
+        value={value}
+        maxLength={10}
+        onChange={(event) =>
+          onChange(formatDateTyping(event.target.value))
+        }
+        className={`${inputClass} pr-12`}
+      />
+
+      <button
+        type="button"
+        onClick={openCalendar}
+        className="absolute right-1.5 top-1/2 inline-flex h-9 w-9 -translate-y-1/2 items-center justify-center rounded-lg text-slate-500 transition hover:bg-slate-100 hover:text-[#001F3F]"
+        title="Open calendar"
+        aria-label="Open calendar"
+      >
+        <CalendarDays className="h-4 w-4" />
+      </button>
+
+      <input
+        ref={pickerRef}
+        type="date"
+        tabIndex={-1}
+        value={isoValue}
+        onChange={(event) => {
+          const selected = event.target.value;
+
+          if (!selected) {
+            onChange("");
+            return;
+          }
+
+          const [year, month, day] = selected.split("-");
+          onChange(`${day}/${month}/${year}`);
+        }}
+        className="pointer-events-none absolute h-0 w-0 opacity-0"
+        aria-hidden="true"
+      />
+    </div>
+  );
+}
 
 function Field({
   label,
@@ -62,7 +190,9 @@ export default function EditSupplierPaymentForm({
   const [bankAccountId, setBankAccountId] = useState(
     payment.bankAccountId || "",
   );
-  const [paymentDate, setPaymentDate] = useState(payment.paymentDate);
+  const [paymentDate, setPaymentDate] = useState(
+    europeanDateFromIso(payment.paymentDate),
+  );
   const [method, setMethod] = useState(payment.method);
   const [reference, setReference] = useState(payment.reference || "");
   const [notes, setNotes] = useState(payment.notes || "");
@@ -88,6 +218,13 @@ export default function EditSupplierPaymentForm({
       return;
     }
 
+    const parsedPaymentDate = parseEuropeanDate(paymentDate);
+
+    if (!parsedPaymentDate) {
+      toast.error("Payment date must use DD/MM/YYYY format.");
+      return;
+    }
+
     setLoading(true);
 
     try {
@@ -95,7 +232,7 @@ export default function EditSupplierPaymentForm({
 
       formData.set("amount", String(numericAmount));
       formData.set("bankAccountId", bankAccountId);
-      formData.set("paymentDate", paymentDate);
+      formData.set("paymentDate", parsedPaymentDate);
       formData.set("method", method);
       formData.set("reference", reference.trim());
       formData.set("notes", notes.trim());
@@ -159,11 +296,9 @@ export default function EditSupplierPaymentForm({
         </Field>
 
         <Field label="Payment Date *">
-          <input
-            type="date"
+          <EuropeanDateInput
             value={paymentDate}
-            onChange={(event) => setPaymentDate(event.target.value)}
-            className={inputClass}
+            onChange={setPaymentDate}
           />
         </Field>
 
@@ -220,8 +355,9 @@ export default function EditSupplierPaymentForm({
 
         {payment.hasProof ? (
           <div className="mt-2">
+            {payment.proofDocumentId ? (
             <a
-              href={`/api/admin/supplier-payables/${payable.id}/payments/${payment.id}`}
+              href={`/api/admin/finance/documents/${payment.proofDocumentId}/download`}
               target="_blank"
               rel="noreferrer"
               className="inline-flex items-center gap-2 text-sm font-semibold text-blue-700 hover:underline"
@@ -229,6 +365,7 @@ export default function EditSupplierPaymentForm({
               <ExternalLink className="h-4 w-4" />
               Open Current Proof
             </a>
+            ) : null}
 
             {payment.proofFileName ? (
               <p className="mt-1 text-xs text-slate-500">

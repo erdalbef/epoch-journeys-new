@@ -735,7 +735,7 @@ export default function EditSupplierPayableForm({
                     {document.title}{document.accountingSubcategory ? ` · ${document.accountingSubcategory}` : ""}
                   </p>
                 </div>
-                <a href={document.storagePath} target="_blank" rel="noreferrer" className="shrink-0 rounded-lg border bg-white px-3 py-2 text-sm font-semibold text-[#001F3F] hover:bg-slate-50">View</a>
+                <a href={`/api/admin/finance/documents/${document.id}/download`} target="_blank" rel="noreferrer" className="shrink-0 rounded-lg border bg-white px-3 py-2 text-sm font-semibold text-[#001F3F] hover:bg-slate-50">View</a>
               </div>
             ))}
           </div>
