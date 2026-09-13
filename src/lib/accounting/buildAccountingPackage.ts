@@ -917,14 +917,57 @@ export async function buildAccountingPackage({
       ? PART_1_CATEGORIES
       : PART_2_CATEGORIES;
 
+  /*
+   * Dedicated BankStatement records are the canonical source for
+   * monthly bank statements in Part 1.
+   *
+   * Older data can also contain a FinanceDocument copy of the same
+   * statement. When the filenames match, exclude that FinanceDocument
+   * from the ZIP so the accountant receives the statement only once.
+   */
+  const dedicatedBankStatementFileNames =
+    new Set(
+      part === 1
+        ? period.bankStatements
+            .map(
+              (statement) =>
+                statement.fileName
+                  ?.trim()
+                  .toLowerCase() ??
+                "",
+            )
+            .filter(Boolean)
+        : [],
+    );
+
   const selectedDocuments =
     period.documents.filter(
-      (document) =>
-        document.accountingCategory !==
-          null &&
-        selectedCategories.includes(
-          document.accountingCategory,
-        ),
+      (document) => {
+        if (
+          document.accountingCategory ===
+            null ||
+          !selectedCategories.includes(
+            document.accountingCategory,
+          )
+        ) {
+          return false;
+        }
+
+        if (
+          part === 1 &&
+          document.accountingCategory ===
+            AccountingCategory.BANK_STATEMENTS &&
+          dedicatedBankStatementFileNames.has(
+            document.originalFileName
+              .trim()
+              .toLowerCase(),
+          )
+        ) {
+          return false;
+        }
+
+        return true;
+      },
     );
 
   const statementCount =
@@ -1019,6 +1062,85 @@ export async function buildAccountingPackage({
       .join(","),
   ];
 
+  /*
+   * A SupplierPayable may now retain several supplier documents
+   * (for example Deposit Invoice -> Final Invoice).
+   *
+   * All source documents remain in the ZIP, but the payable's
+   * approved amount must appear only once in the detailed index.
+   * Use the newest non-payment supplier document as the financial
+   * document for that payable.
+   */
+  const payableFinancialDocumentIds =
+    new Set<string>();
+
+  const newestSupplierDocumentByPayable =
+    new Map<
+      string,
+      (typeof selectedDocuments)[number]
+    >();
+
+  for (
+    const document of
+    selectedDocuments
+  ) {
+    if (
+      !document.supplierPayable ||
+      document.supplierPayablePayment
+    ) {
+      continue;
+    }
+
+    const payableId =
+      document.supplierPayable.id;
+
+    const existing =
+      newestSupplierDocumentByPayable.get(
+        payableId,
+      );
+
+    if (!existing) {
+      newestSupplierDocumentByPayable.set(
+        payableId,
+        document,
+      );
+      continue;
+    }
+
+    const documentDate =
+      document.documentDate ??
+      document.createdAt;
+
+    const existingDate =
+      existing.documentDate ??
+      existing.createdAt;
+
+    if (
+      documentDate.getTime() >
+      existingDate.getTime() ||
+      (
+        documentDate.getTime() ===
+          existingDate.getTime() &&
+        document.createdAt.getTime() >
+          existing.createdAt.getTime()
+      )
+    ) {
+      newestSupplierDocumentByPayable.set(
+        payableId,
+        document,
+      );
+    }
+  }
+
+  for (
+    const document of
+    newestSupplierDocumentByPayable.values()
+  ) {
+    payableFinancialDocumentIds.add(
+      document.id,
+    );
+  }
+
   for (
     const document of
     selectedDocuments
@@ -1030,9 +1152,18 @@ export async function buildAccountingPackage({
     }
 
     const financialValue =
-      getDocumentFinancialValue(
-        document,
-      );
+      document.supplierPayable &&
+      !document.supplierPayablePayment &&
+      !payableFinancialDocumentIds.has(
+        document.id,
+      )
+        ? {
+            amount: "",
+            currency: "",
+          }
+        : getDocumentFinancialValue(
+            document,
+          );
 
     const folderName =
       CATEGORY_FOLDER_NAMES[
