@@ -3,6 +3,7 @@
 import { useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { CalendarDays, FileText, Upload, X } from "lucide-react";
+import SupplierDocumentDeleteButton from "@/components/admin/supplier-payables/SupplierDocumentDeleteButton";
 import { toast } from "sonner";
 
 type Service = {
@@ -735,7 +736,21 @@ export default function EditSupplierPayableForm({
                     {document.title}{document.accountingSubcategory ? ` · ${document.accountingSubcategory}` : ""}
                   </p>
                 </div>
-                <a href={`/api/admin/finance/documents/${document.id}/download`} target="_blank" rel="noreferrer" className="shrink-0 rounded-lg border bg-white px-3 py-2 text-sm font-semibold text-[#001F3F] hover:bg-slate-50">View</a>
+                <div className="flex shrink-0 flex-wrap gap-2">
+                  <a
+                    href={`/api/admin/finance/documents/${document.id}/download`}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="rounded-lg border bg-white px-3 py-2 text-sm font-semibold text-[#001F3F] hover:bg-slate-50"
+                  >
+                    View
+                  </a>
+
+                  <SupplierDocumentDeleteButton
+                    documentId={document.id}
+                    fileName={document.originalFileName}
+                  />
+                </div>
               </div>
             ))}
           </div>

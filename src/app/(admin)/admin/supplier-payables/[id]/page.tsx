@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 
 import { db } from "@/lib/db";
 import SupplierPayableActions from "@/components/admin/supplier-payables/SupplierPayableActions";
+import SupplierDocumentDeleteButton from "@/components/admin/supplier-payables/SupplierDocumentDeleteButton";
 
 type Props = {
   params: Promise<{ id: string }>;
@@ -454,7 +455,7 @@ export default async function SupplierPayableDetailPage({ params }: Props) {
                     </p>
                   </div>
 
-                  <div>
+                  <div className="flex flex-wrap items-start gap-2">
                     <a
                       href={`/api/admin/finance/documents/${document.id}/download`}
                       target="_blank"
@@ -463,6 +464,12 @@ export default async function SupplierPayableDetailPage({ params }: Props) {
                     >
                       View Document
                     </a>
+
+                    <SupplierDocumentDeleteButton
+                      documentId={document.id}
+                      fileName={document.originalFileName}
+                      compact
+                    />
                   </div>
                 </div>
               ))}
