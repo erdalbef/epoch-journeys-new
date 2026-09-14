@@ -34,8 +34,7 @@ console.log("BLOB_STORAGE_CHECK", {
 
 function blobStorageEnabled() {
   return Boolean(
-    process.env.VERCEL_OIDC_TOKEN?.trim() ||
-      process.env.BLOB_READ_WRITE_TOKEN?.trim(),
+    process.env.BLOB_READ_WRITE_TOKEN?.trim(),
   );
 }
 
@@ -156,7 +155,7 @@ export async function saveFinanceFile({
     isActualVercelDeployment()
   ) {
     throw new Error(
-      "Private finance file storage is not configured for this Vercel deployment. Check the connected Blob store and Vercel Blob authentication.",
+      "Private finance file storage is not configured for this Vercel deployment. Check the connected Blob store and BLOB_READ_WRITE_TOKEN.",
     );
   }
 
@@ -244,7 +243,7 @@ export async function deleteFinanceFile(
       !blobStorageEnabled()
     ) {
       console.warn(
-        "Unable to delete Blob file because Vercel Blob authentication is not configured.",
+        "Unable to delete Blob file because BLOB_READ_WRITE_TOKEN is not configured.",
       );
 
       return;
@@ -350,7 +349,7 @@ export async function readFinanceFile(
       !blobStorageEnabled()
     ) {
       throw new Error(
-        "Unable to read private finance document because Vercel Blob authentication is not configured.",
+        "Unable to read private finance document because BLOB_READ_WRITE_TOKEN is not configured.",
       );
     }
 
