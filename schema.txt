@@ -441,33 +441,16 @@ model BookingOperationControl {
   finalNotes       String?
   createdAt        DateTime        @default(now())
   updatedAt        DateTime        @updatedAt
-
-  documentItems   Json?
-  emergencyItems  Json?
-  guideItems      Json?
-  hotelItems      Json?
-  massItems       Json?
-  paymentItems    Json?
-  restaurantItems Json?
-  ticketItems     Json?
-  transportItems  Json?
-
-  // TOUR MANAGEMENT / TOUR MANAGER FOLDER
-  groupInfo               Json?
-  tourManagerInfo         Json?
-  spiritualDirectorInfo   Json?
-  groupLeaderInfo         Json?
-  flightItems             Json?
-  trainItems              Json?
-  headsetInfo             Json?
-  dailyItinerary          Json?
-  lunchInstructions       String?
-  drivingInstructions     String?
-  generalInstructions     String?
-  paymentResponsibilities Json?
-  folderNotes             String?
-
-  booking Booking @relation(fields: [bookingId], references: [id])
+  documentItems    Json?
+  emergencyItems   Json?
+  guideItems       Json?
+  hotelItems       Json?
+  massItems        Json?
+  paymentItems     Json?
+  restaurantItems  Json?
+  ticketItems      Json?
+  transportItems   Json?
+  booking          Booking         @relation(fields: [bookingId], references: [id])
 }
 
 model CustomTourRequest {
@@ -2536,3 +2519,4 @@ enum SupplierType {
   INSURANCE
   OTHER
 }
+
