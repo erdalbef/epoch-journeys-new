@@ -1,0 +1,580 @@
+> C:\Users\emrev\epoch-journeys\prisma\schema.prisma:757:model Payment {
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:758:  id                   String              @id @default(cuid())
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:759:  createdAt            DateTime            @default(now())
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:760:  updatedAt            DateTime            @updatedAt
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:761:  bookingId            String?
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:762:  amount               Float
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:763:  currency             String              @default("EUR")
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:764:  method               PaymentMethod
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:765:  status               PaymentRecordStatus @default(PENDING)
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:766:  reference            String?
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:767:  notes                String?
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:768:  paidAt               DateTime?
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:769:  receivedBy           String?
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:770:  allocationLockReason String?
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:771:  allocationLockedAt   DateTime?
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:772:  agencyGroupName      String?
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:773:  tourId               String?
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:774:  bankTransactions     BankTransaction[]
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:775:  financeDocument      FinanceDocument?
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:776:  booking              Booking?            @relation(fields: [bookingId], references: [id])
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:777:  tour                 Tour?               @relation(fields: [tourId], references: [id])
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:778:  allocations          PaymentAllocation[]
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:779:  refunds              Refund[]
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:780:  salesDocuments       SalesDocument[]
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:781:
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:782:  @@index([bookingId])
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:783:  @@index([tourId])
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:784:  @@index([agencyGroupName])
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:785:  @@index([status])
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:786:  @@index([paidAt])
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:787:  @@index([allocationLockedAt])
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:788:}
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:789:
+> C:\Users\emrev\epoch-journeys\prisma\schema.prisma:790:model PaymentAllocation {
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:791:  id                String                 @id @default(cuid())
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:792:  paymentId         String
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:793:  paymentScheduleId String
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:794:  amount            Float
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:795:  allocatedAt       DateTime               @default(now())
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:796:  notes             String?
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:797:  payment           Payment                @relation(fields: [paymentId], references: [id], onDelete: Cascade)
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:798:  paymentSchedule   BookingPaymentSchedule @relation(fields: [paymentScheduleId], references: [id], onDelete: Cascade)
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:799:
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:800:  @@unique([paymentId, paymentScheduleId])
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:801:  @@index([paymentId])
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:802:  @@index([paymentScheduleId])
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:803:}
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:804:
+> C:\Users\emrev\epoch-journeys\prisma\schema.prisma:805:model PaymentSubmission {
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:806:  id           String                  @id @default(cuid())
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:807:  bookingId    String
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:808:  userId       String
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:809:  amount       Float
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:810:  currency     String                  @default("EUR")
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:811:  method       String
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:812:  note         String?
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:813:  proofUrl     String?
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:814:  status       PaymentSubmissionStatus @default(PENDING)
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:815:  reviewedById String?
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:816:  reviewedAt   DateTime?
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:817:  reviewNote   String?
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:818:  createdAt    DateTime                @default(now())
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:819:  updatedAt    DateTime                @updatedAt
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:820:  booking      Booking                 @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:821:  reviewedBy   User?                   @relation("PaymentSubmissionReviewer", fields: [reviewedById], references: [id])
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:822:  user         User                    @relation("PaymentSubmissionUser", fields: [userId], references: [id], onDelete: Cascade)
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:823:
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:824:  @@index([bookingId])
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:825:  @@index([userId])
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:826:  @@index([status])
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:827:}
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:828:
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:829:model PartnerPayout {
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:830:  id               String       @id @default(cuid())
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:831:  agentId          String
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:832:  totalAmount      Float
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:833:  currency         String       @default("EUR")
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:834:  status           PayoutStatus @default(PENDING)
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:835:  notes            String?
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:836:  createdAt        DateTime     @default(now())
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:837:  paidAt           DateTime?
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:838:  paymentMethod    String?
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:839:  paymentReference String?
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:840:  approvedAt       DateTime?
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:841:  lockedAt         DateTime?
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:842:  periodEnd        DateTime?
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:843:  periodStart      DateTime?
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:844:  processedById    String?
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:845:  updatedAt        DateTime     @updatedAt
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:846:  bookings         Booking[]
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:847:  agent            User         @relation("AgentPayouts", fields: [agentId], references: [id], onDelete: Cascade)
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:848:  processedBy      User?        @relation("ProcessedPartnerPayouts", fields: [processedById], references: [id])
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:849:
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:850:  @@index([agentId])
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:851:  @@index([processedById])
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:852:  @@index([status])
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:853:  @@index([createdAt])
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:854:  @@index([paidAt])
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:855:}
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:856:
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:857:model AgentTourCommission {
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:858:  id             String   @id @default(cuid())
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:859:  agentId        String
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:860:  tourId         String
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:861:  commissionRate Float?
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:862:  payoutPerPax   Float?
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:863:  createdAt      DateTime @default(now())
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:864:  updatedAt      DateTime @updatedAt
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:865:  agent          User     @relation(fields: [agentId], references: [id], onDelete: Cascade)
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:866:  tour           Tour     @relation(fields: [tourId], references: [id], onDelete: Cascade)
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:867:
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:868:  @@unique([agentId, tourId])
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:869:  @@index([agentId])
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:870:  @@index([tourId])
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:871:}
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:872:
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:873:model PricingTier {
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:874:  id             String    @id @default(cuid())
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:875:  tourId         String
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:876:  label          String?
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:877:  minPax         Int?
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:878:  maxPax         Int?
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:879:  roomType       RoomType?
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:880:  pricePerPerson Float
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:881:  currency       String    @default("EUR")
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:882:  isActive       Boolean   @default(true)
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:883:  createdAt      DateTime  @default(now())
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:884:  updatedAt      DateTime  @updatedAt
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:885:  tour           Tour      @relation(fields: [tourId], references: [id], onDelete: Cascade)
+> C:\Users\emrev\epoch-journeys\prisma\schema.prisma:913:model Expense {
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:914:  id                     String                     @id @default(cuid())
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:915:  title                  String
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:916:  description            String?
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:917:  amount                 Float
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:918:  currency               String                     @default("EUR")
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:919:  category               ExpenseCategory
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:920:  paymentStatus          ExpensePaymentStatus       @default(PENDING)
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:921:  vendorName             String?
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:922:  expenseDate            DateTime
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:923:  paidAt                 DateTime?
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:924:  receiptUrl             String?
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:925:  notes                  String?
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:926:  bookingId              String?
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:927:  tourId                 String?
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:928:  departureDateId        String?
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:929:  createdById            String?
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:930:  createdAt              DateTime                   @default(now())
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:931:  updatedAt              DateTime                   @updatedAt
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:932:  agentNameSnapshot      String?
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:933:  customPackageName      String?
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:934:  direction              FinanceDirection           @default(EXPENSE)
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:935:  grossAmount            Float?
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:936:  groupName              String?
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:937:  netAmount              Float?
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:938:  partnerCompanyId       String?
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:939:  partnerCompanyName     String?
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:940:  sourceType             FinanceSourceType          @default(INTERNAL)
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:941:  taxAmount              Float?                     @default(0)
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:942:  taxRate                Float?
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:943:  taxType                FinanceTaxType             @default(NONE)
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:944:  tourLeaderName         String?
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:945:  baseAmount             Float                      @default(0)
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:946:  baseCurrency           String                     @default("EUR")
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:947:  exchangeRateToBase     Float                      @default(1)
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:948:  originalAmount         Float                      @default(0)
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:949:  originalCurrency       String                     @default("EUR")
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:950:  clientCompanyName      String?
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:951:  spenderName            String?
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:952:  tourCategoryName       String?
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:953:  approvalStatus         ExpenseApprovalStatus      @default(DRAFT)
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:954:  bankAccountId          String?
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:955:  costCenter             ExpenseCostCenter?
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:956:  costType               ExpenseCostType            @default(OVERHEAD)
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:957:  documentUrl            String?
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:958:  dueDate                DateTime?
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:959:  expenseItem            ExpenseItem?
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:960:  invoiceDate            DateTime?
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:961:  paymentMethod          PaymentMethod?
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:962:  paymentReference       String?
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:963:  recurring              Boolean                    @default(false)
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:964:  reimbursable           Boolean                    @default(false)
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:965:  supplierId             String?
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:966:  supplierInvoiceNumber  String?
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:967:  paymentSource          ExpensePaymentSource       @default(COMPANY_BANK)
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:968:  reimbursedAmount       Float                      @default(0)
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:969:  reimbursedAt           DateTime?
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:970:  reimbursementReference String?
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:971:  reimbursementStatus    ExpenseReimbursementStatus @default(NOT_APPLICABLE)
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:972:  bankTransactions       BankTransaction[]
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:973:  bankAccount            BankAccount?               @relation(fields: [bankAccountId], references: [id])
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:974:  booking                Booking?                   @relation(fields: [bookingId], references: [id])
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:975:  createdBy              User?                      @relation("ExpenseCreatedBy", fields: [createdById], references: [id])
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:976:  departureDate          DepartureDate?             @relation(fields: [departureDateId], references: [id])
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:977:  supplier               Supplier?                  @relation(fields: [supplierId], references: [id])
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:978:  tour                   Tour?                      @relation(fields: [tourId], references: [id])
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:979:  documents              FinanceDocument[]
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:980:
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:981:  @@index([category])
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:982:  @@index([paymentStatus])
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:983:  @@index([expenseDate])
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:984:  @@index([bookingId])
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:985:  @@index([tourId])
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:986:  @@index([departureDateId])
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:987:  @@index([direction])
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:988:  @@index([sourceType])
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:989:  @@index([partnerCompanyId])
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:990:  @@index([baseCurrency])
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:991:  @@index([clientCompanyName])
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:992:  @@index([spenderName])
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:993:  @@index([tourCategoryName])
+> C:\Users\emrev\epoch-journeys\prisma\schema.prisma:1318:model BankReconciliation {
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:1319:  id                      String                   @id @default(cuid())
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:1320:  bankAccountId           String
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:1321:  createdById             String?
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:1322:  statementDate           DateTime
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:1323:  statementOpeningBalance Decimal                  @db.Decimal(12, 2)
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:1324:  statementClosingBalance Decimal                  @db.Decimal(12, 2)
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:1325:  ledgerOpeningBalance    Decimal                  @db.Decimal(12, 2)
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:1326:  ledgerClosingBalance    Decimal                  @db.Decimal(12, 2)
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:1327:  difference              Decimal                  @db.Decimal(12, 2)
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:1328:  status                  BankReconciliationStatus @default(DRAFT)
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:1329:  reconciledAt            DateTime?
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:1330:  lockedAt                DateTime?
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:1331:  notes                   String?
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:1332:  createdAt               DateTime                 @default(now())
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:1333:  updatedAt               DateTime                 @updatedAt
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:1334:  bankAccount             BankAccount              @relation(fields: [bankAccountId], references: [id])
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:1335:  createdBy               User?                    @relation(fields: [createdById], references: [id])
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:1336:  transactions            BankTransaction[]
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:1337:
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:1338:  @@index([bankAccountId])
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:1339:  @@index([createdAt])
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:1340:  @@index([createdById])
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:1341:  @@index([statementDate])
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:1342:  @@index([status])
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:1343:}
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:1344:
+> C:\Users\emrev\epoch-journeys\prisma\schema.prisma:1345:model BankStatement {
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:1346:  id                 String              @id @default(cuid())
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:1347:  bankAccountId      String
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:1348:  uploadedById       String?
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:1349:  fileName           String?
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:1350:  fileType           String?
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:1351:  statementDate      DateTime
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:1352:  openingBalance     Decimal?            @db.Decimal(12, 2)
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:1353:  closingBalance     Decimal?            @db.Decimal(12, 2)
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:1354:  currency           String              @default("EUR")
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:1355:  status             BankStatementStatus @default(IMPORTED)
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:1356:  notes              String?
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:1357:  createdAt          DateTime            @default(now())
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:1358:  updatedAt          DateTime            @updatedAt
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:1359:  accountingPeriodId String?
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:1360:  accountingPeriod   AccountingPeriod?   @relation(fields: [accountingPeriodId], references: [id])
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:1361:  bankAccount        BankAccount         @relation(fields: [bankAccountId], references: [id])
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:1362:  uploadedBy         User?               @relation(fields: [uploadedById], references: [id])
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:1363:  lines              BankStatementLine[]
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:1364:
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:1365:  @@index([accountingPeriodId])
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:1366:  @@index([bankAccountId])
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:1367:  @@index([createdAt])
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:1368:  @@index([statementDate])
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:1369:  @@index([status])
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:1370:  @@index([uploadedById])
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:1371:}
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:1372:
+> C:\Users\emrev\epoch-journeys\prisma\schema.prisma:1373:model BankStatementLine {
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:1374:  id                       String                       @id @default(cuid())
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:1375:  bankStatementId          String
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:1376:  transactionDate          DateTime
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:1377:  valueDate                DateTime?
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:1378:  description              String?
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:1379:  reference                String?
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:1380:  amount                   Decimal                      @db.Decimal(12, 2)
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:1381:  direction                BankTransactionDirection
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:1382:  currency                 String                       @default("EUR")
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:1383:  balance                  Decimal?                     @db.Decimal(12, 2)
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:1384:  matchStatus              BankStatementLineMatchStatus @default(UNMATCHED)
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:1385:  matchedBankTransactionId String?                      @unique
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:1386:  matchedAt                DateTime?
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:1387:  rawData                  Json?
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:1388:  createdAt                DateTime                     @default(now())
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:1389:  updatedAt                DateTime                     @updatedAt
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:1390:  bankStatement            BankStatement                @relation(fields: [bankStatementId], references: [id], onDelete: Cascade)
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:1391:  matchedBankTransaction   BankTransaction?             @relation(fields: [matchedBankTransactionId], references: [id])
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:1392:
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:1393:  @@index([bankStatementId])
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:1394:  @@index([direction])
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:1395:  @@index([matchStatus])
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:1396:  @@index([matchedBankTransactionId])
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:1397:  @@index([transactionDate])
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:1398:}
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:1399:
+> C:\Users\emrev\epoch-journeys\prisma\schema.prisma:1400:model BankTransaction {
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:1401:  id                       String                   @id @default(cuid())
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:1402:  bankAccountId            String
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:1403:  createdById              String?
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:1404:  type                     BankTransactionType
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:1405:  direction                BankTransactionDirection
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:1406:  status                   BankTransactionStatus    @default(POSTED)
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:1407:  amount                   Decimal                  @db.Decimal(12, 2)
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:1408:  currency                 String                   @default("EUR")
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:1409:  transactionDate          DateTime                 @default(now())
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:1410:  valueDate                DateTime?
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:1411:  reference                String?
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:1412:  description              String?
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:1413:  notes                    String?
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:1414:  bookingId                String?
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:1415:  paymentId                String?
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:1416:  supplierPayablePaymentId String?
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:1417:  expenseId                String?
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:1418:  tourId                   String?
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:1419:  departureDateId          String?
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:1420:  transferGroupId          String?
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:1421:  reversalOfId             String?                  @unique
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:1422:  reversedAt               DateTime?
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:1423:  createdAt                DateTime                 @default(now())
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:1424:  updatedAt                DateTime                 @updatedAt
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:1425:  refundId                 String?
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:1426:  reconciliationId         String?
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:1427:  reconciledAt             DateTime?
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:1428:  statementLine            BankStatementLine?
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:1429:  bankAccount              BankAccount              @relation(fields: [bankAccountId], references: [id])
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:1430:  booking                  Booking?                 @relation(fields: [bookingId], references: [id])
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:1431:  createdBy                User?                    @relation(fields: [createdById], references: [id])
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:1432:  departureDate            DepartureDate?           @relation(fields: [departureDateId], references: [id])
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:1433:  expense                  Expense?                 @relation(fields: [expenseId], references: [id])
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:1434:  payment                  Payment?                 @relation(fields: [paymentId], references: [id])
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:1435:  reconciliation           BankReconciliation?      @relation(fields: [reconciliationId], references: [id])
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:1436:  refund                   Refund?                  @relation(fields: [refundId], references: [id])
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:1437:  reversalOf               BankTransaction?         @relation("BankTransactionToBankTransaction", fields: [reversalOfId], references: [id], onDelete: Restrict)
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:1438:  reversals                BankTransaction?         @relation("BankTransactionToBankTransaction")
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:1439:  supplierPayablePayment   SupplierPayablePayment?  @relation(fields: [supplierPayablePaymentId], references: [id])
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:1440:  tour                     Tour?                    @relation(fields: [tourId], references: [id])
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:1441:  documents                FinanceDocument[]
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:1442:
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:1443:  @@index([bankAccountId])
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:1444:  @@index([bookingId])
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:1445:  @@index([createdById])
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:1446:  @@index([departureDateId])
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:1447:  @@index([direction])
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:1448:  @@index([expenseId])
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:1449:  @@index([paymentId])
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:1450:  @@index([reconciliationId])
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:1451:  @@index([refundId])
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:1452:  @@index([reversalOfId])
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:1453:  @@index([status])
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:1454:  @@index([supplierPayablePaymentId])
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:1455:  @@index([tourId])
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:1456:  @@index([transactionDate])
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:1457:  @@index([transferGroupId])
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:1458:  @@index([type])
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:1459:  @@index([valueDate])
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:1460:}
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:1461:
+> C:\Users\emrev\epoch-journeys\prisma\schema.prisma:1462:model FinanceDocument {
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:1463:  id                       String                  @id @default(cuid())
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:1464:  type                     FinanceDocumentType
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:1465:  title                    String
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:1466:  description              String?
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:1467:  originalFileName         String
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:1468:  storedFileName           String
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:1469:  storagePath              String
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:1470:  mimeType                 String
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:1471:  fileSize                 Int
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:1472:  documentDate             DateTime?
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:1473:  referenceNumber          String?
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:1474:  notes                    String?
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:1475:  expenseId                String?
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:1476:  supplierPayableId        String?
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:1477:  supplierPayablePaymentId String?
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:1478:  refundId                 String?
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:1479:  bankTransactionId        String?
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:1480:  bookingId                String?
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:1481:  tourId                   String?
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:1482:  departureDateId          String?
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:1483:  supplierId               String?
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:1484:  uploadedById             String?
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:1485:  createdAt                DateTime                @default(now())
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:1486:  updatedAt                DateTime                @updatedAt
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:1487:  bankAccountId            String?
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:1488:  accountingCategory       AccountingCategory?
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:1489:  accountingPeriodId       String?
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:1490:  accountingSubcategory    String?
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:1491:  salesDocumentId          String?                 @unique
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:1492:  paymentId                String?                 @unique
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:1493:  accountingPeriod         AccountingPeriod?       @relation(fields: [accountingPeriodId], references: [id])
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:1494:  bankAccount              BankAccount?            @relation(fields: [bankAccountId], references: [id])
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:1495:  bankTransaction          BankTransaction?        @relation(fields: [bankTransactionId], references: [id], onDelete: Cascade)
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:1496:  booking                  Booking?                @relation(fields: [bookingId], references: [id])
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:1497:  departureDate            DepartureDate?          @relation(fields: [departureDateId], references: [id])
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:1498:  expense                  Expense?                @relation(fields: [expenseId], references: [id], onDelete: Cascade)
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:1499:  payment                  Payment?                @relation(fields: [paymentId], references: [id], onDelete: Cascade)
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:1500:  refund                   Refund?                 @relation(fields: [refundId], references: [id], onDelete: Cascade)
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:1501:  salesDocument            SalesDocument?          @relation(fields: [salesDocumentId], references: [id], onDelete: Cascade)
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:1502:  supplier                 Supplier?               @relation(fields: [supplierId], references: [id])
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:1503:  supplierPayable          SupplierPayable?        @relation(fields: [supplierPayableId], references: [id], onDelete: Cascade)
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:1504:  supplierPayablePayment   SupplierPayablePayment? @relation(fields: [supplierPayablePaymentId], references: [id], onDelete: Cascade)
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:1505:  tour                     Tour?                   @relation(fields: [tourId], references: [id])
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:1506:  uploadedBy               User?                   @relation(fields: [uploadedById], references: [id])
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:1507:
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:1508:  @@index([accountingCategory])
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:1509:  @@index([accountingPeriodId])
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:1510:  @@index([bankAccountId])
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:1511:  @@index([bankTransactionId])
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:1512:  @@index([bookingId])
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:1513:  @@index([createdAt])
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:1514:  @@index([departureDateId])
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:1515:  @@index([documentDate])
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:1516:  @@index([expenseId])
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:1517:  @@index([refundId])
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:1518:  @@index([supplierId])
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:1519:  @@index([supplierPayableId])
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:1520:  @@index([supplierPayablePaymentId])
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:1521:  @@index([tourId])
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:1522:  @@index([type])
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:1523:  @@index([uploadedById])
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:1524:}
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:1525:
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:1526:model SalesDocument {
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:1527:  id                       String              @id @default(cuid())
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:1528:  bookingId                String?
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:1529:  paymentId                String?
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:1530:  createdById              String?
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:1531:  issuedById               String?
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:1532:  sentById                 String?
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:1533:  type                     SalesDocumentType
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:1534:  status                   SalesDocumentStatus @default(DRAFT)
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:1535:  documentNumber           String?             @unique
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:1536:  issueDate                DateTime?
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:1537:  dueDate                  DateTime?
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:1538:  currency                 String              @default("EUR")
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:1539:  subtotal                 Decimal             @default(0) @db.Decimal(12, 2)
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:1540:  discountTotal            Decimal             @default(0) @db.Decimal(12, 2)
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:1541:  taxTotal                 Decimal             @default(0) @db.Decimal(12, 2)
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:1542:  totalAmount              Decimal             @default(0) @db.Decimal(12, 2)
+> C:\Users\emrev\epoch-journeys\prisma\schema.prisma:1856:model SupplierPayable {
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:1857:  id                    String                        @id @default(cuid())
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:1858:  supplierId            String
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:1859:  serviceId             String?
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:1860:  rateId                String?
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:1861:  tourId                String?
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:1862:  departureDateId       String?
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:1863:  bookingId             String?
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:1864:  createdById           String?
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:1865:  approvedById          String?
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:1866:  title                 String
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:1867:  description           String?
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:1868:  supplierInvoiceNumber String?
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:1869:  supplierReference     String?
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:1870:  invoiceDate           DateTime?
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:1871:  dueDate               DateTime?
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:1872:  currency              String                        @default("EUR")
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:1873:  contractedAmount      Decimal?                      @db.Decimal(12, 2)
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:1874:  approvedAmount        Decimal                       @db.Decimal(12, 2)
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:1875:  creditAmount          Decimal                       @default(0) @db.Decimal(12, 2)
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:1876:  amountPaid            Decimal                       @default(0) @db.Decimal(12, 2)
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:1877:  balance               Decimal                       @default(0) @db.Decimal(12, 2)
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:1878:  approvalStatus        SupplierPayableApprovalStatus @default(DRAFT)
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:1879:  paymentStatus         SupplierPayablePaymentStatus  @default(UNPAID)
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:1880:  approvedAt            DateTime?
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:1881:  cancelledAt           DateTime?
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:1882:  cancellationReason    String?
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:1883:  documentUrl           String?
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:1884:  internalNotes         String?
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:1885:  supplierNameSnapshot  String
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:1886:  serviceNameSnapshot   String?
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:1887:  rateNameSnapshot      String?
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:1888:  createdAt             DateTime                      @default(now())
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:1889:  updatedAt             DateTime                      @updatedAt
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:1890:  documentType          SupplierPayableDocumentType   @default(FINAL_INVOICE)
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:1891:  internalReference     String?                       @unique
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:1892:  agencyGroupName       String?
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:1893:  documents             FinanceDocument[]
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:1894:  approvedBy            User?                         @relation("SupplierPayable_approvedByIdToUser", fields: [approvedById], references: [id])
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:1895:  booking               Booking?                      @relation(fields: [bookingId], references: [id])
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:1896:  createdBy             User?                         @relation("SupplierPayable_createdByIdToUser", fields: [createdById], references: [id])
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:1897:  departureDate         DepartureDate?                @relation(fields: [departureDateId], references: [id])
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:1898:  rate                  SupplierRate?                 @relation(fields: [rateId], references: [id])
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:1899:  service               SupplierService?              @relation(fields: [serviceId], references: [id])
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:1900:  supplier              Supplier                      @relation(fields: [supplierId], references: [id])
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:1901:  tour                  Tour?                         @relation(fields: [tourId], references: [id])
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:1902:  payments              SupplierPayablePayment[]
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:1903:
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:1904:  @@index([agencyGroupName])
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:1905:  @@index([approvalStatus])
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:1906:  @@index([approvedById])
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:1907:  @@index([bookingId])
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:1908:  @@index([createdAt])
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:1909:  @@index([createdById])
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:1910:  @@index([departureDateId])
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:1911:  @@index([dueDate])
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:1912:  @@index([invoiceDate])
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:1913:  @@index([paymentStatus])
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:1914:  @@index([rateId])
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:1915:  @@index([serviceId])
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:1916:  @@index([supplierId])
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:1917:  @@index([tourId])
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:1918:}
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:1919:
+> C:\Users\emrev\epoch-journeys\prisma\schema.prisma:1920:model SupplierPayablePayment {
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:1921:  id               String            @id @default(cuid())
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:1922:  payableId        String
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:1923:  bankAccountId    String?
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:1924:  recordedById     String?
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:1925:  amount           Decimal           @db.Decimal(12, 2)
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:1926:  currency         String            @default("EUR")
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:1927:  paymentDate      DateTime          @default(now())
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:1928:  method           PaymentMethod
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:1929:  reference        String?
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:1930:  notes            String?
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:1931:  proofUrl         String?
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:1932:  createdAt        DateTime          @default(now())
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:1933:  updatedAt        DateTime          @updatedAt
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:1934:  bankTransactions BankTransaction[]
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:1935:  documents        FinanceDocument[]
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:1936:  bankAccount      BankAccount?      @relation(fields: [bankAccountId], references: [id])
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:1937:  payable          SupplierPayable   @relation(fields: [payableId], references: [id], onDelete: Cascade)
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:1938:  recordedBy       User?             @relation(fields: [recordedById], references: [id])
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:1939:
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:1940:  @@index([bankAccountId])
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:1941:  @@index([payableId])
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:1942:  @@index([paymentDate])
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:1943:  @@index([recordedById])
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:1944:}
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:1945:
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:1946:model SupplierRate {
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:1947:  id          String           @id @default(cuid())
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:1948:  supplierId  String
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:1949:  serviceId   String?
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:1950:  name        String
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:1951:  description String?
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:1952:  validFrom   DateTime
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:1953:  validTo     DateTime
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:1954:  currency    String           @default("EUR")
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:1955:  amount      Decimal          @db.Decimal(12, 2)
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:1956:  unit        SupplierRateUnit
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:1957:  roomType    RoomType?
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:1958:  mealBasis   String?
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:1959:  minPax      Int?
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:1960:  maxPax      Int?
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:1961:
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:1962:  // TAX / VAT
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:1963:  taxIncluded Boolean  @default(true)
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:1964:  taxRate     Decimal? @db.Decimal(7, 4)
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:1965:  taxNotes    String?
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:1966:
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:1967:  // CITY / LOCAL TAX
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:1968:  cityTaxIncluded Boolean           @default(false)
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:1969:  cityTaxAmount   Decimal?          @db.Decimal(12, 2)
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:1970:  cityTaxCurrency String?
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:1971:  cityTaxUnit     SupplierRateUnit?
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:1972:
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:1973:  // ACCOMMODATION / MEALS
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:1974:  breakfastIncluded Boolean?
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:1975:  dinnerIncluded    Boolean?
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:1976:
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:1977:  // DINNER / HALF-BOARD UPGRADE
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:1978:  dinnerAmount Decimal?          @db.Decimal(12, 2)
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:1979:  dinnerUnit   SupplierRateUnit?
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:1980:  dinnerNotes  String?
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:1981:
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:1982:  // PORTERAGE
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:1983:  porterageAvailable Boolean?
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:1984:  porterageIncluded  Boolean?
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:1985:  porterageAmount    Decimal?          @db.Decimal(12, 2)
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:1986:  porterageUnit      SupplierRateUnit?
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:1987:
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:1988:  // BEVERAGE PACKAGE
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:1989:  beveragePackageIncluded    Boolean?
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:1990:  beveragePackageDescription String?
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:1991:  beveragePackageAmount      Decimal?          @db.Decimal(12, 2)
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:1992:  beveragePackageUnit        SupplierRateUnit?
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:1993:  beverageNotes              String?
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:1994:
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:1995:  // FREE PLACES
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:1996:  freePlaces     String?
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:1997:  freePlaceRatio Int?
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:1998:  freePlaceMax   Int?
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:1999:  freePlaceNotes String?
+  C:\Users\emrev\epoch-journeys\prisma\schema.prisma:2000:
