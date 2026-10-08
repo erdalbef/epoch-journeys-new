@@ -1,0 +1,365 @@
+import Link from "next/link";
+
+import { db } from "@/lib/db";
+import SupplierPayableForm from "@/components/admin/supplier-payables/SupplierPayableForm";
+
+export default async function NewSupplierPayablePage() {
+  const [suppliers, tours, bookings] = await Promise.all([
+    db.supplier.findMany({
+      where: {
+        status: "ACTIVE",
+      },
+
+      orderBy: [
+        {
+          preferred: "desc",
+        },
+        {
+          name: "asc",
+        },
+      ],
+
+      select: {
+        id: true,
+        name: true,
+
+        preferred: true,
+
+        country: true,
+        city: true,
+
+        defaultCurrency: true,
+
+        services: {
+          where: {
+            isActive: true,
+          },
+
+          orderBy: [
+            {
+              type: "asc",
+            },
+            {
+              country: "asc",
+            },
+            {
+              city: "asc",
+            },
+            {
+              name: "asc",
+            },
+          ],
+
+          select: {
+            id: true,
+            name: true,
+            type: true,
+
+            country: true,
+            city: true,
+
+            description: true,
+            notes: true,
+          },
+        },
+
+        rates: {
+          where: {
+            isActive: true,
+          },
+
+          orderBy: [
+            {
+              validTo: "desc",
+            },
+            {
+              name: "asc",
+            },
+          ],
+
+          select: {
+            id: true,
+
+            serviceId: true,
+
+            name: true,
+            description: true,
+
+            validFrom: true,
+            validTo: true,
+
+            amount: true,
+            currency: true,
+            unit: true,
+
+            roomType: true,
+            mealBasis: true,
+
+            minPax: true,
+            maxPax: true,
+
+            // ==============================================
+            // HOTEL / MEAL DETAILS
+            // ==============================================
+
+            breakfastIncluded: true,
+            dinnerIncluded: true,
+
+            dinnerAmount: true,
+            dinnerUnit: true,
+            dinnerNotes: true,
+
+            // ==============================================
+            // CITY TAX
+            // ==============================================
+
+            cityTaxIncluded: true,
+            cityTaxAmount: true,
+            cityTaxCurrency: true,
+            cityTaxUnit: true,
+
+            // ==============================================
+            // PORTERAGE
+            // ==============================================
+
+            porterageAvailable: true,
+            porterageIncluded: true,
+            porterageAmount: true,
+            porterageUnit: true,
+
+            // ==============================================
+            // DRINKS / BEVERAGE PACKAGE
+            // ==============================================
+
+            beveragePackageIncluded: true,
+            beveragePackageDescription: true,
+            beveragePackageAmount: true,
+            beveragePackageUnit: true,
+            beverageNotes: true,
+
+            // ==============================================
+            // FREE PLACES
+            // ==============================================
+
+            freePlaces: true,
+            freePlaceRatio: true,
+            freePlaceMax: true,
+            freePlaceNotes: true,
+
+            // ==============================================
+            // GROUP CONDITIONS
+            // ==============================================
+
+            minimumRooms: true,
+            minimumNights: true,
+
+            rateRestrictions: true,
+
+            // ==============================================
+            // SUPPLEMENTS / REDUCTIONS
+            // ==============================================
+
+            supplements: true,
+            reductions: true,
+
+            singleSupplement: true,
+            tripleReduction: true,
+
+            childRate: true,
+            extraBedRate: true,
+
+            // ==============================================
+            // OPERATIONAL CONDITIONS
+            // ==============================================
+
+            driverRoomIncluded: true,
+            driverMealIncluded: true,
+
+            guideRoomIncluded: true,
+            guideMealIncluded: true,
+
+            tourManagerRoomIncluded: true,
+            tourManagerMealIncluded: true,
+
+            // ==============================================
+            // COMMERCIAL TERMS
+            // ==============================================
+
+            cancellationTerms: true,
+            paymentTerms: true,
+
+            depositRequired: true,
+            depositAmount: true,
+            depositPercent: true,
+            paymentDeadlineDays: true,
+
+            // ==============================================
+            // INTERNAL / SOURCE
+            // ==============================================
+
+            rateSource: true,
+            supplierReference: true,
+            lastVerifiedAt: true,
+            internalRateNotes: true,
+
+            notes: true,
+          },
+        },
+      },
+    }),
+
+    db.tour.findMany({
+      orderBy: {
+        title: "asc",
+      },
+
+      select: {
+        id: true,
+        title: true,
+
+        departureDates: {
+          orderBy: {
+            date: "asc",
+          },
+
+          select: {
+            id: true,
+            date: true,
+          },
+        },
+      },
+    }),
+
+    db.booking.findMany({
+      where: {
+        status: {
+          not: "CANCELLED",
+        },
+      },
+
+      take: 250,
+
+      orderBy: {
+        createdAt: "desc",
+      },
+
+      select: {
+        id: true,
+
+        bookingReference: true,
+        bookingDisplayCode: true,
+
+        tourTitleSnapshot: true,
+      },
+    }),
+  ]);
+
+  return (
+    <div className="mx-auto max-w-6xl space-y-6 p-4 sm:p-6 lg:p-8">
+      <div>
+        <Link
+          href="/admin/supplier-payables"
+          className="text-sm font-semibold text-[#001F3F]"
+        >
+          ← Supplier Payables
+        </Link>
+
+        <h1 className="mt-3 text-3xl font-bold text-slate-950">
+          Create Supplier Payable
+        </h1>
+
+        <p className="mt-2 text-sm text-slate-500">
+          Record a supplier proforma, deposit invoice, final invoice or credit
+          note. Epoch assigns the internal payable reference automatically.
+        </p>
+      </div>
+
+      <SupplierPayableForm
+        suppliers={suppliers.map((supplier) => ({
+          ...supplier,
+
+          rates: supplier.rates.map((rate) => ({
+            ...rate,
+
+            /*
+             * Prisma Decimal values must be converted before
+             * passing them into the Client Component.
+             */
+
+            amount:
+              rate.amount.toString(),
+
+            dinnerAmount:
+              rate.dinnerAmount?.toString() ??
+              null,
+
+            cityTaxAmount:
+              rate.cityTaxAmount?.toString() ??
+              null,
+
+            porterageAmount:
+              rate.porterageAmount?.toString() ??
+              null,
+
+            beveragePackageAmount:
+              rate.beveragePackageAmount?.toString() ??
+              null,
+
+            singleSupplement:
+              rate.singleSupplement?.toString() ??
+              null,
+
+            tripleReduction:
+              rate.tripleReduction?.toString() ??
+              null,
+
+            childRate:
+              rate.childRate?.toString() ??
+              null,
+
+            extraBedRate:
+              rate.extraBedRate?.toString() ??
+              null,
+
+            depositAmount:
+              rate.depositAmount?.toString() ??
+              null,
+
+            depositPercent:
+              rate.depositPercent?.toString() ??
+              null,
+
+            /*
+             * Dates are serialized explicitly for the
+             * Client Component.
+             */
+
+            validFrom:
+              rate.validFrom.toISOString(),
+
+            validTo:
+              rate.validTo.toISOString(),
+
+            lastVerifiedAt:
+              rate.lastVerifiedAt?.toISOString() ??
+              null,
+          })),
+        }))}
+        tours={tours.map((tour) => ({
+          ...tour,
+
+          departureDates:
+            tour.departureDates.map(
+              (departure) => ({
+                ...departure,
+
+                date:
+                  departure.date.toISOString(),
+              }),
+            ),
+        }))}
+        bookings={bookings}
+      />
+    </div>
+  );
+}
