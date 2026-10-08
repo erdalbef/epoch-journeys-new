@@ -1,22 +1,15 @@
 import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
-import {
-  AccountingCategory,
-  FinanceDocumentType,
-} from "@prisma/client";
+import { mkdir, writeFile } from "fs/promises";
 import path from "path";
 
 import { db } from "@/lib/db";
 import { authOptions } from "@/lib/authOptions";
-import {
-  deleteFinanceFile,
-  saveFinanceFile,
-} from "@/lib/storage/finansFileStorage";
 
 export const runtime = "nodejs";
 
 const MAX_FILE_SIZE =
-  15 * 1024 * 1024;
+  20 * 1024 * 1024;
 
 const ALLOWED_EXTENSIONS =
   new Set([
@@ -24,11 +17,6 @@ const ALLOWED_EXTENSIONS =
     ".csv",
     ".xls",
     ".xlsx",
-    ".doc",
-    ".docx",
-    ".jpg",
-    ".jpeg",
-    ".png",
   ]);
 
 const ALLOWED_MIME_TYPES =
@@ -37,45 +25,35 @@ const ALLOWED_MIME_TYPES =
     "text/csv",
     "application/vnd.ms-excel",
     "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-    "application/msword",
-    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-    "image/jpeg",
-    "image/png",
   ]);
 
 function optionalString(
   value: FormDataEntryValue | null
 ): string | null {
-  if (
-    typeof value !== "string"
-  ) {
+  if (typeof value !== "string") {
     return null;
   }
 
-  const trimmed =
-    value.trim();
+  const trimmed = value.trim();
 
   return trimmed || null;
 }
 
-function isAccountingCategory(
-  value: string
-): value is AccountingCategory {
-  return Object.values(
-    AccountingCategory
-  ).includes(
-    value as AccountingCategory
-  );
-}
+function parseOptionalDecimal(
+  value: FormDataEntryValue | null
+): number | null {
+  if (
+    typeof value !== "string" ||
+    value.trim() === ""
+  ) {
+    return null;
+  }
 
-function isFinanceDocumentType(
-  value: string
-): value is FinanceDocumentType {
-  return Object.values(
-    FinanceDocumentType
-  ).includes(
-    value as FinanceDocumentType
-  );
+  const parsed = Number(value);
+
+  return Number.isFinite(parsed)
+    ? parsed
+    : null;
 }
 
 function sanitizeFileName(
@@ -92,13 +70,11 @@ function sanitizeFileName(
 
   const safeBase =
     baseName
-      .normalize("NFKD")
       .replace(/\s+/g, "-")
       .replace(
         /[^a-zA-Z0-9._-]/g,
         ""
       )
-      .replace(/-+/g, "-")
       .slice(0, 120);
 
   const safeExtension =
@@ -110,7 +86,7 @@ function sanitizeFileName(
       );
 
   return `${
-    safeBase || "document"
+    safeBase || "statement"
   }${safeExtension}`;
 }
 
@@ -143,10 +119,6 @@ function getDueDate(
 export async function POST(
   request: Request
 ) {
-  let uploadedStoragePath:
-    | string
-    | null = null;
-
   try {
     const session =
       await getServerSession(
@@ -155,8 +127,7 @@ export async function POST(
 
     if (
       !session?.user?.id ||
-      session.user.role !==
-        "ADMIN"
+      session.user.role !== "ADMIN"
     ) {
       return NextResponse.json(
         {
@@ -187,26 +158,38 @@ export async function POST(
         )
       );
 
-    const categoryRaw =
-      formData
-        .get(
-          "accountingCategory"
-        )
-        ?.toString() ??
-      "";
-
-    const typeRaw =
-      formData
-        .get(
-          "type"
-        )
-        ?.toString() ??
-      "";
-
-    const title =
+    const bankAccountId =
       optionalString(
         formData.get(
-          "title"
+          "bankAccountId"
+        )
+      );
+
+    const statementDateRaw =
+      optionalString(
+        formData.get(
+          "statementDate"
+        )
+      );
+
+    const notes =
+      optionalString(
+        formData.get(
+          "notes"
+        )
+      );
+
+    const openingBalance =
+      parseOptionalDecimal(
+        formData.get(
+          "openingBalance"
+        )
+      );
+
+    const closingBalance =
+      parseOptionalDecimal(
+        formData.get(
+          "closingBalance"
         )
       );
 
@@ -216,11 +199,13 @@ export async function POST(
       );
 
     // ======================================================
-    // PERIOD VALIDATION
+    // VALIDATE PERIOD
     // ======================================================
 
     if (
-      !Number.isInteger(year) ||
+      !Number.isInteger(
+        year
+      ) ||
       year < 2000 ||
       year > 2100
     ) {
@@ -237,7 +222,9 @@ export async function POST(
     }
 
     if (
-      !Number.isInteger(month) ||
+      !Number.isInteger(
+        month
+      ) ||
       month < 1 ||
       month > 12
     ) {
@@ -253,20 +240,12 @@ export async function POST(
       );
     }
 
-    // ======================================================
-    // CATEGORY
-    // ======================================================
-
-    if (
-      !isAccountingCategory(
-        categoryRaw
-      )
-    ) {
+    if (!bankAccountId) {
       return NextResponse.json(
         {
           ok: false,
           error:
-            "Invalid accounting category.",
+            "Bank account is required.",
         },
         {
           status: 400,
@@ -275,19 +254,32 @@ export async function POST(
     }
 
     // ======================================================
-    // DOCUMENT TYPE
+    // BANK ACCOUNT
     // ======================================================
 
+    const bankAccount =
+      await db.bankAccount.findUnique({
+        where: {
+          id:
+            bankAccountId,
+        },
+
+        select: {
+          id: true,
+          currency: true,
+          isActive: true,
+        },
+      });
+
     if (
-      !isFinanceDocumentType(
-        typeRaw
-      )
+      !bankAccount ||
+      !bankAccount.isActive
     ) {
       return NextResponse.json(
         {
           ok: false,
           error:
-            "Invalid document type.",
+            "Bank account not found or inactive.",
         },
         {
           status: 400,
@@ -295,12 +287,60 @@ export async function POST(
       );
     }
 
-    if (!title) {
+    /*
+     * Phase 1:
+     * Accounting bank statements are
+     * currently limited to EUR.
+     */
+
+    if (
+      bankAccount.currency !==
+      "EUR"
+    ) {
       return NextResponse.json(
         {
           ok: false,
           error:
-            "Document title is required.",
+            "Only EUR bank accounts are supported in Phase 1.",
+        },
+        {
+          status: 400,
+        }
+      );
+    }
+
+    // ======================================================
+    // STATEMENT DATE
+    // ======================================================
+
+    if (!statementDateRaw) {
+      return NextResponse.json(
+        {
+          ok: false,
+          error:
+            "Statement date is required.",
+        },
+        {
+          status: 400,
+        }
+      );
+    }
+
+    const statementDate =
+      new Date(
+        `${statementDateRaw}T12:00:00.000Z`
+      );
+
+    if (
+      Number.isNaN(
+        statementDate.getTime()
+      )
+    ) {
+      return NextResponse.json(
+        {
+          ok: false,
+          error:
+            "Invalid statement date.",
         },
         {
           status: 400,
@@ -319,7 +359,7 @@ export async function POST(
         {
           ok: false,
           error:
-            "Please select a file.",
+            "Please select a statement file.",
         },
         {
           status: 400,
@@ -351,7 +391,7 @@ export async function POST(
         {
           ok: false,
           error:
-            "Maximum file size is 15 MB.",
+            "Maximum file size is 20 MB.",
         },
         {
           status: 400,
@@ -375,7 +415,7 @@ export async function POST(
         {
           ok: false,
           error:
-            "Unsupported file extension.",
+            "Unsupported bank statement file extension.",
         },
         {
           status: 400,
@@ -393,7 +433,7 @@ export async function POST(
         {
           ok: false,
           error:
-            "Unsupported file type.",
+            "Unsupported bank statement file type.",
         },
         {
           status: 400,
@@ -428,6 +468,15 @@ export async function POST(
         },
       });
 
+    /*
+     * CLOSED accounting periods are
+     * read-only.
+     *
+     * The administrator must reopen the
+     * month before another bank
+     * statement can be uploaded.
+     */
+
     if (
       period.status ===
       "CLOSED"
@@ -436,7 +485,7 @@ export async function POST(
         {
           ok: false,
           error:
-            "This accounting period is closed. Reopen the period before uploading documents.",
+            "This accounting period is closed. Reopen the period before uploading a bank statement.",
         },
         {
           status: 409,
@@ -445,200 +494,103 @@ export async function POST(
     }
 
     // ======================================================
-    // OPTIONAL FIELDS
+    // PREPARE FILE STORAGE
     // ======================================================
 
-    const accountingSubcategory =
-      optionalString(
-        formData.get(
-          "accountingSubcategory"
-        )
+    const safeFileName =
+      sanitizeFileName(
+        fileEntry.name
       );
 
-    const description =
-      optionalString(
-        formData.get(
-          "description"
-        )
+    const storedFileName =
+      `${Date.now()}-${crypto.randomUUID()}-${safeFileName}`;
+
+    const monthFolder =
+      String(month).padStart(
+        2,
+        "0"
       );
 
-    const referenceNumber =
-      optionalString(
-        formData.get(
-          "referenceNumber"
-        )
+    const relativeFolder =
+      path.join(
+        "uploads",
+        "accounting",
+        String(year),
+        monthFolder,
+        "bank-statements"
       );
 
-    const notes =
-      optionalString(
-        formData.get(
-          "notes"
-        )
+    const absoluteFolder =
+      path.join(
+        process.cwd(),
+        "public",
+        relativeFolder
       );
 
-    const supplierId =
-      optionalString(
-        formData.get(
-          "supplierId"
-        )
-      );
-
-    const tourId =
-      optionalString(
-        formData.get(
-          "tourId"
-        )
-      );
-
-    const bookingId =
-      optionalString(
-        formData.get(
-          "bookingId"
-        )
-      );
-
-    const departureDateId =
-      optionalString(
-        formData.get(
-          "departureDateId"
-        )
-      );
-
-    const bankAccountId =
-      optionalString(
-        formData.get(
-          "bankAccountId"
-        )
-      );
-
-    // ======================================================
-    // DOCUMENT DATE
-    // ======================================================
-
-    const documentDateRaw =
-      optionalString(
-        formData.get(
-          "documentDate"
-        )
-      );
-
-    let documentDate:
-      | Date
-      | null = null;
-
-    if (
-      documentDateRaw
-    ) {
-      documentDate =
-        new Date(
-          `${documentDateRaw}T12:00:00.000Z`
-        );
-
-      if (
-        Number.isNaN(
-          documentDate.getTime()
-        )
-      ) {
-        return NextResponse.json(
-          {
-            ok: false,
-            error:
-              "Invalid document date.",
-          },
-          {
-            status: 400,
-          }
-        );
+    await mkdir(
+      absoluteFolder,
+      {
+        recursive: true,
       }
-    }
+    );
+
+    const absoluteFilePath =
+      path.join(
+        absoluteFolder,
+        storedFileName
+      );
 
     // ======================================================
-    // SAVE FILE
+    // SAVE PHYSICAL FILE
     // ======================================================
 
-    const savedFile =
-      await saveFinanceFile({
-        file:
-          fileEntry,
+    const bytes =
+      await fileEntry.arrayBuffer();
 
-        year,
-
-        month,
-
-        safeFileName:
-          sanitizeFileName(
-            fileEntry.name
-          ),
-      });
-
-    uploadedStoragePath =
-      savedFile.storagePath;
+    await writeFile(
+      absoluteFilePath,
+      Buffer.from(
+        bytes
+      )
+    );
 
     // ======================================================
-    // CREATE FINANCE DOCUMENT
+    // CREATE BANK STATEMENT
     // ======================================================
 
-    await db.financeDocument.create({
+    await db.bankStatement.create({
       data: {
-        type:
-          typeRaw,
+        bankAccountId:
+          bankAccount.id,
 
-        title,
-
-        description,
-
-        originalFileName:
-          savedFile.originalFileName,
-
-        storedFileName:
-          savedFile.storedFileName,
-
-        storagePath:
-          savedFile.storagePath,
-
-        mimeType:
-          savedFile.mimeType,
-
-        fileSize:
-          savedFile.fileSize,
-
-        documentDate,
-
-        referenceNumber,
-
-        notes,
+        uploadedById:
+          session.user.id,
 
         accountingPeriodId:
           period.id,
 
-        accountingCategory:
-          categoryRaw,
+        fileName:
+          storedFileName,
 
-        accountingSubcategory,
+        fileType:
+          fileEntry.type ||
+          extension.replace(
+            ".",
+            ""
+          ),
 
-        supplierId,
+        statementDate,
 
-        tourId,
+        openingBalance,
 
-        bookingId,
+        closingBalance,
 
-        departureDateId,
+        currency:
+          "EUR",
 
-        bankAccountId,
-
-        uploadedById:
-          session.user.id,
+        notes,
       },
     });
-
-    /*
-     * DB write succeeded.
-     * The uploaded file now belongs
-     * to FinanceDocument.
-     */
-
-    uploadedStoragePath =
-      null;
 
     // ======================================================
     // RETURN TO ACCOUNTING MONTH
@@ -652,11 +604,11 @@ export async function POST(
 
     redirectUrl.searchParams.set(
       "category",
-      categoryRaw
+      "BANK_STATEMENTS"
     );
 
     redirectUrl.searchParams.set(
-      "uploaded",
+      "statementUploaded",
       "1"
     );
 
@@ -665,36 +617,16 @@ export async function POST(
       303
     );
   } catch (error) {
-    if (
-      uploadedStoragePath
-    ) {
-      try {
-        await deleteFinanceFile(
-          uploadedStoragePath
-        );
-      } catch (
-        cleanupError
-      ) {
-        console.error(
-          "ACCOUNTING_DOCUMENT_FILE_CLEANUP_ERROR",
-          cleanupError
-        );
-      }
-    }
-
     console.error(
-      "POST /api/admin/accounting/documents error:",
+      "POST /api/admin/accounting/bank-statements error:",
       error
     );
 
     return NextResponse.json(
       {
         ok: false,
-
         error:
-          error instanceof Error
-            ? error.message
-            : "Unable to upload accounting document.",
+          "Unable to upload bank statement.",
       },
       {
         status: 500,

@@ -1,10 +1,13 @@
 import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
-import { mkdir, writeFile } from "fs/promises";
 import path from "path";
 
 import { db } from "@/lib/db";
 import { authOptions } from "@/lib/authOptions";
+import {
+  deleteFinanceFile,
+  saveFinanceFile,
+} from "@/lib/storage/finansFileStorage";
 
 export const runtime = "nodejs";
 
@@ -34,7 +37,8 @@ function optionalString(
     return null;
   }
 
-  const trimmed = value.trim();
+  const trimmed =
+    value.trim();
 
   return trimmed || null;
 }
@@ -49,7 +53,8 @@ function parseOptionalDecimal(
     return null;
   }
 
-  const parsed = Number(value);
+  const parsed =
+    Number(value);
 
   return Number.isFinite(parsed)
     ? parsed
@@ -70,11 +75,13 @@ function sanitizeFileName(
 
   const safeBase =
     baseName
+      .normalize("NFKD")
       .replace(/\s+/g, "-")
       .replace(
         /[^a-zA-Z0-9._-]/g,
         ""
       )
+      .replace(/-+/g, "-")
       .slice(0, 120);
 
   const safeExtension =
@@ -119,6 +126,10 @@ function getDueDate(
 export async function POST(
   request: Request
 ) {
+  let uploadedStoragePath:
+    | string
+    | null = null;
+
   try {
     const session =
       await getServerSession(
@@ -203,9 +214,7 @@ export async function POST(
     // ======================================================
 
     if (
-      !Number.isInteger(
-        year
-      ) ||
+      !Number.isInteger(year) ||
       year < 2000 ||
       year > 2100
     ) {
@@ -222,9 +231,7 @@ export async function POST(
     }
 
     if (
-      !Number.isInteger(
-        month
-      ) ||
+      !Number.isInteger(month) ||
       month < 1 ||
       month > 12
     ) {
@@ -468,15 +475,6 @@ export async function POST(
         },
       });
 
-    /*
-     * CLOSED accounting periods are
-     * read-only.
-     *
-     * The administrator must reopen the
-     * month before another bank
-     * statement can be uploaded.
-     */
-
     if (
       period.status ===
       "CLOSED"
@@ -494,65 +492,26 @@ export async function POST(
     }
 
     // ======================================================
-    // PREPARE FILE STORAGE
+    // SAVE FILE
     // ======================================================
 
-    const safeFileName =
-      sanitizeFileName(
-        fileEntry.name
-      );
+    const savedFile =
+      await saveFinanceFile({
+        file:
+          fileEntry,
 
-    const storedFileName =
-      `${Date.now()}-${crypto.randomUUID()}-${safeFileName}`;
+        year,
 
-    const monthFolder =
-      String(month).padStart(
-        2,
-        "0"
-      );
+        month,
 
-    const relativeFolder =
-      path.join(
-        "uploads",
-        "accounting",
-        String(year),
-        monthFolder,
-        "bank-statements"
-      );
+        safeFileName:
+          sanitizeFileName(
+            fileEntry.name
+          ),
+      });
 
-    const absoluteFolder =
-      path.join(
-        process.cwd(),
-        "public",
-        relativeFolder
-      );
-
-    await mkdir(
-      absoluteFolder,
-      {
-        recursive: true,
-      }
-    );
-
-    const absoluteFilePath =
-      path.join(
-        absoluteFolder,
-        storedFileName
-      );
-
-    // ======================================================
-    // SAVE PHYSICAL FILE
-    // ======================================================
-
-    const bytes =
-      await fileEntry.arrayBuffer();
-
-    await writeFile(
-      absoluteFilePath,
-      Buffer.from(
-        bytes
-      )
-    );
+    uploadedStoragePath =
+      savedFile.storagePath;
 
     // ======================================================
     // CREATE BANK STATEMENT
@@ -569,8 +528,23 @@ export async function POST(
         accountingPeriodId:
           period.id,
 
+        /*
+         * BankStatement currently has
+         * only fileName as its stored
+         * file locator.
+         *
+         * Therefore this field stores
+         * the storage path returned by
+         * saveFinanceFile().
+         *
+         * In production this is the
+         * private Vercel Blob URL.
+         *
+         * In local development this is
+         * the /uploads/accounting path.
+         */
         fileName:
-          storedFileName,
+          savedFile.storagePath,
 
         fileType:
           fileEntry.type ||
@@ -591,6 +565,14 @@ export async function POST(
         notes,
       },
     });
+
+    /*
+     * Database creation succeeded.
+     * Do not delete the stored file.
+     */
+
+    uploadedStoragePath =
+      null;
 
     // ======================================================
     // RETURN TO ACCOUNTING MONTH
@@ -617,6 +599,23 @@ export async function POST(
       303
     );
   } catch (error) {
+    if (
+      uploadedStoragePath
+    ) {
+      try {
+        await deleteFinanceFile(
+          uploadedStoragePath
+        );
+      } catch (
+        cleanupError
+      ) {
+        console.error(
+          "BANK_STATEMENT_FILE_CLEANUP_ERROR",
+          cleanupError
+        );
+      }
+    }
+
     console.error(
       "POST /api/admin/accounting/bank-statements error:",
       error
@@ -625,8 +624,11 @@ export async function POST(
     return NextResponse.json(
       {
         ok: false,
+
         error:
-          "Unable to upload bank statement.",
+          error instanceof Error
+            ? error.message
+            : "Unable to upload bank statement.",
       },
       {
         status: 500,

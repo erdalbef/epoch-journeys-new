@@ -4,56 +4,47 @@ import {
   AccountingCategory,
   FinanceDocumentType,
 } from "@prisma/client";
+import { mkdir, writeFile } from "fs/promises";
 import path from "path";
 
 import { db } from "@/lib/db";
 import { authOptions } from "@/lib/authOptions";
-import {
-  deleteFinanceFile,
-  saveFinanceFile,
-} from "@/lib/storage/finansFileStorage";
 
 export const runtime = "nodejs";
 
-const MAX_FILE_SIZE =
-  15 * 1024 * 1024;
+const MAX_FILE_SIZE = 15 * 1024 * 1024;
 
-const ALLOWED_EXTENSIONS =
-  new Set([
-    ".pdf",
-    ".csv",
-    ".xls",
-    ".xlsx",
-    ".doc",
-    ".docx",
-    ".jpg",
-    ".jpeg",
-    ".png",
-  ]);
+const ALLOWED_EXTENSIONS = new Set([
+  ".pdf",
+  ".csv",
+  ".xls",
+  ".xlsx",
+  ".doc",
+  ".docx",
+  ".jpg",
+  ".jpeg",
+  ".png",
+]);
 
-const ALLOWED_MIME_TYPES =
-  new Set([
-    "application/pdf",
-    "text/csv",
-    "application/vnd.ms-excel",
-    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-    "application/msword",
-    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-    "image/jpeg",
-    "image/png",
-  ]);
+const ALLOWED_MIME_TYPES = new Set([
+  "application/pdf",
+  "text/csv",
+  "application/vnd.ms-excel",
+  "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  "application/msword",
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  "image/jpeg",
+  "image/png",
+]);
 
 function optionalString(
   value: FormDataEntryValue | null
 ): string | null {
-  if (
-    typeof value !== "string"
-  ) {
+  if (typeof value !== "string") {
     return null;
   }
 
-  const trimmed =
-    value.trim();
+  const trimmed = value.trim();
 
   return trimmed || null;
 }
@@ -61,9 +52,7 @@ function optionalString(
 function isAccountingCategory(
   value: string
 ): value is AccountingCategory {
-  return Object.values(
-    AccountingCategory
-  ).includes(
+  return Object.values(AccountingCategory).includes(
     value as AccountingCategory
   );
 }
@@ -71,47 +60,29 @@ function isAccountingCategory(
 function isFinanceDocumentType(
   value: string
 ): value is FinanceDocumentType {
-  return Object.values(
-    FinanceDocumentType
-  ).includes(
+  return Object.values(FinanceDocumentType).includes(
     value as FinanceDocumentType
   );
 }
 
-function sanitizeFileName(
-  fileName: string
-) {
-  const extension =
-    path.extname(fileName);
+function sanitizeFileName(fileName: string) {
+  const extension = path.extname(fileName);
 
-  const baseName =
-    path.basename(
-      fileName,
-      extension
-    );
-
-  const safeBase =
-    baseName
-      .normalize("NFKD")
-      .replace(/\s+/g, "-")
-      .replace(
-        /[^a-zA-Z0-9._-]/g,
-        ""
-      )
-      .replace(/-+/g, "-")
-      .slice(0, 120);
-
-  const safeExtension =
+  const baseName = path.basename(
+    fileName,
     extension
-      .toLowerCase()
-      .replace(
-        /[^a-z0-9.]/g,
-        ""
-      );
+  );
 
-  return `${
-    safeBase || "document"
-  }${safeExtension}`;
+  const safeBase = baseName
+    .replace(/\s+/g, "-")
+    .replace(/[^a-zA-Z0-9._-]/g, "")
+    .slice(0, 120);
+
+  const safeExtension = extension
+    .toLowerCase()
+    .replace(/[^a-z0-9.]/g, "");
+
+  return `${safeBase || "document"}${safeExtension}`;
 }
 
 function getDueDate(
@@ -119,14 +90,10 @@ function getDueDate(
   month: number
 ) {
   const nextMonth =
-    month === 12
-      ? 1
-      : month + 1;
+    month === 12 ? 1 : month + 1;
 
   const nextYear =
-    month === 12
-      ? year + 1
-      : year;
+    month === 12 ? year + 1 : year;
 
   return new Date(
     Date.UTC(
@@ -143,10 +110,6 @@ function getDueDate(
 export async function POST(
   request: Request
 ) {
-  let uploadedStoragePath:
-    | string
-    | null = null;
-
   try {
     const session =
       await getServerSession(
@@ -155,14 +118,12 @@ export async function POST(
 
     if (
       !session?.user?.id ||
-      session.user.role !==
-        "ADMIN"
+      session.user.role !== "ADMIN"
     ) {
       return NextResponse.json(
         {
           ok: false,
-          error:
-            "Unauthorized.",
+          error: "Unauthorized.",
         },
         {
           status: 401,
@@ -173,51 +134,34 @@ export async function POST(
     const formData =
       await request.formData();
 
-    const year =
-      Number(
-        formData.get(
-          "year"
-        )
-      );
+    const year = Number(
+      formData.get("year")
+    );
 
-    const month =
-      Number(
-        formData.get(
-          "month"
-        )
-      );
+    const month = Number(
+      formData.get("month")
+    );
 
     const categoryRaw =
       formData
-        .get(
-          "accountingCategory"
-        )
-        ?.toString() ??
-      "";
+        .get("accountingCategory")
+        ?.toString() ?? "";
 
     const typeRaw =
       formData
-        .get(
-          "type"
-        )
-        ?.toString() ??
-      "";
+        .get("type")
+        ?.toString() ?? "";
 
-    const title =
-      optionalString(
-        formData.get(
-          "title"
-        )
-      );
+    const title = optionalString(
+      formData.get("title")
+    );
 
     const fileEntry =
-      formData.get(
-        "file"
-      );
+      formData.get("file");
 
-    // ======================================================
-    // PERIOD VALIDATION
-    // ======================================================
+    /*
+     * Validate accounting period
+     */
 
     if (
       !Number.isInteger(year) ||
@@ -253,9 +197,9 @@ export async function POST(
       );
     }
 
-    // ======================================================
-    // CATEGORY
-    // ======================================================
+    /*
+     * Validate category
+     */
 
     if (
       !isAccountingCategory(
@@ -274,9 +218,9 @@ export async function POST(
       );
     }
 
-    // ======================================================
-    // DOCUMENT TYPE
-    // ======================================================
+    /*
+     * Validate document type
+     */
 
     if (
       !isFinanceDocumentType(
@@ -295,6 +239,10 @@ export async function POST(
       );
     }
 
+    /*
+     * Validate title
+     */
+
     if (!title) {
       return NextResponse.json(
         {
@@ -308,9 +256,9 @@ export async function POST(
       );
     }
 
-    // ======================================================
-    // FILE VALIDATION
-    // ======================================================
+    /*
+     * Validate file
+     */
 
     if (
       !(fileEntry instanceof File)
@@ -327,10 +275,7 @@ export async function POST(
       );
     }
 
-    if (
-      fileEntry.size <=
-      0
-    ) {
+    if (fileEntry.size <= 0) {
       return NextResponse.json(
         {
           ok: false,
@@ -359,12 +304,9 @@ export async function POST(
       );
     }
 
-    const extension =
-      path
-        .extname(
-          fileEntry.name
-        )
-        .toLowerCase();
+    const extension = path
+      .extname(fileEntry.name)
+      .toLowerCase();
 
     if (
       !ALLOWED_EXTENSIONS.has(
@@ -382,6 +324,12 @@ export async function POST(
         }
       );
     }
+
+    /*
+     * Some browsers may provide an empty
+     * MIME type. We allow that as long as
+     * the file extension is permitted.
+     */
 
     if (
       fileEntry.type &&
@@ -401,9 +349,9 @@ export async function POST(
       );
     }
 
-    // ======================================================
-    // ACCOUNTING PERIOD
-    // ======================================================
+    /*
+     * Create/find monthly accounting period
+     */
 
     const period =
       await db.accountingPeriod.upsert({
@@ -428,25 +376,24 @@ export async function POST(
         },
       });
 
-    if (
-      period.status ===
-      "CLOSED"
-    ) {
-      return NextResponse.json(
-        {
-          ok: false,
-          error:
-            "This accounting period is closed. Reopen the period before uploading documents.",
-        },
-        {
-          status: 409,
-        }
-      );
-    }
+      if (
+        period.status === "CLOSED"
+      ) {
+        return NextResponse.json(
+         {
+            ok: false,
+            error:
+              "This accounting period is closed. Reopen the period before uploading documents.",
+          },
+          {
+            status: 409,
+          }
+        );
+      }
 
-    // ======================================================
-    // OPTIONAL FIELDS
-    // ======================================================
+    /*
+     * Read optional document fields
+     */
 
     const accountingSubcategory =
       optionalString(
@@ -471,9 +418,7 @@ export async function POST(
 
     const notes =
       optionalString(
-        formData.get(
-          "notes"
-        )
+        formData.get("notes")
       );
 
     const supplierId =
@@ -485,9 +430,7 @@ export async function POST(
 
     const tourId =
       optionalString(
-        formData.get(
-          "tourId"
-        )
+        formData.get("tourId")
       );
 
     const bookingId =
@@ -511,9 +454,9 @@ export async function POST(
         )
       );
 
-    // ======================================================
-    // DOCUMENT DATE
-    // ======================================================
+    /*
+     * Document date
+     */
 
     const documentDateRaw =
       optionalString(
@@ -522,17 +465,13 @@ export async function POST(
         )
       );
 
-    let documentDate:
-      | Date
-      | null = null;
+    let documentDate: Date | null =
+      null;
 
-    if (
-      documentDateRaw
-    ) {
-      documentDate =
-        new Date(
-          `${documentDateRaw}T12:00:00.000Z`
-        );
+    if (documentDateRaw) {
+      documentDate = new Date(
+        `${documentDateRaw}T12:00:00.000Z`
+      );
 
       if (
         Number.isNaN(
@@ -552,55 +491,98 @@ export async function POST(
       }
     }
 
-    // ======================================================
-    // SAVE FILE
-    // ======================================================
+    /*
+     * Prepare file storage
+     */
 
-    const savedFile =
-      await saveFinanceFile({
-        file:
-          fileEntry,
+    const safeOriginalName =
+      sanitizeFileName(
+        fileEntry.name
+      );
 
-        year,
+    const storedFileName =
+      `${Date.now()}-${crypto.randomUUID()}-${safeOriginalName}`;
 
-        month,
+    const monthFolder =
+      String(month).padStart(
+        2,
+        "0"
+      );
 
-        safeFileName:
-          sanitizeFileName(
-            fileEntry.name
-          ),
-      });
+    const relativeFolder =
+      path.join(
+        "uploads",
+        "accounting",
+        String(year),
+        monthFolder
+      );
 
-    uploadedStoragePath =
-      savedFile.storagePath;
+    const absoluteFolder =
+      path.join(
+        process.cwd(),
+        "public",
+        relativeFolder
+      );
 
-    // ======================================================
-    // CREATE FINANCE DOCUMENT
-    // ======================================================
+    await mkdir(
+      absoluteFolder,
+      {
+        recursive: true,
+      }
+    );
+
+    const absoluteFilePath =
+      path.join(
+        absoluteFolder,
+        storedFileName
+      );
+
+    /*
+     * Save physical file
+     */
+
+    const bytes =
+      await fileEntry.arrayBuffer();
+
+    await writeFile(
+      absoluteFilePath,
+      Buffer.from(bytes)
+    );
+
+    /*
+     * Browser-accessible file path
+     */
+
+    const storagePath =
+      `/${relativeFolder
+        .split(path.sep)
+        .join("/")}/${storedFileName}`;
+
+    /*
+     * Create FinanceDocument
+     */
 
     await db.financeDocument.create({
       data: {
-        type:
-          typeRaw,
+        type: typeRaw,
 
         title,
 
         description,
 
         originalFileName:
-          savedFile.originalFileName,
+          fileEntry.name,
 
-        storedFileName:
-          savedFile.storedFileName,
+        storedFileName,
 
-        storagePath:
-          savedFile.storagePath,
+        storagePath,
 
         mimeType:
-          savedFile.mimeType,
+          fileEntry.type ||
+          "application/octet-stream",
 
         fileSize:
-          savedFile.fileSize,
+          fileEntry.size,
 
         documentDate,
 
@@ -632,17 +614,9 @@ export async function POST(
     });
 
     /*
-     * DB write succeeded.
-     * The uploaded file now belongs
-     * to FinanceDocument.
+     * Return to the accounting month
+     * and preserve selected category.
      */
-
-    uploadedStoragePath =
-      null;
-
-    // ======================================================
-    // RETURN TO ACCOUNTING MONTH
-    // ======================================================
 
     const redirectUrl =
       new URL(
@@ -665,23 +639,6 @@ export async function POST(
       303
     );
   } catch (error) {
-    if (
-      uploadedStoragePath
-    ) {
-      try {
-        await deleteFinanceFile(
-          uploadedStoragePath
-        );
-      } catch (
-        cleanupError
-      ) {
-        console.error(
-          "ACCOUNTING_DOCUMENT_FILE_CLEANUP_ERROR",
-          cleanupError
-        );
-      }
-    }
-
     console.error(
       "POST /api/admin/accounting/documents error:",
       error
@@ -690,11 +647,8 @@ export async function POST(
     return NextResponse.json(
       {
         ok: false,
-
         error:
-          error instanceof Error
-            ? error.message
-            : "Unable to upload accounting document.",
+          "Unable to upload accounting document.",
       },
       {
         status: 500,
