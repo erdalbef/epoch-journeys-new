@@ -28,10 +28,6 @@ type HotelRow = {
   supplierRateCurrency?: string;
   supplierRateValidFrom?: string;
   supplierRateValidTo?: string;
-  supplierRateValidity?:
-    | "VALID_FOR_REQUEST"
-    | "EXPIRED_ESTIMATE";
-  supplierRateRequiresReconfirmation?: boolean;
   supplierMealBasis?: string | null;
   supplierCityTaxIncluded?: boolean | null;
   supplierCityTaxAmount?: number | null;
@@ -107,11 +103,6 @@ type SupplierHotelResult = {
     lastVerifiedAt: string | null;
     notes: string | null;
   };
-
-  rateValidity:
-    | "VALID_FOR_REQUEST"
-    | "EXPIRED_ESTIMATE";
-  requiresReconfirmation: boolean;
 
   effectiveCost: {
     singlePerPersonPerNight: number | null;
@@ -429,7 +420,7 @@ export default function HotelsSection({
         0
       ) {
         toast.info(
-          `No valid or historical hotel rates found for ${city}.`,
+          `No active hotel rates found for ${city}.`,
         );
       }
     } catch (error) {
@@ -554,12 +545,6 @@ export default function HotelsSection({
           result.rate
             .validTo,
 
-        supplierRateValidity:
-          result.rateValidity,
-
-        supplierRateRequiresReconfirmation:
-          result.requiresReconfirmation,
-
         supplierMealBasis:
           result.rate
             .mealBasis,
@@ -586,18 +571,9 @@ export default function HotelsSection({
       },
     );
 
-    if (
-      result.rateValidity ===
-      "EXPIRED_ESTIMATE"
-    ) {
-      toast.warning(
-        `${result.supplier.name} / ${result.rate.name} selected as an estimate. Reconfirm the rate before booking.`,
-      );
-    } else {
-      toast.success(
-        `${result.supplier.name} / ${result.rate.name} selected.`,
-      );
-    }
+    toast.success(
+      `${result.supplier.name} / ${result.rate.name} selected.`,
+    );
   }
 
   return (
@@ -609,7 +585,7 @@ export default function HotelsSection({
           </h2>
 
           <p className="mt-1 max-w-4xl text-xs text-slate-200">
-            Enter the city, compare valid supplier hotel rates, and select the hotel that best fits
+            Enter the city, compare active supplier hotel rates, and select the hotel that best fits
             the group. Manual hotel and rate entry remains available.
           </p>
         </div>
@@ -879,13 +855,6 @@ export default function HotelsSection({
                                           </span>
                                         )}
 
-                                        {result.rateValidity ===
-                                          "EXPIRED_ESTIMATE" && (
-                                          <span className="rounded-full bg-amber-100 px-2 py-1 text-[11px] font-semibold text-amber-900">
-                                            Expired · Estimate only
-                                          </span>
-                                        )}
-
                                         {result.supplier.rating !==
                                           null && (
                                           <span className="text-xs text-slate-500">
@@ -939,10 +908,7 @@ export default function HotelsSection({
                                       }
                                       className="rounded-md bg-[#8B0000] px-4 py-2 text-sm font-semibold text-white transition hover:bg-[#760000] disabled:cursor-not-allowed disabled:bg-slate-300"
                                     >
-                                      {result.rateValidity ===
-                                      "EXPIRED_ESTIMATE"
-                                        ? "Use as Estimate"
-                                        : "Use This Rate"}
+                                      Use This Rate
                                     </button>
                                   </div>
 
@@ -1063,13 +1029,6 @@ export default function HotelsSection({
                                       }
                                     />
                                   </div>
-
-                                  {result.rateValidity ===
-                                    "EXPIRED_ESTIMATE" && (
-                                    <p className="mt-3 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-900">
-                                      This rate does not cover the requested travel dates. It is the latest historical rate available and may be used only as an estimate. Reconfirm with the supplier before booking.
-                                    </p>
-                                  )}
 
                                   {!sameCurrency && (
                                     <p className="mt-3 text-xs font-medium text-amber-700">
@@ -1242,15 +1201,9 @@ export default function HotelsSection({
                           )}
                       </div>
 
-                      {row.supplierRateRequiresReconfirmation ? (
-                        <p className="mt-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-900">
-                          Estimated from expired supplier rate — reconfirm before booking.
-                        </p>
-                      ) : (
-                        <p className="mt-2 text-xs text-emerald-700">
-                          The supplier/rate reference is saved with the quote snapshot. The rate fields below remain editable.
-                        </p>
-                      )}
+                      <p className="mt-2 text-xs text-emerald-700">
+                        The supplier/rate reference is saved with the quote snapshot. The rate fields below remain editable.
+                      </p>
                     </div>
                   )}
 

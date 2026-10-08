@@ -14,6 +14,36 @@ type PageProps = {
   }>;
 };
 
+function isObject(
+  value: unknown,
+): value is Record<string, unknown> {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    !Array.isArray(value)
+  );
+}
+
+function textValue(
+  value: unknown,
+) {
+  return typeof value === "string"
+    ? value
+    : "";
+}
+
+function dateInputValue(
+  value: Date | null | undefined,
+) {
+  if (!value) {
+    return "";
+  }
+
+  return value
+    .toISOString()
+    .slice(0, 10);
+}
+
 export default async function BookingOperationControlPage({
   params,
 }: PageProps) {
@@ -41,27 +71,28 @@ export default async function BookingOperationControlPage({
         id,
       },
 
-      include: {
-        tour: {
-          select: {
-            title:
-              true,
-          },
-        },
-
-        user: {
-          select: {
-            fullName:
-              true,
-
-            email:
-              true,
-          },
-        },
-
-        operationControl:
-          true,
+   include: {
+    tour: {
+    select: {
+      title: true,
       },
+    },
+
+    user: {
+      select: {
+      fullName: true,
+      email: true,
+      },
+    },
+
+    partnerCompany: {
+      select: {
+      name: true,
+      },
+    },
+
+    operationControl: true,
+  },
     });
 
   if (!booking) {
@@ -79,6 +110,254 @@ export default async function BookingOperationControlPage({
     booking.user?.fullName ||
     booking.user?.email ||
     "No customer";
+
+  /*
+   * ==========================================================
+   * AUTO-FILL TOUR MANAGEMENT FROM BOOKING
+   * ==========================================================
+   *
+   * Existing manually entered Tour Management data always wins.
+   *
+   * Booking data is used only as a default when the corresponding
+   * Tour Management field is still empty.
+   * ==========================================================
+   */
+
+  const existingGroupInfo =
+    isObject(
+      booking.operationControl?.groupInfo,
+    )
+      ? booking.operationControl
+          ?.groupInfo
+      : {};
+
+  const existingGroupLeaderInfo =
+    isObject(
+      booking.operationControl
+        ?.groupLeaderInfo,
+    )
+      ? booking.operationControl
+          ?.groupLeaderInfo
+      : {};
+
+  const groupName =
+    textValue(
+      existingGroupInfo.groupName,
+    ) ||
+    booking.groupName ||
+    booking.agencyNameSnapshot ||
+    booking.partnerPackageName ||
+    "";
+
+  const groupCode =
+    textValue(
+      existingGroupInfo.groupCode,
+    ) ||
+    booking.bookingDisplayCode ||
+    booking.bookingReference;
+
+  const numberOfPilgrims =
+    textValue(
+      existingGroupInfo.numberOfPilgrims,
+    ) ||
+    String(
+      booking.finalPax ??
+        booking.estimatedPax ??
+        booking.numberOfGuests ??
+        0,
+    );
+
+  const startDate =
+    textValue(
+      existingGroupInfo.startDate,
+    ) ||
+    dateInputValue(
+      booking.travelStartDateSnapshot ??
+        booking.departureDateSnapshot,
+    );
+
+  const endDate =
+    textValue(
+      existingGroupInfo.endDate,
+    ) ||
+    dateInputValue(
+      booking.travelEndDateSnapshot,
+    );
+
+  const groupInfo = {
+    groupName,
+
+    groupCode,
+
+    numberOfPilgrims,
+
+    startDate,
+
+    endDate,
+
+    tourCoordinatorName:
+      textValue(
+        existingGroupInfo.tourCoordinatorName,
+      ),
+
+    tourCoordinatorPhone:
+      textValue(
+        existingGroupInfo.tourCoordinatorPhone,
+      ),
+
+    notes:
+      textValue(
+        existingGroupInfo.notes,
+      ),
+  };
+
+  const groupLeaderInfo = {
+    name:
+      textValue(
+        existingGroupLeaderInfo.name,
+      ) ||
+      booking.groupLeaderName ||
+      "",
+
+    phone:
+      textValue(
+        existingGroupLeaderInfo.phone,
+      ),
+
+    email:
+      textValue(
+        existingGroupLeaderInfo.email,
+      ),
+
+    company:
+      textValue(
+        existingGroupLeaderInfo.company,
+      ) ||
+      booking.agencyNameSnapshot ||
+      booking.partnerCompany?.name ||
+      "",
+
+    notes:
+      textValue(
+        existingGroupLeaderInfo.notes,
+      ),
+  };
+
+  /*
+   * Build the complete InitialData object expected by
+   * BookingOperationControlForm.
+   */
+
+  const initialData = {
+    hotelItems:
+      booking.operationControl
+        ?.hotelItems ??
+      [],
+
+    transportItems:
+      booking.operationControl
+        ?.transportItems ??
+      [],
+
+    guideItems:
+      booking.operationControl
+        ?.guideItems ??
+      [],
+
+    restaurantItems:
+      booking.operationControl
+        ?.restaurantItems ??
+      [],
+
+    massItems:
+      booking.operationControl
+        ?.massItems ??
+      [],
+
+    ticketItems:
+      booking.operationControl
+        ?.ticketItems ??
+      [],
+
+    paymentItems:
+      booking.operationControl
+        ?.paymentItems ??
+      [],
+
+    documentItems:
+      booking.operationControl
+        ?.documentItems ??
+      [],
+
+    emergencyItems:
+      booking.operationControl
+        ?.emergencyItems ??
+      [],
+
+    groupInfo,
+
+    tourManagerInfo:
+      booking.operationControl
+        ?.tourManagerInfo ??
+      {},
+
+    spiritualDirectorInfo:
+      booking.operationControl
+        ?.spiritualDirectorInfo ??
+      {},
+
+    groupLeaderInfo,
+
+    flightItems:
+      booking.operationControl
+        ?.flightItems ??
+      [],
+
+    trainItems:
+      booking.operationControl
+        ?.trainItems ??
+      [],
+
+    headsetInfo:
+      booking.operationControl
+        ?.headsetInfo ??
+      {},
+
+    dailyItinerary:
+      booking.operationControl
+        ?.dailyItinerary ??
+      [],
+
+    paymentResponsibilities:
+      booking.operationControl
+        ?.paymentResponsibilities ??
+      [],
+
+    lunchInstructions:
+      booking.operationControl
+        ?.lunchInstructions ??
+      "",
+
+    drivingInstructions:
+      booking.operationControl
+        ?.drivingInstructions ??
+      "",
+
+    generalInstructions:
+      booking.operationControl
+        ?.generalInstructions ??
+      "",
+
+    folderNotes:
+      booking.operationControl
+        ?.folderNotes ??
+      "",
+
+    finalNotes:
+      booking.operationControl
+        ?.finalNotes ??
+      "",
+  };
 
   return (
     <div className="mx-auto max-w-7xl space-y-6 p-8">
@@ -119,7 +398,7 @@ export default async function BookingOperationControlPage({
           booking.id
         }
         initialData={
-          booking.operationControl
+          initialData
         }
       />
     </div>

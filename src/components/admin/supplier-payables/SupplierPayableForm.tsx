@@ -9,6 +9,7 @@ import { useRouter } from "next/navigation";
 import {
   CalendarDays,
   FileText,
+  Star,
   Upload,
   X,
 } from "lucide-react";
@@ -18,20 +19,82 @@ type Service = {
   id: string;
   name: string;
   type: string;
+  country: string | null;
+  city: string | null;
+  description: string | null;
+  notes: string | null;
 };
 
 type Rate = {
   id: string;
   serviceId: string | null;
   name: string;
+  description: string | null;
+  validFrom: string;
+  validTo: string;
   amount: string;
   currency: string;
   unit: string;
+  roomType: string | null;
+  mealBasis: string | null;
+  minPax: number | null;
+  maxPax: number | null;
+  breakfastIncluded: boolean | null;
+  dinnerIncluded: boolean | null;
+  dinnerAmount: string | null;
+  dinnerUnit: string | null;
+  dinnerNotes: string | null;
+  cityTaxIncluded: boolean;
+  cityTaxAmount: string | null;
+  cityTaxCurrency: string | null;
+  cityTaxUnit: string | null;
+  porterageAvailable: boolean | null;
+  porterageIncluded: boolean | null;
+  porterageAmount: string | null;
+  porterageUnit: string | null;
+  beveragePackageIncluded: boolean | null;
+  beveragePackageDescription: string | null;
+  beveragePackageAmount: string | null;
+  beveragePackageUnit: string | null;
+  beverageNotes: string | null;
+  freePlaces: string | null;
+  freePlaceRatio: number | null;
+  freePlaceMax: number | null;
+  freePlaceNotes: string | null;
+  minimumRooms: number | null;
+  minimumNights: number | null;
+  rateRestrictions: string | null;
+  supplements: string | null;
+  reductions: string | null;
+  singleSupplement: string | null;
+  tripleReduction: string | null;
+  childRate: string | null;
+  extraBedRate: string | null;
+  driverRoomIncluded: boolean | null;
+  driverMealIncluded: boolean | null;
+  guideRoomIncluded: boolean | null;
+  guideMealIncluded: boolean | null;
+  tourManagerRoomIncluded: boolean | null;
+  tourManagerMealIncluded: boolean | null;
+  cancellationTerms: string | null;
+  paymentTerms: string | null;
+  depositRequired: boolean | null;
+  depositAmount: string | null;
+  depositPercent: string | null;
+  paymentDeadlineDays: number | null;
+  rateSource: string | null;
+  supplierReference: string | null;
+  lastVerifiedAt: string | null;
+  internalRateNotes: string | null;
+  notes: string | null;
 };
 
 type Supplier = {
   id: string;
   name: string;
+  preferred: boolean;
+  country: string | null;
+  city: string | null;
   defaultCurrency: string;
   services: Service[];
   rates: Rate[];
@@ -86,6 +149,25 @@ const DOCUMENT_TYPE_OPTIONS: Array<{
   },
 ];
 
+const SERVICE_CATEGORY_OPTIONS = [
+  ["ACCOMMODATION", "Hotels / Accommodation"],
+  ["TRANSPORT", "Transportation / Coach / Transfers"],
+  ["MEAL", "Restaurants / Meals"],
+  ["GUIDE", "Local Guides"],
+  ["TOUR_MANAGER", "Tour Managers"],
+  ["ENTRANCE", "Entrance Fees / Attractions"],
+  ["MASS_ARRANGEMENT", "Mass Arrangements"],
+  ["CHURCH_RESERVATION", "Church / Shrine Reservations"],
+  ["TICKET", "Tickets"],
+  ["RAIL", "Rail"],
+  ["FERRY", "Ferry"],
+  ["CRUISE", "Cruise"],
+  ["FLIGHT", "Flights"],
+  ["INSURANCE", "Insurance"],
+  ["DMC_SERVICE", "DMC / Ground Services"],
+  ["OTHER", "Other"],
+] as const;
+
 const MAX_FILE_SIZE =
   10 * 1024 * 1024;
 
@@ -99,65 +181,24 @@ const ALLOWED_FILE_TYPES = [
 function serviceTypeLabel(
   type: string,
 ) {
-  switch (type) {
-    case "ACCOMMODATION":
-      return "Accommodation / Hotel";
+  const match =
+    SERVICE_CATEGORY_OPTIONS.find(
+      ([value]) =>
+        value === type,
+    );
 
-    case "TRANSPORT":
-      return "Transport / Transfers";
-
-    case "GUIDE":
-      return "Guide";
-
-    case "TOUR_MANAGER":
-      return "Tour Manager";
-
-    case "MEAL":
-      return "Restaurant / Meals";
-
-    case "MASS_ARRANGEMENT":
-      return "Mass Arrangement";
-
-    case "CHURCH_RESERVATION":
-      return "Church / Shrine Reservation";
-
-    case "ENTRANCE":
-      return "Entrance Fee";
-
-    case "TICKET":
-      return "Ticket";
-
-    case "FLIGHT":
-      return "Flight";
-
-    case "CRUISE":
-      return "Cruise";
-
-    case "FERRY":
-      return "Ferry";
-
-    case "RAIL":
-      return "Rail";
-
-    case "INSURANCE":
-      return "Insurance";
-
-    case "DMC_SERVICE":
-      return "DMC / Ground Services";
-
-    case "OTHER":
-      return "Other";
-
-    default:
-      return type
-        .replaceAll("_", " ")
-        .toLowerCase()
-        .replace(
-          /\b\w/g,
-          (value) =>
-            value.toUpperCase(),
-        );
+  if (match) {
+    return match[1];
   }
+
+  return type
+    .replaceAll("_", " ")
+    .toLowerCase()
+    .replace(
+      /\b\w/g,
+      (value) =>
+        value.toUpperCase(),
+    );
 }
 
 function rateUnitLabel(
@@ -171,6 +212,38 @@ function rateUnitLabel(
       (value) =>
         value.toUpperCase(),
     );
+}
+
+function moneyValue(
+  value: string | null,
+  currency: string,
+) {
+  if (
+    value === null ||
+    value === ""
+  ) {
+    return "—";
+  }
+
+  const parsed =
+    Number(value);
+
+  if (
+    !Number.isFinite(
+      parsed,
+    )
+  ) {
+    return `${currency} ${value}`;
+  }
+
+  return new Intl.NumberFormat(
+    "en-GB",
+    {
+      style: "currency",
+      currency,
+      maximumFractionDigits: 2,
+    },
+  ).format(parsed);
 }
 
 function parseEuropeanDate(
@@ -318,6 +391,101 @@ function formatDateTyping(
   )}`;
 }
 
+function normalize(
+  value:
+    | string
+    | null
+    | undefined,
+) {
+  return value
+    ?.trim()
+    .toLocaleLowerCase() ??
+    "";
+}
+
+function uniqueSorted(
+  values: Array<
+    string | null
+  >,
+) {
+  return Array.from(
+    new Set(
+      values
+        .map(
+          (value) =>
+            value?.trim() ??
+            "",
+        )
+        .filter(Boolean),
+    ),
+  ).sort((a, b) =>
+    a.localeCompare(b),
+  );
+}
+
+function lowestRateAmount(
+  supplier: Supplier,
+  category: string,
+  country: string,
+  city: string,
+) {
+  const matchingServiceIds =
+    new Set(
+      supplier.services
+        .filter(
+          (service) =>
+            service.type ===
+              category &&
+            (!country ||
+              normalize(
+                service.country ??
+                  supplier.country,
+              ) ===
+                normalize(
+                  country,
+                )) &&
+            (!city ||
+              normalize(
+                service.city ??
+                  supplier.city,
+              ) ===
+                normalize(
+                  city,
+                )),
+        )
+        .map(
+          (service) =>
+            service.id,
+        ),
+    );
+
+  const values =
+    supplier.rates
+      .filter(
+        (rate) =>
+          !rate.serviceId ||
+          matchingServiceIds.has(
+            rate.serviceId,
+          ),
+      )
+      .map(
+        (rate) =>
+          Number(
+            rate.amount,
+          ),
+      )
+      .filter(
+        (value) =>
+          Number.isFinite(
+            value,
+          ),
+      );
+
+  return values.length
+    ? Math.min(...values)
+    : Number.POSITIVE_INFINITY;
+}
+
 export default function SupplierPayableForm({
   suppliers,
   tours,
@@ -329,6 +497,21 @@ export default function SupplierPayableForm({
 }) {
   const router =
     useRouter();
+
+  const [
+    category,
+    setCategory,
+  ] = useState("");
+
+  const [
+    countryFilter,
+    setCountryFilter,
+  ] = useState("");
+
+  const [
+    cityFilter,
+    setCityFilter,
+  ] = useState("");
 
   const [
     supplierId,
@@ -415,12 +598,249 @@ export default function SupplierPayableForm({
   ] =
     useState(false);
 
+  const countries =
+    useMemo(
+      () =>
+        uniqueSorted(
+          suppliers.flatMap(
+            (supplier) =>
+              supplier.services
+                .filter(
+                  (service) =>
+                    !category ||
+                    service.type ===
+                      category,
+                )
+                .map(
+                  (service) =>
+                    service.country ??
+                    supplier.country,
+                ),
+          ),
+        ),
+      [
+        suppliers,
+        category,
+      ],
+    );
+
+  const cities =
+    useMemo(
+      () =>
+        uniqueSorted(
+          suppliers.flatMap(
+            (supplier) =>
+              supplier.services
+                .filter(
+                  (service) =>
+                    (!category ||
+                      service.type ===
+                        category) &&
+                    (!countryFilter ||
+                      normalize(
+                        service.country ??
+                          supplier.country,
+                      ) ===
+                        normalize(
+                          countryFilter,
+                        )),
+                )
+                .map(
+                  (service) =>
+                    service.city ??
+                    supplier.city,
+                ),
+          ),
+        ),
+      [
+        suppliers,
+        category,
+        countryFilter,
+      ],
+    );
+
+  const filteredSuppliers =
+    useMemo(() => {
+      if (!category) {
+        return [];
+      }
+
+      return suppliers
+        .filter(
+          (supplier) =>
+            supplier.services.some(
+              (service) =>
+                service.type ===
+                  category &&
+                (!countryFilter ||
+                  normalize(
+                    service.country ??
+                      supplier.country,
+                  ) ===
+                    normalize(
+                      countryFilter,
+                    )) &&
+                (!cityFilter ||
+                  normalize(
+                    service.city ??
+                      supplier.city,
+                  ) ===
+                    normalize(
+                      cityFilter,
+                    )),
+            ),
+        )
+        .slice()
+        .sort((a, b) => {
+          if (
+            a.preferred !==
+            b.preferred
+          ) {
+            return a.preferred
+              ? -1
+              : 1;
+          }
+
+          const aRate =
+            lowestRateAmount(
+              a,
+              category,
+              countryFilter,
+              cityFilter,
+            );
+
+          const bRate =
+            lowestRateAmount(
+              b,
+              category,
+              countryFilter,
+              cityFilter,
+            );
+
+          if (
+            aRate !==
+            bRate
+          ) {
+            return aRate - bRate;
+          }
+
+          return a.name.localeCompare(
+            b.name,
+          );
+        });
+    }, [
+      suppliers,
+      category,
+      countryFilter,
+      cityFilter,
+    ]);
+
   const supplier =
+    filteredSuppliers.find(
+      (item) =>
+        item.id ===
+        supplierId,
+    ) ??
     suppliers.find(
       (item) =>
         item.id ===
         supplierId,
     );
+
+  const services =
+    useMemo(
+      () =>
+        supplier?.services.filter(
+          (service) =>
+            (!category ||
+              service.type ===
+                category) &&
+            (!countryFilter ||
+              normalize(
+                service.country ??
+                  supplier.country,
+              ) ===
+                normalize(
+                  countryFilter,
+                )) &&
+            (!cityFilter ||
+              normalize(
+                service.city ??
+                  supplier.city,
+              ) ===
+                normalize(
+                  cityFilter,
+                )),
+        ) ?? [],
+      [
+        supplier,
+        category,
+        countryFilter,
+        cityFilter,
+      ],
+    );
+
+  const selectedService =
+    services.find(
+      (item) =>
+        item.id ===
+        serviceId,
+    ) ?? null;
+
+  const rates =
+    useMemo(
+      () =>
+        (supplier?.rates.filter(
+          (rate) =>
+            !serviceId ||
+            !rate.serviceId ||
+            rate.serviceId ===
+              serviceId,
+        ) ?? [])
+          .slice()
+          .sort(
+            (a, b) => {
+              const amountA =
+                Number(
+                  a.amount,
+                );
+
+              const amountB =
+                Number(
+                  b.amount,
+                );
+
+              if (
+                Number.isFinite(
+                  amountA,
+                ) &&
+                Number.isFinite(
+                  amountB,
+                ) &&
+                amountA !==
+                  amountB
+              ) {
+                return amountA -
+                  amountB;
+              }
+
+              return a.name.localeCompare(
+                b.name,
+              );
+            },
+          ),
+      [
+        supplier,
+        serviceId,
+      ],
+    );
+
+  const selectedRate =
+    rates.find(
+      (item) =>
+        item.id ===
+        rateId,
+    ) ?? null;
 
   const selectedTour =
     tours.find(
@@ -428,26 +848,6 @@ export default function SupplierPayableForm({
         item.id ===
         tourId,
     );
-
-  const selectedService =
-    supplier?.services.find(
-      (item) =>
-        item.id ===
-        serviceId,
-    ) ?? null;
-
-  const services =
-    supplier?.services ??
-    [];
-
-  const rates =
-    supplier?.rates.filter(
-      (rate) =>
-        !serviceId ||
-        !rate.serviceId ||
-        rate.serviceId ===
-          serviceId,
-    ) ?? [];
 
   const balancePreview =
     useMemo(() => {
@@ -481,6 +881,43 @@ export default function SupplierPayableForm({
       documentType,
     ]);
 
+  function resetSupplierChoice() {
+    setSupplierId("");
+    setServiceId("");
+    setRateId("");
+    setContractedAmount("");
+  }
+
+  function chooseCategory(
+    value: string,
+  ) {
+    setCategory(
+      value,
+    );
+    setCountryFilter("");
+    setCityFilter("");
+    resetSupplierChoice();
+  }
+
+  function chooseCountry(
+    value: string,
+  ) {
+    setCountryFilter(
+      value,
+    );
+    setCityFilter("");
+    resetSupplierChoice();
+  }
+
+  function chooseCity(
+    value: string,
+  ) {
+    setCityFilter(
+      value,
+    );
+    resetSupplierChoice();
+  }
+
   function chooseSupplier(
     value: string,
   ) {
@@ -488,27 +925,65 @@ export default function SupplierPayableForm({
       value,
     );
 
-    setServiceId(
-      "",
-    );
-
     setRateId(
       "",
     );
 
     const selected =
+      filteredSuppliers.find(
+        (item) =>
+          item.id ===
+          value,
+      ) ??
       suppliers.find(
         (item) =>
           item.id ===
           value,
       );
 
-    if (selected) {
-      setCurrency(
-        selected.defaultCurrency ||
-          "EUR",
+    if (!selected) {
+      setServiceId(
+        "",
       );
+
+      return;
     }
+
+    setCurrency(
+      selected.defaultCurrency ||
+        "EUR",
+    );
+
+    const matchingServices =
+      selected.services.filter(
+        (service) =>
+          (!category ||
+            service.type ===
+              category) &&
+          (!countryFilter ||
+            normalize(
+              service.country ??
+                selected.country,
+            ) ===
+              normalize(
+                countryFilter,
+              )) &&
+          (!cityFilter ||
+            normalize(
+              service.city ??
+                selected.city,
+            ) ===
+              normalize(
+                cityFilter,
+              )),
+      );
+
+    setServiceId(
+      matchingServices.length ===
+        1
+        ? matchingServices[0].id
+        : "",
+    );
   }
 
   function chooseRate(
@@ -656,23 +1131,11 @@ export default function SupplierPayableForm({
         event.currentTarget,
       );
 
-    /*
-     * Visible form:
-     * DD/MM/YYYY
-     *
-     * API:
-     * YYYY-MM-DD
-     */
     form.set(
       "documentType",
       documentType,
     );
 
-    /*
-     * These linkage fields are controlled React selects.
-     * Set them explicitly so the selected operational links
-     * are always included in the multipart request.
-     */
     form.set(
       "tourId",
       tourId,
@@ -784,6 +1247,19 @@ export default function SupplierPayableForm({
     }
   }
 
+  const showCountry =
+    category ===
+      "GUIDE" ||
+    category ===
+      "TOUR_MANAGER" ||
+    category ===
+      "TRANSPORT" ||
+    category ===
+      "DMC_SERVICE";
+
+  const showCity =
+    category !== "";
+
   return (
     <form
       onSubmit={
@@ -791,173 +1267,418 @@ export default function SupplierPayableForm({
       }
       className="space-y-6 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6"
     >
-      {/* ============================================== */}
-      {/* SUPPLIER / SERVICE */}
-      {/* ============================================== */}
+      <div className="rounded-2xl border border-slate-200 bg-slate-50/70 p-5">
+        <div>
+          <h2 className="text-lg font-bold text-slate-950">
+            Supplier Selection
+          </h2>
 
-      <div className="grid gap-4 md:grid-cols-2">
-        <FieldLabel label="Supplier *">
-          <select
-            name="supplierId"
-            required
-            value={
-              supplierId
-            }
-            onChange={(
-              event,
-            ) =>
-              chooseSupplier(
-                event
-                  .target
-                  .value,
-              )
-            }
-            className="input"
-          >
-            <option value="">
-              Select
-              supplier...
-            </option>
+          <p className="mt-1 text-sm text-slate-500">
+            Select the service category and location first. Preferred suppliers are listed first,
+            followed by suppliers with the lower matching rate.
+          </p>
+        </div>
 
-            {suppliers.map(
-              (item) => (
-                <option
-                  key={
-                    item.id
-                  }
-                  value={
-                    item.id
-                  }
-                >
-                  {
-                    item.name
-                  }
+        <div className="mt-5 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+          <FieldLabel label="Supplier category *">
+            <select
+              required
+              value={
+                category
+              }
+              onChange={(
+                event,
+              ) =>
+                chooseCategory(
+                  event
+                    .target
+                    .value,
+                )
+              }
+              className="input"
+            >
+              <option value="">
+                Select category...
+              </option>
+
+              {SERVICE_CATEGORY_OPTIONS.map(
+                ([
+                  value,
+                  label,
+                ]) => (
+                  <option
+                    key={
+                      value
+                    }
+                    value={
+                      value
+                    }
+                  >
+                    {label}
+                  </option>
+                ),
+              )}
+            </select>
+          </FieldLabel>
+
+          {showCountry && (
+            <FieldLabel label="Country">
+              <select
+                value={
+                  countryFilter
+                }
+                onChange={(
+                  event,
+                ) =>
+                  chooseCountry(
+                    event
+                      .target
+                      .value,
+                  )
+                }
+                className="input"
+              >
+                <option value="">
+                  All countries
                 </option>
-              ),
-            )}
-          </select>
-        </FieldLabel>
 
-        <FieldLabel label="Supplier service">
-          <select
-            name="serviceId"
-            value={
-              serviceId
-            }
-            onChange={(
-              event,
-            ) => {
-              setServiceId(
-                event
-                  .target
-                  .value,
-              );
+                {countries.map(
+                  (country) => (
+                    <option
+                      key={
+                        country
+                      }
+                      value={
+                        country
+                      }
+                    >
+                      {country}
+                    </option>
+                  ),
+                )}
+              </select>
+            </FieldLabel>
+          )}
 
-              setRateId(
-                "",
-              );
-            }}
-            disabled={
-              !supplierId
-            }
-            className="input"
-          >
-            <option value="">
-              {supplierId
-                ? services.length >
-                  0
-                  ? "Select service..."
-                  : "No services configured for this supplier"
-                : "Select supplier first..."}
-            </option>
-
-            {services.map(
-              (
-                service,
-              ) => (
-                <option
-                  key={
-                    service.id
-                  }
-                  value={
-                    service.id
-                  }
-                >
-                  {serviceTypeLabel(
-                    service.type,
-                  )}{" "}
-                  -{" "}
-                  {
-                    service.name
-                  }
+          {showCity && (
+            <FieldLabel
+              label={
+                category ===
+                "GUIDE"
+                  ? "City / Region"
+                  : "City / Operating area"
+              }
+            >
+              <select
+                value={
+                  cityFilter
+                }
+                onChange={(
+                  event,
+                ) =>
+                  chooseCity(
+                    event
+                      .target
+                      .value,
+                  )
+                }
+                className="input"
+              >
+                <option value="">
+                  All locations
                 </option>
-              ),
-            )}
-          </select>
 
-          {supplierId &&
-            services.length ===
-              0 && (
-              <p className="mt-1.5 text-xs text-amber-700">
-                This
-                supplier has
-                no active
-                services.
-                Add a
-                service to
-                the supplier
-                before
-                attaching
-                an invoice
-                that should
-                be
-                classified
-                automatically.
+                {cities.map(
+                  (city) => (
+                    <option
+                      key={
+                        city
+                      }
+                      value={
+                        city
+                      }
+                    >
+                      {city}
+                    </option>
+                  ),
+                )}
+              </select>
+            </FieldLabel>
+          )}
+
+          <FieldLabel label="Supplier *">
+            <select
+              name="supplierId"
+              required
+              value={
+                supplierId
+              }
+              onChange={(
+                event,
+              ) =>
+                chooseSupplier(
+                  event
+                    .target
+                    .value,
+                )
+              }
+              disabled={
+                !category
+              }
+              className="input"
+            >
+              <option value="">
+                {!category
+                  ? "Select category first..."
+                  : filteredSuppliers.length ===
+                      0
+                    ? "No matching suppliers"
+                    : "Select supplier..."}
+              </option>
+
+              {filteredSuppliers.map(
+                (item) => {
+                  const lowest =
+                    lowestRateAmount(
+                      item,
+                      category,
+                      countryFilter,
+                      cityFilter,
+                    );
+
+                  return (
+                    <option
+                      key={
+                        item.id
+                      }
+                      value={
+                        item.id
+                      }
+                    >
+                      {item.preferred
+                        ? "★ "
+                        : ""}
+                      {item.name}
+                      {Number.isFinite(
+                        lowest,
+                      )
+                        ? ` · from ${lowest.toFixed(
+                            2,
+                          )}`
+                        : ""}
+                    </option>
+                  );
+                },
+              )}
+            </select>
+
+            {supplier?.preferred && (
+              <p className="mt-1.5 inline-flex items-center gap-1 text-xs font-semibold text-amber-700">
+                <Star className="h-3.5 w-3.5 fill-current" />
+                Preferred supplier
               </p>
             )}
+          </FieldLabel>
+        </div>
 
-          {selectedService && (
-            <p className="mt-1.5 text-xs text-slate-500">
-              Accounting
-              classification
-              will be based
-              on{" "}
-              <span className="font-semibold text-slate-700">
-                {serviceTypeLabel(
-                  selectedService.type,
-                )}
-              </span>
-              .
-            </p>
-          )}
-        </FieldLabel>
+        <div className="mt-4 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+          <FieldLabel label="Supplier service">
+            <select
+              name="serviceId"
+              value={
+                serviceId
+              }
+              onChange={(
+                event,
+              ) => {
+                setServiceId(
+                  event
+                    .target
+                    .value,
+                );
 
+                setRateId(
+                  "",
+                );
+              }}
+              disabled={
+                !supplierId
+              }
+              className="input"
+            >
+              <option value="">
+                {supplierId
+                  ? services.length >
+                    0
+                    ? "Select service..."
+                    : "No matching active service"
+                  : "Select supplier first..."}
+              </option>
 
-        <FieldLabel label="Currency *">
-          <input
-            name="currency"
-            required
-            value={
-              currency
+              {services.map(
+                (
+                  service,
+                ) => (
+                  <option
+                    key={
+                      service.id
+                    }
+                    value={
+                      service.id
+                    }
+                  >
+                    {serviceTypeLabel(
+                      service.type,
+                    )}
+                    {" - "}
+                    {service.name}
+                    {service.city
+                      ? ` · ${service.city}`
+                      : ""}
+                    {service.country
+                      ? `, ${service.country}`
+                      : ""}
+                  </option>
+                ),
+              )}
+            </select>
+
+            {supplierId &&
+              services.length ===
+                0 && (
+                <p className="mt-1.5 text-xs text-amber-700">
+                  This supplier has no active service matching the selected category/location.
+                </p>
+              )}
+
+            {selectedService && (
+              <p className="mt-1.5 text-xs text-slate-500">
+                Accounting classification will be based on{" "}
+                <span className="font-semibold text-slate-700">
+                  {serviceTypeLabel(
+                    selectedService.type,
+                  )}
+                </span>
+                .
+              </p>
+            )}
+          </FieldLabel>
+
+          <FieldLabel label="Supplier rate">
+            <select
+              name="rateId"
+              value={
+                rateId
+              }
+              onChange={(
+                event,
+              ) =>
+                chooseRate(
+                  event
+                    .target
+                    .value,
+                )
+              }
+              disabled={
+                !supplierId
+              }
+              className="input"
+            >
+              <option value="">
+                {supplierId
+                  ? rates.length >
+                    0
+                    ? "Select contracted rate..."
+                    : "No active rates"
+                  : "Select supplier first..."}
+              </option>
+
+              {rates.map(
+                (rate) => (
+                  <option
+                    key={
+                      rate.id
+                    }
+                    value={
+                      rate.id
+                    }
+                  >
+                    {rate.name}
+                    {" · "}
+                    {rate.currency}
+                    {" "}
+                    {Number(
+                      rate.amount,
+                    ).toFixed(
+                      2,
+                    )}
+                    {" · "}
+                    {rateUnitLabel(
+                      rate.unit,
+                    )}
+                  </option>
+                ),
+              )}
+            </select>
+
+            {rates.length >
+              1 && (
+              <p className="mt-1.5 text-xs text-slate-500">
+                Rates are listed from lower to higher base rate.
+              </p>
+            )}
+          </FieldLabel>
+
+          <FieldLabel label="Currency *">
+            <input
+              name="currency"
+              required
+              value={
+                currency
+              }
+              onChange={(
+                event,
+              ) =>
+                setCurrency(
+                  event.target.value.toUpperCase(),
+                )
+              }
+              maxLength={
+                3
+              }
+              className="input"
+            />
+          </FieldLabel>
+        </div>
+
+        {selectedRate && (
+          <RateReference
+            category={
+              category
             }
-            onChange={(
-              event,
-            ) =>
-              setCurrency(
-                event.target.value.toUpperCase(),
-              )
+            rate={
+              selectedRate
             }
-            maxLength={
-              3
-            }
-            className="input"
           />
-        </FieldLabel>
+        )}
+
+        {category ===
+          "GUIDE" && (
+          <p className="mt-4 text-xs text-slate-500">
+            Guide filtering currently uses country and city/region. A dedicated guide-language field
+            is not yet stored in Supplier Service/Rate data, so language filtering should be added
+            later rather than inferred from notes.
+          </p>
+        )}
       </div>
 
       <div className="grid gap-4 md:grid-cols-2">
         <FieldLabel label="Agency / Parish / Group">
-          <input name="agencyGroupName" placeholder="e.g. GLORY TOURS / JOSSIE or St. Mary's Parish" className="input" />
+          <input
+            name="agencyGroupName"
+            placeholder="e.g. GLORY TOURS / JOSSIE or St. Mary's Parish"
+            className="input"
+          />
         </FieldLabel>
       </div>
 
@@ -998,10 +1719,6 @@ export default function SupplierPayableForm({
           </div>
         </div>
       </div>
-
-      {/* ============================================== */}
-      {/* AMOUNTS */}
-      {/* ============================================== */}
 
       <div className="grid gap-4 md:grid-cols-3">
         <FieldLabel label="Contracted amount">
@@ -1074,9 +1791,7 @@ export default function SupplierPayableForm({
 
       <div className="rounded-xl bg-slate-50 p-4">
         <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-          Initial
-          balance after
-          credit
+          Initial balance after credit
         </p>
 
         <p className="mt-1 text-2xl font-bold text-[#001F3F]">
@@ -1087,20 +1802,9 @@ export default function SupplierPayableForm({
         </p>
 
         <p className="mt-1 text-xs text-slate-500">
-          Payments
-          recorded later
-          will reduce
-          this balance
-          without
-          creating
-          another
-          supplier cost.
+          Payments recorded later will reduce this balance without creating another supplier cost.
         </p>
       </div>
-
-      {/* ============================================== */}
-      {/* INVOICE DETAILS */}
-      {/* ============================================== */}
 
       <div className="grid gap-4 md:grid-cols-2">
         <FieldLabel label="Payable title *">
@@ -1150,10 +1854,6 @@ export default function SupplierPayableForm({
         </FieldLabel>
       </div>
 
-      {/* ============================================== */}
-      {/* SUPPLIER INVOICE UPLOAD */}
-      {/* ============================================== */}
-
       <div className="rounded-2xl border border-slate-200 bg-slate-50/70 p-5">
         <div className="flex items-start gap-3">
           <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-white text-[#8B0000] shadow-sm">
@@ -1162,22 +1862,12 @@ export default function SupplierPayableForm({
 
           <div>
             <h3 className="font-bold text-slate-950">
-              Supplier
-              Document
+              Supplier Document
             </h3>
 
             <p className="mt-1 text-sm text-slate-500">
-              Upload the
-              supplier
-              document once.
-              It will
-              automatically
-              appear in
-              Finance
-              Documents and
-              in the monthly
-              Accounting
-              package.
+              Upload the supplier document once. It will automatically appear in Finance Documents
+              and in the monthly Accounting package.
             </p>
           </div>
         </div>
@@ -1187,15 +1877,11 @@ export default function SupplierPayableForm({
             <Upload className="h-6 w-6 text-slate-400" />
 
             <span className="mt-2 text-sm font-semibold text-slate-700">
-              Select invoice
-              or supporting
-              document
+              Select invoice or supporting document
             </span>
 
             <span className="mt-1 text-xs text-slate-500">
-              PDF, JPG, PNG
-              or WEBP -
-              Maximum 10 MB
+              PDF, JPG, PNG or WEBP - Maximum 10 MB
             </span>
 
             <input
@@ -1243,25 +1929,30 @@ export default function SupplierPayableForm({
             </div>
 
             <div className="flex shrink-0 items-center gap-2">
-              <button type="button" onClick={() => {
-                const url = URL.createObjectURL(invoiceFile);
-                window.open(url, "_blank", "noopener,noreferrer");
-                window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
-              }} className="inline-flex h-9 items-center rounded-lg border border-slate-200 px-3 text-sm font-semibold text-[#001F3F] hover:bg-slate-50">
+              <button
+                type="button"
+                onClick={() => {
+                  const url = URL.createObjectURL(invoiceFile);
+                  window.open(url, "_blank", "noopener,noreferrer");
+                  window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
+                }}
+                className="inline-flex h-9 items-center rounded-lg border border-slate-200 px-3 text-sm font-semibold text-[#001F3F] hover:bg-slate-50"
+              >
                 View Document
               </button>
-              <button type="button" onClick={() => setInvoiceFile(null)}
-                className="inline-flex h-9 w-9 items-center justify-center rounded-lg text-slate-400 hover:bg-red-50 hover:text-[#8B0000]" title="Remove file">
+
+              <button
+                type="button"
+                onClick={() => setInvoiceFile(null)}
+                className="inline-flex h-9 w-9 items-center justify-center rounded-lg text-slate-400 hover:bg-red-50 hover:text-[#8B0000]"
+                title="Remove file"
+              >
                 <X className="h-4 w-4" />
               </button>
             </div>
           </div>
         )}
       </div>
-
-      {/* ============================================== */}
-      {/* TOUR / DEPARTURE / BOOKING */}
-      {/* ============================================== */}
 
       <div className="grid gap-4 md:grid-cols-3">
         <FieldLabel label="Tour">
@@ -1286,8 +1977,7 @@ export default function SupplierPayableForm({
             className="input"
           >
             <option value="">
-              Not linked to
-              a tour
+              Not linked to a tour
             </option>
 
             {tours.map(
@@ -1330,8 +2020,7 @@ export default function SupplierPayableForm({
             className="input"
           >
             <option value="">
-              Not linked to
-              a departure
+              Not linked to a departure
             </option>
 
             {selectedTour?.departureDates.map(
@@ -1373,8 +2062,7 @@ export default function SupplierPayableForm({
             className="input"
           >
             <option value="">
-              Not linked to
-              a booking
+              Not linked to a booking
             </option>
 
             {bookings.map(
@@ -1402,10 +2090,6 @@ export default function SupplierPayableForm({
         </FieldLabel>
       </div>
 
-      {/* ============================================== */}
-      {/* NOTES */}
-      {/* ============================================== */}
-
       <FieldLabel label="Description">
         <textarea
           name="description"
@@ -1421,10 +2105,6 @@ export default function SupplierPayableForm({
           className="input py-2"
         />
       </FieldLabel>
-
-      {/* ============================================== */}
-      {/* ACTIONS */}
-      {/* ============================================== */}
 
       <div className="flex flex-wrap gap-3">
         <button
@@ -1459,8 +2139,7 @@ export default function SupplierPayableForm({
           height: 44px;
           width: 100%;
           border-radius: 0.75rem;
-          border: 1px solid
-            rgb(226 232 240);
+          border: 1px solid rgb(226 232 240);
           background: white;
           padding-left: 0.75rem;
           padding-right: 0.75rem;
@@ -1477,15 +2156,217 @@ export default function SupplierPayableForm({
         }
 
         .input:disabled {
-          background: rgb(
-            248 250 252
-          );
-          color: rgb(
-            148 163 184
-          );
+          background: rgb(248 250 252);
+          color: rgb(148 163 184);
         }
       `}</style>
     </form>
+  );
+}
+
+function RateReference({
+  category,
+  rate,
+}: {
+  category: string;
+  rate: Rate;
+}) {
+  const isHotel =
+    category ===
+    "ACCOMMODATION";
+
+  const isRestaurant =
+    category ===
+    "MEAL";
+
+  return (
+    <div className="mt-5 rounded-xl border border-slate-200 bg-white p-4">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+            Selected rate reference
+          </p>
+
+          <p className="mt-1 font-semibold text-slate-950">
+            {rate.name}
+          </p>
+
+          <p className="mt-1 text-xs text-slate-500">
+            Valid {europeanDateFromIso(rate.validFrom)} - {europeanDateFromIso(rate.validTo)}
+          </p>
+        </div>
+
+        <div className="text-right">
+          <p className="font-bold text-[#001F3F]">
+            {moneyValue(
+              rate.amount,
+              rate.currency,
+            )}
+          </p>
+
+          <p className="text-xs text-slate-500">
+            {rateUnitLabel(
+              rate.unit,
+            )}
+          </p>
+        </div>
+      </div>
+
+      {(isHotel ||
+        isRestaurant) && (
+        <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+          {isHotel && (
+            <>
+              <ReferenceItem
+                label="Meal basis"
+                value={
+                  rate.mealBasis ||
+                  "—"
+                }
+              />
+
+              <ReferenceItem
+                label="Dinner"
+                value={
+                  rate.dinnerIncluded ===
+                  true
+                    ? "Included"
+                    : rate.dinnerAmount
+                      ? `${moneyValue(
+                          rate.dinnerAmount,
+                          rate.currency,
+                        )} / ${rate.dinnerUnit ? rateUnitLabel(rate.dinnerUnit) : "unit"}`
+                      : "Not included / no supplement stored"
+                }
+              />
+
+              <ReferenceItem
+                label="City tax"
+                value={
+                  rate.cityTaxIncluded
+                    ? "Included"
+                    : rate.cityTaxAmount
+                      ? `${moneyValue(
+                          rate.cityTaxAmount,
+                          rate.cityTaxCurrency ||
+                            rate.currency,
+                        )} / ${rate.cityTaxUnit ? rateUnitLabel(rate.cityTaxUnit) : "unit"}`
+                      : "No additional amount stored"
+                }
+              />
+
+              <ReferenceItem
+                label="Porterage"
+                value={
+                  rate.porterageIncluded ===
+                  true
+                    ? "Included"
+                    : rate.porterageAvailable ===
+                        false
+                      ? "Not available"
+                      : rate.porterageAmount
+                        ? `${moneyValue(
+                            rate.porterageAmount,
+                            rate.currency,
+                          )} / ${rate.porterageUnit ? rateUnitLabel(rate.porterageUnit) : "unit"}`
+                        : "Not included / no amount stored"
+                }
+              />
+            </>
+          )}
+
+          <ReferenceItem
+            label="Drinks / beverage package"
+            value={
+              rate.beveragePackageIncluded ===
+              true
+                ? rate.beveragePackageDescription ||
+                  "Included"
+                : rate.beveragePackageAmount
+                  ? `${moneyValue(
+                      rate.beveragePackageAmount,
+                      rate.currency,
+                    )} / ${rate.beveragePackageUnit ? rateUnitLabel(rate.beveragePackageUnit) : "unit"}${
+                      rate.beveragePackageDescription
+                        ? ` · ${rate.beveragePackageDescription}`
+                        : ""
+                    }`
+                  : rate.beveragePackageDescription ||
+                    "No additional package stored"
+            }
+          />
+
+          {isRestaurant && (
+            <ReferenceItem
+              label="Meal basis / description"
+              value={
+                rate.mealBasis ||
+                rate.description ||
+                "—"
+              }
+            />
+          )}
+        </div>
+      )}
+
+      {(rate.rateRestrictions ||
+        rate.paymentTerms ||
+        rate.cancellationTerms) && (
+        <div className="mt-4 grid gap-3 md:grid-cols-3">
+          {rate.rateRestrictions && (
+            <ReferenceItem
+              label="Restrictions"
+              value={
+                rate.rateRestrictions
+              }
+            />
+          )}
+
+          {rate.paymentTerms && (
+            <ReferenceItem
+              label="Payment terms"
+              value={
+                rate.paymentTerms
+              }
+            />
+          )}
+
+          {rate.cancellationTerms && (
+            <ReferenceItem
+              label="Cancellation"
+              value={
+                rate.cancellationTerms
+              }
+            />
+          )}
+        </div>
+      )}
+
+      <p className="mt-4 text-xs text-slate-500">
+        This rate is a reference. The contracted and approved payable amounts remain editable so the
+        actual supplier document can be recorded correctly.
+      </p>
+    </div>
+  );
+}
+
+function ReferenceItem({
+  label,
+  value,
+}: {
+  label: string;
+  value: string;
+}) {
+  return (
+    <div className="rounded-lg bg-slate-50 p-3">
+      <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+        {label}
+      </p>
+
+      <p className="mt-1 text-sm font-medium text-slate-800">
+        {value}
+      </p>
+    </div>
   );
 }
 

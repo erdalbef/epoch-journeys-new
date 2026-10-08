@@ -1820,9 +1820,9 @@ model SupplierContract {
 
   supplier Supplier @relation(fields: [supplierId], references: [id], onDelete: Cascade)
 
-  previousVersion SupplierContract?                 @relation("SupplierContractVersion", fields: [previousVersionId], references: [id])
-  newerVersions   SupplierContract[]                @relation("SupplierContractVersion")
-  paymentSchedule SupplierContractPaymentSchedule[]
+  previousVersion                  SupplierContract?                 @relation("SupplierContractVersion", fields: [previousVersionId], references: [id])
+  newerVersions                    SupplierContract[]                @relation("SupplierContractVersion")
+  supplierContractPaymentSchedules SupplierContractPaymentSchedule[]
 
   @@index([status])
   @@index([supplierId])
@@ -1973,11 +1973,6 @@ model SupplierRate {
   // ACCOMMODATION / MEALS
   breakfastIncluded Boolean?
   dinnerIncluded    Boolean?
-
-  // DINNER / HALF-BOARD UPGRADE
-  dinnerAmount Decimal?          @db.Decimal(12, 2)
-  dinnerUnit   SupplierRateUnit?
-  dinnerNotes  String?
 
   // PORTERAGE
   porterageAvailable Boolean?
@@ -2671,3 +2666,4 @@ enum SupplierContractPaymentType {
   FINAL_BALANCE
   OTHER
 }
+

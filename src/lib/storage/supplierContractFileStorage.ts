@@ -1,5 +1,9 @@
 import crypto from "node:crypto";
-import { mkdir, unlink, writeFile } from "node:fs/promises";
+import {
+  mkdir,
+  unlink,
+  writeFile,
+} from "node:fs/promises";
 import path from "node:path";
 
 import {
@@ -8,14 +12,13 @@ import {
   put,
 } from "@vercel/blob";
 
-type SaveFinanceFileInput = {
+type SaveSupplierContractFileInput = {
   file: File;
-  year: number;
-  month: number;
+  supplierId: string;
   safeFileName: string;
 };
 
-type SavedFinanceFile = {
+export type SavedSupplierContractFile = {
   originalFileName: string;
   storedFileName: string;
   storagePath: string;
@@ -23,14 +26,6 @@ type SavedFinanceFile = {
   fileSize: number;
   localAbsolutePath: string | null;
 };
-
-console.log("BLOB_STORAGE_CHECK", {
-  hasStoreId: Boolean(process.env.BLOB_STORE_ID),
-  hasOidcToken: Boolean(process.env.VERCEL_OIDC_TOKEN),
-  hasLegacyReadWriteToken: Boolean(
-    process.env.BLOB_READ_WRITE_TOKEN,
-  ),
-});
 
 function blobStorageEnabled() {
   return Boolean(
@@ -73,45 +68,72 @@ function isHttpUrl(
   );
 }
 
-export async function saveFinanceFile({
+function cleanSupplierId(
+  supplierId: string,
+) {
+  return supplierId
+    .replace(
+      /[^a-zA-Z0-9_-]/g,
+      "",
+    )
+    .slice(
+      0,
+      100,
+    );
+}
+
+export async function saveSupplierContractFile({
   file,
-  year,
-  month,
+  supplierId,
   safeFileName,
-}: SaveFinanceFileInput): Promise<SavedFinanceFile> {
+}: SaveSupplierContractFileInput): Promise<SavedSupplierContractFile> {
   const originalFileName =
-    file.name || safeFileName;
+    file.name ||
+    safeFileName;
 
   const storedFileName =
     `${Date.now()}-${crypto.randomUUID()}-${safeFileName}`;
 
-  const monthFolder =
-    String(month).padStart(
-      2,
-      "0",
+  const safeSupplierId =
+    cleanSupplierId(
+      supplierId,
     );
 
-  const blobPath =
-    `accounting/${year}/${monthFolder}/${storedFileName}`;
+  if (!safeSupplierId) {
+    throw new Error(
+      "Invalid supplier ID for contract storage.",
+    );
+  }
 
   /*
    * ============================================================
-   * VERCEL BLOB
+   * PRIVATE VERCEL BLOB
    * ============================================================
    *
-   * Epoch Journeys uses a PRIVATE Blob store because these files
-   * contain supplier invoices, customer payment proofs, bank
-   * confirmations and accounting documents.
+   * Supplier contracts may contain confidential commercial
+   * conditions, negotiated rates, signatures and payment terms.
+   *
+   * Therefore they use PRIVATE Blob storage.
+   * ============================================================
    */
 
-  if (blobStorageEnabled()) {
+  if (
+    blobStorageEnabled()
+  ) {
+    const blobPath =
+      `supplier-contracts/${safeSupplierId}/${storedFileName}`;
+
     const blob =
       await put(
         blobPath,
         file,
         {
-          access: "private",
-          addRandomSuffix: false,
+          access:
+            "private",
+
+          addRandomSuffix:
+            false,
+
           contentType:
             file.type ||
             "application/octet-stream",
@@ -120,14 +142,9 @@ export async function saveFinanceFile({
 
     return {
       originalFileName,
+
       storedFileName,
 
-      /*
-       * Store the private Blob URL in the database.
-       *
-       * It must not normally be opened directly in the browser.
-       * Server download routes should use readFinanceFile().
-       */
       storagePath:
         blob.url,
 
@@ -145,39 +162,37 @@ export async function saveFinanceFile({
 
   /*
    * ============================================================
-   * ACTUAL VERCEL DEPLOYMENT WITHOUT BLOB
+   * VERCEL WITHOUT BLOB
    * ============================================================
    *
-   * Never attempt to write to /var/task/public on Vercel.
-   * That filesystem is read-only.
+   * Never write into /var/task/public.
+   * ============================================================
    */
 
   if (
     isActualVercelDeployment()
   ) {
     throw new Error(
-      "Private finance file storage is not configured for this Vercel deployment. Check the connected Blob store and Vercel Blob authentication.",
+      "Private supplier contract storage is not configured for this Vercel deployment. Check the connected Blob store and Vercel Blob authentication.",
     );
   }
 
   /*
    * ============================================================
-   * LOCAL DEVELOPMENT STORAGE
+   * LOCAL DEVELOPMENT FALLBACK
    * ============================================================
    *
-   * Used only when Blob credentials are not available.
+   * Local only:
    *
-   * Files are stored at:
-   *
-   * public/uploads/accounting/YYYY/MM/
+   * public/uploads/supplier-contracts/{supplierId}/
+   * ============================================================
    */
 
   const relativeFolder =
     path.join(
       "uploads",
-      "accounting",
-      String(year),
-      monthFolder,
+      "supplier-contracts",
+      safeSupplierId,
     );
 
   const absoluteFolder =
@@ -190,7 +205,8 @@ export async function saveFinanceFile({
   await mkdir(
     absoluteFolder,
     {
-      recursive: true,
+      recursive:
+        true,
     },
   );
 
@@ -209,24 +225,33 @@ export async function saveFinanceFile({
 
   const publicPath =
     `/${relativeFolder
-      .split(path.sep)
-      .join("/")}/${storedFileName}`;
+      .split(
+        path.sep,
+      )
+      .join(
+        "/",
+      )}/${storedFileName}`;
 
   return {
     originalFileName,
+
     storedFileName,
+
     storagePath:
       publicPath,
+
     mimeType:
       file.type ||
       "application/octet-stream",
+
     fileSize:
       file.size,
+
     localAbsolutePath,
   };
 }
 
-export async function deleteFinanceFile(
+export async function deleteSupplierContractFile(
   storagePath: string,
 ) {
   /*
@@ -244,7 +269,7 @@ export async function deleteFinanceFile(
       !blobStorageEnabled()
     ) {
       console.warn(
-        "Unable to delete Blob file because Vercel Blob authentication is not configured.",
+        "Unable to delete supplier contract Blob because Vercel Blob authentication is not configured.",
       );
 
       return;
@@ -259,13 +284,13 @@ export async function deleteFinanceFile(
 
   /*
    * ============================================================
-   * LOCAL ACCOUNTING FILE
+   * LOCAL DEVELOPMENT FILE
    * ============================================================
    */
 
   if (
     !storagePath.startsWith(
-      "/uploads/accounting/",
+      "/uploads/supplier-contracts/",
     )
   ) {
     return;
@@ -277,36 +302,31 @@ export async function deleteFinanceFile(
       "",
     );
 
-  const publicRoot =
-    path.resolve(
-      process.cwd(),
-      "public",
-    );
-
-  const absolutePath =
-    path.resolve(
-      publicRoot,
-      relativePath,
-    );
-
-  const accountingRoot =
+  const supplierContractsRoot =
     path.resolve(
       process.cwd(),
       "public",
       "uploads",
-      "accounting",
+      "supplier-contracts",
+    );
+
+  const absolutePath =
+    path.resolve(
+      process.cwd(),
+      "public",
+      relativePath,
     );
 
   const relativeToRoot =
     path.relative(
-      accountingRoot,
+      supplierContractsRoot,
       absolutePath,
     );
 
   /*
    * Security:
-   * never permit deleting outside
-   * public/uploads/accounting.
+   * Never allow deletion outside
+   * public/uploads/supplier-contracts.
    */
 
   if (
@@ -323,22 +343,18 @@ export async function deleteFinanceFile(
   await unlink(
     absolutePath,
   ).catch(
-    () => undefined,
+    () =>
+      undefined,
   );
 }
 
-export async function readFinanceFile(
+export async function readSupplierContractFile(
   storagePath: string,
 ) {
   /*
    * ============================================================
    * PRIVATE VERCEL BLOB
    * ============================================================
-   *
-   * Private Blob URLs cannot be fetched anonymously.
-   *
-   * Use the authenticated Blob SDK get() call and return the file
-   * contents to our protected server download route.
    */
 
   if (
@@ -350,7 +366,7 @@ export async function readFinanceFile(
       !blobStorageEnabled()
     ) {
       throw new Error(
-        "Unable to read private finance document because Vercel Blob authentication is not configured.",
+        "Unable to read private supplier contract because Vercel Blob authentication is not configured.",
       );
     }
 
@@ -370,7 +386,7 @@ export async function readFinanceFile(
       !result.stream
     ) {
       throw new Error(
-        "Unable to read the private accounting file.",
+        "Unable to read the private supplier contract.",
       );
     }
 
@@ -386,11 +402,8 @@ export async function readFinanceFile(
 
   /*
    * ============================================================
-   * LEGACY PUBLIC BLOB
+   * LEGACY / PUBLIC HTTP FILE
    * ============================================================
-   *
-   * Keep support for files that may already have been stored in a
-   * public Blob store before the switch to private storage.
    */
 
   if (
@@ -411,7 +424,7 @@ export async function readFinanceFile(
       !response.ok
     ) {
       throw new Error(
-        `Unable to read stored accounting file (${response.status}).`,
+        `Unable to read stored supplier contract (${response.status}).`,
       );
     }
 
@@ -421,8 +434,8 @@ export async function readFinanceFile(
   }
 
   /*
-   * Local files under /public can continue to be served directly
-   * by Next.js.
+   * Local development files are handled by the protected
+   * download route using their /public location.
    */
 
   return null;

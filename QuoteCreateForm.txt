@@ -125,32 +125,6 @@ type HotelRow = {
     | "CORE"
     | "PRE"
     | "POST";
-
-  /*
-   * Optional supplier-rate snapshot.
-   *
-   * These fields let a saved quote remember which supplier/service/rate
-   * was selected even if Supplier master data changes later.
-   */
-  supplierId?: string;
-  supplierName?: string;
-  supplierPreferred?: boolean;
-  supplierServiceId?: string;
-  supplierRateId?: string;
-  supplierRateName?: string;
-  supplierRateCurrency?: string;
-  supplierRateValidFrom?: string;
-  supplierRateValidTo?: string;
-  supplierRateValidity?:
-    | "VALID_FOR_REQUEST"
-    | "EXPIRED_ESTIMATE";
-  supplierRateRequiresReconfirmation?: boolean;
-  supplierMealBasis?: string | null;
-  supplierCityTaxIncluded?: boolean | null;
-  supplierCityTaxAmount?: number | null;
-  supplierPorterageIncluded?: boolean | null;
-  supplierBeveragePackageIncluded?: boolean | null;
-  supplierBeveragePackageDescription?: string | null;
 };
 
 type GroupSetup = {
@@ -521,24 +495,6 @@ function createEmptyHotelRow():
     doubleTwinPerPerson: 0,
     triplePerPerson: 0,
     stayType: "CORE",
-
-    supplierId: "",
-    supplierName: "",
-    supplierPreferred: false,
-    supplierServiceId: "",
-    supplierRateId: "",
-    supplierRateName: "",
-    supplierRateCurrency: "",
-    supplierRateValidFrom: "",
-    supplierRateValidTo: "",
-    supplierRateValidity: undefined,
-    supplierRateRequiresReconfirmation: false,
-    supplierMealBasis: null,
-    supplierCityTaxIncluded: null,
-    supplierCityTaxAmount: null,
-    supplierPorterageIncluded: null,
-    supplierBeveragePackageIncluded: null,
-    supplierBeveragePackageDescription: null,
   };
 }
 
@@ -2189,81 +2145,6 @@ export default function QuoteCreateForm({
             stayType:
               row.stayType ||
               "CORE",
-
-            supplierId:
-              row.supplierId ||
-              "",
-
-            supplierName:
-              row.supplierName ||
-              "",
-
-            supplierPreferred:
-              Boolean(
-                row.supplierPreferred
-              ),
-
-            supplierServiceId:
-              row.supplierServiceId ||
-              "",
-
-            supplierRateId:
-              row.supplierRateId ||
-              "",
-
-            supplierRateName:
-              row.supplierRateName ||
-              "",
-
-            supplierRateCurrency:
-              row.supplierRateCurrency ||
-              "",
-
-            supplierRateValidFrom:
-              row.supplierRateValidFrom ||
-              "",
-
-            supplierRateValidTo:
-              row.supplierRateValidTo ||
-              "",
-
-            supplierRateValidity:
-              row.supplierRateValidity,
-
-            supplierRateRequiresReconfirmation:
-              Boolean(
-                row.supplierRateRequiresReconfirmation
-              ),
-
-            supplierMealBasis:
-              row.supplierMealBasis ??
-              null,
-
-            supplierCityTaxIncluded:
-              row.supplierCityTaxIncluded ??
-              null,
-
-            supplierCityTaxAmount:
-              row.supplierCityTaxAmount ===
-                null ||
-              row.supplierCityTaxAmount ===
-                undefined
-                ? null
-                : toNumber(
-                    row.supplierCityTaxAmount
-                  ),
-
-            supplierPorterageIncluded:
-              row.supplierPorterageIncluded ??
-              null,
-
-            supplierBeveragePackageIncluded:
-              row.supplierBeveragePackageIncluded ??
-              null,
-
-            supplierBeveragePackageDescription:
-              row.supplierBeveragePackageDescription ??
-              null,
           })
         )
       );
@@ -4073,75 +3954,6 @@ export default function QuoteCreateForm({
 
               stayType:
                 row.stayType,
-
-              supplierId:
-                row.supplierId ||
-                null,
-
-              supplierName:
-                row.supplierName ||
-                null,
-
-              supplierPreferred:
-                row.supplierPreferred ??
-                false,
-
-              supplierServiceId:
-                row.supplierServiceId ||
-                null,
-
-              supplierRateId:
-                row.supplierRateId ||
-                null,
-
-              supplierRateName:
-                row.supplierRateName ||
-                null,
-
-              supplierRateCurrency:
-                row.supplierRateCurrency ||
-                null,
-
-              supplierRateValidFrom:
-                row.supplierRateValidFrom ||
-                null,
-
-              supplierRateValidTo:
-                row.supplierRateValidTo ||
-                null,
-
-              supplierRateValidity:
-                row.supplierRateValidity ||
-                null,
-
-              supplierRateRequiresReconfirmation:
-                Boolean(
-                  row.supplierRateRequiresReconfirmation
-                ),
-
-              supplierMealBasis:
-                row.supplierMealBasis ??
-                null,
-
-              supplierCityTaxIncluded:
-                row.supplierCityTaxIncluded ??
-                null,
-
-              supplierCityTaxAmount:
-                row.supplierCityTaxAmount ??
-                null,
-
-              supplierPorterageIncluded:
-                row.supplierPorterageIncluded ??
-                null,
-
-              supplierBeveragePackageIncluded:
-                row.supplierBeveragePackageIncluded ??
-                null,
-
-              supplierBeveragePackageDescription:
-                row.supplierBeveragePackageDescription ??
-                null,
             })
           ),
 
@@ -4698,9 +4510,6 @@ export default function QuoteCreateForm({
       <HotelsSection
         hotels={hotels}
         currency={currency}
-        startDate={group.startDate}
-        endDate={group.endDate}
-        payingPassengers={payingPassengers}
         onAddHotel={addHotel}
         onRemoveHotel={removeHotel}
         onUpdateHotel={updateHotel}

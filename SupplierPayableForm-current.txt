@@ -488,10 +488,6 @@ export default function SupplierPayableForm({
       value,
     );
 
-    setServiceId(
-      "",
-    );
-
     setRateId(
       "",
     );
@@ -503,12 +499,32 @@ export default function SupplierPayableForm({
           value,
       );
 
-    if (selected) {
-      setCurrency(
-        selected.defaultCurrency ||
-          "EUR",
+    if (!selected) {
+      setServiceId(
+        "",
       );
+
+      return;
     }
+
+    setCurrency(
+      selected.defaultCurrency ||
+        "EUR",
+    );
+
+    /*
+     * If the supplier has only one active service,
+     * select it automatically.
+     *
+     * If the supplier has multiple services, leave
+     * the field empty so the user can choose the
+     * correct service for this payable.
+     */
+    setServiceId(
+      selected.services.length === 1
+        ? selected.services[0].id
+        : "",
+    );
   }
 
   function chooseRate(
@@ -932,60 +948,6 @@ export default function SupplierPayableForm({
           )}
         </FieldLabel>
 
-        <FieldLabel label="Contracted rate">
-          <select
-            name="rateId"
-            value={
-              rateId
-            }
-            onChange={(
-              event,
-            ) =>
-              chooseRate(
-                event
-                  .target
-                  .value,
-              )
-            }
-            disabled={
-              !supplierId
-            }
-            className="input"
-          >
-            <option value="">
-              No rate /
-              manual cost
-            </option>
-
-            {rates.map(
-              (rate) => (
-                <option
-                  key={
-                    rate.id
-                  }
-                  value={
-                    rate.id
-                  }
-                >
-                  {
-                    rate.name
-                  }{" "}
-                  -{" "}
-                  {
-                    rate.currency
-                  }{" "}
-                  {
-                    rate.amount
-                  }{" "}
-                  /{" "}
-                  {rateUnitLabel(
-                    rate.unit,
-                  )}
-                </option>
-              ),
-            )}
-          </select>
-        </FieldLabel>
 
         <FieldLabel label="Currency *">
           <input
@@ -1006,6 +968,12 @@ export default function SupplierPayableForm({
             }
             className="input"
           />
+        </FieldLabel>
+      </div>
+
+      <div className="grid gap-4 md:grid-cols-2">
+        <FieldLabel label="Agency / Parish / Group">
+          <input name="agencyGroupName" placeholder="e.g. GLORY TOURS / JOSSIE or St. Mary's Parish" className="input" />
         </FieldLabel>
       </div>
 
@@ -1167,9 +1135,10 @@ export default function SupplierPayableForm({
           />
         </FieldLabel>
 
-        <FieldLabel label="Supplier reference">
+        <FieldLabel label="Supplier reference (optional)">
           <input
             name="supplierReference"
+            placeholder="Reservation / confirmation / order reference"
             className="input"
           />
         </FieldLabel>
@@ -1289,18 +1258,19 @@ export default function SupplierPayableForm({
               </div>
             </div>
 
-            <button
-              type="button"
-              onClick={() =>
-                setInvoiceFile(
-                  null,
-                )
-              }
-              className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-slate-400 transition hover:bg-red-50 hover:text-[#8B0000]"
-              title="Remove file"
-            >
-              <X className="h-4 w-4" />
-            </button>
+            <div className="flex shrink-0 items-center gap-2">
+              <button type="button" onClick={() => {
+                const url = URL.createObjectURL(invoiceFile);
+                window.open(url, "_blank", "noopener,noreferrer");
+                window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
+              }} className="inline-flex h-9 items-center rounded-lg border border-slate-200 px-3 text-sm font-semibold text-[#001F3F] hover:bg-slate-50">
+                View Document
+              </button>
+              <button type="button" onClick={() => setInvoiceFile(null)}
+                className="inline-flex h-9 w-9 items-center justify-center rounded-lg text-slate-400 hover:bg-red-50 hover:text-[#8B0000]" title="Remove file">
+                <X className="h-4 w-4" />
+              </button>
+            </div>
           </div>
         )}
       </div>

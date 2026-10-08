@@ -1106,7 +1106,7 @@ export async function POST(
 
         accounting: {
           category:
-            accountingCategory,
+            AccountingCategory.EXPENSES_PURCHASES,
 
           subcategory:
             accountingSubcategory,
@@ -1168,4 +1168,5 @@ export async function POST(
     );
   }
 }
+
 

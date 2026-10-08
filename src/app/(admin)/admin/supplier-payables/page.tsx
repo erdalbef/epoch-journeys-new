@@ -2,14 +2,16 @@ import Link from "next/link";
 import {
   AlertTriangle,
   Banknote,
+  Building2,
   CheckCircle2,
+  ChevronRight,
   Clock3,
   FilePlus2,
   Search,
+  Star,
   WalletCards,
-  Building2,
-  ChevronRight,
 } from "lucide-react";
+import { SupplierServiceType } from "@prisma/client";
 
 import { db } from "@/lib/db";
 
@@ -19,26 +21,65 @@ type Props = {
     approval?: string;
     payment?: string;
     supplierId?: string;
+    category?: string;
   }>;
 };
 
 type SupplierSummary = {
   supplierId: string;
   supplierName: string;
+  preferred: boolean;
+  category: string;
+  categoryLabel: string;
   currency: string;
-
   payableCount: number;
-
   approvedAmount: number;
   amountPaid: number;
   balance: number;
-
   overdueCount: number;
   dueSoonCount: number;
 };
 
+const CATEGORY_OPTIONS: Array<{
+  value: SupplierServiceType;
+  label: string;
+}> = [
+  { value: SupplierServiceType.ACCOMMODATION, label: "Hotels / Accommodation" },
+  { value: SupplierServiceType.TRANSPORT, label: "Transportation / Coach / Transfers" },
+  { value: SupplierServiceType.MEAL, label: "Restaurants / Meals" },
+  { value: SupplierServiceType.GUIDE, label: "Local Guides" },
+  { value: SupplierServiceType.TOUR_MANAGER, label: "Tour Managers" },
+  { value: SupplierServiceType.ENTRANCE, label: "Entrance Fees / Attractions" },
+  { value: SupplierServiceType.MASS_ARRANGEMENT, label: "Mass Arrangements" },
+  { value: SupplierServiceType.CHURCH_RESERVATION, label: "Church / Shrine Reservations" },
+  { value: SupplierServiceType.TICKET, label: "Tickets" },
+  { value: SupplierServiceType.RAIL, label: "Rail" },
+  { value: SupplierServiceType.FERRY, label: "Ferry" },
+  { value: SupplierServiceType.CRUISE, label: "Cruise" },
+  { value: SupplierServiceType.FLIGHT, label: "Flights" },
+  { value: SupplierServiceType.INSURANCE, label: "Insurance" },
+  { value: SupplierServiceType.DMC_SERVICE, label: "DMC / Ground Services" },
+  { value: SupplierServiceType.OTHER, label: "Other" },
+];
+
 function clean(value?: string) {
   return value?.trim() || "";
+}
+
+function categoryLabel(
+  value: SupplierServiceType | string | null | undefined,
+) {
+  if (!value) {
+    return "Uncategorised";
+  }
+
+  return (
+    CATEGORY_OPTIONS.find((item) => item.value === value)?.label ??
+    value
+      .replaceAll("_", " ")
+      .toLowerCase()
+      .replace(/\b\w/g, (letter) => letter.toUpperCase())
+  );
 }
 
 function money(
@@ -52,14 +93,10 @@ function money(
       currency,
       maximumFractionDigits: 2,
     },
-  ).format(
-    Number(value ?? 0),
-  );
+  ).format(Number(value ?? 0));
 }
 
-function date(
-  value: Date | null,
-) {
+function date(value: Date | null) {
   return value
     ? new Intl.DateTimeFormat(
         "en-GB",
@@ -76,41 +113,24 @@ function date(
 export default async function SupplierPayablesPage({
   searchParams,
 }: Props) {
-  const params =
-    await searchParams;
+  const params = await searchParams;
 
-  const q =
-    clean(params.q);
+  const q = clean(params.q);
+  const approval = clean(params.approval);
+  const payment = clean(params.payment);
+  const supplierId = clean(params.supplierId);
+  const category = clean(params.category);
 
-  const approval =
-    clean(
-      params.approval,
-    );
+  const validCategory =
+    Object.values(SupplierServiceType).includes(
+      category as SupplierServiceType,
+    )
+      ? (category as SupplierServiceType)
+      : null;
 
-  const payment =
-    clean(
-      params.payment,
-    );
-
-  const supplierId =
-    clean(
-      params.supplierId,
-    );
-
-  const now =
-    new Date();
-
-  const dueSoon =
-    new Date(now);
-
-  dueSoon.setDate(
-    dueSoon.getDate() +
-      14,
-  );
-
-  // ========================================================
-  // FILTERS
-  // ========================================================
+  const now = new Date();
+  const dueSoon = new Date(now);
+  dueSoon.setDate(dueSoon.getDate() + 14);
 
   const where = {
     ...(q
@@ -119,36 +139,32 @@ export default async function SupplierPayablesPage({
             {
               title: {
                 contains: q,
-                mode:
-                  "insensitive" as const,
+                mode: "insensitive" as const,
               },
             },
             {
-              supplierNameSnapshot:
-                {
-                  contains:
-                    q,
-                  mode:
-                    "insensitive" as const,
-                },
+              supplierNameSnapshot: {
+                contains: q,
+                mode: "insensitive" as const,
+              },
             },
             {
-              supplierInvoiceNumber:
-                {
-                  contains:
-                    q,
-                  mode:
-                    "insensitive" as const,
-                },
+              supplierInvoiceNumber: {
+                contains: q,
+                mode: "insensitive" as const,
+              },
             },
             {
-              supplierReference:
-                {
-                  contains:
-                    q,
-                  mode:
-                    "insensitive" as const,
-                },
+              supplierReference: {
+                contains: q,
+                mode: "insensitive" as const,
+              },
+            },
+            {
+              serviceNameSnapshot: {
+                contains: q,
+                mode: "insensitive" as const,
+              },
             },
           ],
         }
@@ -156,15 +172,13 @@ export default async function SupplierPayablesPage({
 
     ...(approval
       ? {
-          approvalStatus:
-            approval as never,
+          approvalStatus: approval as never,
         }
       : {}),
 
     ...(payment
       ? {
-          paymentStatus:
-            payment as never,
+          paymentStatus: payment as never,
         }
       : {}),
 
@@ -173,11 +187,17 @@ export default async function SupplierPayablesPage({
           supplierId,
         }
       : {}),
-  };
 
-  // ========================================================
-  // DATA
-  // ========================================================
+    ...(validCategory
+      ? {
+          service: {
+            is: {
+              type: validCategory,
+            },
+          },
+        }
+      : {}),
+  };
 
   const [
     payables,
@@ -186,347 +206,274 @@ export default async function SupplierPayablesPage({
     paidTotals,
     overdueCount,
     dueSoonCount,
-  ] =
-    await Promise.all([
-      db.supplierPayable.findMany({
-        where,
-
-        orderBy: [
-          {
-            dueDate:
-              "asc",
-          },
-          {
-            createdAt:
-              "desc",
-          },
-        ],
-
-        include: {
-          supplier: {
-            select: {
-              id: true,
-              name: true,
-            },
-          },
-
-          booking: {
-            select: {
-              id: true,
-              bookingReference:
-                true,
-              bookingDisplayCode:
-                true,
-            },
-          },
-
-          tour: {
-            select: {
-              id: true,
-              title: true,
-            },
-          },
-
-          departureDate:
-            {
-              select: {
-                id: true,
-                date: true,
-              },
-            },
+  ] = await Promise.all([
+    db.supplierPayable.findMany({
+      where,
+      orderBy: [
+        {
+          dueDate: "asc",
         },
-      }),
-
-      db.supplier.findMany({
-        where: {
-          status:
-            "ACTIVE",
+        {
+          createdAt: "desc",
         },
+      ],
+      include: {
+        supplier: {
+          select: {
+            id: true,
+            name: true,
+            preferred: true,
+          },
+        },
+        service: {
+          select: {
+            id: true,
+            name: true,
+            type: true,
+            city: true,
+            country: true,
+          },
+        },
+        rate: {
+          select: {
+            id: true,
+            name: true,
+            amount: true,
+            currency: true,
+            unit: true,
+          },
+        },
+        booking: {
+          select: {
+            id: true,
+            bookingReference: true,
+            bookingDisplayCode: true,
+          },
+        },
+        tour: {
+          select: {
+            id: true,
+            title: true,
+          },
+        },
+        departureDate: {
+          select: {
+            id: true,
+            date: true,
+          },
+        },
+      },
+    }),
 
-        orderBy: {
+    db.supplier.findMany({
+      where: {
+        status: "ACTIVE",
+      },
+      orderBy: [
+        {
+          preferred: "desc",
+        },
+        {
           name: "asc",
         },
+      ],
+      select: {
+        id: true,
+        name: true,
+        preferred: true,
+      },
+    }),
 
-        select: {
-          id: true,
-          name: true,
+    db.supplierPayable.aggregate({
+      where: {
+        approvalStatus: "APPROVED",
+      },
+      _sum: {
+        approvedAmount: true,
+        balance: true,
+      },
+    }),
+
+    db.supplierPayablePayment.aggregate({
+      _sum: {
+        amount: true,
+      },
+    }),
+
+    db.supplierPayable.count({
+      where: {
+        approvalStatus: "APPROVED",
+        balance: {
+          gt: 0,
         },
-      }),
-
-      db.supplierPayable.aggregate({
-        where: {
-          approvalStatus:
-            "APPROVED",
+        dueDate: {
+          lt: now,
         },
-
-        _sum: {
-          approvedAmount:
-            true,
-          balance: true,
+        paymentStatus: {
+          not: "CANCELLED",
         },
-      }),
+      },
+    }),
 
-      db.supplierPayablePayment.aggregate({
-        _sum: {
-          amount: true,
+    db.supplierPayable.count({
+      where: {
+        approvalStatus: "APPROVED",
+        balance: {
+          gt: 0,
         },
-      }),
-
-      db.supplierPayable.count({
-        where: {
-          approvalStatus:
-            "APPROVED",
-
-          balance: {
-            gt: 0,
-          },
-
-          dueDate: {
-            lt: now,
-          },
-
-          paymentStatus:
-            {
-              not:
-                "CANCELLED",
-            },
+        dueDate: {
+          gte: now,
+          lte: dueSoon,
         },
-      }),
-
-      db.supplierPayable.count({
-        where: {
-          approvalStatus:
-            "APPROVED",
-
-          balance: {
-            gt: 0,
-          },
-
-          dueDate: {
-            gte: now,
-            lte:
-              dueSoon,
-          },
-
-          paymentStatus:
-            {
-              not:
-                "CANCELLED",
-            },
+        paymentStatus: {
+          not: "CANCELLED",
         },
-      }),
-    ]);
+      },
+    }),
+  ]);
 
-  // ========================================================
-  // GLOBAL METRICS
-  // ========================================================
+  const approvedAmount = Number(
+    approvedTotals._sum.approvedAmount ?? 0,
+  );
 
-  const approvedAmount =
-    Number(
-      approvedTotals._sum
-        .approvedAmount ??
-        0,
-    );
+  const outstanding = Number(
+    approvedTotals._sum.balance ?? 0,
+  );
 
-  const outstanding =
-    Number(
-      approvedTotals._sum
-        .balance ??
-        0,
-    );
-
-  const paid =
-    Number(
-      paidTotals._sum
-        .amount ??
-        0,
-    );
-
-  // ========================================================
-  // SUPPLIER SUMMARY
-  //
-  // One summary row per supplier + currency.
-  //
-  // We intentionally DO NOT combine EUR, GBP, USD etc.
-  // ========================================================
+  const paid = Number(
+    paidTotals._sum.amount ?? 0,
+  );
 
   const supplierSummaryMap =
-    new Map<
-      string,
-      SupplierSummary
-    >();
+    new Map<string, SupplierSummary>();
 
-  for (
-    const item of
-    payables
-  ) {
-    /*
-     * Cancelled and rejected payables should
-     * not form part of the financial summary.
-     *
-     * Drafts and pending approvals also do
-     * not represent approved liabilities yet.
-     */
-    if (
-      item.approvalStatus !==
-      "APPROVED"
-    ) {
+  for (const item of payables) {
+    if (item.approvalStatus !== "APPROVED") {
       continue;
     }
+
+    const itemCategory =
+      item.service?.type ?? "UNCATEGORISED";
+
+    const itemCategoryLabel =
+      categoryLabel(item.service?.type);
 
     const key =
-      `${item.supplierId}:${item.currency}`;
+      `${itemCategory}:${item.supplierId}:${item.currency}`;
 
     const existing =
-      supplierSummaryMap.get(
-        key,
-      );
+      supplierSummaryMap.get(key);
 
     const approved =
-      Number(
-        item.approvedAmount ??
-          0,
-      );
+      Number(item.approvedAmount ?? 0);
 
     const itemPaid =
-      Number(
-        item.amountPaid ??
-          0,
-      );
+      Number(item.amountPaid ?? 0);
 
     const itemBalance =
-      Number(
-        item.balance ??
-          0,
-      );
+      Number(item.balance ?? 0);
 
     const isOverdue =
-      itemBalance >
-        0 &&
-      item.dueDate !==
-        null &&
-      item.dueDate <
-        now &&
-      item.paymentStatus !==
-        "CANCELLED";
+      itemBalance > 0 &&
+      item.dueDate !== null &&
+      item.dueDate < now &&
+      item.paymentStatus !== "CANCELLED";
 
     const isDueSoon =
-      itemBalance >
-        0 &&
-      item.dueDate !==
-        null &&
-      item.dueDate >=
-        now &&
-      item.dueDate <=
-        dueSoon &&
-      item.paymentStatus !==
-        "CANCELLED";
+      itemBalance > 0 &&
+      item.dueDate !== null &&
+      item.dueDate >= now &&
+      item.dueDate <= dueSoon &&
+      item.paymentStatus !== "CANCELLED";
 
     if (existing) {
-      existing.payableCount +=
-        1;
+      existing.payableCount += 1;
+      existing.approvedAmount += approved;
+      existing.amountPaid += itemPaid;
+      existing.balance += itemBalance;
 
-      existing.approvedAmount +=
-        approved;
-
-      existing.amountPaid +=
-        itemPaid;
-
-      existing.balance +=
-        itemBalance;
-
-      if (
-        isOverdue
-      ) {
-        existing.overdueCount +=
-          1;
+      if (isOverdue) {
+        existing.overdueCount += 1;
       }
 
-      if (
-        isDueSoon
-      ) {
-        existing.dueSoonCount +=
-          1;
+      if (isDueSoon) {
+        existing.dueSoonCount += 1;
       }
 
       continue;
     }
 
-    supplierSummaryMap.set(
-      key,
-      {
-        supplierId:
-          item.supplierId,
-
-        supplierName:
-          item.supplierNameSnapshot,
-
-        currency:
-          item.currency,
-
-        payableCount:
-          1,
-
-        approvedAmount:
-          approved,
-
-        amountPaid:
-          itemPaid,
-
-        balance:
-          itemBalance,
-
-        overdueCount:
-          isOverdue
-            ? 1
-            : 0,
-
-        dueSoonCount:
-          isDueSoon
-            ? 1
-            : 0,
-      },
-    );
+    supplierSummaryMap.set(key, {
+      supplierId: item.supplierId,
+      supplierName: item.supplierNameSnapshot,
+      preferred: item.supplier.preferred,
+      category: itemCategory,
+      categoryLabel: itemCategoryLabel,
+      currency: item.currency,
+      payableCount: 1,
+      approvedAmount: approved,
+      amountPaid: itemPaid,
+      balance: itemBalance,
+      overdueCount: isOverdue ? 1 : 0,
+      dueSoonCount: isDueSoon ? 1 : 0,
+    });
   }
 
   const supplierSummaries =
     Array.from(
       supplierSummaryMap.values(),
+    ).sort((a, b) => {
+      if (a.categoryLabel !== b.categoryLabel) {
+        return a.categoryLabel.localeCompare(
+          b.categoryLabel,
+        );
+      }
+
+      if (a.preferred !== b.preferred) {
+        return a.preferred ? -1 : 1;
+      }
+
+      if (a.balance !== b.balance) {
+        return b.balance - a.balance;
+      }
+
+      return a.supplierName.localeCompare(
+        b.supplierName,
+      );
+    });
+
+  const categoryGroups =
+    new Map<string, SupplierSummary[]>();
+
+  for (const summary of supplierSummaries) {
+    const items =
+      categoryGroups.get(
+        summary.category,
+      ) ?? [];
+
+    items.push(summary);
+
+    categoryGroups.set(
+      summary.category,
+      items,
+    );
+  }
+
+  const groupedSummaries =
+    Array.from(
+      categoryGroups.entries(),
     ).sort(
       (
-        a,
-        b,
-      ) => {
-        /*
-         * Suppliers with outstanding balances
-         * appear first.
-         */
-        if (
-          a.balance !==
-          b.balance
-        ) {
-          return (
-            b.balance -
-            a.balance
-          );
-        }
-
-        return a.supplierName.localeCompare(
-          b.supplierName,
-        );
-      },
+        [categoryA],
+        [categoryB],
+      ) =>
+        categoryLabel(categoryA).localeCompare(
+          categoryLabel(categoryB),
+        ),
     );
-
-  // ========================================================
-  // PAGE
-  // ========================================================
 
   return (
     <div className="mx-auto max-w-[1600px] space-y-6 p-4 sm:p-6 lg:p-8">
-      {/* ================================================== */}
-      {/* HEADER */}
-      {/* ================================================== */}
-
       <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
         <div>
           <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[#8B0000]">
@@ -538,10 +485,8 @@ export default async function SupplierPayablesPage({
           </h1>
 
           <p className="mt-2 max-w-3xl text-sm text-slate-500">
-            Review supplier liabilities,
-            approve costs, monitor due
-            dates, and record partial or
-            full payments.
+            Review supplier liabilities by service category, approve costs,
+            monitor due dates, and record partial or full payments.
           </p>
         </div>
 
@@ -553,10 +498,6 @@ export default async function SupplierPayablesPage({
           New Payable
         </Link>
       </div>
-
-      {/* ================================================== */}
-      {/* GLOBAL METRICS */}
-      {/* ================================================== */}
 
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
         <Metric
@@ -604,27 +545,42 @@ export default async function SupplierPayablesPage({
         />
       </div>
 
-      {/* ================================================== */}
-      {/* FILTERS */}
-      {/* ================================================== */}
-
-      <form className="grid gap-3 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm lg:grid-cols-[1fr_220px_220px_240px_auto]">
+      <form className="grid gap-3 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm lg:grid-cols-[1fr_220px_220px_220px_240px_auto]">
         <label className="relative">
           <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
 
           <input
             name="q"
             defaultValue={q}
-            placeholder="Supplier, invoice, reference or title..."
+            placeholder="Supplier, invoice, service, reference or title..."
             className="h-10 w-full rounded-xl border border-slate-200 pl-9 pr-3 text-sm outline-none focus:border-[#001F3F]/40"
           />
         </label>
 
         <select
+          name="category"
+          defaultValue={validCategory ?? ""}
+          className="h-10 rounded-xl border border-slate-200 px-3 text-sm"
+        >
+          <option value="">
+            All categories
+          </option>
+
+          {CATEGORY_OPTIONS.map(
+            (option) => (
+              <option
+                key={option.value}
+                value={option.value}
+              >
+                {option.label}
+              </option>
+            ),
+          )}
+        </select>
+
+        <select
           name="approval"
-          defaultValue={
-            approval
-          }
+          defaultValue={approval}
           className="h-10 rounded-xl border border-slate-200 px-3 text-sm"
         >
           <option value="">
@@ -640,17 +596,10 @@ export default async function SupplierPayablesPage({
           ].map(
             (item) => (
               <option
-                key={
-                  item
-                }
-                value={
-                  item
-                }
+                key={item}
+                value={item}
               >
-                {item.replaceAll(
-                  "_",
-                  " ",
-                )}
+                {item.replaceAll("_", " ")}
               </option>
             ),
           )}
@@ -658,9 +607,7 @@ export default async function SupplierPayablesPage({
 
         <select
           name="payment"
-          defaultValue={
-            payment
-          }
+          defaultValue={payment}
           className="h-10 rounded-xl border border-slate-200 px-3 text-sm"
         >
           <option value="">
@@ -676,17 +623,10 @@ export default async function SupplierPayablesPage({
           ].map(
             (item) => (
               <option
-                key={
-                  item
-                }
-                value={
-                  item
-                }
+                key={item}
+                value={item}
               >
-                {item.replaceAll(
-                  "_",
-                  " ",
-                )}
+                {item.replaceAll("_", " ")}
               </option>
             ),
           )}
@@ -694,9 +634,7 @@ export default async function SupplierPayablesPage({
 
         <select
           name="supplierId"
-          defaultValue={
-            supplierId
-          }
+          defaultValue={supplierId}
           className="h-10 rounded-xl border border-slate-200 px-3 text-sm"
         >
           <option value="">
@@ -704,20 +642,13 @@ export default async function SupplierPayablesPage({
           </option>
 
           {suppliers.map(
-            (
-              supplier,
-            ) => (
+            (supplier) => (
               <option
-                key={
-                  supplier.id
-                }
-                value={
-                  supplier.id
-                }
+                key={supplier.id}
+                value={supplier.id}
               >
-                {
-                  supplier.name
-                }
+                {supplier.preferred ? "★ " : ""}
+                {supplier.name}
               </option>
             ),
           )}
@@ -728,10 +659,6 @@ export default async function SupplierPayablesPage({
         </button>
       </form>
 
-      {/* ================================================== */}
-      {/* SUPPLIER SUMMARY */}
-      {/* ================================================== */}
-
       <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
         <div className="flex flex-col gap-2 border-b border-slate-100 px-5 py-5 sm:flex-row sm:items-center sm:justify-between">
           <div>
@@ -739,194 +666,203 @@ export default async function SupplierPayablesPage({
               <Building2 className="h-5 w-5 text-[#001F3F]" />
 
               <h2 className="text-lg font-bold text-slate-950">
-                Supplier Summary
+                Supplier Summary by Category
               </h2>
             </div>
 
             <p className="mt-1 text-sm text-slate-500">
-              Consolidated liabilities
-              by supplier. Select a
-              supplier to review its
-              individual invoices and
-              payments.
+              Approved liabilities are grouped by supplier service category.
+              Preferred suppliers appear first within each category.
             </p>
           </div>
 
           <p className="text-xs font-medium text-slate-400">
-            One row per supplier and
-            currency
+            One row per category, supplier and currency
           </p>
         </div>
 
-        <div className="overflow-x-auto">
-          <table className="w-full min-w-[1050px] text-left text-sm">
-            <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
-              <tr>
-                <th className="px-5 py-3">
-                  Supplier
-                </th>
-
-                <th className="px-5 py-3 text-center">
-                  Payables
-                </th>
-
-                <th className="px-5 py-3 text-right">
-                  Approved
-                </th>
-
-                <th className="px-5 py-3 text-right">
-                  Paid
-                </th>
-
-                <th className="px-5 py-3 text-right">
-                  Outstanding
-                </th>
-
-                <th className="px-5 py-3 text-center">
-                  Currency
-                </th>
-
-                <th className="px-5 py-3">
-                  Position
-                </th>
-
-                <th className="px-5 py-3"></th>
-              </tr>
-            </thead>
-
-            <tbody className="divide-y divide-slate-100">
-              {supplierSummaries.map(
-                (
-                  summary,
-                ) => {
-                  const isPaid =
-                    summary.balance <=
-                    0;
-
-                  return (
-                    <tr
-                      key={`${summary.supplierId}-${summary.currency}`}
-                      className="hover:bg-slate-50"
-                    >
-                      <td className="px-5 py-4">
-                        <Link
-                          href={`/admin/supplier-payables?supplierId=${summary.supplierId}`}
-                          className="font-semibold text-[#001F3F] hover:underline"
-                        >
-                          {
-                            summary.supplierName
-                          }
-                        </Link>
-                      </td>
-
-                      <td className="px-5 py-4 text-center font-medium text-slate-700">
-                        {
-                          summary.payableCount
-                        }
-                      </td>
-
-                      <td className="px-5 py-4 text-right font-semibold text-slate-900">
-                        {money(
-                          summary.approvedAmount,
-                          summary.currency,
-                        )}
-                      </td>
-
-                      <td className="px-5 py-4 text-right font-semibold text-emerald-700">
-                        {money(
-                          summary.amountPaid,
-                          summary.currency,
-                        )}
-                      </td>
-
-                      <td
-                        className={`px-5 py-4 text-right font-bold ${
-                          summary.balance >
-                          0
-                            ? "text-amber-700"
-                            : "text-slate-500"
-                        }`}
-                      >
-                        {money(
-                          summary.balance,
-                          summary.currency,
-                        )}
-                      </td>
-
-                      <td className="px-5 py-4 text-center font-medium text-slate-600">
-                        {
-                          summary.currency
-                        }
-                      </td>
-
-                      <td className="px-5 py-4">
-                        {summary.overdueCount >
-                        0 ? (
-                          <span className="rounded-full bg-red-50 px-2.5 py-1 text-xs font-semibold text-red-700">
-                            {
-                              summary.overdueCount
-                            }{" "}
-                            overdue
-                          </span>
-                        ) : summary.dueSoonCount >
-                          0 ? (
-                          <span className="rounded-full bg-amber-50 px-2.5 py-1 text-xs font-semibold text-amber-700">
-                            {
-                              summary.dueSoonCount
-                            }{" "}
-                            due soon
-                          </span>
-                        ) : isPaid ? (
-                          <span className="rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-semibold text-emerald-700">
-                            Settled
-                          </span>
-                        ) : (
-                          <span className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-semibold text-slate-700">
-                            Open
-                          </span>
-                        )}
-                      </td>
-
-                      <td className="px-5 py-4 text-right">
-                        <Link
-                          href={`/admin/supplier-payables?supplierId=${summary.supplierId}`}
-                          className="inline-flex items-center gap-1 font-semibold text-[#8B0000]"
-                        >
-                          Details
-                          <ChevronRight className="h-4 w-4" />
-                        </Link>
-                      </td>
-                    </tr>
+        {groupedSummaries.length === 0 ? (
+          <div className="px-5 py-12 text-center text-slate-500">
+            No approved supplier liabilities match the current filters.
+          </div>
+        ) : (
+          <div className="divide-y divide-slate-200">
+            {groupedSummaries.map(
+              ([groupCategory, summaries]) => {
+                const payableCount =
+                  summaries.reduce(
+                    (
+                      total,
+                      summary,
+                    ) =>
+                      total +
+                      summary.payableCount,
+                    0,
                   );
-                },
-              )}
 
-              {supplierSummaries.length ===
-                0 && (
-                <tr>
-                  <td
-                    colSpan={
-                      8
-                    }
-                    className="px-5 py-12 text-center text-slate-500"
-                  >
-                    No approved
-                    supplier
-                    liabilities
-                    match the
-                    current
-                    filters.
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
-        </div>
+                return (
+                  <div key={groupCategory}>
+                    <div className="flex items-center justify-between bg-slate-50 px-5 py-3">
+                      <h3 className="font-bold text-slate-900">
+                        {categoryLabel(
+                          groupCategory,
+                        )}
+                      </h3>
+
+                      <span className="text-xs font-semibold text-slate-500">
+                        {payableCount}{" "}
+                        {payableCount === 1
+                          ? "payable"
+                          : "payables"}
+                      </span>
+                    </div>
+
+                    <div className="overflow-x-auto">
+                      <table className="w-full min-w-[1080px] text-left text-sm">
+                        <thead className="border-y border-slate-100 bg-white text-xs uppercase tracking-wide text-slate-500">
+                          <tr>
+                            <th className="px-5 py-3">
+                              Supplier
+                            </th>
+
+                            <th className="px-5 py-3 text-center">
+                              Payables
+                            </th>
+
+                            <th className="px-5 py-3 text-right">
+                              Approved
+                            </th>
+
+                            <th className="px-5 py-3 text-right">
+                              Paid
+                            </th>
+
+                            <th className="px-5 py-3 text-right">
+                              Outstanding
+                            </th>
+
+                            <th className="px-5 py-3 text-center">
+                              Currency
+                            </th>
+
+                            <th className="px-5 py-3">
+                              Position
+                            </th>
+
+                            <th className="px-5 py-3"></th>
+                          </tr>
+                        </thead>
+
+                        <tbody className="divide-y divide-slate-100">
+                          {summaries.map(
+                            (summary) => {
+                              const isPaid =
+                                summary.balance <= 0;
+
+                              const href =
+                                summary.category ===
+                                "UNCATEGORISED"
+                                  ? `/admin/supplier-payables?supplierId=${summary.supplierId}`
+                                  : `/admin/supplier-payables?category=${encodeURIComponent(
+                                      summary.category,
+                                    )}&supplierId=${summary.supplierId}`;
+
+                              return (
+                                <tr
+                                  key={`${summary.category}-${summary.supplierId}-${summary.currency}`}
+                                  className="hover:bg-slate-50"
+                                >
+                                  <td className="px-5 py-4">
+                                    <Link
+                                      href={href}
+                                      className="inline-flex items-center gap-1.5 font-semibold text-[#001F3F] hover:underline"
+                                    >
+                                      {summary.preferred && (
+                                        <Star className="h-3.5 w-3.5 fill-amber-500 text-amber-500" />
+                                      )}
+
+                                      {summary.supplierName}
+                                    </Link>
+                                  </td>
+
+                                  <td className="px-5 py-4 text-center font-medium text-slate-700">
+                                    {summary.payableCount}
+                                  </td>
+
+                                  <td className="px-5 py-4 text-right font-semibold text-slate-900">
+                                    {money(
+                                      summary.approvedAmount,
+                                      summary.currency,
+                                    )}
+                                  </td>
+
+                                  <td className="px-5 py-4 text-right font-semibold text-emerald-700">
+                                    {money(
+                                      summary.amountPaid,
+                                      summary.currency,
+                                    )}
+                                  </td>
+
+                                  <td
+                                    className={`px-5 py-4 text-right font-bold ${
+                                      summary.balance > 0
+                                        ? "text-amber-700"
+                                        : "text-slate-500"
+                                    }`}
+                                  >
+                                    {money(
+                                      summary.balance,
+                                      summary.currency,
+                                    )}
+                                  </td>
+
+                                  <td className="px-5 py-4 text-center font-medium text-slate-600">
+                                    {summary.currency}
+                                  </td>
+
+                                  <td className="px-5 py-4">
+                                    {summary.overdueCount > 0 ? (
+                                      <span className="rounded-full bg-red-50 px-2.5 py-1 text-xs font-semibold text-red-700">
+                                        {summary.overdueCount} overdue
+                                      </span>
+                                    ) : summary.dueSoonCount > 0 ? (
+                                      <span className="rounded-full bg-amber-50 px-2.5 py-1 text-xs font-semibold text-amber-700">
+                                        {summary.dueSoonCount} due soon
+                                      </span>
+                                    ) : isPaid ? (
+                                      <span className="rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-semibold text-emerald-700">
+                                        Settled
+                                      </span>
+                                    ) : (
+                                      <span className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-semibold text-slate-700">
+                                        Open
+                                      </span>
+                                    )}
+                                  </td>
+
+                                  <td className="px-5 py-4 text-right">
+                                    <Link
+                                      href={href}
+                                      className="inline-flex items-center gap-1 font-semibold text-[#8B0000]"
+                                    >
+                                      Details
+                                      <ChevronRight className="h-4 w-4" />
+                                    </Link>
+                                  </td>
+                                </tr>
+                              );
+                            },
+                          )}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                );
+              },
+            )}
+          </div>
+        )}
       </section>
-
-      {/* ================================================== */}
-      {/* INDIVIDUAL PAYABLES */}
-      {/* ================================================== */}
 
       <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
         <div className="border-b border-slate-100 px-5 py-5">
@@ -935,20 +871,26 @@ export default async function SupplierPayablesPage({
           </h2>
 
           <p className="mt-1 text-sm text-slate-500">
-            Detailed supplier invoices
-            and liabilities. Individual
-            records are preserved for
-            payment control and
-            accounting audit trail.
+            Detailed supplier invoices and liabilities. Service category,
+            supplier service and rate reference remain visible for payment
+            control and accounting audit trail.
           </p>
         </div>
 
         <div className="overflow-x-auto">
-          <table className="w-full min-w-[1250px] text-left text-sm">
+          <table className="w-full min-w-[1480px] text-left text-sm">
             <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
               <tr>
                 <th className="px-5 py-3">
+                  Category
+                </th>
+
+                <th className="px-5 py-3">
                   Supplier / Payable
+                </th>
+
+                <th className="px-5 py-3">
+                  Service / Rate
                 </th>
 
                 <th className="px-5 py-3">
@@ -963,15 +905,15 @@ export default async function SupplierPayablesPage({
                   Due
                 </th>
 
-                <th className="px-5 py-3">
+                <th className="px-5 py-3 text-right">
                   Approved
                 </th>
 
-                <th className="px-5 py-3">
+                <th className="px-5 py-3 text-right">
                   Paid
                 </th>
 
-                <th className="px-5 py-3">
+                <th className="px-5 py-3 text-right">
                   Balance
                 </th>
 
@@ -989,30 +931,60 @@ export default async function SupplierPayablesPage({
 
             <tbody className="divide-y divide-slate-100">
               {payables.map(
-                (
-                  item,
-                ) => (
+                (item) => (
                   <tr
-                    key={
-                      item.id
-                    }
+                    key={item.id}
                     className="hover:bg-slate-50"
                   >
+                    <td className="px-5 py-4">
+                      <span className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-semibold text-slate-700">
+                        {categoryLabel(
+                          item.service?.type,
+                        )}
+                      </span>
+                    </td>
+
                     <td className="px-5 py-4">
                       <Link
                         href={`/admin/supplier-payables/${item.id}`}
                         className="font-semibold text-[#001F3F] hover:underline"
                       >
-                        {
-                          item.title
-                        }
+                        {item.title}
                       </Link>
 
-                      <p className="mt-1 text-xs text-slate-500">
-                        {
-                          item.supplierNameSnapshot
-                        }
+                      <p className="mt-1 flex items-center gap-1 text-xs text-slate-500">
+                        {item.supplier.preferred && (
+                          <Star className="h-3 w-3 fill-amber-500 text-amber-500" />
+                        )}
+
+                        {item.supplierNameSnapshot}
                       </p>
+                    </td>
+
+                    <td className="px-5 py-4 text-slate-600">
+                      <p className="font-medium text-slate-800">
+                        {item.serviceNameSnapshot ||
+                          item.service?.name ||
+                          "—"}
+                      </p>
+
+                      <p className="mt-1 text-xs text-slate-500">
+                        {item.rateNameSnapshot ||
+                          item.rate?.name ||
+                          "No linked rate"}
+                      </p>
+
+                      {(item.service?.city ||
+                        item.service?.country) && (
+                        <p className="mt-1 text-xs text-slate-400">
+                          {[
+                            item.service?.city,
+                            item.service?.country,
+                          ]
+                            .filter(Boolean)
+                            .join(", ")}
+                        </p>
+                      )}
                     </td>
 
                     <td className="px-5 py-4 text-slate-600">
@@ -1020,13 +992,22 @@ export default async function SupplierPayablesPage({
                         {item.documentType
                           .replaceAll("_", " ")
                           .toLowerCase()
-                          .replace(/\b\w/g, (value) => value.toUpperCase())}
+                          .replace(
+                            /\b\w/g,
+                            (value) =>
+                              value.toUpperCase(),
+                          )}
                       </p>
+
                       <p className="mt-1 text-xs text-slate-500">
-                        {item.supplierInvoiceNumber || item.supplierReference || "—"}
+                        {item.supplierInvoiceNumber ||
+                          item.supplierReference ||
+                          "—"}
                       </p>
+
                       <p className="mt-1 font-mono text-[11px] text-slate-400">
-                        {item.internalReference || "—"}
+                        {item.internalReference ||
+                          "—"}
                       </p>
                     </td>
 
@@ -1041,9 +1022,7 @@ export default async function SupplierPayablesPage({
                         </Link>
                       ) : item.tour ? (
                         <span>
-                          {
-                            item.tour.title
-                          }
+                          {item.tour.title}
                         </span>
                       ) : (
                         "—"
@@ -1051,26 +1030,24 @@ export default async function SupplierPayablesPage({
                     </td>
 
                     <td className="px-5 py-4 text-slate-600">
-                      {date(
-                        item.dueDate,
-                      )}
+                      {date(item.dueDate)}
                     </td>
 
-                    <td className="px-5 py-4 font-semibold text-slate-900">
+                    <td className="px-5 py-4 text-right font-semibold text-slate-900">
                       {money(
                         item.approvedAmount,
                         item.currency,
                       )}
                     </td>
 
-                    <td className="px-5 py-4 text-emerald-700">
+                    <td className="px-5 py-4 text-right text-emerald-700">
                       {money(
                         item.amountPaid,
                         item.currency,
                       )}
                     </td>
 
-                    <td className="px-5 py-4 font-semibold text-amber-700">
+                    <td className="px-5 py-4 text-right font-semibold text-amber-700">
                       {money(
                         item.balance,
                         item.currency,
@@ -1079,17 +1056,13 @@ export default async function SupplierPayablesPage({
 
                     <td className="px-5 py-4">
                       <Status
-                        value={
-                          item.approvalStatus
-                        }
+                        value={item.approvalStatus}
                       />
                     </td>
 
                     <td className="px-5 py-4">
                       <Status
-                        value={
-                          item.paymentStatus
-                        }
+                        value={item.paymentStatus}
                       />
                     </td>
 
@@ -1105,19 +1078,13 @@ export default async function SupplierPayablesPage({
                 ),
               )}
 
-              {payables.length ===
-                0 && (
+              {payables.length === 0 && (
                 <tr>
                   <td
-                    colSpan={
-                      10
-                    }
+                    colSpan={12}
                     className="px-5 py-14 text-center text-slate-500"
                   >
-                    No supplier
-                    payables match
-                    the current
-                    filters.
+                    No supplier payables match the current filters.
                   </td>
                 </tr>
               )}
@@ -1177,18 +1144,13 @@ function Status({
   value: string;
 }) {
   const danger =
-    value ===
-      "OVERDUE" ||
-    value ===
-      "REJECTED" ||
-    value ===
-      "CANCELLED";
+    value === "OVERDUE" ||
+    value === "REJECTED" ||
+    value === "CANCELLED";
 
   const good =
-    value ===
-      "APPROVED" ||
-    value ===
-      "PAID";
+    value === "APPROVED" ||
+    value === "PAID";
 
   return (
     <span
@@ -1200,10 +1162,7 @@ function Status({
             : "bg-slate-100 text-slate-700"
       }`}
     >
-      {value.replaceAll(
-        "_",
-        " ",
-      )}
+      {value.replaceAll("_", " ")}
     </span>
   );
 }

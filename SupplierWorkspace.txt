@@ -1060,23 +1060,7 @@ function RateForm({
       amount: "",
       unit: "PER_PERSON",
       roomType: "",
-      mealBasis: "BB",
-      breakfastIncluded: true,
-      dinnerIncluded: false,
-      dinnerAmount: "",
-      dinnerUnit: "PER_MEAL",
-      dinnerNotes: "",
-      cityTaxIncluded: false,
-      cityTaxAmount: "",
-      cityTaxUnit: "PER_PERSON_PER_NIGHT",
-      porterageAvailable: false,
-      porterageIncluded: false,
-      porterageAmount: "",
-      porterageUnit: "PER_PERSON",
-      beveragePackageIncluded: false,
-      beveragePackageDescription: "",
-      beveragePackageAmount: "",
-      beveragePackageUnit: "PER_MEAL",
+      mealBasis: "",
       minPax: "",
       maxPax: "",
     });
@@ -1107,40 +1091,6 @@ function RateForm({
           roomType:
             form.roomType ||
             null,
-          dinnerAmount:
-            !form.dinnerIncluded && form.dinnerAmount
-              ? Number(form.dinnerAmount)
-              : null,
-          dinnerUnit:
-            !form.dinnerIncluded && form.dinnerAmount
-              ? form.dinnerUnit
-              : null,
-          dinnerNotes:
-            !form.dinnerIncluded
-              ? form.dinnerNotes || null
-              : null,
-          cityTaxAmount: form.cityTaxAmount
-            ? Number(form.cityTaxAmount)
-            : null,
-          cityTaxUnit: form.cityTaxAmount
-            ? form.cityTaxUnit
-            : null,
-          porterageAmount:
-            form.porterageAvailable && !form.porterageIncluded && form.porterageAmount
-              ? Number(form.porterageAmount)
-              : null,
-          porterageUnit:
-            form.porterageAvailable && !form.porterageIncluded && form.porterageAmount
-              ? form.porterageUnit
-              : null,
-          beveragePackageAmount:
-            !form.beveragePackageIncluded && form.beveragePackageAmount
-              ? Number(form.beveragePackageAmount)
-              : null,
-          beveragePackageUnit:
-            !form.beveragePackageIncluded && form.beveragePackageAmount
-              ? form.beveragePackageUnit
-              : null,
         })
       }
     >
@@ -1317,44 +1267,21 @@ function RateForm({
         </option>
       </select>
 
-      <select
+      <input
+        placeholder="Meal basis"
         className={field}
-        value={form.mealBasis}
-        onChange={(event) =>
-          setForm({ ...form, mealBasis: event.target.value })
+        value={
+          form.mealBasis
         }
-      >
-        <option value="RO">RO - Room Only</option>
-        <option value="BB">BB - Bed & Breakfast</option>
-        <option value="HB">HB - Half Board</option>
-        <option value="FB">FB - Full Board</option>
-      </select>
-
-      <label className="flex items-center gap-2 text-sm">
-        <input type="checkbox" checked={form.breakfastIncluded} onChange={(event) => setForm({ ...form, breakfastIncluded: event.target.checked })} />
-        Breakfast included
-      </label>
-
-      <label className="flex items-center gap-2 text-sm">
-        <input type="checkbox" checked={form.dinnerIncluded} onChange={(event) => setForm({ ...form, dinnerIncluded: event.target.checked })} />
-        Dinner included
-      </label>
-
-      {!form.dinnerIncluded && (<>
-        <input type="number" step="0.01" placeholder="Dinner supplement" className={field} value={form.dinnerAmount} onChange={(event) => setForm({ ...form, dinnerAmount: event.target.value })} />
-        <select className={field} value={form.dinnerUnit} onChange={(event) => setForm({ ...form, dinnerUnit: event.target.value })}>{units.map((unit) => <option key={unit} value={unit}>{rateUnitLabel(unit)}</option>)}</select>
-        <input placeholder="Dinner notes" className={field} value={form.dinnerNotes} onChange={(event) => setForm({ ...form, dinnerNotes: event.target.value })} />
-      </>)}
-
-      <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={form.cityTaxIncluded} onChange={(event) => setForm({ ...form, cityTaxIncluded: event.target.checked })} />City tax included</label>
-      {!form.cityTaxIncluded && (<><input type="number" step="0.01" placeholder="City tax amount" className={field} value={form.cityTaxAmount} onChange={(event) => setForm({ ...form, cityTaxAmount: event.target.value })} /><select className={field} value={form.cityTaxUnit} onChange={(event) => setForm({ ...form, cityTaxUnit: event.target.value })}>{units.map((unit) => <option key={unit} value={unit}>{rateUnitLabel(unit)}</option>)}</select></>)}
-
-      <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={form.porterageAvailable} onChange={(event) => setForm({ ...form, porterageAvailable: event.target.checked })} />Porterage available</label>
-      {form.porterageAvailable && (<><label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={form.porterageIncluded} onChange={(event) => setForm({ ...form, porterageIncluded: event.target.checked })} />Porterage included</label>{!form.porterageIncluded && (<><input type="number" step="0.01" placeholder="Porterage amount" className={field} value={form.porterageAmount} onChange={(event) => setForm({ ...form, porterageAmount: event.target.value })} /><select className={field} value={form.porterageUnit} onChange={(event) => setForm({ ...form, porterageUnit: event.target.value })}>{units.map((unit) => <option key={unit} value={unit}>{rateUnitLabel(unit)}</option>)}</select></>)}</>)}
-
-      <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={form.beveragePackageIncluded} onChange={(event) => setForm({ ...form, beveragePackageIncluded: event.target.checked })} />Beverage package included</label>
-      <input placeholder="Beverage package description" className={field} value={form.beveragePackageDescription} onChange={(event) => setForm({ ...form, beveragePackageDescription: event.target.value })} />
-      {!form.beveragePackageIncluded && (<><input type="number" step="0.01" placeholder="Beverage package amount" className={field} value={form.beveragePackageAmount} onChange={(event) => setForm({ ...form, beveragePackageAmount: event.target.value })} /><select className={field} value={form.beveragePackageUnit} onChange={(event) => setForm({ ...form, beveragePackageUnit: event.target.value })}>{units.map((unit) => <option key={unit} value={unit}>{rateUnitLabel(unit)}</option>)}</select></>)}
+        onChange={(event) =>
+          setForm({
+            ...form,
+            mealBasis:
+              event.target
+                .value,
+          })
+        }
+      />
 
       <input
         type="number"
