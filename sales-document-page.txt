@@ -237,15 +237,6 @@ export default async function Page({
             Back
           </Link>
 
-          {document.documentNumber ? (
-            <a
-              href={`/api/admin/finance/sales-documents/${document.id}/pdf`}
-              className="rounded-xl border border-[#0B1F3A] bg-white px-4 py-2.5 text-sm font-semibold text-[#0B1F3A] transition hover:bg-slate-50"
-            >
-              Download PDF
-            </a>
-          ) : null}
-
           <DocumentActions
             id={
               document.id

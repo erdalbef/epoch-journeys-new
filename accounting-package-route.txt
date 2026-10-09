@@ -1,9 +1,11 @@
 import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
-import { Role } from "@prisma/client";
 
 import { authOptions } from "@/lib/authOptions";
-import { buildSalesInvoicesPackage } from "@/lib/accounting/buildSalesInvoicesPackage";
+import {
+  AccountingPackagePart,
+  buildAccountingPackage,
+} from "@/lib/accounting/buildAccountingPackage";
 
 export const runtime = "nodejs";
 
@@ -11,39 +13,39 @@ type RouteContext = {
   params: Promise<{
     year: string;
     month: string;
+    part: string;
   }>;
 };
 
 export async function GET(
   _request: Request,
-  context: RouteContext,
+  context: RouteContext
 ) {
   try {
     const session =
       await getServerSession(
-        authOptions,
+        authOptions
       );
 
     if (
       !session?.user?.id ||
-      session.user.role !==
-        Role.ADMIN
+      session.user.role !== "ADMIN"
     ) {
       return NextResponse.json(
         {
           ok: false,
-          error:
-            "Unauthorized.",
+          error: "Unauthorized.",
         },
         {
           status: 401,
-        },
+        }
       );
     }
 
     const {
       year: yearRaw,
       month: monthRaw,
+      part: partRaw,
     } = await context.params;
 
     const year =
@@ -52,36 +54,46 @@ export async function GET(
     const month =
       Number(monthRaw);
 
+    const part =
+      Number(partRaw);
+
     if (
       !Number.isInteger(year) ||
       year < 2000 ||
       year > 2100 ||
       !Number.isInteger(month) ||
       month < 1 ||
-      month > 12
+      month > 12 ||
+      (part !== 1 &&
+        part !== 2)
     ) {
       return NextResponse.json(
         {
           ok: false,
           error:
-            "Invalid sales invoices ZIP request.",
+            "Invalid accounting package request.",
         },
         {
           status: 400,
-        },
+        }
       );
     }
 
+    const accountingPart =
+      part as AccountingPackagePart;
+
     const packageResult =
-      await buildSalesInvoicesPackage({
+      await buildAccountingPackage({
         year,
         month,
+        part:
+          accountingPart,
         strict: true,
       });
 
     return new Response(
       new Uint8Array(
-        packageResult.buffer,
+        packageResult.buffer
       ),
       {
         headers: {
@@ -94,34 +106,31 @@ export async function GET(
           "Content-Length":
             String(
               packageResult
-                .buffer.length,
+                .buffer.length
             ),
 
           "Cache-Control":
             "no-store",
         },
-      },
+      }
     );
   } catch (error) {
     console.error(
-      "GET sales invoices ZIP error:",
-      error,
+      "GET accounting ZIP package error:",
+      error
     );
 
     const message =
       error instanceof Error
         ? error.message
-        : "Unable to generate sales invoices ZIP.";
+        : "Unable to generate accounting ZIP package.";
 
     const status =
       message ===
       "Accounting period not found."
         ? 404
         : message.includes(
-              "No issued sales invoices",
-            ) ||
-            message.includes(
-              "No sales invoice PDFs",
+              "has no documents"
             )
           ? 400
           : 500;
@@ -133,7 +142,7 @@ export async function GET(
       },
       {
         status,
-      },
+      }
     );
   }
 }

@@ -1,6 +1,8 @@
 import { Resend } from "resend";
 
-const RESEND_API_KEY = process.env.RESEND_API_KEY;
+const RESEND_API_KEY =
+  process.env.RESEND_API_KEY;
+
 const FROM_EMAIL =
   "Epoch Journeys <no-reply@epochjourneys.com>";
 
@@ -11,6 +13,8 @@ type EmailAttachment = {
 
 type SendEmailInput = {
   to: string | string[];
+  cc?: string | string[];
+  bcc?: string | string[];
   subject: string;
   html: string;
   attachments?: EmailAttachment[];
@@ -18,24 +22,32 @@ type SendEmailInput = {
 
 export async function sendEmail({
   to,
+  cc,
+  bcc,
   subject,
   html,
   attachments,
 }: SendEmailInput) {
   if (!RESEND_API_KEY) {
-    console.error("Missing RESEND_API_KEY");
+    console.error(
+      "Missing RESEND_API_KEY",
+    );
+
     return null;
   }
 
   try {
-    const resend = new Resend(
-      RESEND_API_KEY
-    );
+    const resend =
+      new Resend(
+        RESEND_API_KEY,
+      );
 
     const response =
       await resend.emails.send({
         from: FROM_EMAIL,
         to,
+        cc,
+        bcc,
         subject,
         html,
         attachments,
@@ -45,7 +57,7 @@ export async function sendEmail({
   } catch (err) {
     console.error(
       "Email send error:",
-      err
+      err,
     );
 
     return null;

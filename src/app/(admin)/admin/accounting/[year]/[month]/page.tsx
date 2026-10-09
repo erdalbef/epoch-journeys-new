@@ -24,6 +24,8 @@ import {
   FolderOpen,
   Landmark,
   RefreshCcw,
+  ShieldCheck,
+  AlertTriangle,
   ReceiptText,
   UserRound,
 } from "lucide-react";
@@ -283,6 +285,24 @@ export default async function AccountingMonthPage({
               email: true,
             },
           },
+          bankTransaction: {
+            select: {
+              id: true,
+              reconciliationId: true,
+              statementLine: {
+                select: {
+                  id: true,
+                  matchStatus: true,
+                },
+              },
+              reconciliation: {
+                select: {
+                  id: true,
+                  status: true,
+                },
+              },
+            },
+          },
         },
       },
       bankStatements: {
@@ -305,6 +325,23 @@ export default async function AccountingMonthPage({
               id: true,
               fullName: true,
               email: true,
+            },
+          },
+          lines: {
+            select: {
+              id: true,
+              matchStatus: true,
+              matchedBankTransactionId: true,
+              matchedBankTransaction: {
+                select: {
+                  id: true,
+                  documents: {
+                    select: {
+                      id: true,
+                    },
+                  },
+                },
+              },
             },
           },
         },
@@ -403,7 +440,7 @@ export default async function AccountingMonthPage({
     `/admin/accounting/bank-statements/upload?year=${year}&month=${month}`;
 
   const bankReconciliationHref =
-    `/admin/finance/bank-statements?year=${year}&month=${month}`;
+    "/admin/finance/reconciliation";
 
   const hasEurBankStatement = period.bankStatements.length > 0;
   const hasUncategorizedDocuments = uncategorizedCount > 0;
@@ -453,6 +490,61 @@ export default async function AccountingMonthPage({
     hasUncategorizedDocuments,
     !hasPart1Package,
   ].filter(Boolean).length;
+
+  const bankRelevantDocuments = period.documents.filter(
+    (document) => Boolean(document.bankTransactionId),
+  );
+
+  const documentsMatchedToBank = bankRelevantDocuments.length;
+
+  const documentsMatchedToStatement = bankRelevantDocuments.filter(
+    (document) => Boolean(document.bankTransaction?.statementLine),
+  ).length;
+
+  const documentsFullyReconciled = bankRelevantDocuments.filter(
+    (document) => {
+      const status = document.bankTransaction?.reconciliation?.status;
+      return status === "RECONCILED" || status === "LOCKED";
+    },
+  ).length;
+
+  const documentsAwaitingStatementMatch = bankRelevantDocuments.filter(
+    (document) =>
+      document.bankTransaction &&
+      !document.bankTransaction.statementLine,
+  );
+
+  const statementLines = period.bankStatements.flatMap(
+    (statement) => statement.lines,
+  );
+
+  const matchedStatementLines = statementLines.filter(
+    (line) => Boolean(line.matchedBankTransactionId),
+  );
+
+  const statementLinesWithoutDocuments = matchedStatementLines.filter(
+    (line) =>
+      (line.matchedBankTransaction?.documents.length ?? 0) === 0,
+  );
+
+  const reconciliationBase =
+    documentsMatchedToBank + statementLinesWithoutDocuments.length;
+
+  const reconciliationResolved =
+    documentsMatchedToStatement +
+    Math.max(0, matchedStatementLines.length - statementLinesWithoutDocuments.length);
+
+  const reconciliationPercent =
+    reconciliationBase > 0
+      ? Math.min(
+          100,
+          Math.round((reconciliationResolved / reconciliationBase) * 100),
+        )
+      : 100;
+
+  const reconciliationNeedsReview =
+    documentsAwaitingStatementMatch.length +
+    statementLinesWithoutDocuments.length;
 
   const cashTotals = new Map<
     string,
@@ -757,12 +849,138 @@ export default async function AccountingMonthPage({
         </div>
       </section>
 
+      <section className={`rounded-2xl border p-5 shadow-sm ${
+        reconciliationNeedsReview === 0
+          ? "border-emerald-200 bg-emerald-50"
+          : "border-amber-200 bg-amber-50"
+      }`}>
+        <div className="flex flex-col gap-5 xl:flex-row xl:items-start xl:justify-between">
+          <div>
+            <div className="flex items-center gap-3">
+              <div className={`flex h-11 w-11 items-center justify-center rounded-xl ${
+                reconciliationNeedsReview === 0
+                  ? "bg-emerald-100 text-emerald-700"
+                  : "bg-amber-100 text-amber-700"
+              }`}>
+                {reconciliationNeedsReview === 0 ? (
+                  <ShieldCheck className="h-5 w-5" />
+                ) : (
+                  <AlertTriangle className="h-5 w-5" />
+                )}
+              </div>
+
+              <div>
+                <p className="text-xs font-bold uppercase tracking-[0.16em] text-[#8B0000]">
+                  Bank / Document Reconciliation
+                </p>
+                <h2 className="mt-1 text-xl font-semibold text-[#0B1F3A]">
+                  {reconciliationPercent}% Complete
+                </h2>
+              </div>
+            </div>
+
+            <p className="mt-3 max-w-3xl text-sm leading-6 text-slate-700">
+              This control checks the accounting chain from supporting document
+              to bank transaction, then to the imported bank statement and final
+              bank reconciliation. Documents that do not require a bank movement
+              are not treated as exceptions.
+            </p>
+          </div>
+
+          <Link
+            href={bankReconciliationHref}
+            className="inline-flex items-center justify-center gap-2 rounded-lg border border-[#0B1F3A] bg-white px-4 py-2.5 text-sm font-semibold text-[#0B1F3A] transition hover:bg-slate-50"
+          >
+            <RefreshCcw className="h-4 w-4" />
+            Open Bank Reconciliation
+          </Link>
+        </div>
+
+        <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+          <ReconciliationMetric
+            label="Bank-linked Documents"
+            value={documentsMatchedToBank}
+            detail="Documents already linked to a Bank Transaction"
+          />
+          <ReconciliationMetric
+            label="Matched to Statement"
+            value={documentsMatchedToStatement}
+            detail="Document bank transactions found on a statement"
+          />
+          <ReconciliationMetric
+            label="Fully Reconciled"
+            value={documentsFullyReconciled}
+            detail="Linked to a reconciled or locked statement period"
+          />
+          <ReconciliationMetric
+            label="Awaiting Statement Match"
+            value={documentsAwaitingStatementMatch.length}
+            detail="Bank-linked documents not yet matched to a statement line"
+            warning={documentsAwaitingStatementMatch.length > 0}
+          />
+          <ReconciliationMetric
+            label="Statement Items Without Docs"
+            value={statementLinesWithoutDocuments.length}
+            detail="Matched statement transactions without Finance Documents"
+            warning={statementLinesWithoutDocuments.length > 0}
+          />
+        </div>
+
+        {reconciliationNeedsReview > 0 ? (
+          <div className="mt-5 rounded-xl border border-amber-200 bg-white/70 p-4">
+            <div className="flex items-center justify-between gap-4">
+              <div>
+                <p className="text-sm font-semibold text-amber-900">
+                  {reconciliationNeedsReview} item{reconciliationNeedsReview === 1 ? "" : "s"} need review
+                </p>
+                <p className="mt-1 text-xs leading-5 text-amber-800">
+                  Review unmatched bank-linked documents and statement transactions before sending the monthly accounting package.
+                </p>
+              </div>
+              <Link
+                href={bankReconciliationHref}
+                className="shrink-0 text-sm font-semibold text-[#8B0000] underline underline-offset-4"
+              >
+                Review Reconciliation
+              </Link>
+            </div>
+          </div>
+        ) : (
+          <div className="mt-5 rounded-xl border border-emerald-200 bg-white/70 p-4 text-sm font-semibold text-emerald-800">
+            No bank/document reconciliation exceptions detected for this accounting month.
+          </div>
+        )}
+      </section>
+
       <AccountantPackageCard
         year={year}
         month={month}
         part1Count={part1DocumentCount}
         part2Count={part2DocumentCount}
       />
+
+      <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <p className="text-xs font-bold uppercase tracking-[0.16em] text-[#8B0000]">
+              Sales Invoices
+            </p>
+            <h2 className="mt-1 text-lg font-semibold text-[#0B1F3A]">
+              Download Monthly Sales Invoices
+            </h2>
+            <p className="mt-1 text-sm text-slate-600">
+              Download only the issued sales invoice PDFs for this accounting month.
+            </p>
+          </div>
+
+          <a
+            href={`/api/admin/accounting/sales-invoices/${year}/${month}`}
+            className="inline-flex shrink-0 items-center justify-center rounded-xl bg-[#0B1F3A] px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-[#163554]"
+          >
+            Download Sales Invoices ZIP
+          </a>
+        </div>
+      </section>
 
       <section>
         <div className="mb-4">
@@ -1064,7 +1282,7 @@ export default async function AccountingMonthPage({
 
                     <div className="flex shrink-0 flex-wrap items-center gap-2">
                       <a
-                        href={document.storagePath}
+                        href={`/api/admin/finance/documents/${document.id}/download`}
                         target="_blank"
                         rel="noreferrer"
                         className="inline-flex items-center justify-center rounded-lg border px-3 py-2 text-sm font-semibold text-[#0B1F3A] transition hover:bg-slate-50"
@@ -1255,6 +1473,36 @@ function KpiCard({
           </p>
         </div>
       </div>
+    </div>
+  );
+}
+
+function ReconciliationMetric({
+  label,
+  value,
+  detail,
+  warning = false,
+}: {
+  label: string;
+  value: number;
+  detail: string;
+  warning?: boolean;
+}) {
+  return (
+    <div className="rounded-xl border border-slate-200/80 bg-white p-4">
+      <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+        {label}
+      </p>
+      <p
+        className={`mt-2 text-2xl font-semibold ${
+          warning ? "text-amber-700" : "text-[#0B1F3A]"
+        }`}
+      >
+        {value}
+      </p>
+      <p className="mt-1 text-xs leading-5 text-slate-500">
+        {detail}
+      </p>
     </div>
   );
 }
