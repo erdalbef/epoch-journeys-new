@@ -4,19 +4,19 @@ import React from "react";
 
 import {
 
-  Document,
+  Document,
 
-  Font,
+  Font,
 
-  Image,
+  Image,
 
-  Page,
+  Page,
 
-  StyleSheet,
+  StyleSheet,
 
-  Text,
+  Text,
 
-  View,
+  View,
 
 } from "@react-pdf/renderer";
 
@@ -24,131 +24,131 @@ import {
 
 export type SalesPdfData = {
 
-  type: string;
+  type: string;
 
-  documentNumber: string;
+  documentNumber: string;
 
-  issueDate: string;
+  issueDate: string;
 
-  dueDate: string | null;
+  dueDate: string | null;
 
-  currency: string;
+  currency: string;
 
 
 
-  originalDocumentNumber: string | null;
+  originalDocumentNumber: string | null;
 
-  originalDocumentIssueDate: string | null;
+  originalDocumentIssueDate: string | null;
 
 
 
-  recipientName: string;
+  recipientName: string;
 
-  recipientCompany: string | null;
+  recipientCompany: string | null;
 
-  recipientEmail: string | null;
+  recipientEmail: string | null;
 
-  recipientEmailSecondary: string | null;
+  recipientEmailSecondary: string | null;
 
-  recipientAddress: string | null;
+  recipientAddress: string | null;
 
-  recipientCity: string | null;
+  recipientCity: string | null;
 
-  recipientPostalCode: string | null;
+  recipientPostalCode: string | null;
 
-  recipientCountry: string | null;
+  recipientCountry: string | null;
 
-  recipientTaxNumber: string | null;
+  recipientTaxNumber: string | null;
 
-  recipientVatNumber: string | null;
+  recipientVatNumber: string | null;
 
 
 
-  issuerName: string;
+  issuerName: string;
 
-  issuerAddress: string | null;
+  issuerAddress: string | null;
 
-  issuerCountry: string | null;
+  issuerCountry: string | null;
 
-  issuerVatNumber: string | null;
+  issuerVatNumber: string | null;
 
 
 
-  bankName: string | null;
+  bankName: string | null;
 
-  bankAccountName: string | null;
+  bankAccountName: string | null;
 
-  iban: string | null;
+  iban: string | null;
 
-  swiftBic: string | null;
+  swiftBic: string | null;
 
 
 
-  bookingReference: string | null;
+  bookingReference: string | null;
 
-  groupName: string | null;
+  groupName: string | null;
 
-  tourTitle: string | null;
+  tourTitle: string | null;
 
-  departureDate: string | null;
+  departureDate: string | null;
 
 
 
-  subtotal: number;
+  subtotal: number;
 
-  taxTotal: number;
+  taxTotal: number;
 
-  totalAmount: number;
+  totalAmount: number;
 
-  amountPaid: number;
+  amountPaid: number;
 
-  balance: number;
+  balance: number;
 
 
 
-  serviceEn: string;
+  serviceEn: string;
 
-  serviceBg: string;
+  serviceBg: string;
 
 
 
-  vatEn: string;
+  vatEn: string;
 
-  vatBg: string;
+  vatBg: string;
 
 
 
-  paymentEn: string;
+  paymentEn: string;
 
-  paymentBg: string;
+  paymentBg: string;
 
 
 
-  additionalNotes: string;
+  additionalNotes: string;
 
 
 
-  items: {
+  items: {
 
-    description: string;
+    description: string;
 
-    quantity: number;
+    quantity: number;
 
-    unitPrice: number;
+    unitPrice: number;
 
-    taxRate: number | null;
+    taxRate: number | null;
 
-    grossAmount: number;
+    grossAmount: number;
 
-  }[];
+  }[];
 
 
 
-  logoDataUri?: string | null;
+  logoDataUri?: string | null;
 
-  fontRegular?: string | null;
+  fontRegular?: string | null;
 
-  fontBold?: string | null;
+  fontBold?: string | null;
 
 };
 
@@ -156,49 +156,49 @@ export type SalesPdfData = {
 
 export function registerSalesPdfFonts(
 
-  regular?: string | null,
+  regular?: string | null,
 
-  bold?: string | null,
+  bold?: string | null,
 
 ) {
 
-  if (regular && bold) {
+  if (regular && bold) {
 
-    Font.register({
+    Font.register({
 
-      family: "EpochUnicode",
+      family: "EpochUnicode",
 
-      fonts: [
+      fonts: [
 
-        {
+        {
 
-          src: regular,
+          src: regular,
 
-          fontWeight: 400,
+          fontWeight: 400,
 
-        },
+        },
 
-        {
+        {
 
-          src: bold,
+          src: bold,
 
-          fontWeight: 700,
+          fontWeight: 700,
 
-        },
+        },
 
-      ],
+      ],
 
-    });
-
-
-
-    return "EpochUnicode";
-
-  }
+    });
 
 
 
-  return "Helvetica";
+    return "EpochUnicode";
+
+  }
+
+
+
+  return "Helvetica";
 
 }
 
@@ -222,739 +222,751 @@ const CREDIT_BG = "#FFF7ED";
 
 const styles = StyleSheet.create({
 
-  page: {
+  page: {
 
-    paddingTop: 20,
+    paddingTop: 20,
 
-    paddingBottom: 48,
+    paddingBottom: 48,
 
-    paddingHorizontal: 28,
+    paddingHorizontal: 28,
 
-    fontSize: 7.8,
+    fontSize: 7.8,
 
-    color: "#1F2937",
+    color: "#1F2937",
 
-    lineHeight: 1.25,
+    lineHeight: 1.25,
 
-  },
+  },
 
 
 
-  header: {
+  header: {
 
-    flexDirection: "row",
+    flexDirection: "row",
 
-    justifyContent: "space-between",
+    justifyContent: "space-between",
 
-    alignItems: "flex-start",
+    alignItems: "flex-start",
 
-    paddingBottom: 8,
+    paddingBottom: 8,
 
-    marginBottom: 7,
+    marginBottom: 7,
 
-    borderBottomWidth: 1.5,
+    borderBottomWidth: 1.5,
 
-    borderBottomColor: NAVY,
+    borderBottomColor: NAVY,
 
-  },
+  },
 
 
 
-  brandBlock: {
+  brandBlock: {
 
-    width: "48%",
+    width: "50%",
 
-    flexDirection: "row",
+    flexDirection: "row",
 
-    alignItems: "flex-start",
+    alignItems: "flex-start",
 
-  },
+  },
 
 
 
-  logo: {
+  logo: {
 
-    width: 48,
+    width: 48,
 
-    height: 48,
+    height: 48,
 
-    objectFit: "contain",
+    objectFit: "contain",
 
-    marginRight: 8,
+    marginRight: 8,
 
-  },
+  },
 
 
 
-  companyBlock: {
+  companyBlock: {
 
-    flex: 1,
+    flex: 1,
 
-    paddingTop: 1,
+    paddingTop: 1,
 
-  },
+  },
 
 
 
-  companyName: {
+  companyName: {
 
-    fontSize: 11,
+    fontSize: 11,
 
-    fontWeight: 700,
+    fontWeight: 700,
 
-    color: NAVY,
+    color: NAVY,
 
-    marginBottom: 2,
+    marginBottom: 2,
 
-  },
+  },
 
 
 
-  companyText: {
+  companyText: {
 
-    fontSize: 7.3,
+    fontSize: 7.3,
 
-    color: "#475569",
+    color: "#475569",
 
-    marginBottom: 1,
+    marginBottom: 1,
 
-  },
+  },
 
 
 
-  documentBlock: {
+  documentBlock: {
 
-    width: "50%",
+    width: "48%",
 
-    alignItems: "flex-end",
+    alignItems: "flex-end",
 
-  },
+  },
 
 
 
-  title: {
+  titleEnglish: {
 
-    fontSize: 12.5,
+    fontSize: 12.5,
 
-    fontWeight: 700,
+    fontWeight: 700,
 
-    color: NAVY,
+    color: NAVY,
 
-    textAlign: "right",
+    textAlign: "right",
 
-    marginBottom: 4,
+    marginBottom: 1,
 
-  },
+  },
 
+  titleBulgarian: {
 
+    fontSize: 9.2,
 
-  documentNumber: {
+    fontWeight: 700,
 
-    fontSize: 9.5,
+    color: NAVY,
 
-    fontWeight: 700,
+    textAlign: "right",
 
-    color: RED,
+    marginBottom: 5,
 
-    marginBottom: 2,
+  },
 
-  },
 
 
+  documentNumber: {
 
-  documentMeta: {
+    fontSize: 9.5,
 
-    fontSize: 7.3,
+    fontWeight: 700,
 
-    color: "#475569",
+    color: RED,
 
-    marginBottom: 1,
+    marginBottom: 2,
 
-  },
+  },
 
 
 
-  creditReference: {
+  documentMeta: {
 
-    marginTop: 3,
+    fontSize: 7.3,
 
-    paddingVertical: 3,
+    color: "#475569",
 
-    paddingHorizontal: 5,
+    marginBottom: 1,
 
-    backgroundColor: CREDIT_BG,
+  },
 
-    borderRadius: 3,
 
-    color: "#92400E",
 
-    fontSize: 7.2,
+  creditReference: {
 
-    textAlign: "right",
+    marginTop: 3,
 
-  },
+    paddingVertical: 3,
 
+    paddingHorizontal: 5,
 
+    backgroundColor: CREDIT_BG,
 
-  accentLine: {
+    borderRadius: 3,
 
-    height: 1.5,
+    color: "#92400E",
 
-    backgroundColor: GOLD,
+    fontSize: 7.2,
 
-    marginBottom: 7,
+    textAlign: "right",
 
-  },
+  },
 
 
 
-  twoColumn: {
+  accentLine: {
 
-    flexDirection: "row",
+    height: 1.5,
 
-    justifyContent: "space-between",
+    backgroundColor: GOLD,
 
-    marginBottom: 6,
+    marginBottom: 7,
 
-  },
+  },
 
 
 
-  column: {
+  twoColumn: {
 
-    width: "49%",
+    flexDirection: "row",
 
-  },
+    justifyContent: "space-between",
 
+    marginBottom: 6,
 
+  },
 
-  section: {
 
-    borderWidth: 1,
 
-    borderColor: BORDER,
+  column: {
 
-    borderRadius: 3,
+    width: "49%",
 
-    marginBottom: 6,
+  },
 
-    overflow: "hidden",
 
-  },
 
+  section: {
 
+    borderWidth: 1,
 
-  sectionHeader: {
+    borderColor: BORDER,
 
-    backgroundColor: LIGHT,
+    borderRadius: 3,
 
-    borderBottomWidth: 1,
+    marginBottom: 6,
 
-    borderBottomColor: BORDER,
+    overflow: "hidden",
 
-    paddingVertical: 3.5,
+  },
 
-    paddingHorizontal: 6,
 
-  },
 
+  sectionHeader: {
 
+    backgroundColor: LIGHT,
 
-  sectionTitle: {
+    borderBottomWidth: 1,
 
-    fontSize: 8,
+    borderBottomColor: BORDER,
 
-    fontWeight: 700,
+    paddingVertical: 3.5,
 
-    color: NAVY,
+    paddingHorizontal: 6,
 
-  },
+  },
 
 
 
-  sectionBody: {
+  sectionTitle: {
 
-    paddingVertical: 5,
+    fontSize: 8,
 
-    paddingHorizontal: 6,
+    fontWeight: 700,
 
-  },
+    color: NAVY,
 
+  },
 
 
-  text: {
 
-    fontSize: 7.4,
+  sectionBody: {
 
-    marginBottom: 1.2,
+    paddingVertical: 5,
 
-  },
+    paddingHorizontal: 6,
 
+  },
 
 
-  label: {
 
-    fontWeight: 700,
+  text: {
 
-    color: "#334155",
+    fontSize: 7.4,
 
-  },
+    marginBottom: 1.2,
 
+  },
 
 
-  bulgarian: {
 
-    marginTop: 2.5,
+  label: {
 
-    color: "#334155",
+    fontWeight: 700,
 
-  },
+    color: "#334155",
 
+  },
 
 
-  table: {
 
-    marginBottom: 6,
+  bulgarian: {
 
-    borderWidth: 1,
+    marginTop: 2.5,
 
-    borderColor: BORDER,
+    color: "#334155",
 
-  },
+  },
 
 
 
-  tableHeader: {
+  table: {
 
-    flexDirection: "row",
+    marginBottom: 6,
 
-    backgroundColor: NAVY,
+    borderWidth: 1,
 
-    color: "#FFFFFF",
+    borderColor: BORDER,
 
-    paddingVertical: 4,
+  },
 
-    paddingHorizontal: 4,
 
-  },
 
+  tableHeader: {
 
+    flexDirection: "row",
 
-  tableRow: {
+    backgroundColor: NAVY,
 
-    flexDirection: "row",
+    color: "#FFFFFF",
 
-    paddingVertical: 4,
+    paddingVertical: 4,
 
-    paddingHorizontal: 4,
+    paddingHorizontal: 4,
 
-    borderTopWidth: 1,
+  },
 
-    borderTopColor: BORDER,
 
-    minHeight: 22,
 
-    alignItems: "center",
+  tableRow: {
 
-  },
+    flexDirection: "row",
 
+    paddingVertical: 4,
 
+    paddingHorizontal: 4,
 
-  descriptionColumn: {
+    borderTopWidth: 1,
 
-    width: "46%",
+    borderTopColor: BORDER,
 
-    paddingRight: 4,
+    minHeight: 22,
 
-  },
+    alignItems: "center",
 
+  },
 
 
-  quantityColumn: {
 
-    width: "9%",
+  descriptionColumn: {
 
-    textAlign: "right",
+    width: "46%",
 
-  },
+    paddingRight: 4,
 
+  },
 
 
-  unitPriceColumn: {
 
-    width: "18%",
+  quantityColumn: {
 
-    textAlign: "right",
+    width: "9%",
 
-  },
+    textAlign: "right",
 
+  },
 
 
-  vatColumn: {
 
-    width: "9%",
+  unitPriceColumn: {
 
-    textAlign: "right",
+    width: "18%",
 
-  },
+    textAlign: "right",
 
+  },
 
 
-  amountColumn: {
 
-    width: "18%",
+  vatColumn: {
 
-    textAlign: "right",
+    width: "9%",
 
-  },
+    textAlign: "right",
 
+  },
 
 
-  tableHeaderText: {
 
-    fontSize: 6.9,
+  amountColumn: {
 
-    fontWeight: 700,
+    width: "18%",
 
-  },
+    textAlign: "right",
 
+  },
 
 
-  tableText: {
 
-    fontSize: 7.2,
+  tableHeaderText: {
 
-  },
+    fontSize: 6.9,
 
+    fontWeight: 700,
 
+  },
 
-  financialArea: {
 
-    flexDirection: "row",
 
-    justifyContent: "space-between",
+  tableText: {
 
-    marginBottom: 6,
+    fontSize: 7.2,
 
-  },
+  },
 
 
 
-  bankArea: {
+  financialArea: {
 
-    width: "53%",
+    flexDirection: "row",
 
-  },
+    justifyContent: "space-between",
 
+    marginBottom: 6,
 
+  },
 
-  summaryArea: {
 
-    width: "43%",
 
-    borderWidth: 1,
+  bankArea: {
 
-    borderColor: BORDER,
+    width: "53%",
 
-    borderRadius: 3,
+  },
 
-    overflow: "hidden",
 
-  },
 
+  summaryArea: {
 
+    width: "43%",
 
-  summaryTitle: {
+    borderWidth: 1,
 
-    backgroundColor: LIGHT,
+    borderColor: BORDER,
 
-    paddingVertical: 3.5,
+    borderRadius: 3,
 
-    paddingHorizontal: 6,
+    overflow: "hidden",
 
-    borderBottomWidth: 1,
+  },
 
-    borderBottomColor: BORDER,
 
-    color: NAVY,
 
-    fontSize: 7.7,
+  summaryTitle: {
 
-    fontWeight: 700,
+    backgroundColor: LIGHT,
 
-  },
+    paddingVertical: 3.5,
 
+    paddingHorizontal: 6,
 
+    borderBottomWidth: 1,
 
-  summaryBody: {
+    borderBottomColor: BORDER,
 
-    paddingVertical: 4,
+    color: NAVY,
 
-    paddingHorizontal: 6,
+    fontSize: 7.7,
 
-  },
+    fontWeight: 700,
 
+  },
 
 
-  summaryRow: {
 
-    flexDirection: "row",
+  summaryBody: {
 
-    justifyContent: "space-between",
+    paddingVertical: 4,
 
-    paddingVertical: 1.7,
+    paddingHorizontal: 6,
 
-  },
+  },
 
 
 
-  summaryLabel: {
+  summaryRow: {
 
-    fontSize: 7.2,
+    flexDirection: "row",
 
-    color: "#475569",
+    justifyContent: "space-between",
 
-  },
+    paddingVertical: 1.7,
 
+  },
 
 
-  summaryValue: {
 
-    fontSize: 7.2,
+  summaryLabel: {
 
-    fontWeight: 700,
+    fontSize: 7.2,
 
-  },
+    color: "#475569",
 
+  },
 
 
-  totalRow: {
 
-    flexDirection: "row",
+  summaryValue: {
 
-    justifyContent: "space-between",
+    fontSize: 7.2,
 
-    borderTopWidth: 1,
+    fontWeight: 700,
 
-    borderTopColor: NAVY,
+  },
 
-    marginTop: 2,
 
-    paddingTop: 3,
 
-  },
+  totalRow: {
 
+    flexDirection: "row",
 
+    justifyContent: "space-between",
 
-  totalLabel: {
+    borderTopWidth: 1,
 
-    fontSize: 8.7,
+    borderTopColor: NAVY,
 
-    fontWeight: 700,
+    marginTop: 2,
 
-    color: NAVY,
+    paddingTop: 3,
 
-  },
+  },
 
 
 
-  totalValue: {
+  totalLabel: {
 
-    fontSize: 8.7,
+    fontSize: 8.7,
 
-    fontWeight: 700,
+    fontWeight: 700,
 
-    color: NAVY,
+    color: NAVY,
 
-  },
+  },
 
 
 
-  balanceRow: {
+  totalValue: {
 
-    flexDirection: "row",
+    fontSize: 8.7,
 
-    justifyContent: "space-between",
+    fontWeight: 700,
 
-    backgroundColor: CREDIT_BG,
+    color: NAVY,
 
-    marginTop: 2.5,
+  },
 
-    paddingVertical: 3.5,
 
-    paddingHorizontal: 4,
 
-    borderRadius: 3,
+  balanceRow: {
 
-  },
+    flexDirection: "row",
 
+    justifyContent: "space-between",
 
+    backgroundColor: CREDIT_BG,
 
-  balanceLabel: {
+    marginTop: 2.5,
 
-    fontSize: 7.8,
+    paddingVertical: 3.5,
 
-    fontWeight: 700,
+    paddingHorizontal: 4,
 
-    color: RED,
+    borderRadius: 3,
 
-  },
+  },
 
 
 
-  balanceValue: {
+  balanceLabel: {
 
-    fontSize: 7.8,
+    fontSize: 7.8,
 
-    fontWeight: 700,
+    fontWeight: 700,
 
-    color: RED,
+    color: RED,
 
-  },
+  },
 
 
 
-  noteSection: {
+  balanceValue: {
 
-    borderWidth: 1,
+    fontSize: 7.8,
 
-    borderColor: BORDER,
+    fontWeight: 700,
 
-    borderRadius: 3,
+    color: RED,
 
-    paddingVertical: 5,
+  },
 
-    paddingHorizontal: 6,
 
-    marginBottom: 5,
 
-  },
+  noteSection: {
 
+    borderWidth: 1,
 
+    borderColor: BORDER,
 
-  noteTitle: {
+    borderRadius: 3,
 
-    fontSize: 7.8,
+    paddingVertical: 5,
 
-    fontWeight: 700,
+    paddingHorizontal: 6,
 
-    color: NAVY,
+    marginBottom: 5,
 
-    marginBottom: 2,
+  },
 
-  },
 
 
+  noteTitle: {
 
-  noteEnglish: {
+    fontSize: 7.8,
 
-    fontSize: 7.1,
+    fontWeight: 700,
 
-    marginBottom: 2,
+    color: NAVY,
 
-  },
+    marginBottom: 2,
 
+  },
 
 
-  noteBulgarian: {
 
-    fontSize: 7.1,
+  noteEnglish: {
 
-    color: "#374151",
+    fontSize: 7.1,
 
-  },
+    marginBottom: 2,
 
+  },
 
 
-  footer: {
 
-    position: "absolute",
+  noteBulgarian: {
 
-    left: 28,
+    fontSize: 7.1,
 
-    right: 28,
+    color: "#374151",
 
-    bottom: 18,
+  },
 
-    paddingTop: 5,
 
-    borderTopWidth: 1,
 
-    borderTopColor: BORDER,
+  footer: {
 
-    textAlign: "center",
+    position: "absolute",
 
-    color: MUTED,
+    left: 28,
 
-    fontSize: 6.8,
+    right: 28,
 
-    lineHeight: 1.3,
+    bottom: 18,
 
-  },
+    paddingTop: 5,
+
+    borderTopWidth: 1,
+
+    borderTopColor: BORDER,
+
+    textAlign: "center",
+
+    color: MUTED,
+
+    fontSize: 6.8,
+
+    lineHeight: 1.3,
+
+  },
 
 });
 
 
 
 function documentTitle(type: string) {
+  switch (type) {
+    case "INVOICE":
+      return {
+        en: "FINAL INVOICE",
+        bg: "ОКОНЧАТЕЛНА ФАКТУРА",
+      };
 
-  switch (type) {
+    case "PROFORMA":
+      return {
+        en: "PROFORMA INVOICE",
+        bg: "ПРОФОРМА ФАКТУРА",
+      };
 
-    case "INVOICE":
+    case "CREDIT_NOTE":
+      return {
+        en: "CREDIT NOTE",
+        bg: "КРЕДИТНО ИЗВЕСТИЕ",
+      };
 
-      return "FINAL INVOICE / ОКОНЧАТЕЛНА ФАКТУРА";
-
-
-
-    case "PROFORMA":
-
-      return "PROFORMA INVOICE / ПРОФОРМА ФАКТУРА";
-
-
-
-    case "CREDIT_NOTE":
-
-      return "CREDIT NOTE / КРЕДИТНО ИЗВЕСТИЕ";
-
-
-
-    default:
-
-      return type.replaceAll("_", " ").toUpperCase();
-
-  }
-
+    default:
+      return {
+        en: type.replaceAll("_", " ").toUpperCase(),
+        bg: "",
+      };
+  }
 }
 
 
 
 function money(
 
-  value: number,
+  value: number,
 
-  currency: string,
+  currency: string,
 
 ) {
 
-  try {
+  try {
 
-    return new Intl.NumberFormat("en-GB", {
+    return new Intl.NumberFormat("en-GB", {
 
-      style: "currency",
+      style: "currency",
 
-      currency,
+      currency,
 
-      minimumFractionDigits: 2,
+      minimumFractionDigits: 2,
 
-      maximumFractionDigits: 2,
+      maximumFractionDigits: 2,
 
-    }).format(value);
+    }).format(value);
 
-  } catch {
+  } catch {
 
-    return `${currency} ${value.toFixed(2)}`;
+    return `${currency} ${value.toFixed(2)}`;
 
-  }
+  }
 
 }
 
@@ -962,1302 +974,1306 @@ function money(
 
 export function SalesDocumentPdf({
 
-  data,
+  data,
 
 }: {
 
-  data: SalesPdfData;
+  data: SalesPdfData;
 
 }) {
 
-  const fontFamily =
+  const fontFamily =
 
-    registerSalesPdfFonts(
+    registerSalesPdfFonts(
 
-      data.fontRegular,
+      data.fontRegular,
 
-      data.fontBold,
+      data.fontBold,
 
-    );
+    );
 
 
 
-  const isCreditNote =
+  const isCreditNote =
 
-    data.type === "CREDIT_NOTE";
+    data.type === "CREDIT_NOTE";
 
 
 
-  const isProforma =
+  const isProforma =
 
-    data.type === "PROFORMA";
+    data.type === "PROFORMA";
 
 
 
-  const hasBookingDetails = Boolean(
+  const hasBookingDetails = Boolean(
 
-    data.bookingReference ||
+    data.bookingReference ||
 
-      data.groupName ||
+      data.groupName ||
 
-      data.tourTitle ||
+      data.tourTitle ||
 
-      data.departureDate,
+      data.departureDate,
 
-  );
+  );
 
 
 
-  const showPaymentReference =
+  const showPaymentReference =
 
-    !isCreditNote &&
+    !isCreditNote &&
 
-    Boolean(
+    Boolean(
 
-      data.paymentEn ||
+      data.paymentEn ||
 
-        data.paymentBg,
+        data.paymentBg,
 
-    );
+    );
 
 
 
-  const showBankDetails =
+  const showBankDetails =
 
-    !isCreditNote &&
+    !isCreditNote &&
 
-    Boolean(
+    Boolean(
 
-      data.bankName ||
+      data.bankName ||
 
-        data.iban ||
+        data.iban ||
 
-        data.swiftBic ||
+        data.swiftBic ||
 
-        data.bankAccountName,
+        data.bankAccountName,
 
-    );
+    );
 
 
 
-  return (
+  return (
 
-    <Document>
+    <Document>
 
-      <Page
+      <Page
 
-        size="A4"
+        size="A4"
 
-        style={[
+        style={[
 
-          styles.page,
+          styles.page,
 
-          {
+          {
 
-            fontFamily,
+            fontFamily,
 
-          },
+          },
 
-        ]}
+        ]}
 
-      >
+      >
 
-        <View style={styles.header}>
+        <View style={styles.header}>
 
-          <View style={styles.brandBlock}>
+          <View style={styles.brandBlock}>
 
-            {data.logoDataUri ? (
+            {data.logoDataUri ? (
 
-              <Image
+              <Image
 
-                src={data.logoDataUri}
+                src={data.logoDataUri}
 
-                style={styles.logo}
+                style={styles.logo}
 
-              />
+              />
 
-            ) : null}
+            ) : null}
 
 
 
-            <View style={styles.companyBlock}>
+            <View style={styles.companyBlock}>
 
-              <Text style={styles.companyName}>
+              <Text style={styles.companyName}>
 
-                {data.issuerName}
+                {data.issuerName}
 
-              </Text>
+              </Text>
 
 
 
-              {data.issuerAddress ? (
+              {data.issuerAddress ? (
 
-                <Text style={styles.companyText}>
+                <Text style={styles.companyText}>
 
-                  {data.issuerAddress}
+                  {data.issuerAddress}
 
-                </Text>
+                </Text>
 
-              ) : null}
+              ) : null}
 
 
 
-              {data.issuerCountry ? (
+              {data.issuerCountry ? (
 
-                <Text style={styles.companyText}>
+                <Text style={styles.companyText}>
 
-                  {data.issuerCountry}
+                  {data.issuerCountry}
 
-                </Text>
+                </Text>
 
-              ) : null}
+              ) : null}
 
 
 
-              {data.issuerVatNumber ? (
+              {data.issuerVatNumber ? (
 
-                <Text style={styles.companyText}>
+                <Text style={styles.companyText}>
 
-                  VAT No.: {data.issuerVatNumber}
+                  VAT No.: {data.issuerVatNumber}
 
-                </Text>
+                </Text>
 
-              ) : null}
+              ) : null}
 
-            </View>
+            </View>
 
-          </View>
+          </View>
 
 
 
-          <View style={styles.documentBlock}>
+          <View style={styles.documentBlock}>
 
-            <Text style={styles.title}>
+            <Text style={styles.titleEnglish}>
+              {documentTitle(data.type).en}
+            </Text>
 
-              {documentTitle(data.type)}
+            {documentTitle(data.type).bg ? (
+              <Text style={styles.titleBulgarian}>
+                {documentTitle(data.type).bg}
+              </Text>
+            ) : null}
 
-            </Text>
 
 
+            <Text style={styles.documentNumber}>
 
-            <Text style={styles.documentNumber}>
+              No. {data.documentNumber}
 
-              No. {data.documentNumber}
+            </Text>
 
-            </Text>
 
 
+            <Text style={styles.documentMeta}>
 
-            <Text style={styles.documentMeta}>
+              Issue Date / Дата: {data.issueDate}
 
-              Issue Date / Дата: {data.issueDate}
+            </Text>
 
-            </Text>
 
 
+            {isProforma &&
 
-            {!isCreditNote &&
+            data.dueDate ? (
 
-            data.dueDate ? (
+              <Text style={styles.documentMeta}>
 
-              <Text style={styles.documentMeta}>
+                Due Date / Падеж: {data.dueDate}
 
-                Due Date / Падеж: {data.dueDate}
+              </Text>
 
-              </Text>
+            ) : null}
 
-            ) : null}
 
 
+            <Text style={styles.documentMeta}>
 
-            <Text style={styles.documentMeta}>
+              Currency / Валута: {data.currency}
 
-              Currency / Валута: {data.currency}
+            </Text>
 
-            </Text>
 
 
+            {isCreditNote &&
 
-            {isCreditNote &&
+            data.originalDocumentNumber ? (
 
-            data.originalDocumentNumber ? (
+              <View style={styles.creditReference}>
 
-              <View style={styles.creditReference}>
+                <Text>
 
-                <Text>
+                  Original Invoice / Оригинална фактура:{" "}
 
-                  Original Invoice / Оригинална фактура:{" "}
+                  {data.originalDocumentNumber}
 
-                  {data.originalDocumentNumber}
+                </Text>
 
-                </Text>
 
 
+                {data.originalDocumentIssueDate ? (
 
-                {data.originalDocumentIssueDate ? (
+                  <Text>
 
-                  <Text>
+                    Invoice Date / Дата на фактурата:{" "}
 
-                    Invoice Date / Дата на фактурата:{" "}
+                    {data.originalDocumentIssueDate}
 
-                    {data.originalDocumentIssueDate}
+                  </Text>
 
-                  </Text>
+                ) : null}
 
-                ) : null}
+              </View>
 
-              </View>
+            ) : null}
 
-            ) : null}
 
 
+            {isProforma ? (
 
-            {isProforma ? (
+              <Text
 
-              <Text
+                style={[
 
-                style={[
+                  styles.documentMeta,
 
-                  styles.documentMeta,
+                  {
 
-                  {
+                    marginTop: 3,
 
-                    marginTop: 3,
+                    color: RED,
 
-                    color: RED,
+                    fontWeight: 700,
 
-                    fontWeight: 700,
+                  },
 
-                  },
+                ]}
 
-                ]}
+              >
 
-              >
+                Not a tax invoice / Не е данъчна фактура
 
-                Not a tax invoice / Не е данъчна фактура
+              </Text>
 
-              </Text>
+            ) : null}
 
-            ) : null}
+          </View>
 
-          </View>
+        </View>
 
-        </View>
 
 
+        <View style={styles.accentLine} />
 
-        <View style={styles.accentLine} />
 
 
+        <View style={styles.twoColumn}>
 
-        <View style={styles.twoColumn}>
+          <View
 
-          <View
+            style={[
 
-            style={[
+              styles.section,
 
-              styles.section,
+              styles.column,
 
-              styles.column,
+            ]}
 
-            ]}
+          >
 
-          >
+            <View style={styles.sectionHeader}>
 
-            <View style={styles.sectionHeader}>
+              <Text style={styles.sectionTitle}>
 
-              <Text style={styles.sectionTitle}>
+                Bill To / Получател
 
-                Bill To / Получател
+              </Text>
 
-              </Text>
+            </View>
 
-            </View>
 
 
+            <View style={styles.sectionBody}>
 
-            <View style={styles.sectionBody}>
+              <Text
 
-              <Text
+                style={[
 
-                style={[
+                  styles.text,
 
-                  styles.text,
+                  {
 
-                  {
+                    fontWeight: 700,
 
-                    fontWeight: 700,
+                  },
 
-                  },
+                ]}
 
-                ]}
+              >
 
-              >
+                {data.recipientCompany ||
 
-                {data.recipientCompany ||
+                  data.recipientName}
 
-                  data.recipientName}
+              </Text>
 
-              </Text>
 
 
+              {data.recipientCompany ? (
 
-              {data.recipientCompany ? (
+                <Text style={styles.text}>
 
-                <Text style={styles.text}>
+                  Contact / Лице за контакт:{" "}
 
-                  Contact / Лице за контакт:{" "}
+                  {data.recipientName}
 
-                  {data.recipientName}
+                </Text>
 
-                </Text>
+              ) : null}
 
-              ) : null}
 
 
+              {data.recipientAddress ? (
 
-              {data.recipientAddress ? (
+                <Text style={styles.text}>
 
-                <Text style={styles.text}>
+                  {data.recipientAddress}
 
-                  {data.recipientAddress}
+                </Text>
 
-                </Text>
+              ) : null}
 
-              ) : null}
 
 
+              {[
 
-              {[
+                data.recipientPostalCode,
 
-                data.recipientPostalCode,
+                data.recipientCity,
 
-                data.recipientCity,
+                data.recipientCountry,
 
-                data.recipientCountry,
+              ]
 
-              ]
+                .filter(Boolean)
 
-                .filter(Boolean)
+                .join(" ") ? (
 
-                .join(" ") ? (
+                <Text style={styles.text}>
 
-                <Text style={styles.text}>
+                  {[
 
-                  {[
+                    data.recipientPostalCode,
 
-                    data.recipientPostalCode,
+                    data.recipientCity,
 
-                    data.recipientCity,
+                    data.recipientCountry,
 
-                    data.recipientCountry,
+                  ]
 
-                  ]
+                    .filter(Boolean)
 
-                    .filter(Boolean)
+                    .join(", ")}
 
-                    .join(", ")}
+                </Text>
 
-                </Text>
+              ) : null}
 
-              ) : null}
 
 
+              {data.recipientTaxNumber ? (
 
-              {data.recipientTaxNumber ? (
+                <Text style={styles.text}>
 
-                <Text style={styles.text}>
+                  Tax ID / ЕИК:{" "}
 
-                  Tax ID / ЕИК:{" "}
+                  {data.recipientTaxNumber}
 
-                  {data.recipientTaxNumber}
+                </Text>
 
-                </Text>
+              ) : null}
 
-              ) : null}
 
 
+              {data.recipientVatNumber ? (
 
-              {data.recipientVatNumber ? (
+                <Text style={styles.text}>
 
-                <Text style={styles.text}>
+                  VAT No. / ДДС №:{" "}
 
-                  VAT No. / ДДС №:{" "}
+                  {data.recipientVatNumber}
 
-                  {data.recipientVatNumber}
+                </Text>
 
-                </Text>
+              ) : null}
 
-              ) : null}
 
 
+              {data.recipientEmail ? (
 
-              {data.recipientEmail ? (
+                <Text style={styles.text}>
 
-                <Text style={styles.text}>
+                  Email: {data.recipientEmail}
 
-                  Email: {data.recipientEmail}
+                </Text>
 
-                </Text>
+              ) : null}
 
-              ) : null}
 
 
+              {data.recipientEmailSecondary ? (
 
-              {data.recipientEmailSecondary ? (
+                <Text style={styles.text}>
 
-                <Text style={styles.text}>
+                  CC: {data.recipientEmailSecondary}
 
-                  CC: {data.recipientEmailSecondary}
+                </Text>
 
-                </Text>
+              ) : null}
 
-              ) : null}
+            </View>
 
-            </View>
+          </View>
 
-          </View>
 
 
+          {hasBookingDetails ? (
 
-          {hasBookingDetails ? (
+            <View
 
-            <View
+              style={[
 
-              style={[
+                styles.section,
 
-                styles.section,
+                styles.column,
 
-                styles.column,
+              ]}
 
-              ]}
+            >
 
-            >
+              <View style={styles.sectionHeader}>
 
-              <View style={styles.sectionHeader}>
+                <Text style={styles.sectionTitle}>
 
-                <Text style={styles.sectionTitle}>
+                  Booking Details / Данни за резервацията
 
-                  Booking Details / Данни за резервацията
+                </Text>
 
-                </Text>
+              </View>
 
-              </View>
 
 
+              <View style={styles.sectionBody}>
 
-              <View style={styles.sectionBody}>
+                <Text style={styles.text}>
 
-                <Text style={styles.text}>
+                  <Text style={styles.label}>
 
-                  <Text style={styles.label}>
+                    Booking Reference / Референция:{" "}
 
-                    Booking Reference / Референция:{" "}
+                  </Text>
 
-                  </Text>
+                  {data.bookingReference || "-"}
 
-                  {data.bookingReference || "-"}
+                </Text>
 
-                </Text>
 
 
+                <Text style={styles.text}>
 
-                <Text style={styles.text}>
+                  <Text style={styles.label}>
 
-                  <Text style={styles.label}>
+                    Group Name / Име на групата:{" "}
 
-                    Group Name / Име на групата:{" "}
+                  </Text>
 
-                  </Text>
+                  {data.groupName || "-"}
 
-                  {data.groupName || "-"}
+                </Text>
 
-                </Text>
 
 
+                <Text style={styles.text}>
 
-                <Text style={styles.text}>
+                  <Text style={styles.label}>
 
-                  <Text style={styles.label}>
+                    Tour / Тур:{" "}
 
-                    Tour / Тур:{" "}
+                  </Text>
 
-                  </Text>
+                  {data.tourTitle || "-"}
 
-                  {data.tourTitle || "-"}
+                </Text>
 
-                </Text>
 
 
+                <Text style={styles.text}>
 
-                <Text style={styles.text}>
+                  <Text style={styles.label}>
 
-                  <Text style={styles.label}>
+                    Travel Date / Дата на пътуване:{" "}
 
-                    Travel Date / Дата на пътуване:{" "}
+                  </Text>
 
-                  </Text>
+                  {data.departureDate || "-"}
 
-                  {data.departureDate || "-"}
+                </Text>
 
-                </Text>
+              </View>
 
-              </View>
+            </View>
 
-            </View>
+          ) : (
 
-          ) : (
+            <View
 
-            <View
+              style={[
 
-              style={[
+                styles.section,
 
-                styles.section,
+                styles.column,
 
-                styles.column,
+              ]}
 
-              ]}
+            >
 
-            >
+              <View style={styles.sectionHeader}>
 
-              <View style={styles.sectionHeader}>
+                <Text style={styles.sectionTitle}>
 
-                <Text style={styles.sectionTitle}>
+                  Document Details / Данни за документа
 
-                  Document Details / Данни за документа
+                </Text>
 
-                </Text>
+              </View>
 
-              </View>
 
 
+              <View style={styles.sectionBody}>
 
-              <View style={styles.sectionBody}>
+                <Text style={styles.text}>
 
-                <Text style={styles.text}>
+                  Document No.: {data.documentNumber}
 
-                  Document No.: {data.documentNumber}
+                </Text>
 
-                </Text>
 
 
+                <Text style={styles.text}>
 
-                <Text style={styles.text}>
+                  Issue Date: {data.issueDate}
 
-                  Issue Date: {data.issueDate}
+                </Text>
 
-                </Text>
 
 
+                <Text style={styles.text}>
 
-                <Text style={styles.text}>
+                  Currency: {data.currency}
 
-                  Currency: {data.currency}
+                </Text>
 
-                </Text>
+              </View>
 
-              </View>
+            </View>
 
-            </View>
+          )}
 
-          )}
+        </View>
 
-        </View>
 
 
+        {(data.serviceEn ||
 
-        {(data.serviceEn ||
+          data.serviceBg) && (
 
-          data.serviceBg) && (
+          <View style={styles.section}>
 
-          <View style={styles.section}>
+            <View style={styles.sectionHeader}>
 
-            <View style={styles.sectionHeader}>
+              <Text style={styles.sectionTitle}>
 
-              <Text style={styles.sectionTitle}>
+                Service Description / Описание на услугата
 
-                Service Description / Описание на услугата
+              </Text>
 
-              </Text>
+            </View>
 
-            </View>
 
 
+            <View style={styles.sectionBody}>
 
-            <View style={styles.sectionBody}>
+              {data.serviceEn ? (
 
-              {data.serviceEn ? (
+                <Text style={styles.text}>
 
-                <Text style={styles.text}>
+                  {data.serviceEn}
 
-                  {data.serviceEn}
+                </Text>
 
-                </Text>
+              ) : null}
 
-              ) : null}
 
 
+              {data.serviceBg ? (
 
-              {data.serviceBg ? (
+                <Text
 
-                <Text
+                  style={[
 
-                  style={[
+                    styles.text,
 
-                    styles.text,
+                    styles.bulgarian,
 
-                    styles.bulgarian,
+                  ]}
 
-                  ]}
+                >
 
-                >
+                  {data.serviceBg}
 
-                  {data.serviceBg}
+                </Text>
 
-                </Text>
+              ) : null}
 
-              ) : null}
+            </View>
 
-            </View>
+          </View>
 
-          </View>
+        )}
 
-        )}
 
 
+        <View style={styles.table}>
 
-        <View style={styles.table}>
+          <View style={styles.tableHeader}>
 
-          <View style={styles.tableHeader}>
+            <Text
 
-            <Text
+              style={[
 
-              style={[
+                styles.descriptionColumn,
 
-                styles.descriptionColumn,
+                styles.tableHeaderText,
 
-                styles.tableHeaderText,
+              ]}
 
-              ]}
+            >
 
-            >
+              Description / Описание
 
-              Description / Описание
+            </Text>
 
-            </Text>
 
 
+            <Text
 
-            <Text
+              style={[
 
-              style={[
+                styles.quantityColumn,
 
-                styles.quantityColumn,
+                styles.tableHeaderText,
 
-                styles.tableHeaderText,
+              ]}
 
-              ]}
+            >
 
-            >
+              Qty
 
-              Qty
+            </Text>
 
-            </Text>
 
 
+            <Text
 
-            <Text
+              style={[
 
-              style={[
+                styles.unitPriceColumn,
 
-                styles.unitPriceColumn,
+                styles.tableHeaderText,
 
-                styles.tableHeaderText,
+              ]}
 
-              ]}
+            >
 
-            >
+              Unit Price
 
-              Unit Price
+            </Text>
 
-            </Text>
 
 
+            <Text
 
-            <Text
+              style={[
 
-              style={[
+                styles.vatColumn,
 
-                styles.vatColumn,
+                styles.tableHeaderText,
 
-                styles.tableHeaderText,
+              ]}
 
-              ]}
+            >
 
-            >
+              VAT
 
-              VAT
+            </Text>
 
-            </Text>
 
 
+            <Text
 
-            <Text
+              style={[
 
-              style={[
+                styles.amountColumn,
 
-                styles.amountColumn,
+                styles.tableHeaderText,
 
-                styles.tableHeaderText,
+              ]}
 
-              ]}
+            >
 
-            >
+              Amount
 
-              Amount
+            </Text>
 
-            </Text>
+          </View>
 
-          </View>
 
 
+          {data.items.map((item, index) => (
 
-          {data.items.map((item, index) => (
+            <View
 
-            <View
+              key={`${item.description}-${index}`}
 
-              key={`${item.description}-${index}`}
+              style={styles.tableRow}
 
-              style={styles.tableRow}
+              wrap={false}
 
-              wrap={false}
+            >
 
-            >
+              <Text
 
-              <Text
+                style={[
 
-                style={[
+                  styles.descriptionColumn,
 
-                  styles.descriptionColumn,
+                  styles.tableText,
 
-                  styles.tableText,
+                ]}
 
-                ]}
+              >
 
-              >
+                {item.description}
 
-                {item.description}
+              </Text>
 
-              </Text>
 
 
+              <Text
 
-              <Text
+                style={[
 
-                style={[
+                  styles.quantityColumn,
 
-                  styles.quantityColumn,
+                  styles.tableText,
 
-                  styles.tableText,
+                ]}
 
-                ]}
+              >
 
-              >
+                {item.quantity}
 
-                {item.quantity}
+              </Text>
 
-              </Text>
 
 
+              <Text
 
-              <Text
+                style={[
 
-                style={[
+                  styles.unitPriceColumn,
 
-                  styles.unitPriceColumn,
+                  styles.tableText,
 
-                  styles.tableText,
+                ]}
 
-                ]}
+              >
 
-              >
+                {money(
 
-                {money(
+                  item.unitPrice,
 
-                  item.unitPrice,
+                  data.currency,
 
-                  data.currency,
+                )}
 
-                )}
+              </Text>
 
-              </Text>
 
 
+              <Text
 
-              <Text
+                style={[
 
-                style={[
+                  styles.vatColumn,
 
-                  styles.vatColumn,
+                  styles.tableText,
 
-                  styles.tableText,
+                ]}
 
-                ]}
+              >
 
-              >
+                {item.taxRate ?? 0}%
 
-                {item.taxRate ?? 0}%
+              </Text>
 
-              </Text>
 
 
+              <Text
 
-              <Text
+                style={[
 
-                style={[
+                  styles.amountColumn,
 
-                  styles.amountColumn,
+                  styles.tableText,
 
-                  styles.tableText,
+                ]}
 
-                ]}
+              >
 
-              >
+                {money(
 
-                {money(
+                  item.grossAmount,
 
-                  item.grossAmount,
+                  data.currency,
 
-                  data.currency,
+                )}
 
-                )}
+              </Text>
 
-              </Text>
+            </View>
 
-            </View>
+          ))}
 
-          ))}
+        </View>
 
-        </View>
 
 
+        <View
 
-        <View
+          style={styles.financialArea}
 
-          style={styles.financialArea}
+          wrap={false}
 
-          wrap={false}
+        >
 
-        >
+          {showBankDetails ? (
 
-          {showBankDetails ? (
+            <View
 
-            <View
+              style={[
 
-              style={[
+                styles.section,
 
-                styles.section,
+                styles.bankArea,
 
-                styles.bankArea,
+                {
 
-                {
+                  marginBottom: 0,
 
-                  marginBottom: 0,
+                },
 
-                },
+              ]}
 
-              ]}
+            >
 
-            >
+              <View style={styles.sectionHeader}>
 
-              <View style={styles.sectionHeader}>
+                <Text style={styles.sectionTitle}>
 
-                <Text style={styles.sectionTitle}>
+                  Bank Details / Банкови данни
 
-                  Bank Details / Банкови данни
+                </Text>
 
-                </Text>
+              </View>
 
-              </View>
 
 
+              <View style={styles.sectionBody}>
 
-              <View style={styles.sectionBody}>
+                <Text style={styles.text}>
 
-                <Text style={styles.text}>
+                  <Text style={styles.label}>
 
-                  <Text style={styles.label}>
+                    Bank:{" "}
 
-                    Bank:{" "}
+                  </Text>
 
-                  </Text>
+                  {data.bankName || "-"}
 
-                  {data.bankName || "-"}
+                </Text>
 
-                </Text>
 
 
+                <Text style={styles.text}>
 
-                <Text style={styles.text}>
+                  <Text style={styles.label}>
 
-                  <Text style={styles.label}>
+                    IBAN:{" "}
 
-                    IBAN:{" "}
+                  </Text>
 
-                  </Text>
+                  {data.iban || "-"}
 
-                  {data.iban || "-"}
+                </Text>
 
-                </Text>
 
 
+                <Text style={styles.text}>
 
-                <Text style={styles.text}>
+                  <Text style={styles.label}>
 
-                  <Text style={styles.label}>
+                    SWIFT / BIC:{" "}
 
-                    SWIFT / BIC:{" "}
+                  </Text>
 
-                  </Text>
+                  {data.swiftBic || "-"}
 
-                  {data.swiftBic || "-"}
+                </Text>
 
-                </Text>
 
 
+                <Text style={styles.text}>
 
-                <Text style={styles.text}>
+                  <Text style={styles.label}>
 
-                  <Text style={styles.label}>
+                    Account Name:{" "}
 
-                    Account Name:{" "}
+                  </Text>
 
-                  </Text>
+                  {data.bankAccountName || "-"}
 
-                  {data.bankAccountName || "-"}
+                </Text>
 
-                </Text>
+              </View>
 
-              </View>
+            </View>
 
-            </View>
+          ) : (
 
-          ) : (
+            <View style={styles.bankArea} />
 
-            <View style={styles.bankArea} />
+          )}
 
-          )}
 
 
+          <View style={styles.summaryArea}>
 
-          <View style={styles.summaryArea}>
+            <Text style={styles.summaryTitle}>
 
-            <Text style={styles.summaryTitle}>
+              {isCreditNote
 
-              {isCreditNote
+                ? "Credit Summary / Кредитно известие"
 
-                ? "Credit Summary / Кредитно известие"
+                : "Financial Summary / Финансова справка"}
 
-                : "Financial Summary / Финансова справка"}
+            </Text>
 
-            </Text>
 
 
+            <View style={styles.summaryBody}>
 
-            <View style={styles.summaryBody}>
+              <View style={styles.summaryRow}>
 
-              <View style={styles.summaryRow}>
+                <Text style={styles.summaryLabel}>
 
-                <Text style={styles.summaryLabel}>
+                  Subtotal / Междинна сума
 
-                  Subtotal / Междинна сума
+                </Text>
 
-                </Text>
 
 
+                <Text style={styles.summaryValue}>
 
-                <Text style={styles.summaryValue}>
+                  {money(
 
-                  {money(
+                    data.subtotal,
 
-                    data.subtotal,
+                    data.currency,
 
-                    data.currency,
+                  )}
 
-                  )}
+                </Text>
 
-                </Text>
+              </View>
 
-              </View>
 
 
+              <View style={styles.summaryRow}>
 
-              <View style={styles.summaryRow}>
+                <Text style={styles.summaryLabel}>
 
-                <Text style={styles.summaryLabel}>
+                  VAT / ДДС
 
-                  VAT / ДДС
+                </Text>
 
-                </Text>
 
 
+                <Text style={styles.summaryValue}>
 
-                <Text style={styles.summaryValue}>
+                  {money(
 
-                  {money(
+                    data.taxTotal,
 
-                    data.taxTotal,
+                    data.currency,
 
-                    data.currency,
+                  )}
 
-                  )}
+                </Text>
 
-                </Text>
+              </View>
 
-              </View>
 
 
+              <View style={styles.totalRow}>
 
-              <View style={styles.totalRow}>
+                <Text style={styles.totalLabel}>
 
-                <Text style={styles.totalLabel}>
+                  {isCreditNote
 
-                  {isCreditNote
+                    ? "CREDIT AMOUNT"
 
-                    ? "CREDIT AMOUNT"
+                    : "TOTAL / ОБЩО"}
 
-                    : "TOTAL / ОБЩО"}
+                </Text>
 
-                </Text>
 
 
+                <Text style={styles.totalValue}>
 
-                <Text style={styles.totalValue}>
+                  {money(
 
-                  {money(
+                    data.totalAmount,
 
-                    data.totalAmount,
+                    data.currency,
 
-                    data.currency,
+                  )}
 
-                  )}
+                </Text>
 
-                </Text>
+              </View>
 
-              </View>
 
 
+              {!isCreditNote && (
 
-              {!isCreditNote && (
+                <>
 
-                <>
+                  <View style={styles.summaryRow}>
 
-                  <View style={styles.summaryRow}>
+                    <Text style={styles.summaryLabel}>
 
-                    <Text style={styles.summaryLabel}>
+                      Paid / Платено
 
-                      Paid / Платено
+                    </Text>
 
-                    </Text>
 
 
+                    <Text style={styles.summaryValue}>
 
-                    <Text style={styles.summaryValue}>
+                      {money(
 
-                      {money(
+                        data.amountPaid,
 
-                        data.amountPaid,
+                        data.currency,
 
-                        data.currency,
+                      )}
 
-                      )}
+                    </Text>
 
-                    </Text>
+                  </View>
 
-                  </View>
 
 
+                  <View style={styles.balanceRow}>
 
-                  <View style={styles.balanceRow}>
+                    <Text style={styles.balanceLabel}>
 
-                    <Text style={styles.balanceLabel}>
+                      BALANCE DUE / ОСТАТЪК
 
-                      BALANCE DUE / ОСТАТЪК
+                    </Text>
 
-                    </Text>
 
 
+                    <Text style={styles.balanceValue}>
 
-                    <Text style={styles.balanceValue}>
+                      {money(
 
-                      {money(
+                        data.balance,
 
-                        data.balance,
+                        data.currency,
 
-                        data.currency,
+                      )}
 
-                      )}
+                    </Text>
 
-                    </Text>
+                  </View>
 
-                  </View>
+                </>
 
-                </>
+              )}
 
-              )}
+            </View>
 
-            </View>
+          </View>
 
-          </View>
+        </View>
 
-        </View>
 
 
+        {(data.vatEn ||
 
-        {(data.vatEn ||
+          data.vatBg) && (
 
-          data.vatBg) && (
+          <View
 
-          <View
+            style={styles.noteSection}
 
-            style={styles.noteSection}
+            wrap={false}
 
-            wrap={false}
+          >
 
-          >
+            <Text style={styles.noteTitle}>
 
-            <Text style={styles.noteTitle}>
+              VAT Note / ДДС
 
-              VAT Note / ДДС
+            </Text>
 
-            </Text>
 
 
+            {data.vatEn ? (
 
-            {data.vatEn ? (
+              <Text style={styles.noteEnglish}>
 
-              <Text style={styles.noteEnglish}>
+                {data.vatEn}
 
-                {data.vatEn}
+              </Text>
 
-              </Text>
+            ) : null}
 
-            ) : null}
 
 
+            {data.vatBg ? (
 
-            {data.vatBg ? (
+              <Text style={styles.noteBulgarian}>
 
-              <Text style={styles.noteBulgarian}>
+                {data.vatBg}
 
-                {data.vatBg}
+              </Text>
 
-              </Text>
+            ) : null}
 
-            ) : null}
+          </View>
 
-          </View>
+        )}
 
-        )}
 
 
+        {showPaymentReference ? (
 
-        {showPaymentReference ? (
+          <View
 
-          <View
+            style={styles.noteSection}
 
-            style={styles.noteSection}
+            wrap={false}
 
-            wrap={false}
+          >
 
-          >
+            <Text style={styles.noteTitle}>
 
-            <Text style={styles.noteTitle}>
+              Payment Reference / Основание за плащане
 
-              Payment Reference / Основание за плащане
+            </Text>
 
-            </Text>
 
 
+            {data.paymentEn ? (
 
-            {data.paymentEn ? (
+              <Text style={styles.noteEnglish}>
 
-              <Text style={styles.noteEnglish}>
+                {data.paymentEn}
 
-                {data.paymentEn}
+              </Text>
 
-              </Text>
+            ) : null}
 
-            ) : null}
 
 
+            {data.paymentBg ? (
 
-            {data.paymentBg ? (
+              <Text style={styles.noteBulgarian}>
 
-              <Text style={styles.noteBulgarian}>
+                {data.paymentBg}
 
-                {data.paymentBg}
+              </Text>
 
-              </Text>
+            ) : null}
 
-            ) : null}
+          </View>
 
-          </View>
+        ) : null}
 
-        ) : null}
 
 
+        {data.additionalNotes ? (
 
-        {data.additionalNotes ? (
+          <View
 
-          <View
+            style={styles.noteSection}
 
-            style={styles.noteSection}
+            wrap={false}
 
-            wrap={false}
+          >
 
-          >
+            <Text style={styles.noteTitle}>
 
-            <Text style={styles.noteTitle}>
+              Additional Information / Допълнителна информация
 
-              Additional Information / Допълнителна информация
+            </Text>
 
-            </Text>
 
 
+            <Text style={styles.noteEnglish}>
 
-            <Text style={styles.noteEnglish}>
+              {data.additionalNotes}
 
-              {data.additionalNotes}
+            </Text>
 
-            </Text>
+          </View>
 
-          </View>
+        ) : null}
 
-        ) : null}
 
 
+        <Text
 
-        <Text
+          style={styles.footer}
 
-          style={styles.footer}
+          fixed
 
-          fixed
+        >
 
-        >
+          Epoch Journeys · Thoughtfully Planned. Faithfully Delivered.
 
-          Epoch Journeys · Thoughtfully Planned. Faithfully Delivered.
+          {"\n"}
 
-          {"\n"}
+          Thank you for your cooperation / Благодарим Ви за сътрудничеството.
 
-          Thank you for your cooperation / Благодарим Ви за сътрудничеството.
+        </Text>
 
-        </Text>
+      </Page>
 
-      </Page>
+    </Document>
 
-    </Document>
-
-  );
+  );
 
 }
