@@ -30,6 +30,13 @@ export default function DocumentActions({
   const [error, setError] =
     useState("");
 
+  const [issueDate, setIssueDate] =
+    useState(() =>
+      new Date()
+        .toISOString()
+        .slice(0, 10),
+    );
+
   const canCreateCreditNote =
     type === "INVOICE" &&
     [
@@ -38,6 +45,24 @@ export default function DocumentActions({
       "PARTIALLY_PAID",
       "PAID",
     ].includes(status);
+
+  const canDeleteLatestIssued =
+    [
+      "ISSUED",
+      "SENT",
+      "PARTIALLY_PAID",
+      "PAID",
+    ].includes(status);
+
+  async function readJson(
+    response: Response,
+  ) {
+    return response
+      .json()
+      .catch(
+        () => null,
+      );
+  }
 
   async function act(
     action: string,
@@ -56,11 +81,9 @@ export default function DocumentActions({
         );
 
       const data =
-        await response
-          .json()
-          .catch(
-            () => null,
-          );
+        await readJson(
+          response,
+        );
 
       if (
         !response.ok
@@ -83,29 +106,101 @@ export default function DocumentActions({
     }
   }
 
-  async function deleteDocument(
-    testDelete: boolean,
-  ) {
-    const warning =
-      testDelete
-        ? [
-            "DELETE TEST DOCUMENT?",
-            "",
-            "This will permanently remove this sales document.",
-            "",
-            "If it is issued, its generated accounting document will also be removed.",
-            "",
-            "Use this ONLY for test documents created while developing the module.",
-            "",
-            "This action cannot be undone.",
-          ].join("\n")
-        : [
-            "DELETE DRAFT?",
-            "",
-            "This will permanently delete this draft sales document.",
-            "",
-            "This action cannot be undone.",
-          ].join("\n");
+  async function issueDocument() {
+    if (!issueDate) {
+      setError(
+        "Please select the Issue Date before issuing the document.",
+      );
+
+      return;
+    }
+
+    setBusy(
+      "issue",
+    );
+
+    setError("");
+
+    try {
+      const saveResponse =
+        await fetch(
+          `/api/admin/finance/sales-documents/${id}`,
+          {
+            method:
+              "PATCH",
+
+            headers: {
+              "Content-Type":
+                "application/json",
+            },
+
+            body:
+              JSON.stringify({
+                issueDate,
+              }),
+          },
+        );
+
+      const saveData =
+        await readJson(
+          saveResponse,
+        );
+
+      if (
+        !saveResponse.ok
+      ) {
+        throw new Error(
+          saveData?.error ||
+            "Unable to save the Issue Date.",
+        );
+      }
+
+      const issueResponse =
+        await fetch(
+          `/api/admin/finance/sales-documents/${id}/issue`,
+          {
+            method:
+              "POST",
+          },
+        );
+
+      const issueData =
+        await readJson(
+          issueResponse,
+        );
+
+      if (
+        !issueResponse.ok
+      ) {
+        throw new Error(
+          issueData?.error ||
+            "Unable to issue the document.",
+        );
+      }
+
+      router.refresh();
+    } catch (
+      caughtError
+    ) {
+      setError(
+        caughtError instanceof
+          Error
+          ? caughtError.message
+          : "Unable to issue the document.",
+      );
+    } finally {
+      setBusy("");
+    }
+  }
+
+  async function deleteDraft() {
+    const warning = [
+      "DELETE DRAFT?",
+      "",
+      "This will permanently delete this draft sales document.",
+      "",
+      "This action cannot be undone.",
+    ].join("\n");
 
     if (
       !window.confirm(
@@ -115,10 +210,43 @@ export default function DocumentActions({
       return;
     }
 
+    await deleteDocument(
+      "",
+      "delete-draft",
+    );
+  }
+
+  async function deleteLatestIssued() {
+    const warning = [
+      "DELETE LATEST ISSUED DOCUMENT?",
+      "",
+      "This is allowed only if this is the latest issued document in its numbering sequence.",
+      "",
+      "Its generated accounting document will also be removed.",
+      "",
+      "Continue?",
+    ].join("\n");
+
+    if (
+      !window.confirm(
+        warning,
+      )
+    ) {
+      return;
+    }
+
+    await deleteDocument(
+      "?latest=true",
+      "delete-latest",
+    );
+  }
+
+  async function deleteDocument(
+    query: string,
+    busyKey: string,
+  ) {
     setBusy(
-      testDelete
-        ? "delete-test"
-        : "delete",
+      busyKey,
     );
 
     setError("");
@@ -126,11 +254,7 @@ export default function DocumentActions({
     try {
       const response =
         await fetch(
-          `/api/admin/finance/sales-documents/${id}${
-            testDelete
-              ? "?test=true"
-              : ""
-          }`,
+          `/api/admin/finance/sales-documents/${id}${query}`,
           {
             method:
               "DELETE",
@@ -138,11 +262,9 @@ export default function DocumentActions({
         );
 
       const data =
-        (await response
-          .json()
-          .catch(
-            () => null,
-          )) as {
+        (await readJson(
+          response,
+        )) as {
           success?: boolean;
           message?: string;
           error?: string;
@@ -179,32 +301,64 @@ export default function DocumentActions({
 
   return (
     <div className="space-y-3">
-      <div className="flex flex-wrap gap-2">
-        {status ===
-          "DRAFT" && (
-          <button
-            type="button"
-            onClick={() =>
-              act(
-                "issue",
-              )
-            }
-            disabled={
-              Boolean(
-                busy,
-              )
-            }
-            className={
-              primary
-            }
-          >
-            {busy ===
-            "issue"
-              ? "Issuing..."
-              : "Issue Document"}
-          </button>
-        )}
+      {status ===
+        "DRAFT" && (
+        <div className="rounded-xl border border-slate-200 bg-white p-3">
+          <label className="block text-xs font-bold uppercase tracking-wide text-slate-500">
+            Issue Date
+          </label>
 
+          <div className="mt-2 flex flex-wrap items-end gap-2">
+            <input
+              type="date"
+              value={
+                issueDate
+              }
+              onChange={(
+                event,
+              ) =>
+                setIssueDate(
+                  event.target
+                    .value,
+                )
+              }
+              disabled={
+                Boolean(
+                  busy,
+                )
+              }
+              className="rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-800 outline-none transition focus:border-[#8B0000]"
+            />
+
+            <button
+              type="button"
+              onClick={
+                issueDocument
+              }
+              disabled={
+                Boolean(
+                  busy,
+                ) ||
+                !issueDate
+              }
+              className={
+                primary
+              }
+            >
+              {busy ===
+              "issue"
+                ? "Issuing..."
+                : "Issue Document"}
+            </button>
+          </div>
+
+          <p className="mt-2 text-xs text-slate-500">
+            Select the accounting issue date before issuing. Once issued, the date is locked.
+          </p>
+        </div>
+      )}
+
+      <div className="flex flex-wrap gap-2">
         {status !==
           "DRAFT" &&
           status !==
@@ -264,10 +418,8 @@ export default function DocumentActions({
           "DRAFT" && (
           <button
             type="button"
-            onClick={() =>
-              deleteDocument(
-                false,
-              )
+            onClick={
+              deleteDraft
             }
             disabled={
               Boolean(
@@ -279,20 +431,17 @@ export default function DocumentActions({
             }
           >
             {busy ===
-            "delete"
+            "delete-draft"
               ? "Deleting..."
               : "Delete Draft"}
           </button>
         )}
 
-        {status !==
-          "DRAFT" && (
+        {canDeleteLatestIssued && (
           <button
             type="button"
-            onClick={() =>
-              deleteDocument(
-                true,
-              )
+            onClick={
+              deleteLatestIssued
             }
             disabled={
               Boolean(
@@ -300,26 +449,20 @@ export default function DocumentActions({
               )
             }
             className={
-              testDeleteButton
+              latestDeleteButton
             }
           >
             {busy ===
-            "delete-test"
+            "delete-latest"
               ? "Deleting..."
-              : "Delete Test Document"}
+              : "Delete Latest Issued"}
           </button>
         )}
       </div>
 
-      {status !==
-        "DRAFT" && (
-        <p className="text-xs text-red-600">
-          Delete Test Document
-          is for development
-          cleanup only. Do not
-          use it for genuine
-          issued accounting
-          documents.
+      {canDeleteLatestIssued && (
+        <p className="text-xs text-amber-700">
+          This action is allowed only for the latest issued document. The server will refuse deletion if a later document exists.
         </p>
       )}
 
@@ -341,5 +484,5 @@ const secondary =
 const deleteButton =
   "rounded-xl border border-red-200 bg-white px-4 py-2.5 text-sm font-semibold text-red-700 transition hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-50";
 
-const testDeleteButton =
-  "rounded-xl border border-red-300 bg-red-50 px-4 py-2.5 text-sm font-bold text-red-800 transition hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-50";
+const latestDeleteButton =
+  "rounded-xl border border-amber-300 bg-amber-50 px-4 py-2.5 text-sm font-bold text-amber-800 transition hover:bg-amber-100 disabled:cursor-not-allowed disabled:opacity-50";

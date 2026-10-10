@@ -86,22 +86,6 @@ function paymentMethodLabel(
     );
 }
 
-function endOfUtcDay(
-  value: Date,
-) {
-  return new Date(
-    Date.UTC(
-      value.getUTCFullYear(),
-      value.getUTCMonth(),
-      value.getUTCDate(),
-      23,
-      59,
-      59,
-      999,
-    ),
-  );
-}
-
 export async function buildSalesPdfData(
   id: string,
 ): Promise<SalesPdfData | null> {
@@ -206,74 +190,33 @@ export async function buildSalesPdfData(
       "NotoSans-Bold.ttf",
     );
 
-  /*
-   * Final invoice payment history rules:
-   *
-   * - source of truth: Booking -> Payments
-   * - payment status must be RECEIVED
-   * - currency must match the sales document currency
-   * - payment date must be on or before the invoice Issue Date
-   *
-   * The Prisma query above already restricts the status.
-   * Currency/date rules are applied here because they depend
-   * on the SalesDocument values.
-   */
-  const issueDateCutoff =
-    document.issueDate
-      ? endOfUtcDay(
-          document.issueDate,
-        )
-      : null;
-
   const payments =
-    document.booking?.payments
-      .filter(
-        (payment) => {
-          const paymentDate =
+    document.booking?.payments.map(
+      (payment) => ({
+        date:
+          date(
             payment.paidAt ??
-            payment.createdAt;
+              payment.createdAt,
+          ) || "-",
 
-          const sameCurrency =
-            payment.currency ===
-            document.currency;
+        reference:
+          payment.reference?.trim() ||
+          null,
 
-          const withinIssueDate =
-            !issueDateCutoff ||
-            paymentDate <=
-              issueDateCutoff;
+        method:
+          paymentMethodLabel(
+            payment.method,
+          ),
 
-          return (
-            sameCurrency &&
-            withinIssueDate
-          );
-        },
-      )
-      .map(
-        (payment) => ({
-          date:
-            date(
-              payment.paidAt ??
-                payment.createdAt,
-            ) || "-",
+        amount:
+          Number(
+            payment.amount,
+          ),
 
-          reference:
-            payment.reference?.trim() ||
-            null,
-
-          method:
-            paymentMethodLabel(
-              payment.method,
-            ),
-
-          amount:
-            Number(
-              payment.amount,
-            ),
-
-          currency:
-            payment.currency,
-        }),
-      ) ?? [];
+        currency:
+          payment.currency,
+      }),
+    ) ?? [];
 
   return {
     type:
