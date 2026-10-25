@@ -183,7 +183,7 @@ export async function POST(request: Request) {
           currency: submission.currency,
           method: paymentMethod,
           status: PaymentRecordStatus.RECEIVED,
-          reference: submission.proofUrl || undefined,
+          reference: submission.proofUrl ? `/api/payment-proofs/${submission.id}` : undefined,
           notes: submission.note || undefined,
           paidAt: new Date(),
           receivedBy: session.user.id,

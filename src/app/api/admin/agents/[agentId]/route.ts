@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { requireAdminApiAccess } from "@/lib/security/requireAdminApiAccess";
 import { db } from "@/lib/db";
 
 type RouteContext = {
@@ -54,6 +55,9 @@ function normalizeOptionalNumber(value: unknown) {
 
 export async function PATCH(req: Request, context: RouteContext) {
   try {
+    const denied = await requireAdminApiAccess();
+    if (denied) return denied;
+
     const { agentId } = await context.params;
     const body = (await req.json()) as PatchBody;
 
@@ -176,6 +180,9 @@ export async function PATCH(req: Request, context: RouteContext) {
 
 export async function DELETE(req: Request, context: RouteContext) {
   try {
+    const denied = await requireAdminApiAccess();
+    if (denied) return denied;
+
     const { agentId } = await context.params;
 
     const existingAgent = await db.user.findUnique({

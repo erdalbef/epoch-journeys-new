@@ -6,6 +6,12 @@ export default withAuth(
     const token = req.nextauth.token;
     const { pathname } = req.nextUrl;
 
+    // Block legacy static payment receipts, including for logged-in users.
+    // Receipts must be delivered through the permission-checked API endpoint.
+    if (pathname === "/uploads/payments" || pathname.startsWith("/uploads/payments/")) {
+      return new NextResponse("Not Found", { status: 404 });
+    }
+
     // Public login pages should never be blocked
     if (pathname === "/admin-login" || pathname === "/agent-login") {
       return NextResponse.next();
@@ -48,5 +54,5 @@ export default withAuth(
 );
 
 export const config = {
-  matcher: ["/admin/:path*", "/b2b/:path*"],
+  matcher: ["/admin/:path*", "/b2b/:path*", "/uploads/payments/:path*", "/uploads/payments"],
 };

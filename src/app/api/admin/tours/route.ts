@@ -1,10 +1,14 @@
 import { NextResponse } from "next/server";
+import { requireAdminApiAccess } from "@/lib/security/requireAdminApiAccess";
 import { Prisma } from "@prisma/client";
 import { db} from "@/lib/db";
 import { generateTourCode } from "@/lib/codes/generateTourCode";
 
 export async function POST(req: Request) {
   try {
+    const denied = await requireAdminApiAccess();
+    if (denied) return denied;
+
     const body = await req.json();
 
     const {

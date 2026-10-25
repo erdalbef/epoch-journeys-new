@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { requireAdminApiAccess } from "@/lib/security/requireAdminApiAccess";
 import { Season } from "@prisma/client";
 
 import { db } from "@/lib/db";
@@ -48,6 +49,9 @@ export async function GET(
   }
 ) {
   try {
+    const denied = await requireAdminApiAccess();
+    if (denied) return denied;
+
     const { id } = await context.params;
 
     const url = new URL(request.url);

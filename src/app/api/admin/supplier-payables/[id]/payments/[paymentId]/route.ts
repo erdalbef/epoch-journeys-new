@@ -690,6 +690,13 @@ export async function PATCH(
         ),
       );
 
+    // Missing field preserves the existing association (older clients).
+    // An explicitly empty field clears the association.
+    const scheduleFieldProvided = formData.has("contractPaymentScheduleId");
+    const contractPaymentScheduleId = stringValue(
+      formData.get("contractPaymentScheduleId"),
+    );
+
     const proofValue =
       formData.get(
         "paymentProof",
@@ -803,6 +810,7 @@ export async function PATCH(
             title: true,
             supplierId:
               true,
+            contractId: true,
             supplierNameSnapshot:
               true,
             currency:
@@ -842,6 +850,8 @@ export async function PATCH(
 
             amount:
               true,
+
+            contractPaymentScheduleId: true,
 
             documents: {
               where: {
@@ -960,6 +970,56 @@ export async function PATCH(
           status: 400,
         },
       );
+    }
+
+    // An installment can only be newly selected when it belongs to the
+    // contract explicitly linked to this payable. Do not change existing
+    // associations when older clients omit the installment field.
+    if (scheduleFieldProvided && contractPaymentScheduleId) {
+      if (!payable.contractId) {
+        return NextResponse.json(
+          { error: "Link a supplier contract to this payable before selecting an installment." },
+          { status: 400 },
+        );
+      }
+
+      const schedule = await db.supplierContractPaymentSchedule.findUnique({
+        where: { id: contractPaymentScheduleId },
+        select: {
+          id: true,
+          contractId: true,
+          contract: {
+            select: {
+              supplierId: true,
+              currency: true,
+            },
+          },
+        },
+      });
+
+      if (!schedule || schedule.contract.supplierId !== payable.supplierId) {
+        return NextResponse.json(
+          { error: "The selected contract installment does not belong to this supplier." },
+          { status: 400 },
+        );
+      }
+
+      if (schedule.contractId !== payable.contractId) {
+        return NextResponse.json(
+          { error: "The selected installment does not belong to this payable's linked contract." },
+          { status: 400 },
+        );
+      }
+
+      if (
+        schedule.contract.currency &&
+        schedule.contract.currency.toUpperCase() !== payable.currency.toUpperCase()
+      ) {
+        return NextResponse.json(
+          { error: "Contract currency must match the supplier payable currency." },
+          { status: 400 },
+        );
+      }
     }
 
     const otherPayments =
@@ -1156,6 +1216,11 @@ export async function PATCH(
               reference,
 
               notes,
+
+              // Do not unlink existing payments when older clients omit the field.
+              ...(scheduleFieldProvided
+                ? { contractPaymentScheduleId }
+                : {}),
             },
           });
 
@@ -1482,6 +1547,7 @@ export async function PATCH(
     revalidateSupplierFinance(
       id,
     );
+    revalidatePath("/admin/suppliers");
 
     return NextResponse.json({
       success:

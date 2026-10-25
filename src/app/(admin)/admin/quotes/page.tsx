@@ -5,9 +5,8 @@ import { QuoteStatus, Prisma } from "@prisma/client";
 
 import { db } from "@/lib/db";
 import { authOptions } from "@/lib/authOptions";
-import DeleteQuoteButton from "@/components/admin/DeleteQuoteButton";
+import QuoteDraftDeleteButton from "@/components/admin/QuoteDraftDeleteButton";
 import DuplicateQuoteButton from "@/components/admin/DuplicateQuoteButton";
-import UpdateQuoteStatusButton from "@/components/admin/UpdateQuoteStatusButton";
 
 function formatMoney(amount: number, currency: string) {
   try {
@@ -102,7 +101,7 @@ export default async function QuotesPage({ searchParams }: PageProps) {
         <div>
           <h1 className="text-2xl font-semibold">Quotes</h1>
           <p className="text-sm text-slate-600">
-            Review, manage, and open saved quotes.
+            Find and open quotations. Approval and booking actions are managed on Quote Details.
           </p>
         </div>
 
@@ -234,7 +233,14 @@ export default async function QuotesPage({ searchParams }: PageProps) {
                   </td>
 
                   <td className="p-3">
-                    <StatusBadge status={quote.status} />
+                    <div className="flex flex-wrap items-center gap-2">
+                      <StatusBadge status={quote.status} />
+                      {quote.status === "SENT" && quote.approvedAt && (
+                        <span className="rounded-md bg-emerald-100 px-2 py-1 text-xs font-medium text-emerald-800">
+                          APPROVED
+                        </span>
+                      )}
+                    </div>
                   </td>
 
                   <td className="p-3">
@@ -254,44 +260,21 @@ export default async function QuotesPage({ searchParams }: PageProps) {
                         View
                       </Link>
 
+                      {quote.status === "DRAFT" && (
+                        <Link
+                          href={`/admin/quotes/${quote.id}/edit`}
+                          className="rounded-md border px-3 py-2 text-sm hover:bg-slate-50"
+                        >
+                          Edit Draft
+                        </Link>
+                      )}
+
                       <DuplicateQuoteButton quoteId={quote.id} />
 
                       {quote.status === "DRAFT" && (
-                        <>
-                          <Link
-                            href={`/admin/quotes/${quote.id}/edit`}
-                            className="rounded-md border px-3 py-2 text-sm hover:bg-slate-50"
-                          >
-                            Edit Draft
-                          </Link>
-
-                          <UpdateQuoteStatusButton
-                            quoteId={quote.id}
-                            currentStatus={quote.status}
-                          />
-
-                          <DeleteQuoteButton quoteId={quote.id} />
-                        </>
-                      )}
-
-                      {quote.status === "FINALIZED" && (
-                        <UpdateQuoteStatusButton
+                        <QuoteDraftDeleteButton
                           quoteId={quote.id}
-                          currentStatus={quote.status}
-                        />
-                      )}
-
-                      {quote.status === "SENT" && (
-                        <UpdateQuoteStatusButton
-                          quoteId={quote.id}
-                          currentStatus={quote.status}
-                        />
-                      )}
-
-                      {quote.status === "ACCEPTED" && (
-                        <UpdateQuoteStatusButton
-                          quoteId={quote.id}
-                          currentStatus={quote.status}
+                          quoteReference={quote.quoteReference || `#${quote.quoteNumber}`}
                         />
                       )}
                     </div>

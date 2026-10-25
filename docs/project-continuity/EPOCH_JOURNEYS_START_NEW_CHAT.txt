@@ -1,0 +1,9 @@
+Continue the EPOCH JOURNEYS software project from the attached EPOCH_JOURNEYS_PROJECT_HANDOFF_2026-10-25.md.
+
+This is a continuation of a long development conversation, NOT a request to redesign or restart the application. Preserve all approved workflows and tested behaviors. Use the existing Next.js/TypeScript/Prisma code as the implementation source of truth.
+
+The latest prepared package was Epoch_Quote_Workflow_Simple_Delete_25Oct2026.zip. Installation, build, and functional verification of this last package have NOT been confirmed yet. First establish whether it was installed, then verify View / Edit Draft / Duplicate / protected Delete on the Quotes list and lifecycle actions on Quote Details.
+
+After that, refine Approval Readiness rules (email required for sending, not automatically for internal finalization; reduce false or duplicate warnings), then polish the Internal Costing PDF. Do not change the working pricing engine, COMP allocation, Supplier CRM, Supplier Payables, accounting, saved snapshots, or meal-quantity rules without demonstrating a specific bug.
+
+For all code changes, inspect the CURRENT affected files first, provide complete updated files and a safely installable ZIP that checks versions and backs up originals, and have me run TypeScript and a production build. Do not assume any previously generated ZIP matches my latest local files.

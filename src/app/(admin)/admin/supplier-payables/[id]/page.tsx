@@ -41,6 +41,16 @@ export default async function SupplierPayableDetailPage({ params }: Props) {
             name: true,
           },
         },
+        contract: {
+          select: {
+            id: true,
+            title: true,
+            reference: true,
+            version: true,
+            currency: true,
+            status: true,
+          },
+        },
         service: {
           select: {
             id: true,
@@ -108,6 +118,14 @@ export default async function SupplierPayableDetailPage({ params }: Props) {
             { createdAt: "desc" },
           ],
           include: {
+            contractPaymentSchedule: {
+              select: {
+                id: true,
+                label: true,
+                dueDate: true,
+                contract: { select: { id: true, title: true } },
+              },
+            },
             bankAccount: {
               select: {
                 name: true,
@@ -156,6 +174,66 @@ export default async function SupplierPayableDetailPage({ params }: Props) {
   if (!payable) {
     notFound();
   }
+
+  // Show and offer only installments belonging to this payable's linked contract.
+  // Payments from other payables linked to the same installment still count.
+  // Unlinked payables have no eligible contract installments.
+  const contractSchedules = await db.supplierContractPaymentSchedule.findMany({
+    where: { contractId: payable.contractId ?? "__NO_LINKED_CONTRACT__" },
+    orderBy: [{ dueDate: "asc" }, { sortOrder: "asc" }],
+    select: {
+      id: true,
+      label: true,
+      paymentType: true,
+      dueDate: true,
+      amount: true,
+      percent: true,
+      contract: {
+        select: {
+          id: true,
+          title: true,
+          reference: true,
+          currency: true,
+          status: true,
+        },
+      },
+      supplierPayablePayments: {
+        select: { amount: true, currency: true },
+      },
+    },
+  });
+
+  const schedules = contractSchedules.map((schedule) => {
+    const currency = schedule.contract.currency || payable.currency;
+    const currencyMatches = currency === payable.currency;
+    const paid = schedule.supplierPayablePayments
+      .filter((payment) => payment.currency === currency)
+      .reduce((sum, payment) => sum + Number(payment.amount), 0);
+    const required = schedule.amount === null ? null : Number(schedule.amount);
+    const remaining = required === null ? null : Math.max(0, required - paid);
+    const status = !currencyMatches
+      ? "Different currency"
+      : required === null
+        ? "Amount not defined"
+        : remaining !== null && remaining <= 0
+          ? "Paid"
+          : paid > 0
+            ? "Partially paid"
+            : "Unpaid";
+    return {
+      id: schedule.id,
+      label: schedule.label,
+      paymentType: schedule.paymentType,
+      dueDate: schedule.dueDate,
+      contract: schedule.contract,
+      currency,
+      paid,
+      required,
+      remaining,
+      percent: schedule.percent === null ? null : Number(schedule.percent),
+      status,
+    };
+  });
 
   const balance = Number(payable.balance);
 
@@ -259,6 +337,26 @@ export default async function SupplierPayableDetailPage({ params }: Props) {
                   >
                     {payable.supplier.name}
                   </Link>
+                }
+              />
+
+              <Row
+                label="Linked contract"
+                value={
+                  payable.contract ? (
+                    <span>
+                      {payable.contract.title}
+                      {payable.contract.reference
+                        ? ` · ${payable.contract.reference}`
+                        : ""}
+                      {` · Version ${payable.contract.version}`}
+                      {payable.contract.currency
+                        ? ` · ${payable.contract.currency}`
+                        : ""}
+                    </span>
+                  ) : (
+                    "Not linked to a contract"
+                  )
                 }
               />
 
@@ -484,6 +582,59 @@ export default async function SupplierPayableDetailPage({ params }: Props) {
 
           <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
             <div className="border-b border-slate-100 px-5 py-4">
+              <h2 className="font-bold text-slate-950">Contract payment schedule</h2>
+              <p className="mt-1 text-sm text-slate-500">
+                Scheduled installments for this payable&apos;s linked contract. Paid totals include
+                linked payments from all payables, not only this invoice.
+                Payments without an installment link are not allocated automatically.
+              </p>
+            </div>
+            {schedules.length ? (
+              <div className="divide-y divide-slate-100">
+                {schedules.map((schedule) => (
+                  <div key={schedule.id} className="px-5 py-4">
+                    <div className="flex flex-wrap items-start justify-between gap-3">
+                      <div>
+                        <p className="font-semibold text-slate-900">{schedule.label}</p>
+                        <p className="mt-1 text-xs text-slate-500">
+                          {schedule.contract.title}
+                          {schedule.contract.reference ? ` · ${schedule.contract.reference}` : ""}
+                          {` · ${schedule.paymentType.replaceAll("_", " ")}`}
+                          {` · Due ${date(schedule.dueDate)}`}
+                        </p>
+                      </div>
+                      <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-700">
+                        {schedule.status}
+                      </span>
+                    </div>
+                    <div className="mt-3 flex flex-wrap gap-x-6 gap-y-1 text-sm text-slate-700">
+                      <span>Required: {schedule.required === null
+                        ? schedule.percent === null ? "Not specified" : `${schedule.percent}% (amount not specified)`
+                        : money(schedule.required, schedule.currency)}</span>
+                      <span>Linked paid: {money(schedule.paid, schedule.currency)}</span>
+                      <span>Remaining: {schedule.remaining === null
+                        ? "Not calculated"
+                        : money(schedule.remaining, schedule.currency)}</span>
+                    </div>
+                    {schedule.currency !== payable.currency ? (
+                      <p className="mt-2 text-xs text-amber-700">
+                        Contract currency differs from this payable; do not allocate this payable to this schedule.
+                      </p>
+                    ) : null}
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="px-5 py-8 text-sm text-slate-500">
+                {payable.contractId
+                  ? "No payment installments have been recorded for the linked contract."
+                  : "This payable is not linked to a supplier contract."}
+              </p>
+            )}
+          </section>
+
+          <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+            <div className="border-b border-slate-100 px-5 py-4">
               <h2 className="font-bold text-slate-950">
                 Payment history
               </h2>
@@ -528,6 +679,13 @@ export default async function SupplierPayableDetailPage({ params }: Props) {
                           payment.recordedBy?.email ||
                           "Admin"}
                       </p>
+
+                      {payment.contractPaymentSchedule ? (
+                        <p className="mt-2 text-xs font-medium text-blue-700">
+                          Contract installment: {payment.contractPaymentSchedule.label}
+                          {` · ${payment.contractPaymentSchedule.contract.title}`}
+                        </p>
+                      ) : null}
 
                       {proof ? (
                         <p className="mt-2 text-xs text-slate-500">
@@ -579,6 +737,18 @@ export default async function SupplierPayableDetailPage({ params }: Props) {
           balance={balance}
           currency={payable.currency}
           bankAccounts={bankAccounts}
+          contractInstallments={schedules.map((schedule) => ({
+            id: schedule.id,
+            label: schedule.label,
+            contractTitle: schedule.contract.title,
+            contractReference: schedule.contract.reference,
+            dueDate: schedule.dueDate.toISOString(),
+            currency: schedule.currency,
+            required: schedule.required,
+            paid: schedule.paid,
+            remaining: schedule.remaining,
+            status: schedule.status,
+          }))}
         />
       </div>
     </div>

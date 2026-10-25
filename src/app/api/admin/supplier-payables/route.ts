@@ -287,6 +287,11 @@ export async function POST(
         ),
       );
 
+    const contractId =
+      stringValue(
+        form.get("contractId"),
+      );
+
     const serviceId =
       stringValue(
         form.get(
@@ -452,6 +457,47 @@ export async function POST(
         {
           status: 404,
         },
+      );
+    }
+
+    // ========================================================
+    // SUPPLIER CONTRACT (OPTIONAL)
+    // ========================================================
+
+    const contract = contractId
+      ? await db.supplierContract.findFirst({
+          where: {
+            id: contractId,
+            supplierId,
+          },
+          select: {
+            id: true,
+            currency: true,
+          },
+        })
+      : null;
+
+    if (contractId && !contract) {
+      return NextResponse.json(
+        {
+          error:
+            "Selected contract does not belong to this supplier or was not found.",
+        },
+        { status: 400 },
+      );
+    }
+
+    // Contracts may have no currency assigned. When one is set,
+    // it must match the payable currency.
+    if (
+      contract?.currency &&
+      contract.currency.trim().toUpperCase() !== currency
+    ) {
+      return NextResponse.json(
+        {
+          error: `Contract currency (${contract.currency}) does not match payable currency (${currency}).`,
+        },
+        { status: 400 },
       );
     }
 
@@ -894,6 +940,7 @@ export async function POST(
             await tx.supplierPayable.create({
               data: {
                 supplierId,
+                contractId: contract?.id ?? null,
 
                 serviceId:
                   service?.id ??

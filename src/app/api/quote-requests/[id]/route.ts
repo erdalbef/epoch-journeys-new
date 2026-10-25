@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server"
 import { db } from "@/lib/db"
 import { z } from "zod"
+import { Role } from "@prisma/client"
+import { getCurrentApiActor } from "@/lib/security/getCurrentApiActor"
 
 const updateQuoteRequestSchema = z.object({
   status: z
@@ -30,8 +32,41 @@ type RouteContext = {
 }
 
 export async function GET(_: Request, context: RouteContext) {
+  const access = await getCurrentApiActor()
+  if (access.response) return access.response
+
   try {
     const { id } = await context.params
+
+    if (access.actor.role !== Role.ADMIN) {
+      // An agency can see only its own request, never admin notes or quote internals.
+      const ownRequest = await db.customTourRequest.findFirst({
+        where: { id, userId: access.actor.id },
+        select: {
+          id: true, requestReference: true, status: true,
+          requestType: true, bookingType: true, title: true,
+          requestName: true, destination: true, destinations: true,
+          startDate: true, endDate: true, durationDays: true,
+          estimatedPax: true, adults: true, children: true,
+          infants: true, singleRooms: true, doubleRooms: true,
+          twinRooms: true, tripleRooms: true, currency: true,
+          budgetPerPerson: true, totalBudget: true,
+          accommodationLevel: true, roomPreference: true,
+          needsFlights: true, landOnly: true, companyName: true,
+          groupName: true, groupLeaderName: true,
+          customerName: true, customerEmail: true,
+          customerPhone: true, specialRequests: true,
+          notes: true, adminReply: true, createdAt: true, updatedAt: true,
+        },
+      })
+      if (!ownRequest) {
+        return NextResponse.json(
+          { success: false, message: "Quote request not found" },
+          { status: 404 },
+        )
+      }
+      return NextResponse.json({ success: true, data: ownRequest })
+    }
 
     const request = await db.customTourRequest.findUnique({
       where: { id },
@@ -90,6 +125,12 @@ export async function GET(_: Request, context: RouteContext) {
 }
 
 export async function PATCH(req: Request, context: RouteContext) {
+  const access = await getCurrentApiActor()
+  if (access.response) return access.response
+  if (access.actor.role !== Role.ADMIN) {
+    return NextResponse.json({ success: false, message: "Admin access required." }, { status: 403 })
+  }
+
   try {
     const { id } = await context.params
     const body = await req.json()
@@ -170,6 +211,12 @@ export async function PATCH(req: Request, context: RouteContext) {
 }
 
 export async function DELETE(_: Request, context: RouteContext) {
+  const access = await getCurrentApiActor()
+  if (access.response) return access.response
+  if (access.actor.role !== Role.ADMIN) {
+    return NextResponse.json({ success: false, message: "Admin access required." }, { status: 403 })
+  }
+
   try {
     const { id } = await context.params
 

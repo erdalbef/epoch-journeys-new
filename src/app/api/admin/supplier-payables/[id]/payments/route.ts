@@ -341,6 +341,10 @@ export async function POST(
         ),
       );
 
+    // Optional link to a contractual installment.
+    const contractPaymentScheduleId =
+      stringValue(formData.get("contractPaymentScheduleId"));
+
     const paymentProofValue =
       formData.get(
         "paymentProof",
@@ -394,6 +398,7 @@ export async function POST(
           title: true,
 
           supplierId: true,
+          contractId: true,
 
           supplierNameSnapshot:
             true,
@@ -632,6 +637,61 @@ export async function POST(
     }
 
     // ======================================================
+    // OPTIONAL CONTRACT PAYMENT SCHEDULE
+    // ======================================================
+
+    if (contractPaymentScheduleId) {
+      const schedule =
+        await db.supplierContractPaymentSchedule.findUnique({
+          where: { id: contractPaymentScheduleId },
+          select: {
+            id: true,
+            contractId: true,
+            contract: {
+              select: {
+                supplierId: true,
+                currency: true,
+              },
+            },
+          },
+        });
+
+      if (!schedule || schedule.contract.supplierId !== payable.supplierId) {
+        return NextResponse.json(
+          { error: "The selected contract installment does not belong to this supplier." },
+          { status: 400 },
+        );
+      }
+
+      // A scheduled payment may only be allocated to the contract
+      // explicitly linked to this payable. Supplier ownership alone
+      // is insufficient when a supplier has multiple contracts.
+      if (!payable.contractId) {
+        return NextResponse.json(
+          { error: "This payable is not linked to a supplier contract. An installment cannot be selected." },
+          { status: 400 },
+        );
+      }
+
+      if (schedule.contractId !== payable.contractId) {
+        return NextResponse.json(
+          { error: "The selected installment belongs to a different contract than the one linked to this payable." },
+          { status: 400 },
+        );
+      }
+
+      if (
+        schedule.contract.currency &&
+        schedule.contract.currency.toUpperCase() !== payable.currency.toUpperCase()
+      ) {
+        return NextResponse.json(
+          { error: "Contract currency must match the supplier payable currency." },
+          { status: 400 },
+        );
+      }
+    }
+
+    // ======================================================
     // PAYMENT PROOF
     // ======================================================
 
@@ -795,6 +855,8 @@ export async function POST(
 
                 recordedById:
                   session.user.id,
+
+                contractPaymentScheduleId,
 
                 amount,
 
@@ -1090,6 +1152,8 @@ export async function POST(
     revalidatePath(
       "/admin/supplier-payables",
     );
+
+    revalidatePath("/admin/suppliers");
 
     revalidatePath(
       "/admin/finance",

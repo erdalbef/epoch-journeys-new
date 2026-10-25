@@ -1,13 +1,55 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { pdf } from "@react-pdf/renderer";
-import { mkdir, writeFile } from "fs/promises";
+import { mkdir, readFile, writeFile } from "fs/promises";
 import path from "path";
 
 import { authOptions } from "@/lib/authOptions";
 import { db } from "@/lib/db";
 import AgentClientQuotePdfDocument from "@/lib/pdf/AgentClientQuotePdfDocument";
 import { buildAgentClientQuotePdfData } from "@/lib/pdf/buildAgentClientQuotePdfData";
+
+/**
+ * @react-pdf/renderer renders on the server. A browser-relative /images URL
+ * does not reliably resolve there, so embed the existing project logo as a
+ * data URI. The configured logo must be a static file in public/images.
+ * Support src/public/images as a legacy fallback; do not create a new logo.
+ */
+async function embedProjectLogo(configuredUrl: string): Promise<string | null> {
+  const match = /^\/images\/([a-zA-Z0-9._-]+\.(?:png|jpe?g))$/i.exec(configuredUrl);
+  if (!match) {
+    console.warn("AGENT_PDF_LOGO_PATH_INVALID", configuredUrl);
+    return null;
+  }
+
+  const fileName = match[1];
+  const mime = /\.png$/i.test(fileName) ? "image/png" : "image/jpeg";
+  // The Admin navigation uses /epoch-compass-logo.png at public/ root;
+  // older PDF configuration uses /images/epoch-compass-logo.png.
+  const folders = [
+    path.join(process.cwd(), "public", "images"),
+    path.join(process.cwd(), "public"),
+    path.join(process.cwd(), "src", "public", "images"),
+    path.join(process.cwd(), "src", "public"),
+  ];
+
+  for (const folder of folders) {
+    try {
+      const bytes = await readFile(path.join(folder, fileName));
+      if (bytes.length > 0) {
+        return `data:${mime};base64,${bytes.toString("base64")}`;
+      }
+    } catch (error) {
+      const code = (error as NodeJS.ErrnoException).code;
+      if (code !== "ENOENT") {
+        console.warn("AGENT_PDF_LOGO_READ_ERROR", fileName, error);
+      }
+    }
+  }
+
+  console.warn("AGENT_PDF_LOGO_NOT_FOUND", fileName);
+  return null;
+}
 
 async function streamToBuffer(
   stream: NodeJS.ReadableStream
@@ -58,6 +100,8 @@ export async function POST(
 
     try {
       pdfData = buildAgentClientQuotePdfData(quote);
+      // Keep the existing PDF text fallback if the logo file is missing.
+      pdfData.logoUrl = (await embedProjectLogo(pdfData.logoUrl)) || "";
     } catch (error) {
       console.error("AGENT_PDF_DATA_ERROR", error);
 

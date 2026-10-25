@@ -26,6 +26,7 @@ type Props = {
   toNumber: (value: unknown) => number;
   formatMoney?: (value: number, currency?: string) => string;
   currency?: string;
+  tripleAvailable?: boolean;
   seasonalReference?: {
     single: number;
     doubleTwin: number;
@@ -68,6 +69,7 @@ export default function PassengerPricingSection({
   formatMoney,
   currency = "EUR",
   seasonalReference = null,
+  tripleAvailable = true,
 }: Props) {
   return (
     <section className="rounded-xl border overflow-hidden">
@@ -135,7 +137,7 @@ export default function PassengerPricingSection({
               <div className="grid grid-cols-3 gap-4 text-right text-sm">
                 <div><div className="text-xs text-slate-500">Single</div><div className="font-semibold">{formatMoney ? formatMoney(seasonalReference.single, currency) : seasonalReference.single}</div></div>
                 <div><div className="text-xs text-slate-500">Double/Twin</div><div className="font-semibold">{formatMoney ? formatMoney(seasonalReference.doubleTwin, currency) : seasonalReference.doubleTwin}</div></div>
-                <div><div className="text-xs text-slate-500">Triple</div><div className="font-semibold">{formatMoney ? formatMoney(seasonalReference.triple, currency) : seasonalReference.triple}</div></div>
+                <div><div className="text-xs text-slate-500">Triple</div><div className="font-semibold">{tripleAvailable ? (formatMoney ? formatMoney(seasonalReference.triple, currency) : seasonalReference.triple) : "Not available"}</div></div>
               </div>
             </div>
           </div>
@@ -148,12 +150,12 @@ export default function PassengerPricingSection({
             const displayTriple = getDisplayValue(row, pricingMode, "triple");
             const recommendedSingle = Math.max(row.calculatedSinglePrice, seasonalReference?.single ?? 0);
             const recommendedDouble = Math.max(row.calculatedDoubleTwinPrice, seasonalReference?.doubleTwin ?? 0);
-            const recommendedTriple = Math.max(row.calculatedTriplePrice, seasonalReference?.triple ?? 0);
+            const recommendedTriple = tripleAvailable ? Math.max(row.calculatedTriplePrice, seasonalReference?.triple ?? 0) : 0;
             const applyFinalRates = (single: number, doubleTwin: number, triple: number) => {
               onUpdateRow(index, {
                 manualSinglePrice: Math.round(single),
                 manualDoubleTwinPrice: Math.round(doubleTwin),
-                manualTriplePrice: Math.round(triple),
+                manualTriplePrice: tripleAvailable ? Math.round(triple) : 0,
               });
               onPricingModeChange("MANUAL");
             };
@@ -201,9 +203,11 @@ export default function PassengerPricingSection({
                       <div>
                         <div className="text-xs text-slate-500">Triple</div>
                         <div className="font-semibold">
-                          {formatMoney
-                            ? formatMoney(displayTriple, currency)
-                            : displayTriple}
+                          {tripleAvailable
+                            ? (formatMoney
+                                ? formatMoney(displayTriple, currency)
+                                : displayTriple)
+                            : "Not available"}
                         </div>
                       </div>
                     </div>
@@ -236,7 +240,7 @@ export default function PassengerPricingSection({
                   <div className="mt-3 grid gap-3 md:grid-cols-3 text-sm">
                     <div><span className="text-slate-500">Single recommended:</span> <strong>{formatMoney ? formatMoney(recommendedSingle, currency) : recommendedSingle}</strong></div>
                     <div><span className="text-slate-500">Double/Twin recommended:</span> <strong>{formatMoney ? formatMoney(recommendedDouble, currency) : recommendedDouble}</strong></div>
-                    <div><span className="text-slate-500">Triple recommended:</span> <strong>{formatMoney ? formatMoney(recommendedTriple, currency) : recommendedTriple}</strong></div>
+                    <div><span className="text-slate-500">Triple recommended:</span> <strong>{tripleAvailable ? (formatMoney ? formatMoney(recommendedTriple, currency) : recommendedTriple) : "Not available"}</strong></div>
                   </div>
                 </div>
 
@@ -278,7 +282,8 @@ export default function PassengerPricingSection({
                         <input
                           type="number"
                           className="w-full rounded-md border bg-slate-50 p-2"
-                          value={row.calculatedTriplePrice}
+                          value={tripleAvailable ? row.calculatedTriplePrice : ""}
+                           placeholder={tripleAvailable ? undefined : "Not available"}
                           readOnly
                         />
                       </label>
@@ -344,13 +349,14 @@ export default function PassengerPricingSection({
                               ? "bg-white"
                               : "bg-slate-50"
                           }`}
-                          value={row.manualTriplePrice}
+                          value={tripleAvailable ? row.manualTriplePrice : ""}
+                           placeholder={tripleAvailable ? undefined : "Not available"}
                           onChange={(e) =>
                             onUpdateRow(index, {
                               manualTriplePrice: toNumber(e.target.value),
                             })
                           }
-                          disabled={pricingMode !== "MANUAL"}
+                          disabled={pricingMode !== "MANUAL" || !tripleAvailable}
                         />
                       </label>
                     </div>

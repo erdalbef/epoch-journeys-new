@@ -66,6 +66,9 @@ export type OperationalCostRow = {
   hotelPerNight: number;
   hotelNights: number;
 
+  /** True when the same staff room is already recovered through COMP costing. */
+  accommodationCoveredElsewhere?: boolean;
+
   airfareTransport: number;
 
   mealsPerDay: number;
@@ -102,6 +105,15 @@ type Props = {
   ) => string;
 
   toNumber: (value: unknown) => number;
+
+  /** Hotel stay snapshots already selected in the quotation form. */
+  staffHotels: Array<{
+    hotelName: string;
+    destination: string;
+    nights: number;
+    singlePerPerson: number;
+    stayType: "CORE" | "PRE" | "POST";
+  }>;
 };
 
 const categories: Array<{
@@ -282,6 +294,7 @@ export default function OperationalCostsSection({
   sectionTotal,
   formatMoney,
   toNumber,
+  staffHotels,
 }: Props) {
   const safePayingPassengers = Math.max(
     Math.floor(toNumber(payingPassengers)),
@@ -302,13 +315,13 @@ export default function OperationalCostsSection({
       <div className="flex flex-col gap-3 bg-[#001F3F] px-5 py-4 text-white md:flex-row md:items-center md:justify-between">
         <div>
           <h2 className="text-lg font-semibold">
-            Operational & Staff Costs
+            Group Operations & Staff Expenses
           </h2>
 
           <p className="mt-1 max-w-4xl text-xs text-slate-200">
-            Core operational costs contribute to the main tour NET rate.
-            Pre- and post-stay services are optional add-ons and are quoted
-            separately.
+            Group contracts, Tour Manager and driver fees, and separately
+            chargeable staff expenses. Staff single-room accommodation uses
+            the selected hotel rates. Pre- and post-stay items remain optional.
           </p>
         </div>
 
@@ -399,12 +412,7 @@ export default function OperationalCostsSection({
                     </span>
 
                     <div className="font-semibold text-[#001F3F]">
-                      {row.label ||
-                        categories.find(
-                          (item) =>
-                            item.value === row.category
-                        )?.label ||
-                        "Operational Cost"}
+                      {categories.find((item) => item.value === row.category)?.label || "Operational Cost"}
                     </div>
 
                     {row.scope === "CORE" && (
@@ -427,6 +435,8 @@ export default function OperationalCostsSection({
                   </div>
 
                   <div className="mt-1 text-xs text-slate-500">
+                    {row.label && row.label !== "Bus / Coach" && row.label !== categories.find((item) => item.value === row.category)?.label
+                      ? `${row.label} — ` : ""}
                     {row.scope === "CORE"
                       ? "Internal core tour costing"
                       : "Optional add-on — excluded from main tour NET rate"}
@@ -520,12 +530,13 @@ export default function OperationalCostsSection({
                           e.target
                             .value as OperationalCostCategory;
 
+                        const previousCategoryLabel = categories.find((item) => item.value === row.category)?.label;
+                        const isDefaultLabel = !row.label.trim() || row.label === previousCategoryLabel || row.label === "Bus / Coach";
                         onUpdateRow(index, {
                           category,
-                          costMode:
-                            defaultCostMode(category),
-                          pricingBasis:
-                            defaultPricingBasis(category),
+                          label: isDefaultLabel ? "" : row.label,
+                          costMode: defaultCostMode(category),
+                          pricingBasis: defaultPricingBasis(category),
                         });
                       }}
                     >
@@ -542,7 +553,7 @@ export default function OperationalCostsSection({
 
                   <label className="block">
                     <span className="mb-1 block text-sm font-medium">
-                      Service Name
+                      Service Details (optional)
                     </span>
 
                     <input
@@ -699,15 +710,51 @@ export default function OperationalCostsSection({
                   <div className="rounded-lg border border-blue-100 bg-white/70 p-4">
                     <div className="mb-4">
                       <h3 className="font-semibold text-[#001F3F]">
-                        Staff Expenses
+                        Additional Staff Expenses
                       </h3>
 
                       <p className="mt-1 text-xs text-slate-600">
-                        Additional costs paid by Epoch for this staff member.
+                        Staff fees and separately charged meals, travel and other services. Group costs are allocated once across paying pilgrims.
                       </p>
                     </div>
 
                     <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
+                      {(row.category === "TOUR_MANAGER" || row.category === "DRIVER") ? (
+                        <div className="md:col-span-2 xl:col-span-5 rounded-lg border border-blue-200 bg-blue-50/60 p-3">
+                          <div className="font-semibold text-sm text-[#001F3F]">
+                            Single-room accommodation - from Hotels
+                          </div>
+                          <p className="mt-1 text-xs text-slate-600">
+                            The Hotel section provides the Single rate and number of nights. There is no separate staff nightly-rate input.
+                          </p>
+                          {staffHotels.filter((hotel) => hotel.stayType === row.scope && toNumber(hotel.nights) > 0).map((hotel, hotelIndex) => {
+                            const nights = Math.max(0, toNumber(hotel.nights));
+                            const rate = Math.max(0, toNumber(hotel.singlePerPerson));
+                            return (
+                              <div key={`${hotel.hotelName}-${hotelIndex}`} className="mt-2 flex flex-wrap justify-between gap-2 text-sm">
+                                <span>{hotel.hotelName || hotel.destination || "Unnamed hotel"} - {nights} nights</span>
+                                <span className={rate > 0 ? "font-medium" : "font-semibold text-red-700"}>
+                                  {rate > 0 ? `${formatMoney(rate, currency)} / night` : "Single rate missing - confirm before issuing"}
+                                </span>
+                              </div>
+                            );
+                          })}
+                          {staffHotels.filter((hotel) => hotel.stayType === row.scope && toNumber(hotel.nights) > 0).length === 0 && (
+                            <p className="mt-2 text-sm text-amber-800">No hotels selected for this cost scope.</p>
+                          )}
+                          <label className="mt-3 flex items-center gap-2 text-sm">
+                            <input
+                              type="checkbox"
+                              checked={Boolean(row.accommodationCoveredElsewhere)}
+                              onChange={(event) => onUpdateRow(index, { accommodationCoveredElsewhere: event.target.checked })}
+                            />
+                            Accommodation already included in COMP or another cost line - do not add twice
+                          </label>
+                          <div className="mt-2 text-sm font-semibold text-[#001F3F]">
+                            Staff hotel expense in this row: {formatMoney(toNumber(row.hotelPerNight) * toNumber(row.hotelNights), currency)}
+                          </div>
+                        </div>
+                      ) : (
                       <div className="grid grid-cols-2 gap-2">
                         <label className="block">
                           <span className="mb-1 block text-xs font-medium">
@@ -753,6 +800,8 @@ export default function OperationalCostsSection({
                           />
                         </label>
                       </div>
+
+                      )}
 
                       <label className="block">
                         <span className="mb-1 block text-xs font-medium">

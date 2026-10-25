@@ -85,32 +85,13 @@ export default function PayNowModal({
 
     startTransition(async () => {
       try {
-        const uploadForm = new FormData();
-        uploadForm.append("file", file);
-
-        const uploadRes = await fetch("/api/upload/payment-proof", {
-          method: "POST",
-          body: uploadForm,
-        });
-
-        const uploadData = (await uploadRes.json()) as {
-          success?: boolean;
-          url?: string;
-          error?: string;
-        };
-
-        if (!uploadRes.ok || !uploadData.url) {
-          setError(uploadData.error || "Failed to upload file.");
-          return;
-        }
-
         const formData = new FormData();
         formData.append("bookingId", bookingId);
         formData.append("amount", amount);
         formData.append("currency", currency);
         formData.append("method", method);
         formData.append("note", note);
-        formData.append("proofUrl", uploadData.url);
+        formData.append("file", file);
 
         const res = await fetch("/api/b2b/payments/submit", {
           method: "POST",

@@ -89,6 +89,27 @@ type Rate = {
   notes: string | null;
 };
 
+type ContractInstallment = {
+  id: string;
+  label: string;
+  paymentType: string;
+  dueDate: string | null;
+  amount: string | null;
+  percent: string | null;
+  warningDays: number;
+  sortOrder: number;
+};
+
+type SupplierContract = {
+  id: string;
+  supplierId: string;
+  title: string;
+  reference: string | null;
+  version: number;
+  currency: string | null;
+  paymentSchedule: ContractInstallment[];
+};
+
 type Supplier = {
   id: string;
   name: string;
@@ -98,6 +119,7 @@ type Supplier = {
   defaultCurrency: string;
   services: Service[];
   rates: Rate[];
+  contracts: SupplierContract[];
 };
 
 type Tour = {
@@ -519,6 +541,11 @@ export default function SupplierPayableForm({
   ] = useState("");
 
   const [
+    contractId,
+    setContractId,
+  ] = useState("");
+
+  const [
     serviceId,
     setServiceId,
   ] = useState("");
@@ -598,142 +625,78 @@ export default function SupplierPayableForm({
   ] =
     useState(false);
 
-  const countries =
-    useMemo(
-      () =>
-        uniqueSorted(
-          suppliers.flatMap(
-            (supplier) =>
-              supplier.services
-                .filter(
-                  (service) =>
-                    !category ||
-                    service.type ===
-                      category,
-                )
-                .map(
-                  (service) =>
-                    service.country ??
-                    supplier.country,
-                ),
-          ),
-        ),
-      [
-        suppliers,
-        category,
-      ],
-    );
+  // Suppliers without services remain available for manual payable entry.
+  // The selected payable category is not inferred from an absent service.
+  const countries = useMemo(
+    () => uniqueSorted(
+      suppliers.flatMap((supplier) => {
+        const matchingServices = supplier.services.filter(
+          (service) => !category || service.type === category,
+        );
+        if (supplier.services.length === 0) {
+          return [supplier.country];
+        }
+        return matchingServices.map(
+          (service) => service.country ?? supplier.country,
+        );
+      }),
+    ),
+    [suppliers, category],
+  );
 
-  const cities =
-    useMemo(
-      () =>
-        uniqueSorted(
-          suppliers.flatMap(
-            (supplier) =>
-              supplier.services
-                .filter(
-                  (service) =>
-                    (!category ||
-                      service.type ===
-                        category) &&
-                    (!countryFilter ||
-                      normalize(
-                        service.country ??
-                          supplier.country,
-                      ) ===
-                        normalize(
-                          countryFilter,
-                        )),
-                )
-                .map(
-                  (service) =>
-                    service.city ??
-                    supplier.city,
-                ),
-          ),
-        ),
-      [
-        suppliers,
-        category,
-        countryFilter,
-      ],
-    );
+  const cities = useMemo(
+    () => uniqueSorted(
+      suppliers.flatMap((supplier) => {
+        if (supplier.services.length === 0) {
+          return !countryFilter ||
+            normalize(supplier.country) === normalize(countryFilter)
+            ? [supplier.city]
+            : [];
+        }
+        return supplier.services
+          .filter((service) =>
+            (!category || service.type === category) &&
+            (!countryFilter ||
+              normalize(service.country ?? supplier.country) ===
+                normalize(countryFilter)),
+          )
+          .map((service) => service.city ?? supplier.city);
+      }),
+    ),
+    [suppliers, category, countryFilter],
+  );
 
-  const filteredSuppliers =
-    useMemo(() => {
-      if (!category) {
-        return [];
-      }
+  const filteredSuppliers = useMemo(() => {
+    if (!category) return [];
 
-      return suppliers
-        .filter(
-          (supplier) =>
-            supplier.services.some(
-              (service) =>
-                service.type ===
-                  category &&
-                (!countryFilter ||
-                  normalize(
-                    service.country ??
-                      supplier.country,
-                  ) ===
-                    normalize(
-                      countryFilter,
-                    )) &&
-                (!cityFilter ||
-                  normalize(
-                    service.city ??
-                      supplier.city,
-                  ) ===
-                    normalize(
-                      cityFilter,
-                    )),
-            ),
-        )
-        .slice()
-        .sort((a, b) => {
-          if (
-            a.preferred !==
-            b.preferred
-          ) {
-            return a.preferred
-              ? -1
-              : 1;
-          }
-
-          const aRate =
-            lowestRateAmount(
-              a,
-              category,
-              countryFilter,
-              cityFilter,
-            );
-
-          const bRate =
-            lowestRateAmount(
-              b,
-              category,
-              countryFilter,
-              cityFilter,
-            );
-
-          if (
-            aRate !==
-            bRate
-          ) {
-            return aRate - bRate;
-          }
-
-          return a.name.localeCompare(
-            b.name,
+    return suppliers
+      .filter((supplier) => {
+        if (supplier.services.length === 0) {
+          return (
+            (!countryFilter ||
+              normalize(supplier.country) === normalize(countryFilter)) &&
+            (!cityFilter ||
+              normalize(supplier.city) === normalize(cityFilter))
           );
-        });
-    }, [
-      suppliers,
-      category,
-      countryFilter,
-      cityFilter,
-    ]);
+        }
+        return supplier.services.some((service) =>
+          service.type === category &&
+          (!countryFilter ||
+            normalize(service.country ?? supplier.country) ===
+              normalize(countryFilter)) &&
+          (!cityFilter ||
+            normalize(service.city ?? supplier.city) ===
+              normalize(cityFilter)),
+        );
+      })
+      .sort((a, b) => {
+        if (a.preferred !== b.preferred) return a.preferred ? -1 : 1;
+        const aRate = lowestRateAmount(a, category, countryFilter, cityFilter);
+        const bRate = lowestRateAmount(b, category, countryFilter, cityFilter);
+        if (aRate !== bRate) return aRate - bRate;
+        return a.name.localeCompare(b.name);
+      });
+  }, [suppliers, category, countryFilter, cityFilter]);
 
   const supplier =
     filteredSuppliers.find(
@@ -746,6 +709,15 @@ export default function SupplierPayableForm({
         item.id ===
         supplierId,
     );
+
+  const selectedContract = supplier?.contracts.find(
+    (contract) => contract.id === contractId,
+  ) ?? null;
+
+  const contractCurrencyMismatch = Boolean(
+    selectedContract?.currency &&
+      selectedContract.currency.trim().toUpperCase() !== currency.trim().toUpperCase(),
+  );
 
   const services =
     useMemo(
@@ -882,6 +854,7 @@ export default function SupplierPayableForm({
     ]);
 
   function resetSupplierChoice() {
+    setContractId("");
     setSupplierId("");
     setServiceId("");
     setRateId("");
@@ -921,6 +894,7 @@ export default function SupplierPayableForm({
   function chooseSupplier(
     value: string,
   ) {
+    setContractId("");
     setSupplierId(
       value,
     );
@@ -1079,6 +1053,11 @@ export default function SupplierPayableForm({
       return;
     }
 
+    if (contractCurrencyMismatch) {
+      toast.error("The selected contract currency does not match the payable currency.");
+      return;
+    }
+
     if (
       invoiceFile &&
       !serviceId
@@ -1130,6 +1109,8 @@ export default function SupplierPayableForm({
       new FormData(
         event.currentTarget,
       );
+
+    form.set("contractId", contractId);
 
     form.set(
       "documentType",
@@ -1472,6 +1453,14 @@ export default function SupplierPayableForm({
               )}
             </select>
 
+            {supplier && supplier.services.length === 0 && (
+              <p className="mt-1.5 text-xs text-amber-700">
+                No active supplier services are registered. Verify that the selected
+                category is correct. Uploading a supplier document currently requires
+                a linked service for Accounting classification.
+              </p>
+            )}
+
             {supplier?.preferred && (
               <p className="mt-1.5 inline-flex items-center gap-1 text-xs font-semibold text-amber-700">
                 <Star className="h-3.5 w-3.5 fill-current" />
@@ -1650,6 +1639,71 @@ export default function SupplierPayableForm({
             />
           </FieldLabel>
         </div>
+
+        {supplier && (
+          <div className="mt-4 rounded-xl border border-slate-200 bg-white p-4">
+            <FieldLabel label="Supplier contract (optional)">
+              <select
+                name="contractId"
+                value={contractId}
+                onChange={(event) => setContractId(event.target.value)}
+                className="input"
+              >
+                <option value="">Not linked to a contract</option>
+                {supplier.contracts.map((contract) => (
+                  <option key={contract.id} value={contract.id}>
+                    {contract.title} · v{contract.version}
+                    {contract.reference ? ` · ${contract.reference}` : ""}
+                    {contract.currency ? ` · ${contract.currency}` : ""}
+                  </option>
+                ))}
+              </select>
+            </FieldLabel>
+
+            {supplier.contracts.length === 0 && (
+              <p className="mt-2 text-xs text-slate-500">
+                No active supplier contracts. You can create a payable without a contract.
+              </p>
+            )}
+
+            {contractCurrencyMismatch && (
+              <p className="mt-2 text-sm font-semibold text-red-700" role="alert">
+                Contract currency ({selectedContract?.currency}) does not match payable currency ({currency}).
+                Please correct the currency or select another contract.
+              </p>
+            )}
+
+            {selectedContract && (
+              <div className="mt-3 rounded-lg bg-slate-50 p-3">
+                <p className="text-xs font-semibold uppercase tracking-wide text-slate-600">
+                  Contract payment schedule — reference only
+                </p>
+                {selectedContract.paymentSchedule.length === 0 ? (
+                  <p className="mt-2 text-sm text-slate-500">No installments recorded.</p>
+                ) : (
+                  <div className="mt-2 space-y-2">
+                    {selectedContract.paymentSchedule.map((installment) => (
+                      <div key={installment.id} className="flex flex-wrap justify-between gap-2 border-b border-slate-200 pb-2 text-sm last:border-b-0 last:pb-0">
+                        <span className="font-medium text-slate-800">{installment.label}</span>
+                        <span className="text-slate-600">
+                          {installment.amount !== null
+                            ? `${selectedContract.currency || currency} ${Number(installment.amount).toFixed(2)}`
+                            : installment.percent !== null
+                              ? `${installment.percent}%`
+                              : "Amount not specified"}
+                          {installment.dueDate ? ` · Due ${europeanDateFromIso(installment.dueDate)}` : ""}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                <p className="mt-2 text-xs text-slate-500">
+                  Linking a payable does not allocate its amount to an installment or record a payment.
+                </p>
+              </div>
+            )}
+          </div>
+        )}
 
         {selectedRate && (
           <RateReference

@@ -4,6 +4,7 @@ import { Prisma, QuoteStatus } from "@prisma/client";
 
 import { authOptions } from "@/lib/authOptions";
 import { db } from "@/lib/db";
+import { calculateQuoteTotals } from "@/lib/quote-utils";
 
 type RouteContext = {
   params: Promise<{ id: string }>;
@@ -41,6 +42,10 @@ export async function POST(
       );
     }
 
+    // Some legacy quotes have subtotal/discount/tax stored as zero.
+    // Recompute from copied line items so a duplicate gets a valid breakdown.
+    const quoteTotals = calculateQuoteTotals(existing.items);
+
     const duplicated = await db.quote.create({
       data: {
         title: existing.title ? `${existing.title} (Copy)` : null,
@@ -55,6 +60,9 @@ export async function POST(
         tourId: existing.tourId,
         departureDateId: existing.departureDateId,
 
+        subtotal: quoteTotals.subtotal,
+        discountTotal: quoteTotals.discountTotal,
+        taxTotal: quoteTotals.taxTotal,
         totalAmount: existing.totalAmount,
 
         quoteBuilderSummary:

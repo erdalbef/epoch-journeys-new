@@ -7,6 +7,7 @@ import {
 
 import { authOptions } from "@/lib/authOptions";
 import { db } from "@/lib/db";
+import { calculateQuoteTotals } from "@/lib/quote-utils";
 
 type GeneratedQuoteItemType =
   | "SERVICE"
@@ -79,6 +80,7 @@ type QuotePayload = {
    * Complimentary traveler structure
    */
   complimentarySetup?: Prisma.JsonObject;
+  costingSnapshot?: Prisma.JsonObject;
 
   groupLeaderAllowanceTotal?: number;
 
@@ -366,6 +368,17 @@ export async function POST(
         ? body.items
         : [];
 
+    // Preserve the existing line-item total calculation, but also persist the
+    // breakdown required by Admin quote views and the internal PDF.
+    const quoteTotals = calculateQuoteTotals(
+      items.map((item) => ({
+        quantity: toNumber(item.quantity),
+        unitPrice: toNumber(item.unitPrice),
+        discountAmount: toNumber(item.discountAmount),
+        taxAmount: toNumber(item.taxAmount),
+      }))
+    );
+
     const totalAmount =
       items.reduce(
         (
@@ -472,6 +485,8 @@ export async function POST(
         normalizeJsonObject(
           body.complimentarySetup
         ),
+
+      costingSnapshot: normalizeJsonObject(body.costingSnapshot),
 
       groupLeaderAllowanceTotal:
         Math.max(
@@ -652,6 +667,9 @@ export async function POST(
 
           currency,
 
+          subtotal: quoteTotals.subtotal,
+          discountTotal: quoteTotals.discountTotal,
+          taxTotal: quoteTotals.taxTotal,
           totalAmount,
 
           status:

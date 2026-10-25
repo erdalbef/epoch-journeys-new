@@ -1,8 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { pdf } from "@react-pdf/renderer";
-import { mkdir, writeFile } from "fs/promises";
-import path from "path";
 
 import { authOptions } from "@/lib/authOptions";
 import { db } from "@/lib/db";
@@ -74,28 +72,15 @@ export async function POST(
       output instanceof Buffer
         ? output
         : await streamToBuffer(output as NodeJS.ReadableStream);
+    if (!pdfBuffer.length) throw new Error("Empty PDF generated");
 
-    const quotesDir = path.join(process.cwd(), "public", "quotes");
-    await mkdir(quotesDir, { recursive: true });
-
-    const safeReference =
-      quote.quoteReference?.trim() || `quote-${quote.quoteNumber}`;
-
-    const sanitizedFileName = safeReference
-      .replace(/[<>:"/\\|?*\x00-\x1F]/g, "-")
-      .replace(/\s+/g, "-");
-
-    const fileName = `${sanitizedFileName}-internal.pdf`;
-    const filePath = path.join(quotesDir, fileName);
-
-    await writeFile(filePath, pdfBuffer);
-
-    const publicUrl = `/quotes/${fileName}`;
-
+    // Internal costing is confidential: never write it under /public.
+    // The PDF is served on demand from an authenticated Admin-only endpoint.
+    const privateUrl = `/api/quotes/${quote.id}/internal-pdf`;
     const updatedQuote = await db.quote.update({
       where: { id: quote.id },
       data: {
-        pdfUrl: publicUrl,
+        pdfUrl: privateUrl,
         pdfGeneratedAt: new Date(),
       },
       select: {

@@ -60,3 +60,6 @@ yarn-error.log*
 # ======================
 *.tsbuildinfo
 next-env.d.ts
+
+/SupplierWorkspace-current.zip
+/src.zip

@@ -13,6 +13,19 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 
+type ContractInstallment = {
+  id: string;
+  label: string;
+  contractTitle: string;
+  contractReference: string | null;
+  dueDate: string;
+  currency: string;
+  required: number | null;
+  paid: number;
+  remaining: number | null;
+  status: string;
+};
+
 type BankAccount = {
   id: string;
   name: string;
@@ -152,6 +165,7 @@ export default function SupplierPayableActions({
   balance,
   currency,
   bankAccounts,
+  contractInstallments = [],
 }: {
   payableId: string;
   approvalStatus: string;
@@ -159,6 +173,7 @@ export default function SupplierPayableActions({
   balance: number;
   currency: string;
   bankAccounts: BankAccount[];
+  contractInstallments?: ContractInstallment[];
 }) {
   const router =
     useRouter();
@@ -206,6 +221,8 @@ export default function SupplierPayableActions({
     notes,
     setNotes,
   ] = useState("");
+
+  const [contractPaymentScheduleId, setContractPaymentScheduleId] = useState("");
 
   const [
     paymentProof,
@@ -480,6 +497,10 @@ export default function SupplierPayableActions({
       );
     }
 
+    if (contractPaymentScheduleId) {
+      formData.set("contractPaymentScheduleId", contractPaymentScheduleId);
+    }
+
     if (
       paymentProof
     ) {
@@ -530,6 +551,7 @@ export default function SupplierPayableActions({
 
       setReference("");
       setNotes("");
+      setContractPaymentScheduleId("");
       setPaymentProof(
         null,
       );
@@ -713,6 +735,40 @@ export default function SupplierPayableActions({
                     inputClass
                   }
                 />
+              </label>
+
+              <label>
+                <span className={labelClass}>Contract installment (optional)</span>
+                <select
+                  value={contractPaymentScheduleId}
+                  onChange={(event) => setContractPaymentScheduleId(event.target.value)}
+                  className={inputClass}
+                >
+                  <option value="">No contract installment</option>
+                  {contractInstallments
+                    .filter((item) => item.currency === currency)
+                    .map((item) => (
+                      <option key={item.id} value={item.id}>
+                        {item.contractTitle} — {item.label} — Due {item.dueDate.slice(0, 10)}
+                        {item.remaining !== null
+                          ? ` — Remaining ${item.currency} ${item.remaining.toFixed(2)}`
+                          : " — Amount not defined"}
+                      </option>
+                    ))}
+                </select>
+                <p className="mt-1 text-xs text-slate-500">
+                  Links this payment to a supplier contract installment. Leave blank for payments without a scheduled installment.
+                  A single payment can be linked to one installment.
+                </p>
+                {contractPaymentScheduleId && (() => {
+                  const selected = contractInstallments.find((item) => item.id === contractPaymentScheduleId);
+                  return selected ? (
+                    <p className="mt-1 text-xs text-slate-600">
+                      {selected.status}. Linked paid: {selected.currency} {selected.paid.toFixed(2)}.
+                      {selected.remaining !== null ? ` Remaining: ${selected.currency} ${selected.remaining.toFixed(2)}.` : " Required amount has not been defined."}
+                    </p>
+                  ) : null;
+                })()}
               </label>
 
               <label>

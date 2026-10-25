@@ -9,6 +9,7 @@ import {
   Star,
 } from "lucide-react";
 import { toast } from "sonner";
+import { hotelExtraDisplay, hotelExtraOverlapWarnings, type HotelExtraService } from "@/lib/quotes/hotelExtraDisplay";
 
 type HotelRow = {
   hotelName: string;
@@ -33,11 +34,32 @@ type HotelRow = {
     | "EXPIRED_ESTIMATE";
   supplierRateRequiresReconfirmation?: boolean;
   supplierMealBasis?: string | null;
+  // Frozen supplier cost components for BB/HB comparison.
+  supplierSelectedMealBasis?: "BB" | "HB";
+  supplierBaseSinglePerNight?: number;
+  supplierBaseDoubleTwinPerNight?: number;
+  supplierBaseTriplePerNight?: number;
+  supplierDinnerIncluded?: boolean | null;
+  supplierDinnerAmount?: number | null;
+  supplierDinnerUnit?: string | null;
+  supplierCityTaxCurrency?: string | null;
+  supplierCityTaxUnit?: string | null;
   supplierCityTaxIncluded?: boolean | null;
   supplierCityTaxAmount?: number | null;
   supplierPorterageIncluded?: boolean | null;
+  supplierPorterageAvailable?: boolean | null;
+  supplierPorterageAmount?: number | null;
+  supplierPorterageUnit?: string | null;
   supplierBeveragePackageIncluded?: boolean | null;
+  supplierBeveragePackageAmount?: number | null;
+  supplierBeveragePackageUnit?: string | null;
   supplierBeveragePackageDescription?: string | null;
+  // Group-specific choices. Supplier contract prices remain unchanged.
+  supplierDinnerSelected?: boolean;
+  supplierDinnerMeals?: number;
+  supplierPorterageSelected?: boolean;
+  supplierBeverageSelected?: boolean;
+  supplierBeverageMeals?: number;
 };
 
 type SupplierHotelResult = {
@@ -126,6 +148,8 @@ type SupplierHotelResult = {
 
 type Props = {
   hotels: HotelRow[];
+  /** Other services already selected in this quotation; review-only overlap detection. */
+  perPersonServices?: HotelExtraService[];
   currency: string;
 
   startDate: string;
@@ -235,47 +259,22 @@ function rateUnitLabel(
     );
 }
 
-function yesNoIncluded(
-  value: boolean | null,
-) {
-  if (value === true) {
-    return "Included";
-  }
-
-  if (value === false) {
-    return "Not included";
-  }
-
-  return "Not specified";
+function roomCostAvailable(value: number | null, status: string) {
+  return value !== null && Number.isFinite(value) && status === "COMPLETE";
 }
 
-function completeEffectiveCost(
-  result: SupplierHotelResult,
-) {
+function hasUsableRoomCost(result: SupplierHotelResult) {
+  const cost = result.effectiveCost;
   return (
-    result.effectiveCost
-      .singlePerPersonPerNight !==
-      null &&
-    result.effectiveCost
-      .doubleTwinPerPersonPerNight !==
-      null &&
-    result.effectiveCost
-      .triplePerPersonPerNight !==
-      null &&
-    result.effectiveCost
-      .singleStatus ===
-      "COMPLETE" &&
-    result.effectiveCost
-      .doubleTwinStatus ===
-      "COMPLETE" &&
-    result.effectiveCost
-      .tripleStatus ===
-      "COMPLETE"
+    roomCostAvailable(cost.singlePerPersonPerNight, cost.singleStatus) ||
+    roomCostAvailable(cost.doubleTwinPerPersonPerNight, cost.doubleTwinStatus) ||
+    roomCostAvailable(cost.triplePerPersonPerNight, cost.tripleStatus)
   );
 }
 
 export default function HotelsSection({
   hotels,
+  perPersonServices = [],
   currency,
   startDate,
   endDate,
@@ -475,12 +474,12 @@ export default function HotelsSection({
     }
 
     if (
-      !completeEffectiveCost(
+      !hasUsableRoomCost(
         result,
       )
     ) {
       toast.error(
-        "This supplier rate does not have a complete comparable hotel cost. Review the supplier rate before using it.",
+        "No usable room rate is available. Review the supplier rate before using it.",
       );
 
       return;
@@ -563,6 +562,15 @@ export default function HotelsSection({
         supplierMealBasis:
           result.rate
             .mealBasis,
+        supplierSelectedMealBasis: /^(HB|HALF[ _-]?BOARD)$/i.test(result.rate.mealBasis || "") ? "HB" : "BB",
+        supplierBaseSinglePerNight: result.effectiveCost.singlePerPersonPerNight ?? 0,
+        supplierBaseDoubleTwinPerNight: result.effectiveCost.doubleTwinPerPersonPerNight ?? 0,
+        supplierBaseTriplePerNight: result.effectiveCost.triplePerPersonPerNight ?? 0,
+        supplierDinnerIncluded: result.rate.dinnerIncluded,
+        supplierDinnerAmount: result.rate.dinnerAmount,
+        supplierDinnerUnit: result.rate.dinnerUnit,
+        supplierCityTaxCurrency: result.rate.cityTaxCurrency,
+        supplierCityTaxUnit: result.rate.cityTaxUnit,
 
         supplierCityTaxIncluded:
           result.rate
@@ -575,14 +583,24 @@ export default function HotelsSection({
         supplierPorterageIncluded:
           result.rate
             .porterageIncluded,
+        supplierPorterageAvailable: result.rate.porterageAvailable,
+        supplierPorterageAmount: result.rate.porterageAmount,
+        supplierPorterageUnit: result.rate.porterageUnit,
 
         supplierBeveragePackageIncluded:
           result.rate
             .beveragePackageIncluded,
+        supplierBeveragePackageAmount: result.rate.beveragePackageAmount,
+        supplierBeveragePackageUnit: result.rate.beveragePackageUnit,
 
         supplierBeveragePackageDescription:
           result.rate
             .beveragePackageDescription,
+        supplierDinnerSelected: false,
+        supplierDinnerMeals: 0,
+        supplierPorterageSelected: false,
+        supplierBeverageSelected: false,
+        supplierBeverageMeals: 0,
       },
     );
 
@@ -609,8 +627,7 @@ export default function HotelsSection({
           </h2>
 
           <p className="mt-1 max-w-4xl text-xs text-slate-200">
-            Enter the city, compare valid supplier hotel rates, and select the hotel that best fits
-            the group. Manual hotel and rate entry remains available.
+            Select accommodation and hotel-provided extras at Supplier CRM prices. Dinner, drinks and porterage from restaurants or other providers belong in Standard Per-Person Services. Mandatory city tax is shown separately without being charged twice.
           </p>
         </div>
 
@@ -631,6 +648,12 @@ export default function HotelsSection({
             row,
             index,
           ) => {
+            const extraDisplay = hotelExtraDisplay(row);
+            const hasPricedHotelExtras = extraDisplay.dinner || extraDisplay.porterage || extraDisplay.drinks;
+            const overlapWarnings = hotelExtraOverlapWarnings(row, perPersonServices);
+            const supplierIncludesHB = /^(HB|HALF[ _-]?BOARD)$/i.test(row.supplierMealBasis || "") || row.supplierDinnerIncluded === true;
+            const hasLegacyHbUpgrade = Boolean(row.supplierRateId && row.supplierSelectedMealBasis === "HB" && !supplierIncludesHB);
+
             const singleTotal =
               hotelCostPerPerson(
                 row,
@@ -731,10 +754,7 @@ export default function HotelsSection({
                       </span>
 
                       <span className="font-semibold">
-                        {formatMoney(
-                          singleTotal,
-                          currency,
-                        )}
+                        {row.supplierRateId && row.singlePerPerson <= 0 ? "Not available" : formatMoney(singleTotal, currency)}
                       </span>
                     </div>
 
@@ -744,10 +764,7 @@ export default function HotelsSection({
                       </span>
 
                       <span className="font-semibold">
-                        {formatMoney(
-                          doubleTwinTotal,
-                          currency,
-                        )}
+                        {row.supplierRateId && row.doubleTwinPerPerson <= 0 ? "Not available" : formatMoney(doubleTwinTotal, currency)}
                       </span>
                     </div>
 
@@ -757,10 +774,7 @@ export default function HotelsSection({
                       </span>
 
                       <span className="font-semibold">
-                        {formatMoney(
-                          tripleTotal,
-                          currency,
-                        )}
+                        {row.supplierRateId && row.triplePerPerson <= 0 ? "Not available" : formatMoney(tripleTotal, currency)}
                       </span>
                     </div>
                   </div>
@@ -850,7 +864,7 @@ export default function HotelsSection({
                               result,
                             ) => {
                               const complete =
-                                completeEffectiveCost(
+                                hasUsableRoomCost(
                                   result,
                                 );
 
@@ -1009,59 +1023,18 @@ export default function HotelsSection({
                                   </div>
 
                                   <div className="mt-3 grid gap-2 text-xs text-slate-600 sm:grid-cols-2 lg:grid-cols-4">
-                                    <Info
-                                      label="Dinner"
-                                      value={
-                                        yesNoIncluded(
-                                          result.rate
-                                            .dinnerIncluded,
-                                        )
-                                      }
-                                    />
-
-                                    <Info
-                                      label="City tax"
-                                      value={
-                                        result.rate
-                                          .cityTaxIncluded
-                                          ? "Included"
-                                          : result.rate
-                                                .cityTaxAmount !==
-                                              null
-                                            ? `${formatMoney(
-                                                result.rate.cityTaxAmount,
-                                                result.rate.cityTaxCurrency ||
-                                                  result.rate.currency,
-                                              )} · ${result.rate.cityTaxUnit ? rateUnitLabel(result.rate.cityTaxUnit) : "unit not specified"}`
-                                            : "Not included / no amount"
-                                      }
-                                    />
-
-                                    <Info
-                                      label="Porterage"
-                                      value={
-                                        result.rate
-                                          .porterageAvailable ===
-                                        false
-                                          ? "Not available"
-                                          : yesNoIncluded(
-                                              result.rate
-                                                .porterageIncluded,
-                                            )
-                                      }
-                                    />
-
-                                    <Info
-                                      label="Drinks"
-                                      value={
-                                        result.rate
-                                          .beveragePackageIncluded
-                                          ? result.rate
-                                                .beveragePackageDescription ||
-                                            "Included"
-                                          : "Not included / not specified"
-                                      }
-                                    />
+                                    {((result.rate.dinnerIncluded === true) || /^(HB|HALF[ _-]?BOARD)$/i.test(result.rate.mealBasis || "")) && (
+                                      <Info label="Meal basis" value="Half Board — dinner included" />
+                                    )}
+                                    {(result.rate.cityTaxIncluded || result.rate.cityTaxAmount != null) && (
+                                      <Info label="City tax" value={result.rate.cityTaxIncluded ? "Included" : `${formatMoney(Number(result.rate.cityTaxAmount), result.rate.cityTaxCurrency || result.rate.currency)} / ${result.rate.cityTaxUnit ? rateUnitLabel(result.rate.cityTaxUnit) : "unit not specified"}`} />
+                                    )}
+                                    {result.rate.porterageIncluded === true && (
+                                      <Info label="Porterage" value="Included in hotel rate" />
+                                    )}
+                                    {result.rate.beveragePackageIncluded === true && (
+                                      <Info label="Drinks" value="Included in hotel rate" />
+                                    )}
                                   </div>
 
                                   {result.rateValidity ===
@@ -1087,7 +1060,7 @@ export default function HotelsSection({
 
                                   {!complete && (
                                     <p className="mt-3 text-xs font-medium text-amber-700">
-                                      Effective hotel cost is incomplete. Review the supplier rate before using it.
+                                      No usable room rate is available. Review the supplier rate before using it.
                                     </p>
                                   )}
                                 </div>
@@ -1227,6 +1200,11 @@ export default function HotelsSection({
                           </span>
                         )}
 
+                        {row.supplierRateId && (
+                          <span>
+                            Selected: {row.supplierSelectedMealBasis || (/^(HB|HALF[ _-]?BOARD)$/i.test(row.supplierMealBasis || "") ? "HB" : "BB")}
+                          </span>
+                        )}
                         {row.supplierRateValidFrom &&
                           row.supplierRateValidTo && (
                             <span>
@@ -1241,6 +1219,100 @@ export default function HotelsSection({
                             </span>
                           )}
                       </div>
+
+                      {(row.singlePerPerson <= 0 || row.doubleTwinPerPerson <= 0 || row.triplePerPerson <= 0) && (
+                        <p className="mt-3 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-900">
+                          Unavailable room types: {[
+                            row.singlePerPerson <= 0 ? "Single" : null,
+                            row.doubleTwinPerPerson <= 0 ? "Double/Twin" : null,
+                            row.triplePerPerson <= 0 ? "Triple" : null,
+                          ].filter(Boolean).join(", ")}. Their prices are not supplied by this hotel. Do not quote these occupancies until a valid rate is entered.
+                        </p>
+                      )}
+
+                      {hasLegacyHbUpgrade && (
+                        <div className="mt-3 rounded-md border border-amber-300 bg-amber-50 p-3 text-xs text-amber-950" role="alert">
+                          <p className="font-semibold">Earlier BB-to-HB upgrade needs review</p>
+                          <p className="mt-1">The saved quote contains an older HB supplement. Review it before choosing hotel dinner separately; an HB supplement and selected hotel dinners could overlap. No saved cost has been removed automatically.</p>
+                        </div>
+                      )}
+
+                      {row.supplierRateId && hasPricedHotelExtras && (
+                        <div className="mt-3 space-y-3 rounded-md border border-slate-200 bg-white p-3 text-sm">
+                          <p className="font-semibold text-slate-900">Hotel-contracted optional services</p>
+                          <p className="text-xs text-slate-600">These are supplier CRM hotel prices for services provided by this hotel. Select only what this group requires. Dinner and drinks at restaurants or elsewhere remain in Standard Per-Person Services.</p>
+                          {extraDisplay.dinner ? (
+                            <div className="flex flex-wrap items-center justify-between gap-3 rounded-md border p-3">
+                              <label className="flex items-center gap-2">
+                                <input type="checkbox" checked={Boolean(row.supplierDinnerSelected)} onChange={e => onUpdateHotel(index, { supplierDinnerSelected: e.target.checked, supplierDinnerMeals: e.target.checked ? Math.max(1, row.supplierDinnerMeals || 0) : 0 })} />
+                                <span>Hotel dinners · {formatMoney(Number(row.supplierDinnerAmount), row.supplierRateCurrency || currency)} / {rateUnitLabel(row.supplierDinnerUnit || "")}</span>
+                              </label>
+                              <label className="flex items-center gap-2">Meals
+                                <input aria-label="Number of hotel dinners" type="number" min="0" step="1" disabled={!row.supplierDinnerSelected} value={row.supplierDinnerMeals ?? 0} onChange={e => onUpdateHotel(index, { supplierDinnerMeals: Math.max(0, Math.floor(toNumber(e.target.value))) })} className="w-20 rounded border p-2" />
+                              </label>
+                            </div>
+                          ) : null}
+                          {extraDisplay.porterage ? (
+                            <label className="flex items-center gap-2 rounded-md border p-3">
+                              <input type="checkbox" checked={Boolean(row.supplierPorterageSelected)} onChange={e => onUpdateHotel(index, { supplierPorterageSelected: e.target.checked })} />
+                              <span>Porterage · {formatMoney(Number(row.supplierPorterageAmount), row.supplierRateCurrency || currency)} / {rateUnitLabel(row.supplierPorterageUnit || "")}</span>
+                            </label>
+                          ) : null}
+                          {extraDisplay.drinks ? (
+                            <div className="flex flex-wrap items-center justify-between gap-3 rounded-md border p-3">
+                              <label className="flex items-center gap-2">
+                                <input type="checkbox" checked={Boolean(row.supplierBeverageSelected)} onChange={e => onUpdateHotel(index, { supplierBeverageSelected: e.target.checked, supplierBeverageMeals: e.target.checked ? Math.max(1, row.supplierBeverageMeals || 0) : 0 })} />
+                                <span>Drinks · {formatMoney(Number(row.supplierBeveragePackageAmount), row.supplierRateCurrency || currency)} / {rateUnitLabel(row.supplierBeveragePackageUnit || "")}</span>
+                              </label>
+                              <label className="flex items-center gap-2">Meals
+                                <input aria-label="Number of beverage packages" type="number" min="0" step="1" disabled={!row.supplierBeverageSelected} value={row.supplierBeverageMeals ?? 0} onChange={e => onUpdateHotel(index, { supplierBeverageMeals: Math.max(0, Math.floor(toNumber(e.target.value))) })} className="w-20 rounded border p-2" />
+                              </label>
+                            </div>
+                          ) : null}
+                          <p className="rounded-md bg-sky-50 p-2 text-xs text-sky-900">Selected hotel services are added once to this hotel's quotation cost. Hotel meals are charged by the number selected, not automatically by nights. Separately arranged restaurant services stay in Per-Person Services. Check possible overlaps below.</p>
+                        </div>
+                      )}
+
+                      {row.supplierRateId && (supplierIncludesHB || extraDisplay.porterageIncluded || extraDisplay.drinksIncluded) && (
+                        <p className="mt-3 rounded-md bg-emerald-50 p-2 text-xs text-emerald-900">
+                          Included in supplier hotel rate: {[supplierIncludesHB ? "Dinner (HB)" : null, extraDisplay.porterageIncluded ? "Porterage" : null, extraDisplay.drinksIncluded ? "Drinks" : null].filter(Boolean).join(" · ")}. Do not enter the same service again for this hotel.
+                        </p>
+                      )}
+
+                      {overlapWarnings.length > 0 && (
+                        <div className="mt-3 space-y-2 rounded-md border border-amber-300 bg-amber-50 p-3" role="status">
+                          <p className="text-sm font-semibold text-amber-900">Review possible overlapping costs</p>
+                          {overlapWarnings.map((warning, warningIndex) => (
+                            <p key={warningIndex} className="text-xs leading-5 text-amber-900">{warning}</p>
+                          ))}
+                        </div>
+                      )}
+
+                      {row.supplierRateId && (
+                        <div className="mt-3 rounded-md border border-slate-200 bg-white p-3 text-sm">
+                          <p className="font-semibold text-slate-900">Hotel meal basis and taxes</p>
+                          <p className="mt-2 text-xs text-slate-700">
+                            Supplier meal plan: <strong>{supplierIncludesHB ? "Half Board (HB — dinner included)" : (row.supplierMealBasis || "Bed & Breakfast / confirm with supplier")}</strong>.
+                            {hasLegacyHbUpgrade ? " A previous HB upgrade is retained in this saved quote until reviewed." : " Hotel-provided dinners may be selected above; restaurant dinners belong in Standard Per-Person Services."}
+                          </p>
+                          <p className="mt-2 text-xs text-slate-600">
+                            City tax: {row.supplierCityTaxIncluded ? "included by supplier - no extra charge" : row.supplierCityTaxAmount != null ? `${formatMoney(Number(row.supplierCityTaxAmount), row.supplierCityTaxCurrency || row.supplierRateCurrency || currency)} / ${rateUnitLabel(row.supplierCityTaxUnit || "")}` : "not specified - verify with supplier"}.
+                          </p>
+                          {row.supplierCityTaxIncluded === false && row.supplierCityTaxAmount != null && Number(row.supplierCityTaxAmount) > 0 && (() => {
+                            const amount = Number(row.supplierCityTaxAmount);
+                            const unit = (row.supplierCityTaxUnit || "").toUpperCase();
+                            const ppNight = unit === "PER_PERSON_PER_NIGHT" ? amount : unit === "PER_ROOM_PER_NIGHT" ? amount / 2 : null;
+                            if (ppNight === null) return <p className="mt-1 text-xs text-amber-800">Verify the city-tax billing unit before relying on this rate.</p>;
+                            const nights = Math.max(0, toNumber(row.nights));
+                            const base = toNumber(row.doubleTwinPerPerson) - ppNight;
+                            return <div className="mt-2 rounded-md bg-sky-50 p-2 text-xs text-sky-950">
+                              <p className="font-semibold">City tax breakdown - Double/Twin, read-only</p>
+                              <p>Room excluding city tax: {base >= 0 ? formatMoney(base, currency) : "Review manual room rate"} / traveler/night. City tax: {formatMoney(ppNight, currency)} / traveler/night x {nights} nights = {formatMoney(ppNight * nights, currency)} / traveler.</p>
+                              <p className="mt-1">The city tax is already included in the displayed supplier room rate and hotel total. It is identified separately for auditing, not added again.</p>
+                            </div>;
+                          })()}
+                        </div>
+                      )}
 
                       {row.supplierRateRequiresReconfirmation ? (
                         <p className="mt-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-900">
@@ -1386,7 +1458,7 @@ export default function HotelsSection({
                     <TotalBox
                       label="Single Hotel Cost / Person"
                       value={
-                        singleTotal
+                        row.supplierRateId && row.singlePerPerson <= 0 ? null : singleTotal
                       }
                       currency={
                         currency
@@ -1399,7 +1471,7 @@ export default function HotelsSection({
                     <TotalBox
                       label="Double/Twin Hotel Cost / Person"
                       value={
-                        doubleTwinTotal
+                        row.supplierRateId && row.doubleTwinPerPerson <= 0 ? null : doubleTwinTotal
                       }
                       currency={
                         currency
@@ -1412,7 +1484,7 @@ export default function HotelsSection({
                     <TotalBox
                       label="Triple Hotel Cost / Person"
                       value={
-                        tripleTotal
+                        row.supplierRateId && row.triplePerPerson <= 0 ? null : tripleTotal
                       }
                       currency={
                         currency
@@ -1512,20 +1584,16 @@ function RateBox({
       <div className="mt-1 text-base font-semibold text-[#001F3F]">
         {value ===
         null
-          ? "Incomplete"
+          ? "Not available"
           : `${formatMoney(
               value,
               currency,
             )} pp/night`}
       </div>
 
-      {status !==
-        "COMPLETE" && (
+      {status !== "COMPLETE" && value !== null && (
         <div className="mt-1 text-xs text-amber-700">
-          {status.replaceAll(
-            "_",
-            " ",
-          )}
+          {status.replaceAll("_", " ")}
         </div>
       )}
     </div>
@@ -1556,7 +1624,7 @@ function TotalBox({
   formatMoney,
 }: {
   label: string;
-  value: number;
+  value: number | null;
   currency: string;
   formatMoney: (
     amount: number,
@@ -1570,10 +1638,7 @@ function TotalBox({
       </div>
 
       <div className="mt-1 text-lg font-semibold text-[#001F3F]">
-        {formatMoney(
-          value,
-          currency,
-        )}
+        {value === null ? "Not available" : formatMoney(value, currency)}
       </div>
     </div>
   );

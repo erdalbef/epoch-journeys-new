@@ -96,6 +96,10 @@ function decimalNumber(
     : null;
 }
 
+/**
+ * This endpoint returns per-person, per-night costs. Do not interpret
+ * per-stay, per-day or per-meal rates as nightly rates without duration.
+ */
 function unitToPerPersonPerNight(
   amount: number,
   unit: SupplierRateUnit,
@@ -103,76 +107,50 @@ function unitToPerPersonPerNight(
 ) {
   switch (unit) {
     case SupplierRateUnit.PER_PERSON_PER_NIGHT:
-    case SupplierRateUnit.PER_PERSON:
-    case SupplierRateUnit.PER_PERSON_PER_DAY:
-    case SupplierRateUnit.PER_MEAL:
-      return {
-        value: amount,
-        supported: true,
-      };
-
+      return { value: amount, supported: true };
     case SupplierRateUnit.PER_ROOM_PER_NIGHT:
-    case SupplierRateUnit.PER_ROOM:
-      return {
-        value:
-          amount /
-          occupancy,
-        supported: true,
-      };
-
+      return { value: amount / occupancy, supported: true };
     default:
-      return {
-        value: 0,
-        supported: false,
-      };
+      return { value: 0, supported: false };
   }
 }
 
+/** Optional extras are zero unless a charge is explicitly supplied.
+ * Required extras are incomplete when their amount or unit is missing.
+ */
 function componentCost({
   amount,
   unit,
   occupancy,
   included,
+  required = false,
 }: {
   amount: number | null;
   unit: SupplierRateUnit | null;
   occupancy: 1 | 2 | 3;
   included: boolean | null;
+  required?: boolean;
 }) {
   if (included === true) {
-    return {
-      cost: 0,
-      complete: true,
-      supported: true,
-    };
+    return { cost: 0, complete: true, supported: true };
   }
-
-  if (
-    amount === null ||
-    unit === null
-  ) {
-    return {
-      cost: 0,
-      complete: false,
-      supported: true,
-    };
+  if (amount === null && !required) {
+    return { cost: 0, complete: true, supported: true };
   }
-
-  const converted =
-    unitToPerPersonPerNight(
-      amount,
-      unit,
-      occupancy,
-    );
-
+  if (amount === null || unit === null) {
+    return { cost: 0, complete: false, supported: true };
+  }
+  const converted = unitToPerPersonPerNight(amount, unit, occupancy);
   return {
-    cost:
-      converted.value,
-    complete:
-      converted.supported,
-    supported:
-      converted.supported,
+    cost: converted.value,
+    complete: converted.supported,
+    supported: converted.supported,
   };
+}
+
+function isHalfBoard(mealBasis: string | null): boolean {
+  const basis = (mealBasis ?? "").trim().toUpperCase();
+  return basis === "HB" || basis === "HALF BOARD" || basis === "HALF_BOARD" || basis === "HALF-BOARD";
 }
 
 function roundMoney(
@@ -191,19 +169,13 @@ function effectiveHotelCost({
   baseAmount,
   baseUnit,
   dinnerIncluded,
+  mealBasis,
   dinnerAmount,
   dinnerUnit,
   cityTaxIncluded,
   cityTaxAmount,
   cityTaxCurrency,
   cityTaxUnit,
-  porterageAvailable,
-  porterageIncluded,
-  porterageAmount,
-  porterageUnit,
-  beveragePackageIncluded,
-  beveragePackageAmount,
-  beveragePackageUnit,
 }: {
   occupancy: 1 | 2 | 3;
   currency: string;
@@ -211,6 +183,7 @@ function effectiveHotelCost({
   baseUnit: SupplierRateUnit;
 
   dinnerIncluded: boolean | null;
+  mealBasis: string | null;
   dinnerAmount: number | null;
   dinnerUnit: SupplierRateUnit | null;
 
@@ -243,16 +216,16 @@ function effectiveHotelCost({
     };
   }
 
-  const dinner =
-    componentCost({
-      amount:
-        dinnerAmount,
-      unit:
-        dinnerUnit,
-      occupancy,
-      included:
-        dinnerIncluded,
-    });
+  // A BB rate with an available HB supplement remains BB until HB is
+  // explicitly indicated. Never add dinner twice when it is included.
+  const hbRequested = isHalfBoard(mealBasis);
+  const dinner = componentCost({
+    amount: hbRequested ? dinnerAmount : null,
+    unit: hbRequested ? dinnerUnit : null,
+    occupancy,
+    included: dinnerIncluded === true || !hbRequested,
+    required: hbRequested && dinnerIncluded !== true,
+  });
 
   const cityTaxCurrencyMismatch =
     cityTaxAmount !== null &&
@@ -282,43 +255,15 @@ function effectiveHotelCost({
       occupancy,
       included:
         cityTaxIncluded,
+      required: cityTaxIncluded !== true,
     });
 
-  const porterage =
-    porterageAvailable ===
-    false
-      ? {
-          cost: 0,
-          complete: true,
-          supported: true,
-        }
-      : componentCost({
-          amount:
-            porterageAmount,
-          unit:
-            porterageUnit,
-          occupancy,
-          included:
-            porterageIncluded,
-        });
-
-  const beverage =
-    componentCost({
-      amount:
-        beveragePackageAmount,
-      unit:
-        beveragePackageUnit,
-      occupancy,
-      included:
-        beveragePackageIncluded,
-    });
-
-  const parts = [
-    dinner,
-    cityTax,
-    porterage,
-    beverage,
-  ];
+  // Porterage and beverage packages are optional ancillary services.
+  // Their PER_PERSON / PER_MEAL units cannot safely be treated as nightly
+  // amounts without knowing the number of nights or meals selected.
+  // Keep their original amounts in the API response, but exclude them from
+  // the automatically calculated accommodation cost.
+  const parts = [dinner, cityTax];
 
   if (
     parts.some(
@@ -351,9 +296,7 @@ function effectiveHotelCost({
       roundMoney(
         base.value +
           dinner.cost +
-          cityTax.cost +
-          porterage.cost +
-          beverage.cost,
+          cityTax.cost,
       ),
     status:
       "COMPLETE" as EffectiveCostStatus,
@@ -779,10 +722,43 @@ export async function GET(
                             a.validTo.getTime(),
                         )[0];
 
-                    return (
-                      latestExpired?.id ===
-                      rate.id
+                    return Boolean(
+                      latestExpired &&
+                      rate.validTo.getTime() === latestExpired.validTo.getTime() &&
+                      rate.validFrom.getTime() === latestExpired.validFrom.getTime() &&
+                      paxMatches
                     );
+                  })
+                  // Room-specific supplier rates are separate records. Return one
+                  // comparison card per compatible rate set, not one per room.
+                  .filter((rate, _index, candidates) => {
+                    if (rate.roomType === null) return true; // legacy rate
+                    const compatible = candidates.filter((other) =>
+                      other.roomType !== null &&
+                      other.currency === rate.currency &&
+                      other.unit === rate.unit &&
+                      other.validFrom.getTime() === rate.validFrom.getTime() &&
+                      other.validTo.getTime() === rate.validTo.getTime() &&
+                      other.mealBasis === rate.mealBasis &&
+                      other.minPax === rate.minPax &&
+                      other.maxPax === rate.maxPax &&
+                      other.cityTaxIncluded === rate.cityTaxIncluded &&
+                      String(other.cityTaxAmount) === String(rate.cityTaxAmount) &&
+                      other.cityTaxCurrency === rate.cityTaxCurrency &&
+                      other.cityTaxUnit === rate.cityTaxUnit &&
+                      other.dinnerIncluded === rate.dinnerIncluded &&
+                      String(other.dinnerAmount) === String(rate.dinnerAmount) &&
+                      other.dinnerUnit === rate.dinnerUnit &&
+                      other.porterageIncluded === rate.porterageIncluded &&
+                      String(other.porterageAmount) === String(rate.porterageAmount) &&
+                      other.porterageUnit === rate.porterageUnit &&
+                      other.beveragePackageIncluded === rate.beveragePackageIncluded &&
+                      String(other.beveragePackageAmount) === String(rate.beveragePackageAmount) &&
+                      other.beveragePackageUnit === rate.beveragePackageUnit
+                    );
+                    const preferred = compatible.find((item) => item.roomType === "DOUBLE_TWIN") ??
+                      compatible.find((item) => item.roomType === "SINGLE") ?? compatible[0];
+                    return preferred?.id === rate.id;
                   })
                   .map(
                   (rate) => {
@@ -798,7 +774,10 @@ export async function GET(
                       rate.validFrom <=
                         referenceStart &&
                       rate.validTo >=
-                        referenceEnd
+                        referenceEnd &&
+                      (!pax ||
+                        ((rate.minPax === null || rate.minPax <= pax) &&
+                         (rate.maxPax === null || rate.maxPax >= pax)))
                         ? "VALID_FOR_REQUEST"
                         : "EXPIRED_ESTIMATE";
 
@@ -837,128 +816,65 @@ export async function GET(
                         rate.tripleReduction,
                       );
 
-                    const singleEffective =
-                      effectiveHotelCost(
-                        {
-                          occupancy:
-                            1,
-                          currency:
-                            rate.currency,
-                          baseAmount,
-                          baseUnit:
-                            rate.unit,
+                    // Only use the price recorded for the matching room type.
+                    // Legacy records without roomType retain their prior behavior.
+                    const matchingRoomRate = (roomType: "SINGLE" | "DOUBLE_TWIN" | "TRIPLE") => {
+                      if (rate.roomType === null) return rate;
+                      return service.rates.find((other) =>
+                        other.roomType === roomType &&
+                        other.currency === rate.currency &&
+                        other.unit === rate.unit &&
+                        other.validFrom.getTime() === rate.validFrom.getTime() &&
+                        other.validTo.getTime() === rate.validTo.getTime() &&
+                        other.mealBasis === rate.mealBasis &&
+                        other.minPax === rate.minPax &&
+                        other.maxPax === rate.maxPax &&
+                        other.cityTaxIncluded === rate.cityTaxIncluded &&
+                        String(other.cityTaxAmount) === String(rate.cityTaxAmount) &&
+                        other.cityTaxCurrency === rate.cityTaxCurrency &&
+                        other.cityTaxUnit === rate.cityTaxUnit &&
+                        other.dinnerIncluded === rate.dinnerIncluded &&
+                        String(other.dinnerAmount) === String(rate.dinnerAmount) &&
+                        other.dinnerUnit === rate.dinnerUnit &&
+                        other.porterageIncluded === rate.porterageIncluded &&
+                        String(other.porterageAmount) === String(rate.porterageAmount) &&
+                        other.porterageUnit === rate.porterageUnit &&
+                        other.beveragePackageIncluded === rate.beveragePackageIncluded &&
+                        String(other.beveragePackageAmount) === String(rate.beveragePackageAmount) &&
+                        other.beveragePackageUnit === rate.beveragePackageUnit
+                      ) ?? null;
+                    };
 
-                          dinnerIncluded:
-                            rate.dinnerIncluded,
-                          dinnerAmount,
-                          dinnerUnit:
-                            rate.dinnerUnit,
-
-                          cityTaxIncluded:
-                            rate.cityTaxIncluded,
-                          cityTaxAmount,
-                          cityTaxCurrency:
-                            rate.cityTaxCurrency,
-                          cityTaxUnit:
-                            rate.cityTaxUnit,
-
-                          porterageAvailable:
-                            rate.porterageAvailable,
-                          porterageIncluded:
-                            rate.porterageIncluded,
-                          porterageAmount,
-                          porterageUnit:
-                            rate.porterageUnit,
-
-                          beveragePackageIncluded:
-                            rate.beveragePackageIncluded,
-                          beveragePackageAmount,
-                          beveragePackageUnit:
-                            rate.beveragePackageUnit,
-                        },
-                      );
-
-                    const doubleEffective =
-                      effectiveHotelCost(
-                        {
-                          occupancy:
-                            2,
-                          currency:
-                            rate.currency,
-                          baseAmount,
-                          baseUnit:
-                            rate.unit,
-
-                          dinnerIncluded:
-                            rate.dinnerIncluded,
-                          dinnerAmount,
-                          dinnerUnit:
-                            rate.dinnerUnit,
-
-                          cityTaxIncluded:
-                            rate.cityTaxIncluded,
-                          cityTaxAmount,
-                          cityTaxCurrency:
-                            rate.cityTaxCurrency,
-                          cityTaxUnit:
-                            rate.cityTaxUnit,
-
-                          porterageAvailable:
-                            rate.porterageAvailable,
-                          porterageIncluded:
-                            rate.porterageIncluded,
-                          porterageAmount,
-                          porterageUnit:
-                            rate.porterageUnit,
-
-                          beveragePackageIncluded:
-                            rate.beveragePackageIncluded,
-                          beveragePackageAmount,
-                          beveragePackageUnit:
-                            rate.beveragePackageUnit,
-                        },
-                      );
-
-                    const tripleEffective =
-                      effectiveHotelCost(
-                        {
-                          occupancy:
-                            3,
-                          currency:
-                            rate.currency,
-                          baseAmount,
-                          baseUnit:
-                            rate.unit,
-
-                          dinnerIncluded:
-                            rate.dinnerIncluded,
-                          dinnerAmount,
-                          dinnerUnit:
-                            rate.dinnerUnit,
-
-                          cityTaxIncluded:
-                            rate.cityTaxIncluded,
-                          cityTaxAmount,
-                          cityTaxCurrency:
-                            rate.cityTaxCurrency,
-                          cityTaxUnit:
-                            rate.cityTaxUnit,
-
-                          porterageAvailable:
-                            rate.porterageAvailable,
-                          porterageIncluded:
-                            rate.porterageIncluded,
-                          porterageAmount,
-                          porterageUnit:
-                            rate.porterageUnit,
-
-                          beveragePackageIncluded:
-                            rate.beveragePackageIncluded,
-                          beveragePackageAmount,
-                          beveragePackageUnit:
-                            rate.beveragePackageUnit,
-                        },
-                      );
+                    const calculateRoom = (roomType: "SINGLE" | "DOUBLE_TWIN" | "TRIPLE", occupancy: 1 | 2 | 3) => {
+                      const roomRate = matchingRoomRate(roomType);
+                      if (!roomRate) {
+                        return { amount: null, status: "INCOMPLETE" as EffectiveCostStatus };
+                      }
+                      return effectiveHotelCost({
+                        occupancy,
+                        currency: roomRate.currency,
+                        baseAmount: decimalNumber(roomRate.amount) ?? 0,
+                        baseUnit: roomRate.unit,
+                        dinnerIncluded: roomRate.dinnerIncluded,
+                        mealBasis: roomRate.mealBasis,
+                        dinnerAmount: decimalNumber(roomRate.dinnerAmount),
+                        dinnerUnit: roomRate.dinnerUnit,
+                        cityTaxIncluded: roomRate.cityTaxIncluded,
+                        cityTaxAmount: decimalNumber(roomRate.cityTaxAmount),
+                        cityTaxCurrency: roomRate.cityTaxCurrency,
+                        cityTaxUnit: roomRate.cityTaxUnit,
+                        porterageAvailable: roomRate.porterageAvailable,
+                        porterageIncluded: roomRate.porterageIncluded,
+                        porterageAmount: decimalNumber(roomRate.porterageAmount),
+                        porterageUnit: roomRate.porterageUnit,
+                        beveragePackageIncluded: roomRate.beveragePackageIncluded,
+                        beveragePackageAmount: decimalNumber(roomRate.beveragePackageAmount),
+                        beveragePackageUnit: roomRate.beveragePackageUnit,
+                      });
+                    };
+                    const singleEffective = calculateRoom("SINGLE", 1);
+                    const doubleEffective = calculateRoom("DOUBLE_TWIN", 2);
+                    const tripleEffective = calculateRoom("TRIPLE", 3);
 
                     const adjustedSingleEffective =
                       singleEffective.amount === null
@@ -967,7 +883,7 @@ export async function GET(
                             ...singleEffective,
                             amount: roundMoney(
                               singleEffective.amount +
-                                (singleSupplement ?? 0),
+                                (rate.roomType === null ? (singleSupplement ?? 0) : 0),
                             ),
                           };
 
@@ -980,7 +896,7 @@ export async function GET(
                               Math.max(
                                 0,
                                 tripleEffective.amount -
-                                  (tripleReduction ?? 0),
+                                  (rate.roomType === null ? (tripleReduction ?? 0) : 0),
                               ),
                             ),
                           };

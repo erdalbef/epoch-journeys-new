@@ -6,6 +6,8 @@ export type NetGroupPricingInput = {
   hotelTriplePerPayingPax: number;
   otherPerPersonCost: number;
   groupOperationalCost: number;
+  /** Optional correctly allocated named complimentary costs, replacing generic double/twin estimate. */
+  freeVariableCostOverride?: number;
   epochMarkupPercent: number;
   manualSingleNetRate?: number | null;
   manualDoubleTwinNetRate?: number | null;
@@ -44,7 +46,9 @@ export function calculateNetGroupPricing(input: NetGroupPricingInput): NetGroupP
 
   // Complimentary travelers are costed at the double/twin basis by default.
   // They consume variable services but do not duplicate true group costs.
-  const freeVariableCostTotal = free * (hotel.doubleTwin + perPerson);
+  const freeVariableCostTotal = input.freeVariableCostOverride === undefined
+    ? free * (hotel.doubleTwin + perPerson)
+    : nonNegative(input.freeVariableCostOverride);
   const freeCostPerPayingPax = freeVariableCostTotal / paying;
   const groupOperationalCostPerPayingPax = operations / paying;
 

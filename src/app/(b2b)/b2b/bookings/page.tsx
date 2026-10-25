@@ -1,37 +1,34 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { getServerSession } from "next-auth";
+import {
+  BookingStatus,
+  BookingType,
+  PaymentStatus,
+  Prisma,
+} from "@prisma/client";
 
 import { authOptions } from "@/lib/authOptions";
 import { db } from "@/lib/db";
 
-type SearchParams =
-  | Promise<{
-      q?: string;
-      status?: string;
-      paymentStatus?: string;
-      bookingType?: string;
-    }>
-  | {
-      q?: string;
-      status?: string;
-      paymentStatus?: string;
-      bookingType?: string;
-    };
+export const dynamic = "force-dynamic";
 
-function formatCurrency(value: number | null | undefined, currency = "EUR") {
-  if (value === null || value === undefined) return "—";
+const PAGE_SIZE = 20;
 
-  return new Intl.NumberFormat("en-US", {
-    style: "currency",
-    currency,
-    maximumFractionDigits: 2,
-  }).format(value);
-}
+type SearchParams = {
+  q?: string;
+  status?: string;
+  paymentStatus?: string;
+  bookingType?: string;
+  page?: string;
+};
+
+type PageProps = {
+  searchParams?: Promise<SearchParams> | SearchParams;
+};
 
 function formatDate(value: Date | string | null | undefined) {
-  if (!value) return "—";
-
+  if (!value) return "To be confirmed";
   return new Date(value).toLocaleDateString("en-GB", {
     day: "2-digit",
     month: "short",
@@ -39,560 +36,447 @@ function formatDate(value: Date | string | null | undefined) {
   });
 }
 
-function formatStatus(value: string | null | undefined) {
-  if (!value) return "—";
-  return value.replaceAll("_", " ");
+function formatMoney(value: number, currency: string) {
+  try {
+    return new Intl.NumberFormat("en-GB", {
+      style: "currency",
+      currency,
+      maximumFractionDigits: 2,
+    }).format(value);
+  } catch {
+    return `${value.toFixed(2)} ${currency}`;
+  }
 }
 
-function getBookingStatusClasses(status: string | null | undefined) {
-  const base = "inline-flex rounded-full border px-3 py-1 text-xs font-semibold";
+function label(value: string) {
+  return value
+    .replaceAll("_", " ")
+    .toLowerCase()
+    .replace(/\b\w/g, (letter) => letter.toUpperCase());
+}
 
-  switch (status) {
-    case "PENDING":
-      return `${base} border-amber-200 bg-amber-100 text-amber-800`;
+function statusStyle(value: string) {
+  const base = "inline-flex rounded-full px-2.5 py-1 text-xs font-semibold";
+  switch (value) {
     case "CONFIRMED":
-      return `${base} border-green-200 bg-green-100 text-green-800`;
-    case "ON_REQUEST":
-      return `${base} border-blue-200 bg-blue-100 text-blue-800`;
-    case "CANCELLED":
-      return `${base} border-red-200 bg-red-100 text-red-800`;
-    case "WAITLIST":
-      return `${base} border-purple-200 bg-purple-100 text-purple-800`;
-    default:
-      return `${base} border-gray-200 bg-gray-100 text-gray-800`;
-  }
-}
-
-function getPaymentStatusClasses(status: string | null | undefined) {
-  const base = "inline-flex rounded-full border px-3 py-1 text-xs font-semibold";
-
-  switch (status) {
-    case "UNPAID":
-      return `${base} border-red-200 bg-red-100 text-red-800`;
-    case "PARTIALLY_PAID":
-      return `${base} border-amber-200 bg-amber-100 text-amber-800`;
     case "PAID":
-      return `${base} border-green-200 bg-green-100 text-green-800`;
+      return `${base} bg-emerald-100 text-emerald-800`;
+    case "PENDING":
+    case "PARTIALLY_PAID":
+      return `${base} bg-amber-100 text-amber-800`;
+    case "ON_REQUEST":
+    case "WAITLIST":
+      return `${base} bg-blue-100 text-blue-800`;
+    case "CANCELLED":
     case "REFUNDED":
-      return `${base} border-slate-200 bg-slate-100 text-slate-800`;
+      return `${base} bg-slate-200 text-slate-700`;
+    case "UNPAID":
+      return `${base} bg-red-100 text-red-800`;
     default:
-      return `${base} border-gray-200 bg-gray-100 text-gray-800`;
+      return `${base} bg-slate-100 text-slate-700`;
   }
 }
 
-function buildUrl(params: {
+function findEnum<T extends string>(
+  values: readonly T[],
+  input: string | undefined,
+): T | undefined {
+  return values.find((value) => value === input);
+}
+
+function buildUrl(filters: {
   q?: string;
   status?: string;
   paymentStatus?: string;
   bookingType?: string;
+  page?: number;
 }) {
-  const search = new URLSearchParams();
-
-  if (params.q) search.set("q", params.q);
-  if (params.status) search.set("status", params.status);
-  if (params.paymentStatus) search.set("paymentStatus", params.paymentStatus);
-  if (params.bookingType) search.set("bookingType", params.bookingType);
-
-  const query = search.toString();
-  return query ? `/admin/bookings?${query}` : "/admin/bookings";
+  const params = new URLSearchParams();
+  if (filters.q) params.set("q", filters.q);
+  if (filters.status) params.set("status", filters.status);
+  if (filters.paymentStatus) {
+    params.set("paymentStatus", filters.paymentStatus);
+  }
+  if (filters.bookingType) params.set("bookingType", filters.bookingType);
+  if (filters.page && filters.page > 1) {
+    params.set("page", String(filters.page));
+  }
+  const query = params.toString();
+  return query ? `/b2b/bookings?${query}` : "/b2b/bookings";
 }
 
-export default async function AdminBookingsPage({
-  searchParams,
-}: {
-  searchParams?: SearchParams;
-}) {
+export default async function AgentBookingsPage({ searchParams }: PageProps) {
   const session = await getServerSession(authOptions);
 
-  if (!session?.user || session.user.role !== "ADMIN") {
-    redirect("/admin-login");
+  if (!session?.user?.id) {
+    redirect("/agent-login");
   }
 
-  const resolvedSearchParams = await Promise.resolve(searchParams ?? {});
-  const q = resolvedSearchParams.q?.trim() ?? "";
-  const status = resolvedSearchParams.status?.trim() ?? "";
-  const paymentStatus = resolvedSearchParams.paymentStatus?.trim() ?? "";
-  const bookingType = resolvedSearchParams.bookingType?.trim() ?? "";
+  // Recheck permissions in the database. A previously approved JWT alone
+  // must not permit access if the agency has since been suspended/revoked.
+  const agent = await db.user.findUnique({
+    where: { id: session.user.id },
+    select: { id: true, role: true, approved: true, status: true },
+  });
+
+  if (
+    !agent ||
+    agent.role !== "AGENT" ||
+    !agent.approved ||
+    agent.status !== "ACTIVE"
+  ) {
+    redirect("/agent-login");
+  }
+
+  const params = (await searchParams) ?? {};
+  const q = (params.q ?? "").trim().slice(0, 100);
+  const status = findEnum(Object.values(BookingStatus), params.status);
+  const paymentStatus = findEnum(
+    Object.values(PaymentStatus),
+    params.paymentStatus,
+  );
+  const bookingType = findEnum(Object.values(BookingType), params.bookingType);
+
+  // Crucial: ALL queries are scoped to the authenticated Agent's user ID.
+  // Never allow the caller to supply a different userId in a query parameter.
+  const where: Prisma.BookingWhereInput = {
+    userId: agent.id,
+    ...(status ? { status } : {}),
+    ...(paymentStatus ? { paymentStatus } : {}),
+    ...(bookingType ? { bookingType } : {}),
+    ...(q
+      ? {
+          OR: [
+            { bookingReference: { contains: q, mode: "insensitive" } },
+            { bookingDisplayCode: { contains: q, mode: "insensitive" } },
+            { tourTitleSnapshot: { contains: q, mode: "insensitive" } },
+            { groupName: { contains: q, mode: "insensitive" } },
+          ],
+        }
+      : {}),
+  };
+
+  const [totalCount, confirmedCount, paymentAttentionCount] = await Promise.all([
+    db.booking.count({ where }),
+    db.booking.count({ where: { AND: [where, { status: "CONFIRMED" }] } }),
+    db.booking.count({
+      where: {
+        AND: [
+          where,
+          { paymentStatus: { in: ["UNPAID", "PARTIALLY_PAID"] } },
+        ],
+      },
+    }),
+  ]);
+
+  const requestedPage = Number.parseInt(params.page ?? "1", 10);
+  const totalPages = Math.max(1, Math.ceil(totalCount / PAGE_SIZE));
+  const page = Number.isFinite(requestedPage)
+    ? Math.min(Math.max(requestedPage, 1), totalPages)
+    : 1;
 
   const bookings = await db.booking.findMany({
-    where: {
-      ...(status ? { status: status as never } : {}),
-      ...(paymentStatus ? { paymentStatus: paymentStatus as never } : {}),
-      ...(bookingType ? { bookingType: bookingType as never } : {}),
-      ...(q
-        ? {
-            OR: [
-              { bookingReference: { contains: q, mode: "insensitive" } },
-              { bookingDisplayCode: { contains: q, mode: "insensitive" } },
-              { customerName: { contains: q, mode: "insensitive" } },
-              { customerEmail: { contains: q, mode: "insensitive" } },
-              { agentNameSnapshot: { contains: q, mode: "insensitive" } },
-              { agentEmailSnapshot: { contains: q, mode: "insensitive" } },
-              { groupName: { contains: q, mode: "insensitive" } },
-              { groupLeaderName: { contains: q, mode: "insensitive" } },
-              {
-                user: {
-                  fullName: { contains: q, mode: "insensitive" },
-                },
-              },
-              {
-                tour: {
-                  title: { contains: q, mode: "insensitive" },
-                },
-              },
-            ],
-          }
-        : {}),
-    },
-    orderBy: {
-      createdAt: "desc",
-    },
-    include: {
-      user: {
-        select: {
-          id: true,
-          fullName: true,
-          email: true,
-          travelAgency: true,
-          partnerType: true,
-        },
-      },
-      tour: {
-        select: {
-          id: true,
-          title: true,
-          category: true,
-        },
-      },
-      departureDate: {
-        select: {
-          id: true,
-          date: true,
-          season: true,
-          status: true,
-        },
-      },
-      paymentSchedules: {
-        select: {
-          id: true,
-          amount: true,
-          amountPaid: true,
-          status: true,
-        },
-      },
-      payments: {
-        select: {
-          id: true,
-          amount: true,
-          currency: true,
-          status: true,
-          createdAt: true,
-          allocationLockedAt: true,
-        },
-        orderBy: {
-          createdAt: "desc",
-        },
-        take: 1,
-      },
-      payout: {
-        select: {
-          id: true,
-          status: true,
-          totalAmount: true,
-          currency: true,
-        },
-      },
-      _count: {
-        select: {
-          passengers: true,
-          paymentSubmissions: true,
-        },
-      },
+    where,
+    orderBy: { createdAt: "desc" },
+    skip: (page - 1) * PAGE_SIZE,
+    take: PAGE_SIZE,
+    select: {
+      id: true,
+      bookingReference: true,
+      bookingDisplayCode: true,
+      bookingType: true,
+      tourTitleSnapshot: true,
+      groupName: true,
+      departureDateSnapshot: true,
+      createdAt: true,
+      numberOfGuests: true,
+      totalPrice: true,
+      amountPaid: true,
+      amountDue: true,
+      currency: true,
+      status: true,
+      paymentStatus: true,
     },
   });
 
-  const totalBookings = bookings.length;
-  const totalRevenue = bookings.reduce(
-    (sum, booking) => sum + (booking.totalPrice ?? 0),
-    0
-  );
-  const confirmedCount = bookings.filter(
-    (booking) => booking.status === "CONFIRMED"
-  ).length;
-  const unpaidOrPartialCount = bookings.filter(
-    (booking) =>
-      booking.paymentStatus === "UNPAID" ||
-      booking.paymentStatus === "PARTIALLY_PAID"
-  ).length;
+  const activeFilters = {
+    q,
+    status,
+    paymentStatus,
+    bookingType,
+  };
 
   return (
-    <div className="mx-auto max-w-7xl space-y-6 p-6 md:p-8">
-      <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+    <div className="mx-auto max-w-7xl space-y-6">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
         <div>
-          <p className="text-sm text-gray-500">Admin / Bookings</p>
-          <h1 className="mt-1 text-3xl font-bold text-gray-900">Bookings</h1>
-          <p className="mt-2 text-sm text-gray-600">
-            Review operational, financial, and payment activity across all
-            bookings.
+          <p className="text-sm text-slate-500">Partner Workspace / Bookings</p>
+          <h1 className="mt-1 text-3xl font-bold text-[#001F3F]">
+            My Bookings
+          </h1>
+          <p className="mt-2 text-sm text-slate-600">
+            Review your agency&apos;s tour bookings, passenger counts and
+            payment status.
           </p>
         </div>
-
-        <div className="flex flex-wrap gap-3">
-          <Link
-            href="/admin/dashboard"
-            className="rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
-          >
-            Back to Dashboard
-          </Link>
-        </div>
+        <Link
+          href="/b2b/tours"
+          className="inline-flex justify-center rounded-xl bg-[#8B0000] px-4 py-2.5 text-sm font-semibold text-white hover:opacity-90"
+        >
+          Browse Tours
+        </Link>
       </div>
 
-      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+      <div className="grid gap-4 sm:grid-cols-3">
         <div className="rounded-2xl border bg-white p-5 shadow-sm">
-          <p className="text-sm text-gray-500">Total Bookings</p>
-          <p className="mt-2 text-2xl font-bold text-gray-900">
-            {totalBookings}
-          </p>
+          <p className="text-sm text-slate-500">Matching Bookings</p>
+          <p className="mt-2 text-2xl font-bold text-[#001F3F]">{totalCount}</p>
         </div>
-
         <div className="rounded-2xl border bg-white p-5 shadow-sm">
-          <p className="text-sm text-gray-500">Confirmed</p>
-          <p className="mt-2 text-2xl font-bold text-green-700">
+          <p className="text-sm text-slate-500">Confirmed</p>
+          <p className="mt-2 text-2xl font-bold text-emerald-700">
             {confirmedCount}
           </p>
         </div>
-
         <div className="rounded-2xl border bg-white p-5 shadow-sm">
-          <p className="text-sm text-gray-500">Needs Payment Attention</p>
+          <p className="text-sm text-slate-500">Unpaid / Partially Paid</p>
           <p className="mt-2 text-2xl font-bold text-amber-700">
-            {unpaidOrPartialCount}
-          </p>
-        </div>
-
-        <div className="rounded-2xl border bg-white p-5 shadow-sm">
-          <p className="text-sm text-gray-500">Total Booking Value</p>
-          <p className="mt-2 text-2xl font-bold text-gray-900">
-            {formatCurrency(totalRevenue, "EUR")}
+            {paymentAttentionCount}
           </p>
         </div>
       </div>
 
       <section className="rounded-2xl border bg-white shadow-sm">
-        <div className="border-b px-6 py-4">
-          <h2 className="text-lg font-semibold text-gray-900">Filters</h2>
+        <div className="border-b px-5 py-4">
+          <h2 className="text-lg font-semibold text-[#001F3F]">
+            Find a Booking
+          </h2>
         </div>
-
-        <div className="p-6">
-          <form
-            action="/admin/bookings"
-            method="GET"
-            className="grid gap-4 md:grid-cols-2 xl:grid-cols-5"
-          >
-            <div className="xl:col-span-2">
-              <label
-                htmlFor="q"
-                className="mb-2 block text-sm font-medium text-gray-700"
-              >
-                Search
-              </label>
-              <input
-                id="q"
-                name="q"
-                defaultValue={q}
-                placeholder="Reference, customer, agent, group, tour..."
-                className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm outline-none focus:border-gray-500"
-              />
-            </div>
-
-            <div>
-              <label
-                htmlFor="status"
-                className="mb-2 block text-sm font-medium text-gray-700"
-              >
-                Booking Status
-              </label>
-              <select
-                id="status"
-                name="status"
-                defaultValue={status}
-                className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm outline-none focus:border-gray-500"
-              >
-                <option value="">All</option>
-                <option value="PENDING">PENDING</option>
-                <option value="CONFIRMED">CONFIRMED</option>
-                <option value="ON_REQUEST">ON_REQUEST</option>
-                <option value="WAITLIST">WAITLIST</option>
-                <option value="CANCELLED">CANCELLED</option>
-              </select>
-            </div>
-
-            <div>
-              <label
-                htmlFor="paymentStatus"
-                className="mb-2 block text-sm font-medium text-gray-700"
-              >
-                Payment Status
-              </label>
-              <select
-                id="paymentStatus"
-                name="paymentStatus"
-                defaultValue={paymentStatus}
-                className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm outline-none focus:border-gray-500"
-              >
-                <option value="">All</option>
-                <option value="UNPAID">UNPAID</option>
-                <option value="PARTIALLY_PAID">PARTIALLY_PAID</option>
-                <option value="PAID">PAID</option>
-                <option value="REFUNDED">REFUNDED</option>
-              </select>
-            </div>
-
-            <div>
-              <label
-                htmlFor="bookingType"
-                className="mb-2 block text-sm font-medium text-gray-700"
-              >
-                Booking Type
-              </label>
-              <select
-                id="bookingType"
-                name="bookingType"
-                defaultValue={bookingType}
-                className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm outline-none focus:border-gray-500"
-              >
-                <option value="">All</option>
-                <option value="FIT">FIT</option>
-                <option value="GROUP">GROUP</option>
-                <option value="CUSTOM">CUSTOM</option>
-              </select>
-            </div>
-
-            <div className="flex items-end gap-3 xl:col-span-5">
-              <button
-                type="submit"
-                className="rounded-lg bg-[#8B0000] px-4 py-2 text-sm font-medium text-white hover:opacity-90"
-              >
-                Apply Filters
-              </button>
-
-              <Link
-                href="/admin/bookings"
-                className="rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
-              >
-                Reset
-              </Link>
-            </div>
-          </form>
-        </div>
+        <form
+          action="/b2b/bookings"
+          method="GET"
+          className="grid gap-4 p-5 md:grid-cols-2 xl:grid-cols-5"
+        >
+          <div className="xl:col-span-2">
+            <label
+              htmlFor="booking-q"
+              className="mb-1.5 block text-sm font-medium text-slate-700"
+            >
+              Search
+            </label>
+            <input
+              id="booking-q"
+              name="q"
+              defaultValue={q}
+              placeholder="Booking ref, tour or group"
+              className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+            />
+          </div>
+          <div>
+            <label
+              htmlFor="booking-status"
+              className="mb-1.5 block text-sm font-medium text-slate-700"
+            >
+              Booking Status
+            </label>
+            <select
+              id="booking-status"
+              name="status"
+              defaultValue={status ?? ""}
+              className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+            >
+              <option value="">All</option>
+              {Object.values(BookingStatus).map((value) => (
+                <option key={value} value={value}>
+                  {label(value)}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label
+              htmlFor="booking-payment-status"
+              className="mb-1.5 block text-sm font-medium text-slate-700"
+            >
+              Payment Status
+            </label>
+            <select
+              id="booking-payment-status"
+              name="paymentStatus"
+              defaultValue={paymentStatus ?? ""}
+              className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+            >
+              <option value="">All</option>
+              {Object.values(PaymentStatus).map((value) => (
+                <option key={value} value={value}>
+                  {label(value)}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label
+              htmlFor="booking-type"
+              className="mb-1.5 block text-sm font-medium text-slate-700"
+            >
+              Booking Type
+            </label>
+            <select
+              id="booking-type"
+              name="bookingType"
+              defaultValue={bookingType ?? ""}
+              className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+            >
+              <option value="">All</option>
+              {Object.values(BookingType).map((value) => (
+                <option key={value} value={value}>
+                  {label(value)}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div className="flex flex-wrap gap-2 md:col-span-2 xl:col-span-5">
+            <button
+              type="submit"
+              className="rounded-lg bg-[#001F3F] px-4 py-2 text-sm font-semibold text-white hover:bg-[#123b5e]"
+            >
+              Apply Filters
+            </button>
+            <Link
+              href="/b2b/bookings"
+              className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
+            >
+              Reset
+            </Link>
+          </div>
+        </form>
       </section>
 
-      <section className="rounded-2xl border bg-white shadow-sm">
-        <div className="flex items-center justify-between border-b px-6 py-4">
-          <h2 className="text-lg font-semibold text-gray-900">Booking List</h2>
-          <p className="text-sm text-gray-500">{bookings.length} result(s)</p>
+      <section className="overflow-hidden rounded-2xl border bg-white shadow-sm">
+        <div className="flex flex-wrap items-center justify-between gap-2 border-b px-5 py-4">
+          <h2 className="text-lg font-semibold text-[#001F3F]">Booking List</h2>
+          <span className="text-sm text-slate-500">
+            {totalCount} booking{totalCount === 1 ? "" : "s"}
+          </span>
         </div>
 
         {bookings.length === 0 ? (
-          <div className="p-10 text-center text-sm text-gray-500">
-            No bookings found.
+          <div className="space-y-3 p-10 text-center">
+            <p className="font-medium text-slate-700">No bookings found.</p>
+            <p className="text-sm text-slate-500">
+              Your agency has no bookings matching these filters.
+            </p>
+            <Link
+              href="/b2b/tours"
+              className="inline-flex rounded-lg border border-slate-300 px-4 py-2 text-sm font-semibold text-[#001F3F] hover:bg-slate-50"
+            >
+              View Available Tours
+            </Link>
           </div>
         ) : (
           <div className="overflow-x-auto">
-            <table className="min-w-full text-sm">
-              <thead className="bg-gray-50">
-                <tr className="border-b text-left text-gray-500">
-                  <th className="px-4 py-3 font-medium">Booking</th>
-                  <th className="px-4 py-3 font-medium">Tour / Departure</th>
-                  <th className="px-4 py-3 font-medium">Agent</th>
-                  <th className="px-4 py-3 font-medium">Passengers</th>
-                  <th className="px-4 py-3 font-medium">Financials</th>
-                  <th className="px-4 py-3 font-medium">Statuses</th>
-                  <th className="px-4 py-3 font-medium">Activity</th>
-                  <th className="px-4 py-3 font-medium text-right">Action</th>
+            <table className="min-w-full text-left text-sm">
+              <thead className="bg-slate-50 text-slate-600">
+                <tr>
+                  <th className="px-4 py-3 font-semibold">Booking</th>
+                  <th className="px-4 py-3 font-semibold">Tour / Departure</th>
+                  <th className="px-4 py-3 font-semibold">Passengers</th>
+                  <th className="px-4 py-3 font-semibold">Amounts</th>
+                  <th className="px-4 py-3 font-semibold">Status</th>
+                  <th className="px-4 py-3 text-right font-semibold">Details</th>
                 </tr>
               </thead>
-
               <tbody>
-                {bookings.map((booking) => {
-                  const latestPayment = booking.payments[0] ?? null;
-                  const totalScheduled = booking.paymentSchedules.reduce(
-                    (sum, item) => sum + item.amount,
-                    0
-                  );
-                  const totalScheduledPaid = booking.paymentSchedules.reduce(
-                    (sum, item) => sum + item.amountPaid,
-                    0
-                  );
-
-                  return (
-                    <tr key={booking.id} className="border-b last:border-0">
-                      <td className="px-4 py-4 align-top">
-                        <p className="font-semibold text-gray-900">
-                          {booking.bookingReference}
+                {bookings.map((booking) => (
+                  <tr key={booking.id} className="border-t align-top">
+                    <td className="px-4 py-4">
+                      <p className="font-semibold text-[#001F3F]">
+                        {booking.bookingDisplayCode || booking.bookingReference}
+                      </p>
+                      <p className="mt-1 text-xs text-slate-500">
+                        {label(booking.bookingType)} · Created {formatDate(booking.createdAt)}
+                      </p>
+                    </td>
+                    <td className="px-4 py-4">
+                      <p className="font-medium text-slate-900">
+                        {booking.tourTitleSnapshot}
+                      </p>
+                      {booking.groupName && (
+                        <p className="mt-1 text-xs text-slate-500">
+                          Group: {booking.groupName}
                         </p>
-                        <p className="mt-1 text-xs text-gray-500">
-                          {booking.bookingDisplayCode || "—"}
-                        </p>
-                        <p className="mt-1 text-xs text-gray-500">
-                          Created: {formatDate(booking.createdAt)}
-                        </p>
-                      </td>
-
-                      <td className="px-4 py-4 align-top">
-                        <p className="font-medium text-gray-900">
-                          {booking.tour?.title || booking.tourTitleSnapshot || "—"}
-                        </p>
-                        <p className="mt-1 text-xs text-gray-500">
-                          Departure:{" "}
-                          {formatDate(
-                            booking.departureDate?.date ||
-                              booking.departureDateSnapshot
-                          )}
-                        </p>
-                        <p className="mt-1 text-xs text-gray-500">
-                          {formatStatus(
-                            booking.departureDate?.season || booking.seasonSnapshot
-                          )}
-                        </p>
-                      </td>
-
-                      <td className="px-4 py-4 align-top">
-                        <p className="font-medium text-gray-900">
-                          {booking.user?.fullName || booking.agentNameSnapshot || "—"}
-                        </p>
-                        <p className="mt-1 text-xs text-gray-500">
-                          {booking.user?.travelAgency ||
-                            booking.agencyNameSnapshot ||
-                            "—"}
-                        </p>
-                        <p className="mt-1 text-xs text-gray-500">
-                          {booking.user?.email || booking.agentEmailSnapshot || "—"}
-                        </p>
-                      </td>
-
-                      <td className="px-4 py-4 align-top">
-                        <p className="font-medium text-gray-900">
-                          {booking._count.passengers || booking.numberOfGuests || 0}
-                        </p>
-                        <p className="mt-1 text-xs text-gray-500">
-                          Submissions: {booking._count.paymentSubmissions}
-                        </p>
-                      </td>
-
-                      <td className="px-4 py-4 align-top">
-                        <p className="font-medium text-gray-900">
-                          Total: {formatCurrency(booking.totalPrice, booking.currency)}
-                        </p>
-                        <p className="mt-1 text-xs text-gray-500">
-                          Paid: {formatCurrency(booking.amountPaid, booking.currency)}
-                        </p>
-                        <p className="mt-1 text-xs text-gray-500">
-                          Due: {formatCurrency(booking.amountDue, booking.currency)}
-                        </p>
-                        <p className="mt-1 text-xs text-gray-500">
-                          Schedule:{" "}
-                          {formatCurrency(totalScheduledPaid, booking.currency)} /{" "}
-                          {formatCurrency(totalScheduled, booking.currency)}
-                        </p>
-                      </td>
-
-                      <td className="px-4 py-4 align-top">
-                        <div className="flex flex-col gap-2">
-                          <span className={getBookingStatusClasses(booking.status)}>
-                            {formatStatus(booking.status)}
-                          </span>
-
-                          <span
-                            className={getPaymentStatusClasses(booking.paymentStatus)}
-                          >
-                            {formatStatus(booking.paymentStatus)}
-                          </span>
-
-                          {booking.payout ? (
-                            <span className="inline-flex rounded-full border border-blue-200 bg-blue-100 px-3 py-1 text-xs font-semibold text-blue-800">
-                              Payout: {formatStatus(booking.payout.status)}
-                            </span>
-                          ) : null}
-                        </div>
-                      </td>
-
-                      <td className="px-4 py-4 align-top">
-                        {latestPayment ? (
-                          <>
-                            <p className="font-medium text-gray-900">
-                              {formatCurrency(
-                                latestPayment.amount,
-                                latestPayment.currency
-                              )}
-                            </p>
-                            <p className="mt-1 text-xs text-gray-500">
-                              {formatStatus(latestPayment.status)}
-                            </p>
-                            <p className="mt-1 text-xs text-gray-500">
-                              {latestPayment.allocationLockedAt
-                                ? "Allocation Locked"
-                                : "Allocation Open"}
-                            </p>
-                          </>
-                        ) : (
-                          <p className="text-xs text-gray-500">No payment yet</p>
-                        )}
-                      </td>
-
-                      <td className="px-4 py-4 align-top text-right">
-                        <Link
-                          href={`/admin/bookings/${booking.id}`}
-                          className="inline-flex items-center rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
-                        >
-                          View Detail
-                        </Link>
-                      </td>
-                    </tr>
-                  );
-                })}
+                      )}
+                      <p className="mt-1 text-xs text-slate-500">
+                        Departure: {formatDate(booking.departureDateSnapshot)}
+                      </p>
+                    </td>
+                    <td className="px-4 py-4 font-medium text-slate-800">
+                      {booking.numberOfGuests}
+                    </td>
+                    <td className="px-4 py-4">
+                      <p className="font-medium text-slate-900">
+                        Total: {formatMoney(booking.totalPrice, booking.currency)}
+                      </p>
+                      <p className="mt-1 text-xs text-slate-500">
+                        Paid: {formatMoney(booking.amountPaid, booking.currency)}
+                      </p>
+                      <p className="mt-1 text-xs text-slate-500">
+                        Due: {formatMoney(booking.amountDue, booking.currency)}
+                      </p>
+                    </td>
+                    <td className="px-4 py-4">
+                      <div className="flex flex-col items-start gap-2">
+                        <span className={statusStyle(booking.status)}>
+                          {label(booking.status)}
+                        </span>
+                        <span className={statusStyle(booking.paymentStatus)}>
+                          {label(booking.paymentStatus)}
+                        </span>
+                      </div>
+                    </td>
+                    <td className="px-4 py-4 text-right">
+                      <Link
+                        href={`/b2b/bookings/${booking.id}`}
+                        className="inline-flex whitespace-nowrap rounded-lg border border-slate-300 px-3 py-2 font-semibold text-[#001F3F] hover:bg-slate-50"
+                      >
+                        View Booking
+                      </Link>
+                    </td>
+                  </tr>
+                ))}
               </tbody>
             </table>
           </div>
         )}
       </section>
 
-      {(q || status || paymentStatus || bookingType) && (
-        <div className="flex flex-wrap gap-2">
-          {q && (
-            <Link
-              href={buildUrl({ status, paymentStatus, bookingType })}
-              className="rounded-full border bg-white px-3 py-1 text-xs text-gray-700"
-            >
-              Search: {q} ×
-            </Link>
-          )}
-
-          {status && (
-            <Link
-              href={buildUrl({ q, paymentStatus, bookingType })}
-              className="rounded-full border bg-white px-3 py-1 text-xs text-gray-700"
-            >
-              Status: {status} ×
-            </Link>
-          )}
-
-          {paymentStatus && (
-            <Link
-              href={buildUrl({ q, status, bookingType })}
-              className="rounded-full border bg-white px-3 py-1 text-xs text-gray-700"
-            >
-              Payment: {paymentStatus} ×
-            </Link>
-          )}
-
-          {bookingType && (
-            <Link
-              href={buildUrl({ q, status, paymentStatus })}
-              className="rounded-full border bg-white px-3 py-1 text-xs text-gray-700"
-            >
-              Type: {bookingType} ×
-            </Link>
-          )}
+      {totalPages > 1 && (
+        <div className="flex items-center justify-between gap-3">
+          <Link
+            href={buildUrl({ ...activeFilters, page: page - 1 })}
+            aria-disabled={page <= 1}
+            className={`rounded-lg border px-4 py-2 text-sm font-medium ${
+              page <= 1
+                ? "pointer-events-none border-slate-200 text-slate-400"
+                : "border-slate-300 text-[#001F3F] hover:bg-slate-50"
+            }`}
+          >
+            Previous
+          </Link>
+          <p className="text-sm text-slate-600">
+            Page {page} of {totalPages}
+          </p>
+          <Link
+            href={buildUrl({ ...activeFilters, page: page + 1 })}
+            aria-disabled={page >= totalPages}
+            className={`rounded-lg border px-4 py-2 text-sm font-medium ${
+              page >= totalPages
+                ? "pointer-events-none border-slate-200 text-slate-400"
+                : "border-slate-300 text-[#001F3F] hover:bg-slate-50"
+            }`}
+          >
+            Next
+          </Link>
         </div>
       )}
     </div>

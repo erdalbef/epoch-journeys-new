@@ -195,10 +195,6 @@ export default async function QuoteDetailPage({ params }: Props) {
               {quote.pdfUrl || "Not generated"}
             </p>
 
-            <p>
-              <span className="font-medium text-slate-900">PDF (Client):</span>{" "}
-              {quote.clientPdfUrl || "Not generated"}
-            </p>
 
             <p>
               <span className="font-medium text-slate-900">PDF (Agent):</span>{" "}

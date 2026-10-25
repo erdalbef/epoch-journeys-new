@@ -37,42 +37,55 @@ const styles = StyleSheet.create({
     borderBottomColor: NAVY,
   },
 
+  // All business identity details sit in one letterhead beside the real logo.
   headerTop: {
     flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "flex-start",
+    alignItems: "center",
+    paddingBottom: 11,
+    borderBottomWidth: 1,
+    borderBottomColor: BORDER,
   },
 
   brandWrap: {
+    width: "100%",
     flexDirection: "row",
     alignItems: "center",
   },
 
   logo: {
-    width: 120,
-    height: 52,
+    width: 142,
+    height: 56,
     objectFit: "contain",
+    marginRight: 13,
+  },
+
+  brandIdentity: {
+    flex: 1,
+    minWidth: 0,
+    justifyContent: "center",
   },
 
   brandFallback: {
-    fontSize: 19,
+    width: 142,
+    marginRight: 13,
+    fontSize: 15.5,
     fontWeight: "bold",
     color: NAVY,
-    letterSpacing: 0.4,
+    letterSpacing: 0.3,
   },
 
-  brandSub: {
-    marginTop: 3,
-    fontSize: 8.5,
-    color: SLATE,
+  proposalMetaWrap: {
+    width: 190,
+    alignItems: "flex-end",
   },
 
   proposalLabel: {
-    fontSize: 10,
+    marginBottom: 6,
+    fontSize: 9.5,
     color: RED,
     fontWeight: "bold",
     textTransform: "uppercase",
-    letterSpacing: 1,
+    letterSpacing: 0.8,
   },
 
   titleRow: {
@@ -94,7 +107,7 @@ const styles = StyleSheet.create({
   },
 
   metaBox: {
-    width: 190,
+    width: "100%",
     borderWidth: 1,
     borderColor: BORDER,
     borderRadius: 4,
@@ -367,24 +380,25 @@ const styles = StyleSheet.create({
     color: "#64748B",
   },
 
-  contactBlock: {
-    marginTop: 8,
-    borderTopWidth: 1,
-    borderTopColor: BORDER,
-    paddingTop: 8,
-  },
-
   companyName: {
-    fontSize: 9.5,
+    fontSize: 11.5,
     fontWeight: "bold",
     color: NAVY,
     marginBottom: 2,
   },
 
+  brandTagline: {
+    fontSize: 8.5,
+    fontStyle: "italic",
+    color: RED,
+    letterSpacing: 0.2,
+    marginBottom: 4,
+  },
+
   companyContact: {
-    fontSize: 8.2,
+    fontSize: 8.1,
     color: "#475569",
-    lineHeight: 1.35,
+    lineHeight: 1.32,
   },
 
   thankYouBox: {
@@ -426,6 +440,14 @@ function formatMoney(value: number | null | undefined, currency = "EUR") {
     currency,
     maximumFractionDigits: 2,
   }).format(amount);
+}
+
+/** Room types without a usable rate must never be advertised as EUR 0.00. */
+function formatRoomRate(value: number | null | undefined, currency = "EUR") {
+  if (typeof value !== "number" || !Number.isFinite(value) || value <= 0) {
+    return "N/A";
+  }
+  return formatMoney(value, currency);
 }
 
 function formatDate(value: string | Date | null | undefined) {
@@ -551,19 +573,24 @@ export default function AgentClientQuotePdfDocument(props: Props) {
     <Document>
       <Page size="A4" style={styles.page} wrap>
         <View style={styles.header}>
-          <View style={styles.headerTop}>
+          <View style={styles.headerTop} wrap={false}>
             <View style={styles.brandWrap}>
               {logoUrl ? (
                 <Image src={logoUrl} style={styles.logo} />
               ) : (
-                <View>
-                  <Text style={styles.brandFallback}>EPOCH JOURNEYS</Text>
-                  <Text style={styles.brandSub}>Pilgrimage & Group Travel</Text>
-                </View>
+                <Text style={styles.brandFallback}>EPOCH JOURNEYS</Text>
               )}
+              <View style={styles.brandIdentity}>
+                <Text style={styles.companyName}>{companyName || "Epoch Journeys OOD"}</Text>
+                <Text style={styles.brandTagline}>Thoughtfully Planned. Faithfully Delivered.</Text>
+                <Text style={styles.companyContact}>
+                  {companyAddress}{companyVat ? ` | VAT ${companyVat}` : ""}
+                </Text>
+                <Text style={styles.companyContact}>
+                  {[companyEmail, companyWebsite, companyPhone].filter(Boolean).join(" | ")}
+                </Text>
+              </View>
             </View>
-
-            <Text style={styles.proposalLabel}>Agency NET Proposal</Text>
           </View>
 
           <View style={styles.titleRow}>
@@ -580,47 +607,36 @@ export default function AgentClientQuotePdfDocument(props: Props) {
               </View>
             </View>
 
-            <View style={styles.metaBox}>
-              <View style={styles.metaRow}>
-                <Text style={styles.metaLabel}>Quote No.</Text>
-                <Text style={styles.metaValue}>
-                  {quoteNumberLabel(quoteReference, quoteNumber)}
-                </Text>
-              </View>
+            <View style={styles.proposalMetaWrap}>
+              <Text style={styles.proposalLabel}>Agency NET Proposal</Text>
+              <View style={styles.metaBox}>
+                <View style={styles.metaRow}>
+                  <Text style={styles.metaLabel}>Quote No.</Text>
+                  <Text style={styles.metaValue}>
+                    {quoteNumberLabel(quoteReference, quoteNumber)}
+                  </Text>
+                </View>
 
-              <View style={styles.metaRow}>
-                <Text style={styles.metaLabel}>Issue Date</Text>
-                <Text style={styles.metaValue}>{formatDate(issueDate || new Date())}</Text>
-              </View>
+                <View style={styles.metaRow}>
+                  <Text style={styles.metaLabel}>Issue Date</Text>
+                  <Text style={styles.metaValue}>{formatDate(issueDate || new Date())}</Text>
+                </View>
 
-              <View style={styles.metaRow}>
-                <Text style={styles.metaLabel}>Valid Until</Text>
-                <Text style={styles.metaValue}>{formatDate(validUntil)}</Text>
-              </View>
+                <View style={styles.metaRow}>
+                  <Text style={styles.metaLabel}>Valid Until</Text>
+                  <Text style={styles.metaValue}>{formatDate(validUntil)}</Text>
+                </View>
 
-              <View style={styles.metaRow}>
-                <Text style={styles.metaLabel}>Travel Dates</Text>
-                <Text style={styles.metaValue}>
-                  {startDate || endDate
-                    ? `${formatDate(startDate)} - ${formatDate(endDate)}`
-                    : "-"}
-                </Text>
+                <View style={styles.metaRow}>
+                  <Text style={styles.metaLabel}>Travel Dates</Text>
+                  <Text style={styles.metaValue}>
+                    {startDate || endDate
+                      ? `${formatDate(startDate)} - ${formatDate(endDate)}`
+                      : "-"}
+                  </Text>
+                </View>
               </View>
             </View>
-          </View>
-
-          <View style={styles.contactBlock}>
-            <Text style={styles.companyName}>
-              {companyName}
-            </Text>
-
-            <Text style={styles.companyContact}>
-              {companyAddress} | VAT {companyVat}
-            </Text>
-
-            <Text style={styles.companyContact}>
-              {companyEmail} | {companyWebsite} | {companyPhone}
-            </Text>
           </View>
         </View>
 
@@ -698,8 +714,8 @@ export default function AgentClientQuotePdfDocument(props: Props) {
           <View style={styles.table}>
             <View style={styles.tableHeader}>
               <Text style={[styles.tableHeaderText, styles.colPax]}>Paying Pax</Text>
-              <Text style={[styles.tableHeaderText, styles.colPrice]}>Single</Text>
               <Text style={[styles.tableHeaderText, styles.colPrice]}>Double/Twin</Text>
+              <Text style={[styles.tableHeaderText, styles.colPrice]}>Single</Text>
               <Text style={[styles.tableHeaderText, styles.colPrice]}>Triple</Text>
             </View>
 
@@ -707,9 +723,9 @@ export default function AgentClientQuotePdfDocument(props: Props) {
               paxPricingRows.map((row, i) => (
                 <View key={i} style={styles.tableRow}>
                   <Text style={styles.colPax}>{row.paxCount}</Text>
-                  <Text style={styles.colPrice}>{formatMoney(row.singlePrice, currency)}</Text>
-                  <Text style={styles.colPrice}>{formatMoney(row.doubleTwinPrice, currency)}</Text>
-                  <Text style={styles.colPrice}>{formatMoney(row.triplePrice, currency)}</Text>
+                  <Text style={styles.colPrice}>{formatRoomRate(row.doubleTwinPrice, currency)}</Text>
+                  <Text style={styles.colPrice}>{formatRoomRate(row.singlePrice, currency)}</Text>
+                  <Text style={styles.colPrice}>{formatRoomRate(row.triplePrice, currency)}</Text>
                 </View>
               ))
             ) : (
@@ -752,9 +768,9 @@ export default function AgentClientQuotePdfDocument(props: Props) {
                     {row.hotelName}{row.destination ? ` - ${row.destination}` : ""}
                     {row.nights > 0 ? ` (${row.nights} night${row.nights === 1 ? "" : "s"})` : ""}
                   </Text>
-                  <Text style={{ width: "16%", textAlign: "right" }}>{formatMoney(row.singlePrice, currency)}</Text>
-                  <Text style={{ width: "18%", textAlign: "right" }}>{formatMoney(row.doubleTwinPrice, currency)}</Text>
-                  <Text style={{ width: "16%", textAlign: "right" }}>{formatMoney(row.triplePrice, currency)}</Text>
+                  <Text style={{ width: "16%", textAlign: "right" }}>{formatRoomRate(row.singlePrice, currency)}</Text>
+                  <Text style={{ width: "18%", textAlign: "right" }}>{formatRoomRate(row.doubleTwinPrice, currency)}</Text>
+                  <Text style={{ width: "16%", textAlign: "right" }}>{formatRoomRate(row.triplePrice, currency)}</Text>
                 </View>
               ))}
             </View>

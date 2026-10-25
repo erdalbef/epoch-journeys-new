@@ -243,6 +243,10 @@ export async function POST(
         unknown
       >;
 
+    // Optional hotel batch: three room-type prices in one atomic submission.
+    const roomRates = Array.isArray(body.roomRates) ? body.roomRates : null;
+    const isHotelBatch = roomRates !== null;
+
     const name =
       text(body.name);
 
@@ -269,7 +273,7 @@ export async function POST(
     if (
       !name ||
       !unit ||
-      amount === null ||
+      (!isHotelBatch && amount === null) ||
       !validFrom ||
       !validTo
     ) {
@@ -425,10 +429,7 @@ export async function POST(
         body.beveragePackageAmount,
       );
 
-    const rate =
-      await db.supplierRate.create(
-        {
-          data: {
+    const rateData = {
             supplierId,
 
             serviceId,
@@ -450,7 +451,7 @@ export async function POST(
 
             currency,
 
-            amount,
+            amount: amount ?? 0,
 
             unit,
 
@@ -526,6 +527,15 @@ export async function POST(
               optionalBoolean(
                 body.dinnerIncluded,
               ),
+
+            dinnerAmount:
+              optionalNonNegativeNumber(body.dinnerAmount),
+
+            dinnerUnit:
+              optionalRateUnit(body.dinnerUnit),
+
+            dinnerNotes:
+              text(body.dinnerNotes),
 
             // ==================================================
             // PORTERAGE
@@ -750,9 +760,89 @@ export async function POST(
                 body.isActive,
               ) ??
               true,
-          },
-        },
+    };
+
+    if (isHotelBatch) {
+      const selectedService = serviceId
+        ? await db.supplierService.findFirst({
+            where: { id: serviceId, supplierId },
+            select: { type: true },
+          })
+        : null;
+
+      if (selectedService?.type !== "ACCOMMODATION") {
+        return NextResponse.json(
+          { error: "Select an Accommodation / Hotel service for room rates." },
+          { status: 400 },
+        );
+      }
+
+      if (!Array.isArray(roomRates) || roomRates.length < 1 || roomRates.length > 3) {
+        return NextResponse.json(
+          { error: "Enter at least one and at most three hotel room rates." },
+          { status: 400 },
+        );
+      }
+
+      const allowedTypes: RoomType[] = [
+        RoomType.SINGLE,
+        RoomType.DOUBLE_TWIN,
+        RoomType.TRIPLE,
+      ];
+      const seen = new Set<RoomType>();
+      const validatedRates: { roomType: RoomType; amount: number }[] = [];
+
+      for (const entry of roomRates) {
+        if (!entry || typeof entry !== "object" || Array.isArray(entry)) {
+          return NextResponse.json(
+            { error: "Each hotel room rate must be an object." },
+            { status: 400 },
+          );
+        }
+        const item = entry as Record<string, unknown>;
+        const roomType = optionalRoomType(item.roomType);
+        const roomAmount = optionalNonNegativeNumber(item.amount);
+        if (!roomType || !allowedTypes.includes(roomType) || seen.has(roomType) || roomAmount === null) {
+          return NextResponse.json(
+            { error: "Each room type must be unique and have a valid non-negative amount." },
+            { status: 400 },
+          );
+        }
+        seen.add(roomType);
+        validatedRates.push({ roomType, amount: roomAmount });
+      }
+
+      if (unit !== SupplierRateUnit.PER_ROOM_PER_NIGHT &&
+          unit !== SupplierRateUnit.PER_PERSON_PER_NIGHT) {
+        return NextResponse.json(
+          { error: "Hotel room rates must be per room per night or per person per night." },
+          { status: 400 },
+        );
+      }
+
+      const rates = await db.$transaction(
+        validatedRates.map(({ roomType, amount: roomAmount }) =>
+          db.supplierRate.create({
+            data: {
+              ...rateData,
+              amount: roomAmount,
+              roomType,
+              name: `${name} - ${roomType === RoomType.DOUBLE_TWIN ? "Double/Twin" : roomType === RoomType.SINGLE ? "Single" : "Triple"}`,
+            },
+          }),
+        ),
       );
+
+      return NextResponse.json(
+        { success: true, rates: rates.map((rate) => ({
+          ...rate,
+          amount: Number(rate.amount),
+        })) },
+        { status: 201 },
+      );
+    }
+
+    const rate = await db.supplierRate.create({ data: rateData });
 
     return NextResponse.json(
       {

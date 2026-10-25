@@ -1,5 +1,7 @@
 import { NextResponse } from "next/server"
 import { db } from "@/lib/db"
+import { Role } from "@prisma/client"
+import { getCurrentApiActor } from "@/lib/security/getCurrentApiActor"
 import {
   customTourRequestSchema,
   type CustomTourRequestInput,
@@ -16,6 +18,9 @@ function generateRequestReference() {
 }
 
 export async function POST(req: Request) {
+  const access = await getCurrentApiActor()
+  if (access.response) return access.response
+
   try {
     const body = await req.json()
 
@@ -34,20 +39,31 @@ export async function POST(req: Request) {
 
     const data: CustomTourRequestInput = parsed.data
 
-    if (!body.userId || typeof body.userId !== "string") {
-      return NextResponse.json(
-        {
-          success: false,
-          message: "userId is required",
-        },
-        { status: 400 }
-      )
+    // A travel agency can submit a request only under its own account.
+    // Admin may explicitly select an existing account when assisting an agency.
+    const targetUserId =
+      access.actor.role === Role.ADMIN &&
+      typeof body.userId === "string" && body.userId.trim()
+        ? body.userId.trim()
+        : access.actor.id
+
+    if (access.actor.role === Role.ADMIN && targetUserId !== access.actor.id) {
+      const target = await db.user.findUnique({
+        where: { id: targetUserId },
+        select: { id: true, role: true },
+      })
+      if (!target || target.role !== Role.AGENT) {
+        return NextResponse.json(
+          { success: false, message: "Selected agency account not found." },
+          { status: 400 },
+        )
+      }
     }
 
     const request = await db.customTourRequest.create({
       data: {
         requestReference: generateRequestReference(),
-        userId: body.userId,
+        userId: targetUserId,
 
         title: data.title,
         requestName: data.requestName,

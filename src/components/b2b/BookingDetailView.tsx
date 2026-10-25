@@ -848,7 +848,7 @@ export default function BookingDetailView({
                     <td className="py-3 pr-4">
                       {submission.proofUrl ? (
                         <a
-                          href={submission.proofUrl}
+                          href={`/api/payment-proofs/${encodeURIComponent(submission.id)}`}
                           target="_blank"
                           rel="noreferrer"
                           className="text-xs font-medium text-[#8B0000] hover:underline"

@@ -4,6 +4,7 @@ import { Resend } from "resend";
 
 import { authOptions } from "@/lib/authOptions";
 import { db } from "@/lib/db";
+import { checkQuoteApprovalReadiness } from "@/lib/quotes/approvalReadiness";
 
 export const runtime = "nodejs";
 
@@ -56,6 +57,19 @@ export async function POST(
         { ok: false, error: "Quote not found." },
         { status: 404 }
       );
+    }
+
+    const readiness = checkQuoteApprovalReadiness({
+      quoteBuilderSummary: quote.quoteBuilderSummary,
+      recipientEmail: quote.recipientEmail,
+    });
+    if (!readiness.ready) {
+      return NextResponse.json({
+        ok: false,
+        error: `Sending blocked: ${readiness.errors.join(" | ")}`,
+        issues: readiness.errors,
+        warnings: readiness.warnings,
+      }, { status: 400 });
     }
 
     if (!quote.recipientEmail) {

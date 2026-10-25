@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { db } from "@/lib/db"
-import { QuoteStatus, QuoteActivityAction } from "@prisma/client"
+import { QuoteStatus, QuoteActivityAction, Role } from "@prisma/client"
+import { getCurrentApiActor } from "@/lib/security/getCurrentApiActor"
 
 type RouteContext = {
   params: Promise<{
@@ -9,6 +10,12 @@ type RouteContext = {
 }
 
 export async function POST(_: NextRequest, context: RouteContext) {
+  const access = await getCurrentApiActor()
+  if (access.response) return access.response
+  if (access.actor.role !== Role.ADMIN) {
+    return NextResponse.json({ success: false, message: "Admin access required." }, { status: 403 })
+  }
+
   try {
     const { id } = await context.params
 

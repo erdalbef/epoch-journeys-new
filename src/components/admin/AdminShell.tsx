@@ -30,6 +30,7 @@ import {
   Search,
   Sparkles,
   TicketCheck,
+  Ticket,
   TrendingUp,
   Users,
   WalletCards,
@@ -102,6 +103,16 @@ const navSections: NavSection[] = [
         label: "Booking Calendar",
         href: "/admin/bookings/calendar",
         icon: CalendarDays,
+      },
+      {
+        label: "Attractions & Entrance Fees",
+        href: "/admin/attractions",
+        icon: Ticket,
+      },
+      {
+        label: "Standard Per-Person Services",
+        href: "/admin/standard-services",
+        icon: CircleDollarSign,
       },
       {
         label: "Quote Templates",

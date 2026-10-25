@@ -5,6 +5,16 @@ import { CalendarDays, ExternalLink } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 
+type ContractInstallmentOption = {
+  id: string;
+  contractTitle: string;
+  label: string;
+  dueDate: string;
+  currency: string | null;
+  amount: number | null;
+  remaining: number | null;
+};
+
 type Props = {
   payable: {
     id: string;
@@ -24,7 +34,9 @@ type Props = {
     hasProof: boolean;
     proofDocumentId: string | null;
     proofFileName: string | null;
+    contractPaymentScheduleId?: string | null;
   };
+  contractInstallments?: ContractInstallmentOption[];
   bankAccounts: Array<{
     id: string;
     name: string;
@@ -183,6 +195,7 @@ export default function EditSupplierPaymentForm({
   payable,
   payment,
   bankAccounts,
+  contractInstallments = [],
 }: Props) {
   const router = useRouter();
 
@@ -196,6 +209,9 @@ export default function EditSupplierPaymentForm({
   const [method, setMethod] = useState(payment.method);
   const [reference, setReference] = useState(payment.reference || "");
   const [notes, setNotes] = useState(payment.notes || "");
+  const [contractPaymentScheduleId, setContractPaymentScheduleId] = useState(
+    payment.contractPaymentScheduleId || "",
+  );
   const [paymentProof, setPaymentProof] = useState<File | null>(null);
   const [loading, setLoading] = useState(false);
 
@@ -236,6 +252,7 @@ export default function EditSupplierPaymentForm({
       formData.set("method", method);
       formData.set("reference", reference.trim());
       formData.set("notes", notes.trim());
+      formData.set("contractPaymentScheduleId", contractPaymentScheduleId);
 
       if (paymentProof) {
         formData.set("paymentProof", paymentProof);
@@ -337,6 +354,32 @@ export default function EditSupplierPaymentForm({
             onChange={(event) => setReference(event.target.value)}
             className={inputClass}
           />
+        </Field>
+
+        <Field label="Contract Installment (Optional)">
+          <select
+            value={contractPaymentScheduleId}
+            onChange={(event) => setContractPaymentScheduleId(event.target.value)}
+            className={inputClass}
+          >
+            <option value="">No contract installment linked</option>
+            {contractInstallments
+              .filter((item) => !item.currency || item.currency === payable.currency || item.id === contractPaymentScheduleId)
+              .map((item) => (
+                <option key={item.id} value={item.id}>
+                  {item.contractTitle} — {item.label} — Due {item.dueDate}
+                  {item.remaining !== null ? ` — Remaining ${payable.currency} ${item.remaining.toFixed(2)}` : ""}
+                </option>
+              ))}
+          </select>
+          <span className="mt-1 block text-xs text-slate-500">
+            Optional. Only associate this payment with the contract installment it actually settles.
+          </span>
+          {contractPaymentScheduleId && !contractInstallments.some((item) => item.id === contractPaymentScheduleId) ? (
+            <span className="mt-1 block text-xs font-semibold text-amber-700">
+              The previously linked installment is not in the available list. Clear it or ask an administrator to check the contract.
+            </span>
+          ) : null}
         </Field>
 
         <Field label="Internal Notes">

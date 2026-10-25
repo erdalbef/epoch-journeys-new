@@ -7,6 +7,7 @@ import {
 
 import { db } from "@/lib/db";
 import { authOptions } from "@/lib/authOptions";
+import { checkQuoteApprovalReadiness } from "@/lib/quotes/approvalReadiness";
 
 type RouteContext = {
   params: Promise<{
@@ -26,7 +27,7 @@ export async function PATCH(
   try {
     const session = await getServerSession(authOptions);
 
-    if (!session?.user?.id) {
+    if (!session?.user?.id || session.user.role !== "ADMIN") {
       return NextResponse.json(
         {
           ok: false,
@@ -68,6 +69,8 @@ export async function PATCH(
         sentAt: true,
         approvedAt: true,
         convertedAt: true,
+        recipientEmail: true,
+        quoteBuilderSummary: true,
       },
     });
 
@@ -120,6 +123,21 @@ export async function PATCH(
             status: 400,
           }
         );
+      }
+
+      // A quote may reach SENT through several workflows. Always check
+      // approval readiness here on the server; the UI cannot bypass it.
+      const readiness = checkQuoteApprovalReadiness({
+        quoteBuilderSummary: existing.quoteBuilderSummary,
+        recipientEmail: existing.recipientEmail,
+      });
+      if (!readiness.ready) {
+        return NextResponse.json({
+          ok: false,
+          error: `Approval blocked: ${readiness.errors.join(" | ")}`,
+          issues: readiness.errors,
+          warnings: readiness.warnings,
+        }, { status: 400 });
       }
 
       const now = new Date();
@@ -206,6 +224,13 @@ export async function PATCH(
      * Quote -> Booking conversion route.
      */
 
+    if (body.status === QuoteStatus.FINALIZED) {
+      return NextResponse.json({
+        ok: false,
+        error: "Use the dedicated Finalize action so quotation readiness is checked and its final PDF is generated.",
+      }, { status: 400 });
+    }
+
     if (body.status === QuoteStatus.CONVERTED) {
       return NextResponse.json(
         {
@@ -234,6 +259,29 @@ export async function PATCH(
           status: 400,
         }
       );
+    }
+
+    // All commercial transitions use their dedicated guarded endpoints:
+    // DRAFT -> FINALIZED: /finalize
+    // FINALIZED -> SENT: /send (PDF email routes)
+    // SENT -> approved: { approve: true }
+    // approved SENT -> CONVERTED: /convert
+    // The generic status endpoint may only cancel eligible, unapproved quotes.
+    if (body.status !== QuoteStatus.CANCELLED) {
+      return NextResponse.json({
+        ok: false,
+        error: "Use the dedicated action for finalizing, sending, approving or converting a quote.",
+      }, { status: 400 });
+    }
+
+    if (existing.approvedAt || (
+      existing.status !== QuoteStatus.FINALIZED &&
+      existing.status !== QuoteStatus.SENT
+    )) {
+      return NextResponse.json({
+        ok: false,
+        error: "Only finalized or unapproved sent quotations may be cancelled.",
+      }, { status: 400 });
     }
 
     const now = new Date();

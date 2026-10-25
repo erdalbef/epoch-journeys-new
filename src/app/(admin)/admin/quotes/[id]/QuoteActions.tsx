@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import { Prisma } from "@prisma/client";
 
 import SendClientQuoteButton from "@/components/quotes/SendClientQuoteButton";
@@ -23,9 +24,17 @@ type GenerateResponse = {
   error?: string;
   quote?: {
     pdfUrl?: string | null;
-    clientPdfUrl?: string | null;
     agentClientPdfUrl?: string | null;
   };
+};
+
+type ApprovalReadinessResponse = {
+  ok?: boolean;
+  error?: string;
+  ready?: boolean;
+  errors?: string[];
+  warnings?: string[];
+  savedAt?: string;
 };
 
 type BasicResponse = {
@@ -42,7 +51,11 @@ type BasicResponse = {
 export default function QuoteActions({ quote }: Props) {
   const router = useRouter();
   const [loading, setLoading] = useState(false);
+  const [approvalReadiness, setApprovalReadiness] = useState<ApprovalReadinessResponse | null>(null);
 
+  const isDraft = quote.status === "DRAFT";
+  const isFinalized = quote.status === "FINALIZED";
+  const isSent = quote.status === "SENT";
   const isConverted = quote.status === "CONVERTED";
   const isCancelled = quote.status === "CANCELLED";
   const isApproved = Boolean(quote.approvedAt);
@@ -69,7 +82,6 @@ export default function QuoteActions({ quote }: Props) {
     url: string,
     field:
       | "pdfUrl"
-      | "clientPdfUrl"
       | "agentClientPdfUrl"
   ) {
     setLoading(true);
@@ -172,6 +184,58 @@ export default function QuoteActions({ quote }: Props) {
           ? err.message
           : "Failed to duplicate quote."
       );
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  /** API actions may receive Next.js HTML error pages instead of JSON. */
+  async function readActionJson<T>(response: Response, action: string): Promise<T> {
+    const contentType = (response.headers.get("content-type") || "").toLowerCase();
+    if (!contentType.includes("application/json")) {
+      const code = response.status;
+      const reason = response.redirected
+        ? "The request was redirected; your login session may have expired."
+        : code === 404
+          ? "The API endpoint was not found. Confirm the approval-readiness route exists and restart the development server."
+          : code >= 500
+            ? "The server returned an error page. Inspect the 'npm run dev' terminal for the underlying error."
+            : "The server returned a non-JSON response. Check your login and server route.";
+      throw new Error(`${action}: ${reason} (HTTP ${code}).`);
+    }
+    try {
+      return (await response.json()) as T;
+    } catch {
+      throw new Error(`${action}: the server returned malformed JSON (HTTP ${response.status}).`);
+    }
+  }
+
+  async function handleReadinessCheck() {
+    setLoading(true);
+    try {
+      const res = await fetch(`/api/quotes/${quote.id}/approval-readiness`, { cache: "no-store" });
+      const data = await readActionJson<ApprovalReadinessResponse>(res, "Approval readiness check");
+      if (!res.ok || !data.ok) throw new Error(data.error || "Unable to check saved quote readiness.");
+      setApprovalReadiness(data);
+    } catch (err) {
+      alert(err instanceof Error ? err.message : "Failed to check approval readiness.");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function handleFinalize() {
+    if (loading || quote.status !== "DRAFT") return;
+    if (!window.confirm("Finalize this draft after validating saved costs and generating its final PDF?")) return;
+    setLoading(true);
+    try {
+      const res = await fetch(`/api/quotes/${quote.id}/finalize`, { method: "POST" });
+      const data = await readActionJson<{ message?: string; issues?: string[] }>(res, "Finalize quotation");
+      if (!res.ok) throw new Error(data.message || data.issues?.join(" | ") || "Unable to finalize quotation.");
+      setApprovalReadiness(null);
+      router.refresh();
+    } catch (err) {
+      alert(err instanceof Error ? err.message : "Quote finalization failed.");
     } finally {
       setLoading(false);
     }
@@ -294,11 +358,35 @@ export default function QuoteActions({ quote }: Props) {
     }
   }
 
+  async function handleCancel() {
+    if (loading || !(isFinalized || (isSent && !isApproved))) return;
+    if (!window.confirm("Cancel this quotation? It will remain in the system for audit and cannot be converted to a booking.")) return;
+
+    setLoading(true);
+    try {
+      const response = await fetch(`/api/quotes/${quote.id}/status`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status: "CANCELLED" }),
+      });
+      const data = await readActionJson<BasicResponse>(response, "Cancel quotation");
+      if (!response.ok || !data.ok) {
+        throw new Error(data.error || "Could not cancel the quotation.");
+      }
+      setApprovalReadiness(null);
+      router.refresh();
+    } catch (error) {
+      window.alert(error instanceof Error ? error.message : "Could not cancel quotation.");
+    } finally {
+      setLoading(false);
+    }
+  }
+
   async function handleDelete() {
-    if (isConverted) return;
+    if (!isDraft || loading) return;
 
     const confirmed = window.confirm(
-      "Are you sure you want to delete this quote? This action cannot be undone."
+      `Permanently delete draft ${quote.quoteReference || quote.quoteNumber}? This cannot be undone.`
     );
 
     if (!confirmed) return;
@@ -350,9 +438,7 @@ export default function QuoteActions({ quote }: Props) {
           </h2>
 
           <p className="text-sm text-slate-500">
-            Generate PDFs, send proposals,
-            approve, duplicate, convert, or
-            delete this quote.
+            Create and review PDFs, then manage the quotation using actions appropriate to its current status.
           </p>
         </div>
 
@@ -396,22 +482,6 @@ export default function QuoteActions({ quote }: Props) {
               type="button"
               onClick={() =>
                 handleGenerate(
-                  `/api/quotes/${quote.id}/client-pdf`,
-                  "clientPdfUrl"
-                )
-              }
-              className="rounded-md bg-green-600 px-4 py-2 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-50"
-              disabled={loading}
-            >
-              {loading
-                ? "Working..."
-                : "Client PDF"}
-            </button>
-
-            <button
-              type="button"
-              onClick={() =>
-                handleGenerate(
                   `/api/quotes/${quote.id}/agent-client-pdf`,
                   "agentClientPdfUrl"
                 )
@@ -439,21 +509,6 @@ export default function QuoteActions({ quote }: Props) {
               </button>
             )}
 
-            {quote.clientPdfUrl && (
-              <button
-                type="button"
-                onClick={() =>
-                  window.open(
-                    quote.clientPdfUrl!,
-                    "_blank"
-                  )
-                }
-                className="rounded-md border px-4 py-2 text-sm font-medium"
-              >
-                View Client
-              </button>
-            )}
-
             {quote.agentClientPdfUrl && (
               <button
                 type="button"
@@ -471,21 +526,13 @@ export default function QuoteActions({ quote }: Props) {
           </div>
         </div>
 
+        {(isFinalized || (isSent && !isApproved)) && (
         <div>
           <h3 className="mb-2 text-sm font-semibold text-slate-800">
             Email Sending
           </h3>
 
           <div className="flex flex-wrap gap-3">
-            <SendClientQuoteButton
-              quoteId={quote.id}
-              mode="client"
-              disabled={
-                loading ||
-                !quote.clientPdfUrl
-              }
-            />
-
             <SendClientQuoteButton
               quoteId={quote.id}
               mode="agent"
@@ -496,12 +543,47 @@ export default function QuoteActions({ quote }: Props) {
             />
           </div>
 
-          {(!quote.clientPdfUrl ||
-            !quote.agentClientPdfUrl) && (
+          {!quote.agentClientPdfUrl && (
             <p className="mt-2 text-xs text-slate-500">
               Generate the related PDF before
               sending it by email.
             </p>
+          )}
+        </div>
+
+        )}
+
+        <div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <h3 className="text-sm font-semibold text-slate-900">Approval Readiness</h3>
+              <p className="text-xs text-slate-600">Checks saved costs and mandatory fields. Drafts remain editable.</p>
+            </div>
+            <button type="button" onClick={handleReadinessCheck} disabled={loading}
+              className="rounded-md border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-800 disabled:opacity-50">
+              Check Approval Readiness
+            </button>
+          </div>
+          {approvalReadiness && (
+            <div className="mt-3 space-y-2 text-sm">
+              <p className={approvalReadiness.ready ? "font-medium text-emerald-800" : "font-medium text-red-700"}>
+                {approvalReadiness.ready ? "Ready: no blocking cost issues detected" : `Not ready: ${approvalReadiness.errors?.length || 0} issue(s) to resolve`}
+              </p>
+              {(approvalReadiness.errors?.length || 0) > 0 && (
+                <ul className="list-disc space-y-1 pl-5 text-red-700">
+                  {approvalReadiness.errors?.map((message, index) => <li key={`err-${index}`}>{message}</li>)}
+                </ul>
+              )}
+              {(approvalReadiness.warnings?.length || 0) > 0 && (
+                <div className="text-amber-800">
+                  <p className="font-medium">Review warnings (not automatic blockers)</p>
+                  <ul className="list-disc space-y-1 pl-5">
+                    {approvalReadiness.warnings?.map((message, index) => <li key={`warn-${index}`}>{message}</li>)}
+                  </ul>
+                </div>
+              )}
+              <p className="text-xs text-slate-500">Based on the last saved quote. Recheck after any edits. Passing does not replace supplier reconfirmation.</p>
+            </div>
           )}
         </div>
 
@@ -511,78 +593,78 @@ export default function QuoteActions({ quote }: Props) {
           </h3>
 
           <div className="flex flex-wrap gap-3">
+            {isDraft && (
+              <Link
+                href={`/admin/quotes/${quote.id}/edit`}
+                className="rounded-md border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-800 hover:bg-slate-50"
+              >
+                Edit Draft
+              </Link>
+            )}
+
+            {isDraft && (
+              <button
+                type="button"
+                onClick={handleFinalize}
+                disabled={loading}
+                className="rounded-md bg-indigo-700 px-4 py-2 text-sm font-medium text-white disabled:opacity-50"
+              >
+                Finalize Draft
+              </button>
+            )}
+
             <button
               type="button"
               onClick={handleDuplicate}
               disabled={loading}
-              className="rounded-md bg-slate-700 px-4 py-2 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-50"
+              className="rounded-md bg-slate-700 px-4 py-2 text-sm font-medium text-white disabled:opacity-50"
             >
               Duplicate
             </button>
 
-            <button
-              type="button"
-              onClick={handleApprove}
-              disabled={
-                loading ||
-                isConverted ||
-                isCancelled ||
-                isApproved ||
-                quote.status !== "SENT"
-              }
-              className="rounded-md bg-amber-600 px-4 py-2 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-50"
-              title={
-                isApproved
-                  ? "This quote has already been approved."
-                  : quote.status !==
-                      "SENT"
-                    ? "Only a sent quote can be approved."
-                    : undefined
-              }
-            >
-              {isApproved
-                ? "Quote Approved"
-                : "Mark Approved"}
-            </button>
+            {isSent && !isApproved && (
+              <button
+                type="button"
+                onClick={handleApprove}
+                disabled={loading}
+                className="rounded-md bg-amber-600 px-4 py-2 text-sm font-medium text-white disabled:opacity-50"
+              >
+                Mark Approved
+              </button>
+            )}
 
-            <button
-              type="button"
-              onClick={handleConvert}
-              disabled={
-                loading ||
-                isConverted ||
-                isCancelled ||
-                !isApproved
-              }
-              className="rounded-md bg-emerald-700 px-4 py-2 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-50"
-              title={
-                isConverted
-                  ? "This quote has already been converted."
-                  : isCancelled
-                    ? "Cancelled quotes cannot be converted."
-                    : !isApproved
-                      ? "Approve the quote before converting it."
-                      : undefined
-              }
-            >
-              Convert Quote → Booking
-            </button>
+            {isSent && isApproved && (
+              <button
+                type="button"
+                onClick={handleConvert}
+                disabled={loading}
+                className="rounded-md bg-emerald-700 px-4 py-2 text-sm font-medium text-white disabled:opacity-50"
+              >
+                Convert Quote to Booking
+              </button>
+            )}
 
-            <button
-              type="button"
-              onClick={handleDelete}
-              disabled={
-                loading || isConverted
-              }
-              className="rounded-md bg-red-700 px-4 py-2 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-50"
-              title={
-                isConverted
-                  ? "Converted quotes should not be deleted."
-                  : undefined
-              }
-            >
-              Delete
-            </button>
+            {(isFinalized || (isSent && !isApproved)) && (
+              <button
+                type="button"
+                onClick={handleCancel}
+                disabled={loading}
+                className="rounded-md border border-amber-500 px-4 py-2 text-sm font-medium text-amber-800 hover:bg-amber-50 disabled:opacity-50"
+              >
+                Cancel Quote
+              </button>
+            )}
+
+            {isDraft && (
+              <button
+                type="button"
+                onClick={handleDelete}
+                disabled={loading}
+                className="rounded-md border border-red-300 px-4 py-2 text-sm font-medium text-red-700 hover:bg-red-50 disabled:opacity-50"
+              >
+                Delete Draft
+              </button>
+            )}
           </div>
         </div>
       </div>

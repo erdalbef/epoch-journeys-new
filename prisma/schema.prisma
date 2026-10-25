@@ -703,6 +703,39 @@ model CustomRequestNote {
   @@index([authorId])
 }
 
+model AttractionEntranceFee {
+  id           String   @id @default(cuid())
+  lookupKey    String   @unique
+  name         String
+  country      String
+  city         String   @default("")
+  admissionFee Decimal? @db.Decimal(12, 2)
+  currency     String   @default("EUR")
+  isActive     Boolean  @default(true)
+  notes        String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@index([isActive, name])
+  @@index([country, city])
+}
+
+model StandardPerPersonService {
+  id        String   @id @default(cuid())
+  lookupKey String   @unique
+  name      String
+  category  String
+  unit      String   @default("PER_PERSON")
+  price     Decimal? @db.Decimal(12, 2)
+  currency  String   @default("EUR")
+  isActive  Boolean  @default(true)
+  notes     String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([isActive, category, name])
+}
+
 model Passenger {
   id                    String          @id @default(cuid())
   bookingId             String
@@ -1820,9 +1853,10 @@ model SupplierContract {
 
   supplier Supplier @relation(fields: [supplierId], references: [id], onDelete: Cascade)
 
-  previousVersion SupplierContract?                 @relation("SupplierContractVersion", fields: [previousVersionId], references: [id])
-  newerVersions   SupplierContract[]                @relation("SupplierContractVersion")
-  paymentSchedule SupplierContractPaymentSchedule[]
+  previousVersion  SupplierContract?                 @relation("SupplierContractVersion", fields: [previousVersionId], references: [id])
+  newerVersions    SupplierContract[]                @relation("SupplierContractVersion")
+  paymentSchedule  SupplierContractPaymentSchedule[]
+  supplierPayables SupplierPayable[]
 
   @@index([status])
   @@index([supplierId])
@@ -1846,7 +1880,8 @@ model SupplierContractPaymentSchedule {
   createdAt   DateTime                    @default(now())
   updatedAt   DateTime                    @updatedAt
 
-  contract SupplierContract @relation(fields: [contractId], references: [id], onDelete: Cascade)
+  contract                SupplierContract         @relation(fields: [contractId], references: [id], onDelete: Cascade)
+  supplierPayablePayments SupplierPayablePayment[]
 
   @@index([contractId])
   @@index([dueDate])
@@ -1856,6 +1891,7 @@ model SupplierContractPaymentSchedule {
 model SupplierPayable {
   id                    String                        @id @default(cuid())
   supplierId            String
+  contractId            String?
   serviceId             String?
   rateId                String?
   tourId                String?
@@ -1890,21 +1926,25 @@ model SupplierPayable {
   documentType          SupplierPayableDocumentType   @default(FINAL_INVOICE)
   internalReference     String?                       @unique
   agencyGroupName       String?
-  documents             FinanceDocument[]
-  approvedBy            User?                         @relation("SupplierPayable_approvedByIdToUser", fields: [approvedById], references: [id])
-  booking               Booking?                      @relation(fields: [bookingId], references: [id])
-  createdBy             User?                         @relation("SupplierPayable_createdByIdToUser", fields: [createdById], references: [id])
-  departureDate         DepartureDate?                @relation(fields: [departureDateId], references: [id])
-  rate                  SupplierRate?                 @relation(fields: [rateId], references: [id])
-  service               SupplierService?              @relation(fields: [serviceId], references: [id])
-  supplier              Supplier                      @relation(fields: [supplierId], references: [id])
-  tour                  Tour?                         @relation(fields: [tourId], references: [id])
-  payments              SupplierPayablePayment[]
+
+  documents FinanceDocument[]
+
+  approvedBy    User?                    @relation("SupplierPayable_approvedByIdToUser", fields: [approvedById], references: [id])
+  booking       Booking?                 @relation(fields: [bookingId], references: [id])
+  contract      SupplierContract?        @relation(fields: [contractId], references: [id], onDelete: SetNull)
+  createdBy     User?                    @relation("SupplierPayable_createdByIdToUser", fields: [createdById], references: [id])
+  departureDate DepartureDate?           @relation(fields: [departureDateId], references: [id])
+  rate          SupplierRate?            @relation(fields: [rateId], references: [id])
+  service       SupplierService?         @relation(fields: [serviceId], references: [id])
+  supplier      Supplier                 @relation(fields: [supplierId], references: [id])
+  tour          Tour?                    @relation(fields: [tourId], references: [id])
+  payments      SupplierPayablePayment[]
 
   @@index([agencyGroupName])
   @@index([approvalStatus])
   @@index([approvedById])
   @@index([bookingId])
+  @@index([contractId])
   @@index([createdAt])
   @@index([createdById])
   @@index([departureDateId])
@@ -1918,29 +1958,42 @@ model SupplierPayable {
 }
 
 model SupplierPayablePayment {
-  id               String            @id @default(cuid())
-  payableId        String
-  bankAccountId    String?
-  recordedById     String?
-  amount           Decimal           @db.Decimal(12, 2)
-  currency         String            @default("EUR")
-  paymentDate      DateTime          @default(now())
-  method           PaymentMethod
-  reference        String?
-  notes            String?
-  proofUrl         String?
-  createdAt        DateTime          @default(now())
-  updatedAt        DateTime          @updatedAt
+  id            String  @id @default(cuid())
+  payableId     String
+  bankAccountId String?
+  recordedById  String?
+
+  // CONTRACT PAYMENT SCHEDULE (OPTIONAL)
+  contractPaymentScheduleId String?
+
+  amount      Decimal       @db.Decimal(12, 2)
+  currency    String        @default("EUR")
+  paymentDate DateTime      @default(now())
+  method      PaymentMethod
+  reference   String?
+  notes       String?
+  proofUrl    String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // EXISTING RELATIONS
   bankTransactions BankTransaction[]
   documents        FinanceDocument[]
-  bankAccount      BankAccount?      @relation(fields: [bankAccountId], references: [id])
-  payable          SupplierPayable   @relation(fields: [payableId], references: [id], onDelete: Cascade)
-  recordedBy       User?             @relation(fields: [recordedById], references: [id])
 
+  bankAccount BankAccount?    @relation(fields: [bankAccountId], references: [id])
+  payable     SupplierPayable @relation(fields: [payableId], references: [id], onDelete: Cascade)
+  recordedBy  User?           @relation(fields: [recordedById], references: [id])
+
+  // CONTRACT PAYMENT RELATION
+  contractPaymentSchedule SupplierContractPaymentSchedule? @relation(fields: [contractPaymentScheduleId], references: [id], onDelete: SetNull)
+
+  // INDEXES
   @@index([bankAccountId])
   @@index([payableId])
   @@index([paymentDate])
   @@index([recordedById])
+  @@index([contractPaymentScheduleId])
 }
 
 model SupplierRate {

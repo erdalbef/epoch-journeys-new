@@ -132,6 +132,11 @@ export default async function SupplierDetailPage({
 
           include: {
             paymentSchedule: {
+              include: {
+                supplierPayablePayments: {
+                  select: { amount: true },
+                },
+              },
               orderBy: [
                 {
                   dueDate:
@@ -194,6 +199,11 @@ export default async function SupplierDetailPage({
           taxRate:
             decimalToNumber(
               rate.taxRate,
+            ),
+
+          dinnerAmount:
+            decimalToNumber(
+              rate.dinnerAmount,
             ),
 
           cityTaxAmount:
@@ -276,6 +286,12 @@ export default async function SupplierDetailPage({
                   decimalToNumber(
                     payment.percent,
                   ),
+
+                paidAmount: payment.supplierPayablePayments.reduce(
+                  (sum, linkedPayment) => sum + Number(linkedPayment.amount),
+                  0,
+                ),
+                supplierPayablePayments: undefined,
               }),
             ),
         }),

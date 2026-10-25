@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { requireAdminApiAccess } from "@/lib/security/requireAdminApiAccess";
 import { db} from "@/lib/db";
 import { sendEmail } from "@/lib/email/sendEmail";
 import { agentApprovalEmail } from "@/lib/email/templates/agentApprovalEmail";
@@ -59,6 +60,9 @@ export async function POST(
   context: { params: Promise<{ agentId: string }> }
 ) {
   try {
+    const denied = await requireAdminApiAccess();
+    if (denied) return denied;
+
     const { agentId } = await context.params;
 
     const existingAgent = await db.user.findUnique({

@@ -1,9 +1,19 @@
 "use client";
 
+import { useRef, useState } from "react";
+import { findDuplicatePerPersonRow, normalizeServiceLabel } from "@/lib/quotes/perPersonDuplicate";
+import type { MealQuantityResult } from "@/lib/quotes/mealQuantityValidation";
+
+import type { EntranceRateSnapshot } from "@/lib/quotes/entranceRateSelection";
+import AttractionEntranceLookup from "./AttractionEntranceLookup";
+import OtherPerPersonServiceLookup from "./OtherPerPersonServiceLookup";
+import type { StandardServiceSnapshot, SupplierServiceSnapshot } from "@/lib/per-person-services/catalogue";
+
 export type FixedCostCategory =
   | "ENTRANCE"
   | "LUNCH"
   | "DINNER"
+  | "DRINKS"
   | "BOTTLED_WATER"
   | "FLIGHT"
   | "CRUISE"
@@ -19,6 +29,18 @@ export type FixedCostRow = {
   category: FixedCostCategory;
   quantity: number;
   unitCost: number;
+  entranceRateSource?: EntranceRateSnapshot;
+  standardRateSource?: StandardServiceSnapshot;
+  supplierServiceRateSource?: SupplierServiceSnapshot;
+  attractionRateSource?: {
+    attractionId: string;
+    attractionName: string;
+    country: string;
+    city: string;
+    currency: string;
+    admissionFee: number;
+    catalogueUpdatedAt: string;
+  };
 };
 
 type Props = {
@@ -45,6 +67,11 @@ type Props = {
   ) => string;
 
   toNumber: (value: unknown) => number;
+  mealQuantityCheck: MealQuantityResult;
+  /** From the already calculated quotation group setup; reporting only. */
+  totalTravelers?: number;
+  startDate?: string;
+  endDate?: string;
 };
 
 const CATEGORY_OPTIONS: Array<{
@@ -64,16 +91,20 @@ const CATEGORY_OPTIONS: Array<{
     label: "Dinner",
   },
   {
+    value: "DRINKS",
+    label: "Drinks / Beverages",
+  },
+  {
     value: "BOTTLED_WATER",
     label: "Bottled Water",
   },
   {
     value: "FLIGHT",
-    label: "Airfare / Domestic Flight",
+    label: "Flight / Passenger Ticket",
   },
   {
     value: "CRUISE",
-    label: "Cruise / Boat",
+    label: "Boat / Ferry Passenger Ticket",
   },
   {
     value: "TIPS",
@@ -93,48 +124,11 @@ const CATEGORY_OPTIONS: Array<{
   },
   {
     value: "LOCAL_TRANSPORT",
-    label: "Local Transportation",
+    label: "Local Passenger Ticket",
   },
   {
     value: "OTHER",
     label: "Other Per-Person Cost",
-  },
-];
-
-const QUICK_ADD_OPTIONS: Array<{
-  label: string;
-  category: FixedCostCategory;
-  description: string;
-}> = [
-  {
-    label: "Bottled Water",
-    category: "BOTTLED_WATER",
-    description: "Daily bottled water",
-  },
-  {
-    label: "Airfare",
-    category: "FLIGHT",
-    description: "Domestic or regional airfare",
-  },
-  {
-    label: "Tips",
-    category: "TIPS",
-    description: "Guide / driver gratuities",
-  },
-  {
-    label: "Headsets",
-    category: "HEADSETS",
-    description: "Whisper / audio system",
-  },
-  {
-    label: "Porterage",
-    category: "PORTERAGE",
-    description: "Hotel porterage",
-  },
-  {
-    label: "Mass",
-    category: "MASS_CHURCH",
-    description: "Mass / church donation",
   },
 ];
 
@@ -172,17 +166,112 @@ export default function FixedCostsSection({
   sectionTotal,
   formatMoney,
   toNumber,
+  mealQuantityCheck,
+  totalTravelers = 0,
 }: Props) {
-  function addQuickCost(
-    category: FixedCostCategory,
-    label: string
-  ) {
-    onAddRow({
-      category,
+  type DuplicateRequest =
+    | { kind: "add"; row: FixedCostRow; match: string }
+    | { kind: "edit"; index: number; patch: Partial<FixedCostRow>; match: string; applied?: boolean; restoreLabel?: string };
+  const [pendingDuplicate, setPendingDuplicate] = useState<DuplicateRequest | null>(null);
+  type AddSource = "ATTRACTIONS" | "STANDARD" | "SUPPLIER" | "MANUAL";
+  const [addSource, setAddSource] = useState<AddSource>("STANDARD");
+  const [manualLabel, setManualLabel] = useState("");
+  const [manualCategory, setManualCategory] = useState<FixedCostCategory>("OTHER");
+  const [manualPrice, setManualPrice] = useState("");
+  const [manualQuantity, setManualQuantity] = useState("1");
+  const [notice, setNotice] = useState<{ type: "success" | "info"; text: string } | null>(null);
+  const labelBeforeEdit = useRef<Record<number, string>>({});
+
+  function commitSelectedRow(row: FixedCostRow) {
+    const emptyRow = rows.findIndex(existing =>
+      !existing.label.trim() && existing.unitCost === 0 && !existing.entranceRateSource &&
+      !existing.attractionRateSource && !existing.standardRateSource && !existing.supplierServiceRateSource,
+    );
+    if (emptyRow >= 0) onUpdateRow(emptyRow, row);
+    else onAddRow(row);
+    setNotice({ type: "success", text: `${row.label} added to the quotation. Save the quotation to keep this change.` });
+  }
+
+  // Shared by Attractions, Standard Prices, Supplier CRM, and manual lookup.
+  function addSelectedEntrance(row: FixedCostRow) {
+    setNotice(null);
+    const matchIndex = findDuplicatePerPersonRow(rows, row);
+    if (matchIndex !== -1) {
+      setPendingDuplicate({ kind: "add", row, match: rows[matchIndex].label });
+      return;
+    }
+    commitSelectedRow(row);
+  }
+
+  function addManualPerPersonCost() {
+    const label = manualLabel.trim();
+    const raw = manualPrice.trim();
+    const quantity = Number(manualQuantity);
+    if (!label || !/^\d+(\.\d{1,2})?$/.test(raw) ||
+      !Number.isInteger(quantity) || quantity < 1) return;
+    const selected: FixedCostRow = {
       label,
-      quantity: 1,
-      unitCost: 0,
-    });
+      category: manualCategory,
+      quantity: manualCategory === "ENTRANCE" ? 1 : quantity,
+      unitCost: Number(raw),
+    };
+    const duplicate = findDuplicatePerPersonRow(rows, selected) !== -1;
+    addSelectedEntrance(selected);
+    if (!duplicate) {
+      setManualLabel("");
+      setManualPrice("");
+      setManualQuantity("1");
+    }
+  }
+
+  // Manual row editing should also warn when it creates a duplicate.
+  function checkEditedLabel(index: number) {
+    const row = rows[index];
+    if (!row || !normalizeServiceLabel(row.label)) return;
+    const original = labelBeforeEdit.current[index] ?? row.label;
+    if (normalizeServiceLabel(original) === normalizeServiceLabel(row.label)) return;
+    const matchIndex = findDuplicatePerPersonRow(rows, row, index);
+    if (matchIndex !== -1) {
+      setPendingDuplicate({ kind: "edit", index, patch: {}, match: rows[matchIndex].label,
+        applied: true, restoreLabel: original });
+    }
+  }
+
+  function updateCategoryWithDuplicateCheck(index: number, category: FixedCostCategory) {
+    const previous = rows[index];
+    if (!previous) return;
+    const patch: Partial<FixedCostRow> = {
+      category,
+      ...(category !== "ENTRANCE" ? { entranceRateSource: undefined, attractionRateSource: undefined } : {}),
+      ...(category !== previous.category ? { standardRateSource: undefined, supplierServiceRateSource: undefined } : {}),
+    };
+    const matchIndex = findDuplicatePerPersonRow(rows, { ...previous, ...patch }, index);
+    if (matchIndex !== -1) {
+      setPendingDuplicate({ kind: "edit", index, patch, match: rows[matchIndex].label });
+    } else {
+      onUpdateRow(index, patch);
+    }
+  }
+
+  function resolveDuplicate(allow: boolean) {
+    if (!pendingDuplicate) return;
+    const pending = pendingDuplicate;
+    setPendingDuplicate(null);
+    if (pending.kind === "add") {
+      if (allow) {
+        commitSelectedRow(pending.row);
+      } else {
+        setNotice({ type: "info", text: `No duplicate of ${pending.row.label} was added.` });
+      }
+      return;
+    }
+    if (allow) {
+      if (!pending.applied) onUpdateRow(pending.index, pending.patch);
+      setNotice({ type: "info", text: `Repeated service confirmed. Check the quantity to avoid double charging.` });
+    } else {
+      if (pending.applied) onUpdateRow(pending.index, { label: pending.restoreLabel ?? "" });
+      setNotice({ type: "info", text: "Duplicate entry cancelled." });
+    }
   }
 
   return (
@@ -200,10 +289,8 @@ export default function FixedCostsSection({
             </h2>
 
             <p className="mt-1 max-w-3xl text-xs leading-5 text-slate-200">
-              Add services charged for each traveler,
-              including entrances, meals, bottled water,
-              airfare, tips, porterage, headsets and
-              church-related costs.
+              Select attractions or other services from a catalogue,
+              use an actual Supplier CRM rate, or enter a cost manually.
             </p>
           </div>
 
@@ -219,71 +306,175 @@ export default function FixedCostsSection({
         </div>
       </div>
 
-      {/* EXPLANATION */}
-      <div className="border-b bg-blue-50 px-5 py-4">
-        <div className="grid gap-3 md:grid-cols-2">
-          <div>
-            <p className="text-sm font-medium text-[#001F3F]">
-              How this section works
-            </p>
-
-            <p className="mt-1 text-xs leading-5 text-slate-600">
-              Enter the cost of services that apply to
-              each traveler. For example, if bottled
-              water costs €2 per day for 10 days, enter
-              quantity 10 and unit cost €2.
-            </p>
-          </div>
-
-          <div>
-            <p className="text-sm font-medium text-[#001F3F]">
-              Complimentary travelers
-            </p>
-
-            <p className="mt-1 text-xs leading-5 text-slate-600">
-              These costs also apply to complimentary
-              travelers where applicable. Their cost is
-              recovered across the paying pilgrims by
-              the quote calculator.
-            </p>
-          </div>
-        </div>
+      {/* One concise explanation; individual choices and meal limits remain visible below. */}
+      <div className="border-b bg-blue-50 px-5 py-3">
+        <p className="text-xs leading-5 text-slate-700">
+          Enter one service at a time. Its cost is per traveler, per selected meal, day or ticket.
+          Applicable complimentary-traveler costs are allocated by the existing quotation calculator.
+        </p>
       </div>
 
-      {/* QUICK ADD */}
-      <div className="border-b bg-slate-50 px-5 py-4">
-        <div className="mb-3">
-          <p className="text-sm font-semibold text-slate-800">
-            Quick Add
+      {/* Quantity rules are read-only; no automatic price or row mutation. */}
+      <div className="border-b border-slate-200 bg-slate-50 px-5 py-4" aria-label="Lunch and dinner quantity validation">
+        <h3 className="text-sm font-semibold text-[#001F3F]">Lunch & Dinner Quantity Check</h3>
+        <p className="mt-1 text-xs leading-5 text-slate-600">
+          Meal limits use actual core hotel nights only: dinners up to the total nights, and lunches up to one fewer night.
+          Dates cross-check the number of hotel nights but do not set meal quantities. Hotel and restaurant dinners share one limit; included HB dinners do not reduce it.
+        </p>
+        {mealQuantityCheck.lunchBasis === "UNAVAILABLE" ? (
+          <p className="mt-3 rounded-lg border border-slate-200 bg-white p-3 text-sm text-slate-600">
+            Meal limits are not set yet. Add actual core hotel stays and nights to calculate the lunch and dinner allowances. Travel dates alone do not set meal limits.
           </p>
+        ) : (
+          <div className="mt-3 grid gap-3 sm:grid-cols-2">
+            <div className="rounded-lg border border-slate-200 bg-white p-3 text-sm">
+              <div className="font-semibold text-slate-800">
+                Lunches: {mealQuantityCheck.eligibleLunchDays === null
+                  ? `${mealQuantityCheck.lunchCount} / set itinerary`
+                  : mealQuantityCheck.eligibleLunchDays === 0
+                    ? `${mealQuantityCheck.lunchCount} selected - no eligible lunch days`
+                    : `${mealQuantityCheck.lunchCount} / ${mealQuantityCheck.eligibleLunchDays}`}
+              </div>
+              <p className="mt-1 text-xs text-slate-500">Maximum lunches = core hotel nights minus one (arrival and departure excluded). Travel dates only check the hotel-night count.</p>
+            </div>
+            <div className="rounded-lg border border-slate-200 bg-white p-3 text-sm">
+              <div className="font-semibold text-slate-800">
+                Paid dinners: {mealQuantityCheck.purchasedDinnerCount} / {mealQuantityCheck.dinnerLimit ?? "set itinerary"}
+              </div>
+              <p className="mt-1 text-xs text-slate-500">{mealQuantityCheck.restaurantDinnerCount} restaurant / other + {mealQuantityCheck.hotelDinnerCount} contracted hotel. {mealQuantityCheck.includedHbDinners} HB dinner(s) already included in room rates.</p>
+            </div>
+          </div>
+        )}
+        {mealQuantityCheck.errors.length > 0 && (
+          <div role="alert" className="mt-3 rounded-lg border border-red-300 bg-red-50 p-3 text-sm text-red-900">
+            <p className="font-semibold">Meal quantities or hotel-night dates need correction before approval</p>
+            <ul className="mt-2 list-disc space-y-1 pl-5">
+              {mealQuantityCheck.errors.map((message, i) => <li key={i}>{message}</li>)}
+            </ul>
+            <p className="mt-2 text-xs">You may save a draft while correcting these quantities. No costs have been changed automatically.</p>
+          </div>
+        )}
+        {mealQuantityCheck.warnings.length > 0 && (
+          <div role="status" className="mt-3 rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-950">
+            <p className="font-semibold">Review meal dates and included services</p>
+            <ul className="mt-2 list-disc space-y-1 pl-5">
+              {mealQuantityCheck.warnings.map((message, i) => <li key={i}>{message}</li>)}
+            </ul>
+          </div>
+        )}
+      </div>
 
-          <p className="text-xs text-slate-500">
-            Add common pilgrimage costs with one click.
+      {/* ONE source selector for all per-person additions. Each choice feeds the
+          existing row table and duplicate-check path; it is not a new costing engine. */}
+      <section className="border-b border-slate-200 bg-white px-5 py-5" aria-label="Add a per-person cost">
+        <div className="mb-4">
+          <h3 className="text-base font-semibold text-[#001F3F]">Add a Per-Person Cost</h3>
+          <p className="mt-1 text-xs leading-5 text-slate-600">
+            Choose one price source, select the service and add it below. All services appear in the same cost table.
+            Use the quantity in that table for additional meals, days or tickets.
           </p>
         </div>
-
-        <div className="flex flex-wrap gap-2">
-          {QUICK_ADD_OPTIONS.map((option) => (
+        <div role="tablist" aria-label="Per-person cost source" className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+          {([
+            ["ATTRACTIONS", "Attractions"],
+            ["STANDARD", "Epoch standards"],
+            ["SUPPLIER", "Supplier CRM"],
+            ["MANUAL", "Manual cost"],
+          ] as Array<[AddSource, string]>).map(([value, label]) => (
             <button
-              key={option.category}
+              key={value}
               type="button"
-              onClick={() =>
-                addQuickCost(
-                  option.category,
-                  option.description
-                )
-              }
-              className="rounded-full border border-slate-300 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 transition hover:border-[#8B0000] hover:text-[#8B0000]"
+              role="tab"
+              aria-selected={addSource === value}
+              onClick={() => setAddSource(value)}
+              className={`rounded-lg border px-3 py-3 text-xs font-semibold transition ${addSource === value
+                ? "border-[#001F3F] bg-[#001F3F] text-white"
+                : "border-slate-200 bg-slate-50 text-slate-700 hover:bg-blue-50"}`}
             >
-              + {option.label}
+              {label}
             </button>
           ))}
         </div>
-      </div>
+        <div role="tabpanel" className="mt-3 overflow-hidden rounded-lg border border-slate-200 bg-slate-50">
+          {addSource === "ATTRACTIONS" && (
+            <AttractionEntranceLookup
+              currency={currency}
+              onSelect={addSelectedEntrance}
+              formatMoney={formatMoney}
+              embedded
+              hideManual
+            />
+          )}
+          {(addSource === "STANDARD" || addSource === "SUPPLIER") && (
+            <OtherPerPersonServiceLookup
+              key={addSource}
+              currency={currency}
+              totalTravelers={totalTravelers}
+              onSelect={addSelectedEntrance}
+              formatMoney={formatMoney}
+              fixedSource={addSource}
+              embedded
+              hideManual
+            />
+          )}
+          {addSource === "MANUAL" && (
+            <div className="p-4">
+              <h4 className="text-sm font-semibold text-[#001F3F]">Enter a verified per-person cost</h4>
+              <p className="mt-1 text-xs text-slate-600">Use this when an attraction, standard rate or genuine supplier rate is unavailable. The amount applies per traveler per selected unit.</p>
+              <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4 lg:items-end">
+                <label className="block text-xs font-semibold text-slate-700">Service name
+                  <input value={manualLabel} onChange={event => setManualLabel(event.target.value)} placeholder="e.g. Restaurant lunch" className="mt-1 w-full rounded-md border border-slate-300 bg-white p-2 text-sm" />
+                </label>
+                <label className="block text-xs font-semibold text-slate-700">Category
+                  <select value={manualCategory} onChange={event => setManualCategory(event.target.value as FixedCostCategory)} className="mt-1 w-full rounded-md border border-slate-300 bg-white p-2 text-sm">
+                    {CATEGORY_OPTIONS.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
+                  </select>
+                </label>
+                <label className="block text-xs font-semibold text-slate-700">{manualCategory === "LUNCH" || manualCategory === "DINNER" ? "Meals" : manualCategory === "ENTRANCE" ? "Admissions" : "Days / Units"}
+                  <input type="number" min="1" step="1" disabled={manualCategory === "ENTRANCE"} value={manualCategory === "ENTRANCE" ? "1" : manualQuantity} onChange={event => setManualQuantity(event.target.value)} className="mt-1 w-full rounded-md border border-slate-300 bg-white p-2 text-sm disabled:bg-slate-100" />
+                </label>
+                <label className="block text-xs font-semibold text-slate-700">Unit cost ({currency})
+                  <input type="number" min="0" step="0.01" value={manualPrice} onChange={event => setManualPrice(event.target.value)} placeholder="0.00" className="mt-1 w-full rounded-md border border-slate-300 bg-white p-2 text-sm" />
+                </label>
+              </div>
+              <button type="button" onClick={addManualPerPersonCost}
+                disabled={!manualLabel.trim() || !/^\d+(\.\d{1,2})?$/.test(manualPrice.trim()) || (manualCategory !== "ENTRANCE" && (!Number.isInteger(Number(manualQuantity)) || Number(manualQuantity) < 1))}
+                className="mt-4 rounded-md bg-[#001F3F] px-4 py-2 text-xs font-semibold text-white disabled:cursor-not-allowed disabled:opacity-40">
+                Add manual cost
+              </button>
+            </div>
+          )}
+        </div>
+        <p className="mt-3 text-xs text-slate-500">Fixed-price buses, private boat charters and group-only fees belong in Group Operations. Hotel-contracted extras belong in the Hotel Module.</p>
+      </section>
+
+      {/* Explicit duplicate confirmation; the original row stays untouched until confirmed. */}
+      {pendingDuplicate && (
+        <div role="alertdialog" aria-labelledby="duplicate-service-title" aria-describedby="duplicate-service-description"
+          className="mx-5 my-4 rounded-xl border-2 border-amber-300 bg-amber-50 p-4 text-sm text-amber-950 shadow-sm">
+          <h3 id="duplicate-service-title" className="font-bold">This service is already included</h3>
+          <p id="duplicate-service-description" className="mt-1">
+            You already added <strong>{pendingDuplicate.match}</strong>. Do you want to add it again?
+            For repeated lunches, dinners or daily services, you can usually adjust Days / Units on the existing row instead.
+          </p>
+          <div className="mt-3 flex flex-wrap gap-2">
+            <button type="button" onClick={() => resolveDuplicate(false)}
+              className="rounded-md border border-amber-400 bg-white px-4 py-2 font-semibold">No, keep one</button>
+            <button type="button" onClick={() => resolveDuplicate(true)}
+              className="rounded-md bg-[#001F3F] px-4 py-2 font-semibold text-white">Yes, add again</button>
+          </div>
+        </div>
+      )}
+      {notice && !pendingDuplicate && (
+        <div role="status" aria-live="polite" className={`mx-5 my-3 flex items-start justify-between gap-3 rounded-lg border p-3 text-sm ${notice.type === "success" ? "border-emerald-200 bg-emerald-50 text-emerald-900" : "border-slate-200 bg-slate-50 text-slate-700"}`}>
+          <span>{notice.text}</span>
+          <button type="button" onClick={() => setNotice(null)} aria-label="Dismiss notice" className="font-semibold underline">Dismiss</button>
+        </div>
+      )}
 
       {/* TABLE */}
       <div className="overflow-x-auto">
-        <table className="w-full min-w-[980px] text-sm">
+        <table className="w-full min-w-245 text-sm">
           <thead className="bg-slate-100">
             <tr className="border-b">
               <th className="w-20 px-4 py-3 text-left font-semibold text-slate-700">
@@ -299,7 +490,7 @@ export default function FixedCostsSection({
               </th>
 
               <th className="px-4 py-3 text-left font-semibold text-slate-700">
-                Qty
+                Days / Units
               </th>
 
               <th className="px-4 py-3 text-left font-semibold text-slate-700">
@@ -326,8 +517,7 @@ export default function FixedCostsSection({
                   </div>
 
                   <div className="mt-1 text-xs text-slate-500">
-                    Use Quick Add above or add a custom
-                    service below.
+                    Choose Attractions, Epoch standards, Supplier CRM or Manual cost in the single selector above.
                   </div>
                 </td>
               </tr>
@@ -361,6 +551,8 @@ export default function FixedCostsSection({
                       <input
                         className="w-full rounded-md border border-slate-300 bg-white p-2 outline-none transition focus:border-[#001F3F]"
                         value={row.label}
+                        onFocus={() => { labelBeforeEdit.current[index] = row.label; }}
+                        onBlur={() => checkEditedLabel(index)}
                         onChange={(e) =>
                           onUpdateRow(index, {
                             label: e.target.value,
@@ -368,6 +560,37 @@ export default function FixedCostsSection({
                         }
                         placeholder="e.g. Ephesus entrance"
                       />
+                      {row.standardRateSource && (
+                        <p className="mt-1 max-w-64 text-[11px] text-slate-500">
+                          Epoch standard: {row.standardRateSource.serviceName} ({row.standardRateSource.unit})
+                          {row.unitCost !== row.standardRateSource.price && <span className="block font-semibold text-amber-800">This quote uses a manual price override.</span>}
+                        </p>
+                      )}
+                      {row.supplierServiceRateSource && (
+                        <p className="mt-1 max-w-64 text-[11px] text-slate-500">
+                          Supplier CRM: {row.supplierServiceRateSource.supplierName} / {row.supplierServiceRateSource.supplierRateName} ({row.supplierServiceRateSource.supplierRateUnit})
+                          {row.unitCost !== row.supplierServiceRateSource.price && <span className="block font-semibold text-amber-800">This quote uses a manual price override.</span>}
+                        </p>
+                      )}
+                      {row.category === "ENTRANCE" && row.attractionRateSource && (
+                        <p className="mt-1 max-w-64 text-[11px] leading-4 text-slate-600">
+                          Catalogue: {row.attractionRateSource.attractionName} · {row.attractionRateSource.currency} {row.attractionRateSource.admissionFee.toFixed(2)}
+                          {row.unitCost !== row.attractionRateSource.admissionFee && (
+                            <span className="block font-semibold text-amber-800">Manually adjusted from catalogue rate.</span>
+                          )}
+                        </p>
+                      )}
+                      {row.category === "ENTRANCE" && row.entranceRateSource && (
+                        <p className="mt-1 max-w-64 text-[11px] leading-4 text-slate-600">
+                          Supplier: {row.entranceRateSource.supplierName} · {row.entranceRateSource.supplierRateName}
+                          {row.entranceRateSource.visitDate && (
+                            <span className="block">Visit {row.entranceRateSource.visitDate}</span>
+                          )}
+                          {row.unitCost !== row.entranceRateSource.supplierRateAmount && (
+                            <span className="block font-semibold text-amber-800">Manually adjusted from supplier price {formatMoney(row.entranceRateSource.supplierRateAmount, row.entranceRateSource.supplierRateCurrency)}</span>
+                          )}
+                        </p>
+                      )}
                     </td>
 
                     {/* CATEGORY */}
@@ -375,13 +598,7 @@ export default function FixedCostsSection({
                       <select
                         className="w-full rounded-md border border-slate-300 bg-white p-2 outline-none transition focus:border-[#001F3F]"
                         value={row.category}
-                        onChange={(e) =>
-                          onUpdateRow(index, {
-                            category:
-                              e.target
-                                .value as FixedCostCategory,
-                          })
-                        }
+                        onChange={(e) => updateCategoryWithDuplicateCheck(index, e.target.value as FixedCostCategory)}
                       >
                         {CATEGORY_OPTIONS.map(
                           (option) => (
@@ -397,21 +614,24 @@ export default function FixedCostsSection({
                     </td>
 
                     {/* QTY */}
+                    {/* Entrance fees are one admission per attraction, not one per passenger. */}
                     <td className="w-28 px-4 py-3">
-                      <input
-                        type="number"
-                        min="0"
-                        step="1"
-                        className="w-full rounded-md border border-slate-300 bg-white p-2 text-right outline-none transition focus:border-[#001F3F]"
-                        value={row.quantity}
-                        onChange={(e) =>
-                          onUpdateRow(index, {
-                            quantity: toNumber(
-                              e.target.value
-                            ),
-                          })
-                        }
-                      />
+                      {row.quantity === 1 && (row.category === "ENTRANCE" || row.standardRateSource?.unit === "PER_PERSON" || row.supplierServiceRateSource?.supplierRateUnit === "PER_PERSON") ? (
+                        <span className="text-xs text-slate-500">{row.category === "ENTRANCE" ? "1 admission" : "1 per traveler"}</span>
+                      ) : (
+                        <label className="block text-xs text-slate-500">
+                          {row.standardRateSource?.unit === "PER_DAY" || row.supplierServiceRateSource?.supplierRateUnit === "PER_DAY" ? "Days"
+                            : row.standardRateSource?.unit === "PER_MEAL" || row.supplierServiceRateSource?.supplierRateUnit === "PER_MEAL" ? "Meals"
+                            : "Units"}
+                          <input
+                            aria-label={`Units for ${row.label || "service"}`}
+                            type="number" min="0" step="1"
+                            className="mt-1 w-full rounded-md border border-slate-300 bg-white p-2 text-right"
+                            value={row.quantity}
+                            onChange={e => onUpdateRow(index, { quantity: row.category === "LUNCH" || row.category === "DINNER" ? Math.max(0, Math.floor(toNumber(e.target.value))) : toNumber(e.target.value) })}
+                          />
+                        </label>
+                      )}
                     </td>
 
                     {/* UNIT COST */}
@@ -474,38 +694,22 @@ export default function FixedCostsSection({
         </table>
       </div>
 
-      {/* ADD ROW DIRECTLY AFTER LIST */}
-      <div className="border-t bg-white px-5 py-4">
-        <div className="flex justify-center">
-          <button
-            type="button"
-            onClick={() => onAddRow()}
-            className="rounded-lg border-2 border-dashed border-[#001F3F]/30 bg-slate-50 px-8 py-3 text-sm font-semibold text-[#001F3F] transition hover:border-[#001F3F]/60 hover:bg-blue-50"
-          >
-            + Add Another Per-Person Cost
-          </button>
-        </div>
-      </div>
+      {/* Manual costs now use the Manual cost tab above. No second add pathway. */}
 
-      {/* TOTAL FOOTER */}
+      {/* READ-ONLY SECTION TOTALS; do not change the quotation pricing engine. */}
       <div className="border-t bg-slate-50 px-5 py-4">
-        <div className="flex items-center justify-between gap-4">
-          <div>
-            <div className="text-xs text-slate-500">
-              Total Per-Person Services
-            </div>
-
-            <div className="text-lg font-bold text-[#001F3F]">
-              {formatMoney(sectionTotal, currency)}
-            </div>
+        <div className="grid gap-3 sm:grid-cols-2">
+          <div className="rounded-lg border border-slate-200 bg-white p-3">
+            <div className="text-xs font-semibold uppercase text-slate-500">Total per person</div>
+            <div className="mt-1 text-xl font-bold text-[#001F3F]">{formatMoney(sectionTotal, currency)}</div>
           </div>
-
-          <div className="text-right text-xs text-slate-500">
-            Included in the internal tour costing
-            <br />
-            for each applicable traveler.
+          <div className="rounded-lg border border-slate-200 bg-white p-3">
+            <div className="text-xs font-semibold uppercase text-slate-500">Group service cost {totalTravelers > 0 ? `(${totalTravelers} travelers)` : ""}</div>
+            <div className="mt-1 text-xl font-bold text-[#001F3F]">{totalTravelers > 0 ? formatMoney(sectionTotal * totalTravelers, currency) : "Enter group size"}</div>
           </div>
         </div>
+        <p className="mt-2 text-[11px] leading-4 text-slate-600">Lunch limit = core hotel nights minus one; dinner limit = core hotel nights. Tour dates cross-check the number of hotel nights only. Hotel dinners are counted together with separately purchased dinners. Group-priced boat charters, buses and transfers belong in Group Operations.</p>
+        <p className="mt-2 text-[11px] leading-4 text-slate-500">Informational estimate assuming every traveler uses every listed service. Actual complimentary-person exemptions and group pricing are handled separately by the existing quote calculator. No costs are added a second time.</p>
       </div>
     </section>
   );

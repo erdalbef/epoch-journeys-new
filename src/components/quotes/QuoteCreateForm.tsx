@@ -1,6 +1,9 @@
 "use client";
 
 import { calculateNetGroupPricing } from "@/lib/quotes/netGroupPricing";
+import { buildGroupFinancialSummary } from "@/lib/quotes/groupFinancialSummary";
+import { validateMealQuantities } from "@/lib/quotes/mealQuantityValidation";
+import { calculateComplimentaryExpenses, type CompExpenseSettings } from "@/lib/quotes/complimentaryCosts";
 
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
@@ -33,8 +36,7 @@ import PricingControlsSection, {
 } from "@/components/quotes/create/PricingControlsSection";
 
 import PassengerPricingSection from "@/components/quotes/create/PassengerPricingSection";
-import QuoteSummarySection from "@/components/quotes/create/QuoteSummarySection";
-import ProfitViewSection from "@/components/quotes/create/ProfitViewSection";
+import GroupFinancialSummarySection from "@/components/quotes/create/GroupFinancialSummarySection";
 
 import FixedCostsSection, {
   type FixedCostCategory,
@@ -146,11 +148,31 @@ type HotelRow = {
     | "EXPIRED_ESTIMATE";
   supplierRateRequiresReconfirmation?: boolean;
   supplierMealBasis?: string | null;
+  // Frozen supplier cost components for BB/HB comparison.
+  supplierSelectedMealBasis?: "BB" | "HB";
+  supplierBaseSinglePerNight?: number;
+  supplierBaseDoubleTwinPerNight?: number;
+  supplierBaseTriplePerNight?: number;
+  supplierDinnerIncluded?: boolean | null;
+  supplierDinnerAmount?: number | null;
+  supplierDinnerUnit?: string | null;
+  supplierCityTaxCurrency?: string | null;
+  supplierCityTaxUnit?: string | null;
   supplierCityTaxIncluded?: boolean | null;
   supplierCityTaxAmount?: number | null;
   supplierPorterageIncluded?: boolean | null;
   supplierBeveragePackageIncluded?: boolean | null;
   supplierBeveragePackageDescription?: string | null;
+  supplierPorterageAvailable?: boolean | null;
+  supplierPorterageAmount?: number | null;
+  supplierPorterageUnit?: string | null;
+  supplierBeveragePackageAmount?: number | null;
+  supplierBeveragePackageUnit?: string | null;
+  supplierDinnerSelected?: boolean;
+  supplierDinnerMeals?: number;
+  supplierPorterageSelected?: boolean;
+  supplierBeverageSelected?: boolean;
+  supplierBeverageMeals?: number;
 };
 
 type GroupSetup = {
@@ -229,6 +251,11 @@ type SavedOperationalCostRow = Partial<OperationalCostRow> & {
   totalCost?: number;
 };
 
+type ComplimentaryConfig = ComplimentarySetup & CompExpenseSettings & {
+  complimentaryMode?: "AUTOMATIC" | "MANUAL";
+  manualComplimentaryPassengers?: number;
+};
+
 type QuoteBuilderSummary = {
   startDate?: string | null;
   endDate?: string | null;
@@ -239,7 +266,7 @@ type QuoteBuilderSummary = {
   freePassengers?: number;
   payingPassengers?: number;
 
-  complimentarySetup?: Partial<ComplimentarySetup>;
+  complimentarySetup?: Partial<ComplimentaryConfig>;
 
   groupLeaderAllowanceTotal?: number;
 
@@ -357,7 +384,9 @@ const VALID_FIXED_COST_CATEGORIES:
   ];
 
 const DEFAULT_COMPLIMENTARY_SETUP:
-  ComplimentarySetup = {
+  ComplimentaryConfig = {
+    complimentaryMode: "AUTOMATIC",
+    manualComplimentaryPassengers: 0,
     useFreePlaceRule: true,
     freePlaceRatio: 10,
 
@@ -572,6 +601,7 @@ function createEmptyOperationalCostRow():
 
     hotelPerNight: 0,
     hotelNights: 0,
+    accommodationCoveredElsewhere: false,
 
     airfareTransport: 0,
 
@@ -579,6 +609,37 @@ function createEmptyOperationalCostRow():
     mealDays: 0,
 
     otherExpenses: 0,
+  };
+}
+
+/**
+ * Tour Manager / Driver hotel accommodation comes exclusively from the hotel
+ * stay snapshots already selected in this quotation (never from an extra
+ * editable Hotel/Night field). It is a single-person, single-room expense.
+ *
+ * We retain the legacy numeric properties as calculated carriers so all
+ * existing totals, quote saving, and PDF expense audits continue to reconcile.
+ * They represent the weighted average nightly rate and total nights.
+ */
+function withStaffHotelAccommodation(
+  row: OperationalCostRow,
+  hotelRows: HotelRow[],
+): OperationalCostRow {
+  if (row.category !== "TOUR_MANAGER" && row.category !== "DRIVER") return row;
+
+  const applicable = hotelRows.filter((hotel) => hotel.stayType === row.scope);
+  const nights = applicable.reduce((sum, hotel) => sum + Math.max(0, toNumber(hotel.nights)), 0);
+  const accommodationTotal = row.accommodationCoveredElsewhere ? 0 : applicable.reduce((sum, hotel) => {
+    const count = Math.max(0, toNumber(hotel.nights));
+    const nightly = Math.max(0, toNumber(hotel.singlePerPerson));
+    // Do not invent a Single rate if the hotel lacks it.
+    return sum + (nightly > 0 ? nightly * count + optionalHotelExtrasPerPerson(hotel, 1) : 0);
+  }, 0);
+
+  return {
+    ...row,
+    hotelPerNight: nights > 0 ? accommodationTotal / nights : 0,
+    hotelNights: nights,
   };
 }
 
@@ -819,7 +880,7 @@ function calculateRatioFreePlaces(
 
 function calculateComplimentaryPassengers(
   payingPassengers: number,
-  setup: ComplimentarySetup
+  setup: ComplimentaryConfig
 ) {
   const ratioFree =
     calculateRatioFreePlaces(
@@ -899,13 +960,12 @@ function calculateComplimentaryPassengers(
     );
 
   const totalComplimentary =
-    ratioFree +
-    poolOverflow +
-    namedAdditional +
-    additionalFree;
+    setup.complimentaryMode === "MANUAL"
+      ? Math.max(0, Math.floor(Number(setup.manualComplimentaryPassengers) || 0))
+      : ratioFree + poolOverflow + namedAdditional + additionalFree;
 
   return {
-    ratioFree,
+    ratioFree: setup.complimentaryMode === "MANUAL" ? 0 : ratioFree,
 
     priestFree,
 
@@ -945,6 +1005,41 @@ function calculateGroupLeaderAllowance(
   );
 }
 
+/** Optional supplier extras, per traveler for the specified room occupancy.
+ * Room-based charges are divided among the room occupants. Unknown units
+ * are deliberately not estimated; they require supplier confirmation.
+ * Base hotel rates already include the selected meal basis and city tax.
+ */
+function optionalHotelExtrasPerPerson(hotel: HotelRow, occupancy: 1 | 2 | 3): number {
+  if (!hotel.supplierRateId) return 0;
+  const nights = Math.max(0, toNumber(hotel.nights));
+  const amount = (value?: number | null) => Math.max(0, toNumber(value));
+  const units = (value?: number) => Math.max(0, Math.floor(toNumber(value)));
+  const perPerson = (price: number, unit: string | null | undefined, count: number): number => {
+    switch ((unit || "").toUpperCase()) {
+      case "PER_PERSON": case "PER_PERSON_PER_STAY": return price;
+      case "PER_ROOM": case "PER_ROOM_PER_STAY": return price / occupancy;
+      case "PER_PERSON_PER_NIGHT": return price * count;
+      case "PER_ROOM_PER_NIGHT": return price * count / occupancy;
+      case "PER_MEAL": case "PER_PERSON_PER_MEAL": return price * count;
+      case "PER_ROOM_PER_MEAL": return price * count / occupancy;
+      default: return 0;
+    }
+  };
+  let total = 0;
+  const hb = /^(HB|HALF[ _-]?BOARD)$/i.test(hotel.supplierSelectedMealBasis || hotel.supplierMealBasis || "");
+  if (!hb && hotel.supplierDinnerIncluded !== true && hotel.supplierDinnerSelected) {
+    total += perPerson(amount(hotel.supplierDinnerAmount), hotel.supplierDinnerUnit, units(hotel.supplierDinnerMeals));
+  }
+  if (hotel.supplierPorterageAvailable !== false && hotel.supplierPorterageIncluded !== true && hotel.supplierPorterageSelected) {
+    total += perPerson(amount(hotel.supplierPorterageAmount), hotel.supplierPorterageUnit, nights);
+  }
+  if (hotel.supplierBeveragePackageIncluded !== true && hotel.supplierBeverageSelected) {
+    total += perPerson(amount(hotel.supplierBeveragePackageAmount), hotel.supplierBeveragePackageUnit, units(hotel.supplierBeverageMeals));
+  }
+  return total;
+}
+
 function calculateSellingPricesForPax(
   args: {
     paxCount: number;
@@ -959,7 +1054,7 @@ function calculateSellingPricesForPax(
     pricing: PricingControls;
 
     complimentarySetup:
-      ComplimentarySetup;
+      ComplimentaryConfig;
   }
 ) {
   const payingPassengers =
@@ -991,12 +1086,12 @@ function calculateSellingPricesForPax(
     coreHotels.reduce(
       (sum, row) =>
         sum +
-        toNumber(
+        (toNumber(
           row.singlePerPerson
         ) *
           toNumber(
             row.nights
-          ),
+          ) + optionalHotelExtrasPerPerson(row, 1)),
       0
     );
 
@@ -1004,12 +1099,12 @@ function calculateSellingPricesForPax(
     coreHotels.reduce(
       (sum, row) =>
         sum +
-        toNumber(
+        (toNumber(
           row.doubleTwinPerPerson
         ) *
           toNumber(
             row.nights
-          ),
+          ) + optionalHotelExtrasPerPerson(row, 2)),
       0
     );
 
@@ -1017,12 +1112,12 @@ function calculateSellingPricesForPax(
     coreHotels.reduce(
       (sum, row) =>
         sum +
-        toNumber(
+        (toNumber(
           row.triplePerPerson
         ) *
           toNumber(
             row.nights
-          ),
+          ) + optionalHotelExtrasPerPerson(row, 3)),
       0
     );
 
@@ -1059,6 +1154,15 @@ function calculateSellingPricesForPax(
       args.complimentarySetup
     );
 
+  const compExpenses = calculateComplimentaryExpenses({
+    payingPassengers, complimentaryPassengers: freePassengers,
+    priestPassengers: args.complimentarySetup.priestComplimentary ? args.complimentarySetup.priestCount : 0,
+    groupLeaderPassengers: args.complimentarySetup.groupLeaderComplimentary ? args.complimentarySetup.groupLeaderCount : 0,
+    hotelSinglePerPerson, hotelDoubleTwinPerPerson, hotelTriplePerPerson,
+    otherPerPersonCost: fixedCostPerPerson,
+    settings: args.complimentarySetup,
+  });
+
   const result =
     calculateNetGroupPricing({
       payingPassengers,
@@ -1080,6 +1184,7 @@ function calculateSellingPricesForPax(
       groupOperationalCost:
         operationalTotal +
         groupLeaderAllowanceTotal,
+      freeVariableCostOverride: compExpenses.totalExpense,
 
       epochMarkupPercent:
         args.pricing.markupMode ===
@@ -1261,6 +1366,7 @@ function normalizeSavedOperationalRow(
       toNumber(
         row.hotelNights
       ),
+    accommodationCoveredElsewhere: row.accommodationCoveredElsewhere === true,
 
     airfareTransport:
       toNumber(
@@ -1480,7 +1586,7 @@ export default function QuoteCreateForm({
     complimentarySetup,
     setComplimentarySetup,
   ] =
-    useState<ComplimentarySetup>(
+    useState<ComplimentaryConfig>(
       DEFAULT_COMPLIMENTARY_SETUP
     );
 
@@ -1540,6 +1646,13 @@ export default function QuoteCreateForm({
       createEmptyOperationalCostRow(),
     ]);
 
+  // A single derived collection powers screen totals, pricing tiers and PDF snapshots.
+  // Original state remains editable; supplier CRM and financial modules are unchanged.
+  const pricedOperationalCostRows = useMemo(
+    () => operationalCostRows.map((row) => withStaffHotelAccommodation(row, hotels)),
+    [operationalCostRows, hotels],
+  );
+
   const payingPassengers =
     Math.max(
       Math.floor(
@@ -1569,7 +1682,7 @@ export default function QuoteCreateForm({
 
   useEffect(() => {
     setGroup(
-      (prev) => {
+      (prev: GroupSetup) => {
         if (
           prev.freePassengers ===
           totalComplimentaryPassengers
@@ -1961,7 +2074,7 @@ export default function QuoteCreateForm({
           : 20;
 
     setGroup(
-      (prev) => ({
+      (prev: GroupSetup) => ({
         ...prev,
 
         startDate:
@@ -1986,6 +2099,14 @@ export default function QuoteCreateForm({
       setComplimentarySetup({
         ...DEFAULT_COMPLIMENTARY_SETUP,
         ...summary.complimentarySetup,
+        complimentaryMode:
+          summary.complimentarySetup.complimentaryMode === "MANUAL"
+            ? "MANUAL"
+            : "AUTOMATIC",
+        manualComplimentaryPassengers: Math.max(
+          0,
+          Math.floor(Number(summary.complimentarySetup.manualComplimentaryPassengers) || 0)
+        ),
 
         freePlaceRatio:
           Math.max(
@@ -2239,6 +2360,20 @@ export default function QuoteCreateForm({
               row.supplierMealBasis ??
               null,
 
+            // Restore the frozen supplier rate fields alongside the group's
+            // selected service quantities. Without these, a reopened quote
+            // loses the hotel's priced Dinner offering (e.g. 2 x EUR 40)
+            // even though its original costing snapshot still includes it.
+            supplierSelectedMealBasis: row.supplierSelectedMealBasis ?? undefined,
+            supplierBaseSinglePerNight: row.supplierBaseSinglePerNight == null ? undefined : toNumber(row.supplierBaseSinglePerNight),
+            supplierBaseDoubleTwinPerNight: row.supplierBaseDoubleTwinPerNight == null ? undefined : toNumber(row.supplierBaseDoubleTwinPerNight),
+            supplierBaseTriplePerNight: row.supplierBaseTriplePerNight == null ? undefined : toNumber(row.supplierBaseTriplePerNight),
+            supplierDinnerIncluded: row.supplierDinnerIncluded ?? null,
+            supplierDinnerAmount: row.supplierDinnerAmount == null ? null : toNumber(row.supplierDinnerAmount),
+            supplierDinnerUnit: row.supplierDinnerUnit ?? null,
+            supplierCityTaxCurrency: row.supplierCityTaxCurrency ?? null,
+            supplierCityTaxUnit: row.supplierCityTaxUnit ?? null,
+
             supplierCityTaxIncluded:
               row.supplierCityTaxIncluded ??
               null,
@@ -2264,6 +2399,16 @@ export default function QuoteCreateForm({
             supplierBeveragePackageDescription:
               row.supplierBeveragePackageDescription ??
               null,
+            supplierPorterageAvailable: row.supplierPorterageAvailable ?? null,
+            supplierPorterageAmount: row.supplierPorterageAmount ?? null,
+            supplierPorterageUnit: row.supplierPorterageUnit ?? null,
+            supplierBeveragePackageAmount: row.supplierBeveragePackageAmount ?? null,
+            supplierBeveragePackageUnit: row.supplierBeveragePackageUnit ?? null,
+            supplierDinnerSelected: Boolean(row.supplierDinnerSelected),
+            supplierDinnerMeals: toNumber(row.supplierDinnerMeals),
+            supplierPorterageSelected: Boolean(row.supplierPorterageSelected),
+            supplierBeverageSelected: Boolean(row.supplierBeverageSelected),
+            supplierBeverageMeals: toNumber(row.supplierBeverageMeals),
           })
         )
       );
@@ -2754,12 +2899,12 @@ export default function QuoteCreateForm({
         coreHotels.reduce(
           (sum, hotel) =>
             sum +
-            toNumber(
+            (toNumber(
               hotel.singlePerPerson
             ) *
               toNumber(
                 hotel.nights
-              ),
+              ) + optionalHotelExtrasPerPerson(hotel, 1)),
           0
         );
 
@@ -2767,12 +2912,12 @@ export default function QuoteCreateForm({
         coreHotels.reduce(
           (sum, hotel) =>
             sum +
-            toNumber(
+            (toNumber(
               hotel.doubleTwinPerPerson
             ) *
               toNumber(
                 hotel.nights
-              ),
+              ) + optionalHotelExtrasPerPerson(hotel, 2)),
           0
         );
 
@@ -2780,12 +2925,12 @@ export default function QuoteCreateForm({
         coreHotels.reduce(
           (sum, hotel) =>
             sum +
-            toNumber(
+            (toNumber(
               hotel.triplePerPerson
             ) *
               toNumber(
                 hotel.nights
-              ),
+              ) + optionalHotelExtrasPerPerson(hotel, 3)),
           0
         );
 
@@ -2797,12 +2942,12 @@ export default function QuoteCreateForm({
         preHotels.reduce(
           (sum, hotel) =>
             sum +
-            toNumber(
+            (toNumber(
               hotel.singlePerPerson
             ) *
               toNumber(
                 hotel.nights
-              ),
+              ) + optionalHotelExtrasPerPerson(hotel, 1)),
           0
         );
 
@@ -2810,12 +2955,12 @@ export default function QuoteCreateForm({
         preHotels.reduce(
           (sum, hotel) =>
             sum +
-            toNumber(
+            (toNumber(
               hotel.doubleTwinPerPerson
             ) *
               toNumber(
                 hotel.nights
-              ),
+              ) + optionalHotelExtrasPerPerson(hotel, 2)),
           0
         );
 
@@ -2823,12 +2968,12 @@ export default function QuoteCreateForm({
         preHotels.reduce(
           (sum, hotel) =>
             sum +
-            toNumber(
+            (toNumber(
               hotel.triplePerPerson
             ) *
               toNumber(
                 hotel.nights
-              ),
+              ) + optionalHotelExtrasPerPerson(hotel, 3)),
           0
         );
 
@@ -2836,12 +2981,12 @@ export default function QuoteCreateForm({
         postHotels.reduce(
           (sum, hotel) =>
             sum +
-            toNumber(
+            (toNumber(
               hotel.singlePerPerson
             ) *
               toNumber(
                 hotel.nights
-              ),
+              ) + optionalHotelExtrasPerPerson(hotel, 1)),
           0
         );
 
@@ -2849,12 +2994,12 @@ export default function QuoteCreateForm({
         postHotels.reduce(
           (sum, hotel) =>
             sum +
-            toNumber(
+            (toNumber(
               hotel.doubleTwinPerPerson
             ) *
               toNumber(
                 hotel.nights
-              ),
+              ) + optionalHotelExtrasPerPerson(hotel, 2)),
           0
         );
 
@@ -2862,12 +3007,12 @@ export default function QuoteCreateForm({
         postHotels.reduce(
           (sum, hotel) =>
             sum +
-            toNumber(
+            (toNumber(
               hotel.triplePerPerson
             ) *
               toNumber(
                 hotel.nights
-              ),
+              ) + optionalHotelExtrasPerPerson(hotel, 3)),
           0
         );
 
@@ -2891,7 +3036,7 @@ export default function QuoteCreateForm({
        * of the main tour rate.
        */
       const baseOperationalTotal =
-        operationalCostRows
+        pricedOperationalCostRows
           .filter(
             (row) =>
               row.scope ===
@@ -2936,13 +3081,13 @@ export default function QuoteCreateForm({
        * These stay separate from core pricing.
        */
       const preOperationalRows =
-        operationalCostRows.filter(
+        pricedOperationalCostRows.filter(
           (row) =>
             row.scope === "PRE"
         );
 
       const postOperationalRows =
-        operationalCostRows.filter(
+        pricedOperationalCostRows.filter(
           (row) =>
             row.scope === "POST"
         );
@@ -2980,12 +3125,19 @@ export default function QuoteCreateForm({
        * Current complimentary hotel basis remains
        * Double/Twin.
        */
-      const freeCostTotal =
-        freePassengers *
-        (
-          fixedDoubleTwinPerPerson +
-          fixedCostPerPerson
-        );
+      const compExpenses = calculateComplimentaryExpenses({
+        payingPassengers: currentPayingPassengers,
+        complimentaryPassengers: freePassengers,
+        priestPassengers: complimentarySetup.priestComplimentary ? complimentarySetup.priestCount : 0,
+        groupLeaderPassengers: complimentarySetup.groupLeaderComplimentary ? complimentarySetup.groupLeaderCount : 0,
+        hotelSinglePerPerson: fixedSinglePerPerson,
+        hotelDoubleTwinPerPerson: fixedDoubleTwinPerPerson,
+        hotelTriplePerPerson: fixedTriplePerPerson,
+        otherPerPersonCost: fixedCostPerPerson,
+        settings: complimentarySetup,
+      });
+
+      const freeCostTotal = compExpenses.totalExpense;
 
       const freeCostPerPayingPassenger =
         currentPayingPassengers >
@@ -3082,6 +3234,19 @@ export default function QuoteCreateForm({
 
         freeCostPerPayingPassenger,
 
+        complimentaryExpenseLines: compExpenses.lines,
+        compCountMismatch: compExpenses.namedCountExceedsComps,
+        unpricedCompAccommodations: [
+          ...compExpenses.unpricedAccommodation,
+          ...compExpenses.lines.flatMap(line => {
+            if (line.travelers < 1 || line.accommodation === "NONE") return [];
+            const field = line.accommodation === "SINGLE" ? "singlePerPerson" :
+              line.accommodation === "TRIPLE" ? "triplePerPerson" : "doubleTwinPerPerson";
+            return coreHotels.filter(hotel => toNumber(hotel[field]) <= 0)
+              .map(hotel => `${line.category}: ${hotel.hotelName || hotel.destination || "Unspecified hotel"}`);
+          }),
+        ],
+
         singleNetCost,
 
         doubleTwinNetCost,
@@ -3092,7 +3257,7 @@ export default function QuoteCreateForm({
       group.totalPassengers,
       hotels,
       fixedCostRows,
-      operationalCostRows,
+      pricedOperationalCostRows,
       complimentarySetup,
     ]);
 
@@ -3115,7 +3280,7 @@ export default function QuoteCreateForm({
 
               fixedCostRows,
 
-              operationalCostRows,
+              operationalCostRows: pricedOperationalCostRows,
 
               pricing,
 
@@ -3174,95 +3339,64 @@ export default function QuoteCreateForm({
     paxPricingRows,
     hotels,
     fixedCostRows,
-    operationalCostRows,
+    pricedOperationalCostRows,
     pricing,
     complimentarySetup,
   ]);
 
-  const firstPaxRow =
-    useMemo(
-      () =>
-        paxPricingRows.find(
-          (row) =>
-            row.paxCount ===
-            calculations.payingPassengers
-        ) ??
-        paxPricingRows.find(
-          (row) =>
-            row.paxCount > 0
-        ) ??
-        null,
-      [
-        paxPricingRows,
-        calculations.payingPassengers,
-      ]
-    );
+  // The group may use a non-preset size (e.g. 22 paying pilgrims).
+  // Never fall back to the 20-pax tier for an unrelated group size.
+  const selectedPaxPricingRow = paxPricingRows.find(
+    row => row.paxCount === calculations.payingPassengers
+  ) ?? null;
 
-  const activeSinglePrice =
-    firstPaxRow
-      ? getActivePrice(
-          pricingMode,
+  const exactGroupPrices = useMemo(() => calculateSellingPricesForPax({
+    paxCount: calculations.payingPassengers,
+    hotels,
+    fixedCostRows,
+    operationalCostRows: pricedOperationalCostRows,
+    pricing,
+    complimentarySetup,
+  }), [calculations.payingPassengers, hotels, fixedCostRows, pricedOperationalCostRows, pricing, complimentarySetup]);
 
-          firstPaxRow.calculatedSinglePrice,
+  const activeSinglePrice = getActivePrice(
+    pricingMode,
+    Math.round(exactGroupPrices.singleSellingPrice),
+    selectedPaxPricingRow?.manualSinglePrice ?? 0,
+  );
+  const activeDoubleTwinPrice = getActivePrice(
+    pricingMode,
+    Math.round(exactGroupPrices.doubleTwinSellingPrice),
+    selectedPaxPricingRow?.manualDoubleTwinPrice ?? 0,
+  );
+  const activeTriplePrice = getActivePrice(
+    pricingMode,
+    Math.round(exactGroupPrices.tripleSellingPrice),
+    selectedPaxPricingRow?.manualTriplePrice ?? 0,
+  );
 
-          firstPaxRow.manualSinglePrice
-        )
-      : 0;
+  // Validate meal quantities across both Hotel CRM and separately arranged
+  // Per-Person Services. This does not change supplier costs or NET pricing.
+  const mealQuantityCheck = useMemo(() => validateMealQuantities({
+    services: fixedCostRows,
+    hotels,
+    startDate: group.startDate,
+    endDate: group.endDate,
+  }), [fixedCostRows, hotels, group.startDate, group.endDate]);
 
-  const activeDoubleTwinPrice =
-    firstPaxRow
-      ? getActivePrice(
-          pricingMode,
-
-          firstPaxRow.calculatedDoubleTwinPrice,
-
-          firstPaxRow.manualDoubleTwinPrice
-        )
-      : 0;
-
-  const activeTriplePrice =
-    firstPaxRow
-      ? getActivePrice(
-          pricingMode,
-
-          firstPaxRow.calculatedTriplePrice,
-
-          firstPaxRow.manualTriplePrice
-        )
-      : 0;
-
-  const grossSellingPerPerson =
-    activeDoubleTwinPrice;
-
-  const retainedRevenuePerPerson =
-    grossSellingPerPerson;
-
-  const profitPerPerson =
-    retainedRevenuePerPerson -
-    calculations.doubleTwinNetCost;
-
-  const totalRevenue =
-    grossSellingPerPerson *
-    calculations.payingPassengers;
-
-  const retainedRevenue =
-    totalRevenue;
-
-  const totalCost =
-    calculations.doubleTwinNetCost *
-    calculations.payingPassengers;
-
-  const totalProfit =
-    retainedRevenue -
-    totalCost;
-
-  const marginPercent =
-    retainedRevenue > 0
-      ? (
-          totalProfit /
-          retainedRevenue
-        ) * 100
-      : 0;
+  // Read-only reporting from the existing calculation results. Never feed the
+  // result back into quotation rates, COMPs, supplier expenses, or saved items.
+  const groupFinancialSummary = useMemo(() => buildGroupFinancialSummary({
+    payingPassengers: calculations.payingPassengers,
+    freePassengers: calculations.freePassengers,
+    hotelPerPayingPax: calculations.fixedDoubleTwinPerPerson,
+    otherPerPayingPax: calculations.fixedCostPerPerson,
+    coreOperationalGroupTotal: calculations.baseOperationalTotal,
+    groupLeaderAllowanceTotal: calculations.groupLeaderAllowanceTotal,
+    complimentaryExpenseTotal: calculations.freeCostTotal,
+    costPerPayingPax: calculations.doubleTwinNetCost,
+    netSellingPerPayingPax: activeDoubleTwinPrice,
+  }), [calculations, activeDoubleTwinPrice]);
 
   function handleApplyTemplate({
     templateId,
@@ -3279,7 +3413,7 @@ export default function QuoteCreateForm({
     );
 
     setTitle(
-      (prev) =>
+      (prev: string) =>
         prev.trim()
           ? prev
           : templateTitle
@@ -3341,7 +3475,7 @@ export default function QuoteCreateForm({
       );
 
     setOperationalCostRows(
-      (prev) => [
+      (prev: OperationalCostRow[]) => [
         ...hydrated,
         ...prev,
       ]
@@ -3357,7 +3491,7 @@ export default function QuoteCreateForm({
     patch: Partial<HotelRow>
   ) {
     setHotels(
-      (prev) =>
+      (prev: HotelRow[]) =>
         prev.map(
           (
             row,
@@ -3375,7 +3509,7 @@ export default function QuoteCreateForm({
 
   function addHotel() {
     setHotels(
-      (prev) => [
+      (prev: HotelRow[]) => [
         ...prev,
         createEmptyHotelRow(),
       ]
@@ -3386,7 +3520,7 @@ export default function QuoteCreateForm({
     index: number
   ) {
     setHotels(
-      (prev) =>
+      (prev: HotelRow[]) =>
         prev.filter(
           (
             _,
@@ -3402,7 +3536,7 @@ export default function QuoteCreateForm({
     patch: Partial<FixedCostRow>
   ) {
     setFixedCostRows(
-      (prev) =>
+      (prev: FixedCostRow[]) =>
         prev.map(
           (
             row,
@@ -3421,7 +3555,7 @@ export default function QuoteCreateForm({
   function addFixedCostRow(
     row?: FixedCostRow
   ) {
-      setFixedCostRows((prev) => [
+      setFixedCostRows((prev: FixedCostRow[]) => [
       ...prev,
       row ?? {
       label: "",
@@ -3436,7 +3570,7 @@ export default function QuoteCreateForm({
     index: number
   ) {
     setFixedCostRows(
-      (prev) =>
+      (prev: FixedCostRow[]) =>
         prev.filter(
           (
             _,
@@ -3453,7 +3587,7 @@ export default function QuoteCreateForm({
       Partial<OperationalCostRow>
   ) {
     setOperationalCostRows(
-      (prev) =>
+      (prev: OperationalCostRow[]) =>
         prev.map(
           (
             row,
@@ -3471,7 +3605,7 @@ export default function QuoteCreateForm({
 
   function addOperationalCostRow() {
     setOperationalCostRows(
-      (prev) => [
+      (prev: OperationalCostRow[]) => [
         ...prev,
 
         createEmptyOperationalCostRow(),
@@ -3483,7 +3617,7 @@ export default function QuoteCreateForm({
     index: number
   ) {
     setOperationalCostRows(
-      (prev) =>
+      (prev: OperationalCostRow[]) =>
         prev.filter(
           (
             _,
@@ -3499,7 +3633,7 @@ export default function QuoteCreateForm({
     patch: Partial<PaxPricingRow>
   ) {
     setPaxPricingRows(
-      (prev) =>
+      (prev: PaxPricingRow[]) =>
         prev.map(
           (
             row,
@@ -3517,7 +3651,7 @@ export default function QuoteCreateForm({
 
   function addPaxPricingRow() {
     setPaxPricingRows(
-      (prev) => [
+      (prev: PaxPricingRow[]) => [
         ...prev,
 
         createEmptyPaxPricingRow(
@@ -3531,7 +3665,7 @@ export default function QuoteCreateForm({
     index: number
   ) {
     setPaxPricingRows(
-      (prev) =>
+      (prev: PaxPricingRow[]) =>
         prev.filter(
           (
             _,
@@ -3599,12 +3733,12 @@ export default function QuoteCreateForm({
                 ) > 0
               ) {
                 const total =
-                  toNumber(
+                  (toNumber(
                     row.singlePerPerson
                   ) *
                   toNumber(
                     row.nights
-                  );
+                  ) + optionalHotelExtrasPerPerson(row, 1));
 
                 items.push({
                   title:
@@ -3650,12 +3784,12 @@ export default function QuoteCreateForm({
                 ) > 0
               ) {
                 const total =
-                  toNumber(
+                  (toNumber(
                     row.doubleTwinPerPerson
                   ) *
                   toNumber(
                     row.nights
-                  );
+                  ) + optionalHotelExtrasPerPerson(row, 2));
 
                 items.push({
                   title:
@@ -3702,12 +3836,12 @@ export default function QuoteCreateForm({
                 ) > 0
               ) {
                 const total =
-                  toNumber(
+                  (toNumber(
                     row.triplePerPerson
                   ) *
                   toNumber(
                     row.nights
-                  );
+                  ) + optionalHotelExtrasPerPerson(row, 3));
 
                 items.push({
                   title:
@@ -3807,7 +3941,7 @@ export default function QuoteCreateForm({
             })
           ),
 
-        ...operationalCostRows
+        ...pricedOperationalCostRows
           .filter(
             (row) =>
               row.label.trim() ||
@@ -3992,6 +4126,36 @@ export default function QuoteCreateForm({
 
         complimentarySetup,
 
+        costingSnapshot: {
+          version: "GROUP_NET_V2",
+          payingPassengers: calculations.payingPassengers,
+          freePassengers: calculations.freePassengers,
+          totalTravelers: calculations.totalTravelers,
+          hotelSinglePerPayingPax: calculations.fixedSinglePerPerson,
+          hotelDoubleTwinPerPayingPax: calculations.fixedDoubleTwinPerPerson,
+          hotelTriplePerPayingPax: calculations.fixedTriplePerPerson,
+          otherPerPayingPax: calculations.fixedCostPerPerson,
+          coreGroupOperationalTotal: calculations.baseOperationalTotal,
+          groupOperationalPerPayingPax: calculations.operationalPerPerson,
+          groupLeaderAllowanceTotal: calculations.groupLeaderAllowanceTotal,
+          groupLeaderAllowancePerPayingPax: calculations.leaderAllowancePerPayingPassenger,
+          complimentaryExpenseTotal: calculations.freeCostTotal,
+          complimentaryExpensePerPayingPax: calculations.freeCostPerPayingPassenger,
+          complimentaryExpenseLines: calculations.complimentaryExpenseLines,
+          unpricedCompAccommodations: calculations.unpricedCompAccommodations,
+          costPerPayingPax: {
+            single: calculations.singleNetCost,
+            doubleTwin: calculations.doubleTwinNetCost,
+            triple: calculations.tripleNetCost,
+          },
+          netSellingPerPayingPax: {
+            single: activeSinglePrice,
+            doubleTwin: activeDoubleTwinPrice,
+            triple: activeTriplePrice,
+          },
+          rawSupplierEntries: generatedItems,
+        },
+
         groupLeaderAllowanceTotal:
           calculations
             .groupLeaderAllowanceTotal,
@@ -4037,7 +4201,11 @@ export default function QuoteCreateForm({
                   row.calculatedDoubleTwinPrice,
 
                 calculatedTriplePrice:
-                  row.calculatedTriplePrice,
+                  hotels.some((hotel) => hotel.stayType === "CORE") &&
+                  hotels.filter((hotel) => hotel.stayType === "CORE")
+                    .every((hotel) => toNumber(hotel.triplePerPerson) > 0)
+                    ? row.calculatedTriplePrice
+                    : 0,
 
                 manualSinglePrice:
                   row.manualSinglePrice,
@@ -4046,7 +4214,11 @@ export default function QuoteCreateForm({
                   row.manualDoubleTwinPrice,
 
                 manualTriplePrice:
-                  row.manualTriplePrice,
+                  hotels.some((hotel) => hotel.stayType === "CORE") &&
+                  hotels.filter((hotel) => hotel.stayType === "CORE")
+                    .every((hotel) => toNumber(hotel.triplePerPerson) > 0)
+                    ? row.manualTriplePrice
+                    : 0,
               })
             ),
 
@@ -4123,6 +4295,19 @@ export default function QuoteCreateForm({
                 row.supplierMealBasis ??
                 null,
 
+              // Persist the contracted supplier rate as a quote snapshot.
+              // The PDF and quote editor must use the SAME frozen price and
+              // unit that were used in the saved financial calculation.
+              supplierSelectedMealBasis: row.supplierSelectedMealBasis ?? null,
+              supplierBaseSinglePerNight: row.supplierBaseSinglePerNight ?? null,
+              supplierBaseDoubleTwinPerNight: row.supplierBaseDoubleTwinPerNight ?? null,
+              supplierBaseTriplePerNight: row.supplierBaseTriplePerNight ?? null,
+              supplierDinnerIncluded: row.supplierDinnerIncluded ?? null,
+              supplierDinnerAmount: row.supplierDinnerAmount ?? null,
+              supplierDinnerUnit: row.supplierDinnerUnit ?? null,
+              supplierCityTaxCurrency: row.supplierCityTaxCurrency ?? null,
+              supplierCityTaxUnit: row.supplierCityTaxUnit ?? null,
+
               supplierCityTaxIncluded:
                 row.supplierCityTaxIncluded ??
                 null,
@@ -4142,6 +4327,16 @@ export default function QuoteCreateForm({
               supplierBeveragePackageDescription:
                 row.supplierBeveragePackageDescription ??
                 null,
+              supplierPorterageAvailable: row.supplierPorterageAvailable ?? null,
+              supplierPorterageAmount: row.supplierPorterageAmount ?? null,
+              supplierPorterageUnit: row.supplierPorterageUnit ?? null,
+              supplierBeveragePackageAmount: row.supplierBeveragePackageAmount ?? null,
+              supplierBeveragePackageUnit: row.supplierBeveragePackageUnit ?? null,
+              supplierDinnerSelected: Boolean(row.supplierDinnerSelected),
+              supplierDinnerMeals: toNumber(row.supplierDinnerMeals),
+              supplierPorterageSelected: Boolean(row.supplierPorterageSelected),
+              supplierBeverageSelected: Boolean(row.supplierBeverageSelected),
+              supplierBeverageMeals: toNumber(row.supplierBeverageMeals),
             })
           ),
 
@@ -4163,7 +4358,7 @@ export default function QuoteCreateForm({
           ),
 
         operationalCostRows:
-          operationalCostRows.map(
+          pricedOperationalCostRows.map(
             (row) => ({
               label:
                 row.label,
@@ -4194,6 +4389,7 @@ export default function QuoteCreateForm({
 
               hotelNights:
                 row.hotelNights,
+              accommodationCoveredElsewhere: row.accommodationCoveredElsewhere === true,
 
               airfareTransport:
                 row.airfareTransport,
@@ -4249,8 +4445,21 @@ export default function QuoteCreateForm({
           nextStepNotes ||
           null,
 
-        items:
-          generatedItems,
+        // ONE comparable per-paying-pilgrim B2B NET rate. The supplier
+        // cost entries remain in costingSnapshot.rawSupplierEntries.
+        // Never sum SINGLE + DOUBLE/TWIN alternatives or raw group coach rates.
+        items: [{
+          title: "B2B NET tour rate - Double/Twin, per paying pilgrim",
+          description: `Based on ${calculations.payingPassengers} paying + ${calculations.freePassengers} complimentary passengers; alternative occupancy prices in internal costing summary`,
+          itemType: "SERVICE" as const,
+          optional: false,
+          quantity: 1,
+          unitPrice: activeDoubleTwinPrice,
+          discountAmount: 0,
+          taxAmount: 0,
+          total: activeDoubleTwinPrice,
+          sortOrder: 0,
+        }],
       };
 
       const endpoint =
@@ -4517,10 +4726,10 @@ export default function QuoteCreateForm({
             .payingPassengers
         }
         onUpdateGroup={(
-          patch
+          patch: Partial<GroupSetup>
         ) =>
           setGroup(
-            (prev) => ({
+            (prev: GroupSetup) => ({
               ...prev,
               ...patch,
 
@@ -4555,11 +4764,16 @@ export default function QuoteCreateForm({
             .groupLeaderAllowanceTotal
         }
         currency={currency}
+        complimentaryExpenseTotal={calculations.freeCostTotal}
+        complimentaryExpensePerPayingPax={calculations.freeCostPerPayingPassenger}
+        complimentaryExpenseLines={calculations.complimentaryExpenseLines}
+        compCountMismatch={calculations.compCountMismatch}
+        unpricedCompAccommodations={calculations.unpricedCompAccommodations}
         onUpdate={(
-          patch
+          patch: Partial<ComplimentarySetup>
         ) =>
           setComplimentarySetup(
-            (prev) => ({
+            (prev: ComplimentaryConfig) => ({
               ...prev,
               ...patch,
             })
@@ -4568,49 +4782,6 @@ export default function QuoteCreateForm({
         toNumber={toNumber}
         formatMoney={formatMoney}
       />
-
-      <section className="rounded-xl border border-emerald-200 bg-emerald-50 p-5">
-        <div className="grid gap-4 md:grid-cols-3">
-          <div>
-            <div className="text-xs font-semibold uppercase tracking-wide text-emerald-700">
-              Paying Pilgrims
-            </div>
-
-            <div className="mt-1 text-2xl font-bold text-[#001F3F]">
-              {
-                calculations
-                  .payingPassengers
-              }
-            </div>
-          </div>
-
-          <div>
-            <div className="text-xs font-semibold uppercase tracking-wide text-emerald-700">
-              Complimentary
-            </div>
-
-            <div className="mt-1 text-2xl font-bold text-[#001F3F]">
-              {
-                calculations
-                  .freePassengers
-              }
-            </div>
-          </div>
-
-          <div>
-            <div className="text-xs font-semibold uppercase tracking-wide text-emerald-700">
-              Total Travelers
-            </div>
-
-            <div className="mt-1 text-2xl font-bold text-[#001F3F]">
-              {
-                calculations
-                  .totalTravelers
-              }
-            </div>
-          </div>
-        </div>
-      </section>
 
       <section className="rounded-xl border border-blue-200 bg-blue-50 p-5">
         <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
@@ -4697,6 +4868,7 @@ export default function QuoteCreateForm({
 
       <HotelsSection
         hotels={hotels}
+        perPersonServices={fixedCostRows.map((service) => ({ label: service.label, category: service.category }))}
         currency={currency}
         startDate={group.startDate}
         endDate={group.endDate}
@@ -4704,43 +4876,15 @@ export default function QuoteCreateForm({
         onAddHotel={addHotel}
         onRemoveHotel={removeHotel}
         onUpdateHotel={updateHotel}
-        hotelCostPerPerson={(
-          hotel,
-          occupancy
-        ) => {
-          const nights =
-            toNumber(
-              hotel.nights
-            );
-
-          if (
-            occupancy === "single"
-          ) {
-            return (
-              toNumber(
-                hotel.singlePerPerson
-              ) *
-              nights
-            );
-          }
-
-          if (
-            occupancy === "triple"
-          ) {
-            return (
-              toNumber(
-                hotel.triplePerPerson
-              ) *
-              nights
-            );
-          }
-
-          return (
-            toNumber(
-              hotel.doubleTwinPerPerson
-            ) *
-            nights
-          );
+        hotelCostPerPerson={(hotel, occupancy) => {
+          const rate = occupancy === "single"
+            ? toNumber(hotel.singlePerPerson)
+            : occupancy === "triple"
+              ? toNumber(hotel.triplePerPerson)
+              : toNumber(hotel.doubleTwinPerPerson);
+          if (rate <= 0) return 0;
+          const roomOccupants = occupancy === "single" ? 1 : occupancy === "triple" ? 3 : 2;
+          return rate * Math.max(0, toNumber(hotel.nights)) + optionalHotelExtrasPerPerson(hotel, roomOccupants);
         }}
         formatMoney={formatMoney}
         toNumber={toNumber}
@@ -4748,6 +4892,8 @@ export default function QuoteCreateForm({
 
       <FixedCostsSection
         rows={fixedCostRows}
+        mealQuantityCheck={mealQuantityCheck}
+        totalTravelers={calculations.totalTravelers}
         currency={currency}
         onAddRow={addFixedCostRow}
         onRemoveRow={removeFixedCostRow}
@@ -4762,7 +4908,14 @@ export default function QuoteCreateForm({
       />
 
       <OperationalCostsSection
-        rows={operationalCostRows}
+        rows={pricedOperationalCostRows}
+        staffHotels={hotels.map((hotel) => ({
+          hotelName: hotel.hotelName,
+          destination: hotel.destination,
+          nights: hotel.nights,
+          singlePerPerson: hotel.singlePerPerson,
+          stayType: hotel.stayType,
+        }))}
         currency={currency}
         payingPassengers={
           calculations
@@ -4911,10 +5064,10 @@ export default function QuoteCreateForm({
       <PricingControlsSection
         pricing={pricing}
         onUpdatePricing={(
-          patch
+          patch: Partial<PricingControls>
         ) =>
           setPricing(
-            (prev) => ({
+            (prev: PricingControls) => ({
               ...prev,
               ...patch,
             })
@@ -5007,7 +5160,7 @@ export default function QuoteCreateForm({
           </div>
 
           <textarea
-            className="mt-3 min-h-[220px] w-full resize-y rounded-md border bg-white p-4 text-sm leading-relaxed"
+            className="mt-3 min-h-55 w-full resize-y rounded-md border bg-white p-4 text-sm leading-relaxed"
             placeholder={`Athens - Acropolis, Areopagus, Plaka
 Corinth - Ancient Corinth, Bema of St. Paul
 Delphi - Sanctuary of Apollo, Archaeological Museum`}
@@ -5025,6 +5178,12 @@ Delphi - Sanctuary of Apollo, Archaeological Museum`}
         </div>
 
         <PassengerPricingSection
+          tripleAvailable={
+            hotels.some((hotel) => hotel.stayType === "CORE") &&
+            hotels
+              .filter((hotel) => hotel.stayType === "CORE")
+              .every((hotel) => toNumber(hotel.triplePerPerson) > 0)
+          }
           pricingMode={
             pricingMode
           }
@@ -5233,74 +5392,20 @@ Delphi - Sanctuary of Apollo, Archaeological Museum`}
       </section>
 
       <div className="space-y-4 border-t pt-6">
-        <QuoteSummarySection
-          currency={
-            currency
-          }
-          formatMoney={
-            formatMoney
-          }
-          pricingMode={
-            pricingMode
-          }
-          activeSellingPrice={
-            activeDoubleTwinPrice
-          }
-          calculations={{
-            hotelDoubleTwinPerPerson:
-              calculations
-                .fixedDoubleTwinPerPerson,
-
-            fixedCostPerPerson:
-              calculations
-                .fixedCostPerPerson,
-
-            operationalCostPerPerson:
-              calculations
-                .operationalPerPerson,
-
-            doubleTwinNetCost:
-              calculations
-                .doubleTwinNetCost,
-
-            freeCostPerPayingPassenger:
-              calculations
-                .freeCostPerPayingPassenger,
-          }}
-        />
-
-        <ProfitViewSection
-          currency={
-            currency
-          }
-          pricingMode={
-            pricingMode
-          }
-          costPerPerson={
-            calculations
-              .doubleTwinNetCost
-          }
-          sellingPerPerson={
-            activeDoubleTwinPrice
-          }
-          profitPerPerson={
-            profitPerPerson
-          }
-          totalCost={
-            totalCost
-          }
-          totalRevenue={
-            totalRevenue
-          }
-          totalProfit={
-            totalProfit
-          }
-          marginPercent={
-            marginPercent
-          }
-          formatMoney={
-            formatMoney
-          }
+        <GroupFinancialSummarySection
+          summary={groupFinancialSummary}
+          currency={currency}
+          pricingMode={pricingMode}
+          formatMoney={formatMoney}
+          missingCostWarnings={[
+            ...mealQuantityCheck.errors.map((warning) => `Meal quantity requires correction: ${warning}`),
+            ...calculations.unpricedCompAccommodations.map(
+              (entry) => `COMP accommodation: ${entry}`
+            ),
+            ...hotels.filter((hotel) => hotel.stayType === "CORE" && toNumber(hotel.doubleTwinPerPerson) <= 0).map(
+              (hotel) => `Double/Twin room rate missing: ${hotel.hotelName || hotel.destination || "Unspecified hotel"}`
+            ),
+          ]}
         />
 
         <div className="flex justify-end">
