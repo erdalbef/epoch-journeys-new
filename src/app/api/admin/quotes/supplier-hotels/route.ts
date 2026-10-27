@@ -201,6 +201,11 @@ function effectiveHotelCost({
   beveragePackageAmount: number | null;
   beveragePackageUnit: SupplierRateUnit | null;
 }) {
+  // Do not treat a missing/zero supplier room price as a quoted 0 EUR rate.
+  if (!Number.isFinite(baseAmount) || baseAmount <= 0) {
+    return { amount: null, status: "INCOMPLETE" as EffectiveCostStatus };
+  }
+
   const base =
     unitToPerPersonPerNight(
       baseAmount,
@@ -227,35 +232,35 @@ function effectiveHotelCost({
     required: hbRequested && dinnerIncluded !== true,
   });
 
-  const cityTaxCurrencyMismatch =
-    cityTaxAmount !== null &&
+  const hasAdditionalCityTax =
     cityTaxIncluded !== true &&
+    cityTaxAmount !== null &&
+    cityTaxAmount > 0;
+
+  const cityTaxCurrencyMismatch =
+    hasAdditionalCityTax &&
     Boolean(
       cityTaxCurrency &&
         cityTaxCurrency.toUpperCase() !==
           currency.toUpperCase(),
     );
 
-  if (
-    cityTaxCurrencyMismatch
-  ) {
-    return {
-      amount: null,
-      status:
-        "CURRENCY_MISMATCH" as EffectiveCostStatus,
-    };
-  }
+  // City tax is independently reviewable: a missing tax unit or a tax
+  // in a different currency must NOT hide a valid contracted ROOM price.
+  // A compatible per-night tax is added exactly once; an unresolved tax
+  // is excluded from this estimate and visibly flagged by the API/UI.
+  const cityTaxCanBeCosted =
+    hasAdditionalCityTax &&
+    !cityTaxCurrencyMismatch &&
+    (cityTaxUnit === SupplierRateUnit.PER_PERSON_PER_NIGHT ||
+      cityTaxUnit === SupplierRateUnit.PER_ROOM_PER_NIGHT);
 
   const cityTax =
     componentCost({
-      amount:
-        cityTaxAmount,
-      unit:
-        cityTaxUnit,
+      amount: cityTaxCanBeCosted ? cityTaxAmount : null,
+      unit: cityTaxCanBeCosted ? cityTaxUnit : null,
       occupancy,
-      included:
-        cityTaxIncluded,
-      required: cityTaxIncluded !== true,
+      included: !cityTaxCanBeCosted,
     });
 
   // Porterage and beverage packages are optional ancillary services.
@@ -665,6 +670,50 @@ export async function GET(
         },
       );
 
+    // Show all ACTIVE supplier rates, even when they do not cover the
+    // requested itinerary dates. Non-covering dates require reconfirmation.
+    // Combine Single/Double/Twin records only when their contract date ranges
+    // overlap AND their commercial terms match. Never silently mix unrelated
+    // contract seasons or differing tax and meal conditions.
+    type HotelRate = (typeof suppliers)[number]["services"][number]["rates"][number];
+
+    const referenceStart = coverageStart ?? new Date();
+    const referenceEnd = coverageEnd ?? referenceStart;
+
+    const withinTravelAndPax = (item: HotelRate) =>
+      item.validFrom <= referenceStart &&
+      item.validTo >= referenceEnd &&
+      (!pax ||
+        ((item.minPax === null || item.minPax <= pax) &&
+          (item.maxPax === null || item.maxPax >= pax)));
+
+    const sameCommercialTerms = (a: HotelRate, b: HotelRate) =>
+      a.currency === b.currency &&
+      a.unit === b.unit &&
+      a.mealBasis === b.mealBasis &&
+      a.minPax === b.minPax &&
+      a.maxPax === b.maxPax &&
+      a.breakfastIncluded === b.breakfastIncluded &&
+      a.cityTaxIncluded === b.cityTaxIncluded &&
+      String(a.cityTaxAmount) === String(b.cityTaxAmount) &&
+      a.cityTaxCurrency === b.cityTaxCurrency &&
+      a.cityTaxUnit === b.cityTaxUnit &&
+      a.dinnerIncluded === b.dinnerIncluded &&
+      String(a.dinnerAmount) === String(b.dinnerAmount) &&
+      a.dinnerUnit === b.dinnerUnit &&
+      a.porterageIncluded === b.porterageIncluded &&
+      String(a.porterageAmount) === String(b.porterageAmount) &&
+      a.porterageUnit === b.porterageUnit &&
+      a.beveragePackageIncluded === b.beveragePackageIncluded &&
+      String(a.beveragePackageAmount) === String(b.beveragePackageAmount) &&
+      a.beveragePackageUnit === b.beveragePackageUnit;
+
+    const sameRatePeriodForQuote = (a: HotelRate, b: HotelRate) =>
+      a.validFrom <= b.validTo && b.validFrom <= a.validTo;
+
+    const matchingHotelOffer = (a: HotelRate, b: HotelRate) =>
+      sameCommercialTerms(a, b) && sameRatePeriodForQuote(a, b);
+
     const hotels =
       suppliers
         .flatMap(
@@ -672,93 +721,20 @@ export async function GET(
             supplier.services.flatMap(
               (service) =>
                 service.rates
-                  .filter((rate) => {
-                    const referenceStart =
-                      coverageStart ??
-                      new Date();
-
-                    const referenceEnd =
-                      coverageEnd ??
-                      referenceStart;
-
-                    const paxMatches =
-                      !pax ||
-                      ((rate.minPax === null || rate.minPax <= pax) &&
-                        (rate.maxPax === null || rate.maxPax >= pax));
-
-                    const isValidForReference =
-                      rate.validFrom <=
-                        referenceStart &&
-                      rate.validTo >=
-                        referenceEnd &&
-                      paxMatches;
-
-                    const hasValidRate =
-                      service.rates.some(
-                        (candidate) =>
-                          candidate.validFrom <=
-                            referenceStart &&
-                          candidate.validTo >=
-                            referenceEnd &&
-                          (!pax ||
-                            ((candidate.minPax === null || candidate.minPax <= pax) &&
-                              (candidate.maxPax === null || candidate.maxPax >= pax))),
-                      );
-
-                    if (hasValidRate) {
-                      return isValidForReference;
-                    }
-
-                    const latestExpired =
-                      service.rates
-                        .filter(
-                          (candidate) =>
-                            candidate.validTo <
-                            referenceStart,
-                        )
-                        .sort(
-                          (a, b) =>
-                            b.validTo.getTime() -
-                            a.validTo.getTime(),
-                        )[0];
-
-                    return Boolean(
-                      latestExpired &&
-                      rate.validTo.getTime() === latestExpired.validTo.getTime() &&
-                      rate.validFrom.getTime() === latestExpired.validFrom.getTime() &&
-                      paxMatches
-                    );
-                  })
                   // Room-specific supplier rates are separate records. Return one
                   // comparison card per compatible rate set, not one per room.
                   .filter((rate, _index, candidates) => {
-                    if (rate.roomType === null) return true; // legacy rate
-                    const compatible = candidates.filter((other) =>
-                      other.roomType !== null &&
-                      other.currency === rate.currency &&
-                      other.unit === rate.unit &&
-                      other.validFrom.getTime() === rate.validFrom.getTime() &&
-                      other.validTo.getTime() === rate.validTo.getTime() &&
-                      other.mealBasis === rate.mealBasis &&
-                      other.minPax === rate.minPax &&
-                      other.maxPax === rate.maxPax &&
-                      other.cityTaxIncluded === rate.cityTaxIncluded &&
-                      String(other.cityTaxAmount) === String(rate.cityTaxAmount) &&
-                      other.cityTaxCurrency === rate.cityTaxCurrency &&
-                      other.cityTaxUnit === rate.cityTaxUnit &&
-                      other.dinnerIncluded === rate.dinnerIncluded &&
-                      String(other.dinnerAmount) === String(rate.dinnerAmount) &&
-                      other.dinnerUnit === rate.dinnerUnit &&
-                      other.porterageIncluded === rate.porterageIncluded &&
-                      String(other.porterageAmount) === String(rate.porterageAmount) &&
-                      other.porterageUnit === rate.porterageUnit &&
-                      other.beveragePackageIncluded === rate.beveragePackageIncluded &&
-                      String(other.beveragePackageAmount) === String(rate.beveragePackageAmount) &&
-                      other.beveragePackageUnit === rate.beveragePackageUnit
+                    if (rate.roomType === null || rate.roomType === "DOUBLE_TWIN") return true;
+                    // Keep each Double/Twin rate card (including different
+                    // seasons). Hide only room-specific rows represented by
+                    // a compatible Double/Twin or Single rate card.
+                    if (candidates.some((other) =>
+                      other.roomType === "DOUBLE_TWIN" && matchingHotelOffer(rate, other)
+                    )) return false;
+                    if (rate.roomType === "SINGLE") return true;
+                    return !candidates.some((other) =>
+                      other.roomType === "SINGLE" && matchingHotelOffer(rate, other)
                     );
-                    const preferred = compatible.find((item) => item.roomType === "DOUBLE_TWIN") ??
-                      compatible.find((item) => item.roomType === "SINGLE") ?? compatible[0];
-                    return preferred?.id === rate.id;
                   })
                   .map(
                   (rate) => {
@@ -769,17 +745,6 @@ export async function GET(
                     const referenceEnd =
                       coverageEnd ??
                       referenceStart;
-
-                    const rateValidity =
-                      rate.validFrom <=
-                        referenceStart &&
-                      rate.validTo >=
-                        referenceEnd &&
-                      (!pax ||
-                        ((rate.minPax === null || rate.minPax <= pax) &&
-                         (rate.maxPax === null || rate.maxPax >= pax)))
-                        ? "VALID_FOR_REQUEST"
-                        : "EXPIRED_ESTIMATE";
 
                     const baseAmount =
                       decimalNumber(
@@ -819,31 +784,36 @@ export async function GET(
                     // Only use the price recorded for the matching room type.
                     // Legacy records without roomType retain their prior behavior.
                     const matchingRoomRate = (roomType: "SINGLE" | "DOUBLE_TWIN" | "TRIPLE") => {
-                      if (rate.roomType === null) return rate;
-                      return service.rates.find((other) =>
-                        other.roomType === roomType &&
-                        other.currency === rate.currency &&
-                        other.unit === rate.unit &&
-                        other.validFrom.getTime() === rate.validFrom.getTime() &&
-                        other.validTo.getTime() === rate.validTo.getTime() &&
-                        other.mealBasis === rate.mealBasis &&
-                        other.minPax === rate.minPax &&
-                        other.maxPax === rate.maxPax &&
-                        other.cityTaxIncluded === rate.cityTaxIncluded &&
-                        String(other.cityTaxAmount) === String(rate.cityTaxAmount) &&
-                        other.cityTaxCurrency === rate.cityTaxCurrency &&
-                        other.cityTaxUnit === rate.cityTaxUnit &&
-                        other.dinnerIncluded === rate.dinnerIncluded &&
-                        String(other.dinnerAmount) === String(rate.dinnerAmount) &&
-                        other.dinnerUnit === rate.dinnerUnit &&
-                        other.porterageIncluded === rate.porterageIncluded &&
-                        String(other.porterageAmount) === String(rate.porterageAmount) &&
-                        other.porterageUnit === rate.porterageUnit &&
-                        other.beveragePackageIncluded === rate.beveragePackageIncluded &&
-                        String(other.beveragePackageAmount) === String(rate.beveragePackageAmount) &&
-                        other.beveragePackageUnit === rate.beveragePackageUnit
-                      ) ?? null;
+                      if (rate.roomType === null || rate.roomType === roomType) return rate;
+                      const candidates = service.rates.filter((other) =>
+                        other.roomType === roomType && matchingHotelOffer(rate, other)
+                      );
+                      // Prefer covering contracts; otherwise prefer the most
+                      // recent historical rate without inventing a price.
+                      return candidates.sort((a, b) =>
+                        Number(withinTravelAndPax(b)) - Number(withinTravelAndPax(a)) ||
+                        b.validTo.getTime() - a.validTo.getTime()
+                      )[0] ?? null;
                     };
+                    const referencedRoomRates = rate.roomType === null
+                      ? [rate]
+                      : ([matchingRoomRate("SINGLE"), matchingRoomRate("DOUBLE_TWIN"), matchingRoomRate("TRIPLE")]
+                          .filter((item): item is HotelRate => item !== null));
+                    // Preserve the existing two-state field for saved quotes,
+                    // but use it for ANY out-of-date/pax-mismatched estimate.
+                    const rateValidity = referencedRoomRates.every(withinTravelAndPax)
+                      ? "VALID_FOR_REQUEST"
+                      : "EXPIRED_ESTIMATE";
+                    const unresolvedCityTax = referencedRoomRates.some((roomRate) => {
+                      if (roomRate.cityTaxIncluded ||
+                          (decimalNumber(roomRate.cityTaxAmount) ?? 0) <= 0) return false;
+                      return !(
+                        (roomRate.cityTaxUnit === SupplierRateUnit.PER_PERSON_PER_NIGHT ||
+                         roomRate.cityTaxUnit === SupplierRateUnit.PER_ROOM_PER_NIGHT) &&
+                        (!roomRate.cityTaxCurrency ||
+                         roomRate.cityTaxCurrency.toUpperCase() === roomRate.currency.toUpperCase())
+                      );
+                    });
 
                     const calculateRoom = (roomType: "SINGLE" | "DOUBLE_TWIN" | "TRIPLE", occupancy: 1 | 2 | 3) => {
                       const roomRate = matchingRoomRate(roomType);
@@ -1044,6 +1014,7 @@ export async function GET(
                       requiresReconfirmation:
                         rateValidity ===
                         "EXPIRED_ESTIMATE",
+                      cityTaxNeedsReview: unresolvedCityTax,
 
                       effectiveCost: {
                         singlePerPersonPerNight:

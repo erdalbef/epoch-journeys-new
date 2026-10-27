@@ -134,6 +134,7 @@ type SupplierHotelResult = {
     | "VALID_FOR_REQUEST"
     | "EXPIRED_ESTIMATE";
   requiresReconfirmation: boolean;
+  cityTaxNeedsReview?: boolean;
 
   effectiveCost: {
     singlePerPersonPerNight: number | null;
@@ -428,7 +429,7 @@ export default function HotelsSection({
         0
       ) {
         toast.info(
-          `No valid or historical hotel rates found for ${city}.`,
+          `No active hotel rates found for ${city}.`,
         );
       }
     } catch (error) {
@@ -896,7 +897,7 @@ export default function HotelsSection({
                                         {result.rateValidity ===
                                           "EXPIRED_ESTIMATE" && (
                                           <span className="rounded-full bg-amber-100 px-2 py-1 text-[11px] font-semibold text-amber-900">
-                                            Expired · Estimate only
+                                            Outside quote dates · Estimate only
                                           </span>
                                         )}
 
@@ -1040,7 +1041,13 @@ export default function HotelsSection({
                                   {result.rateValidity ===
                                     "EXPIRED_ESTIMATE" && (
                                     <p className="mt-3 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-900">
-                                      This rate does not cover the requested travel dates. It is the latest historical rate available and may be used only as an estimate. Reconfirm with the supplier before booking.
+                                      One or more room rates do not cover the requested travel dates or group size. You can use these prices as an estimate, but reconfirm them with the hotel before committing to the booking.
+                                    </p>
+                                  )}
+
+                                  {result.cityTaxNeedsReview && (
+                                    <p className="mt-3 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-900" role="alert">
+                                      City tax is stated in Supplier CRM but its unit or currency cannot be used in this quotation. The room price is available; the unverified tax has NOT been added. Verify the tax and enter any applicable amount separately before issuing the proposal. Avoid charging it twice.
                                     </p>
                                   )}
 
@@ -1237,10 +1244,18 @@ export default function HotelsSection({
                         </div>
                       )}
 
-                      {row.supplierRateId && hasPricedHotelExtras && (
+                      {row.supplierRateId && (hasPricedHotelExtras || Boolean(row.supplierCityTaxIncluded) || row.supplierCityTaxAmount != null) && (
                         <div className="mt-3 space-y-3 rounded-md border border-slate-200 bg-white p-3 text-sm">
-                          <p className="font-semibold text-slate-900">Hotel-contracted optional services</p>
+                          <p className="font-semibold text-slate-900">Hotel-contracted optional services &amp; city tax</p>
                           <p className="text-xs text-slate-600">These are supplier CRM hotel prices for services provided by this hotel. Select only what this group requires. Dinner and drinks at restaurants or elsewhere remain in Standard Per-Person Services.</p>
+                          {(row.supplierCityTaxIncluded || row.supplierCityTaxAmount != null) && (
+                            <p className="rounded-md border border-sky-200 bg-sky-50 p-3 text-xs text-sky-950">
+                              <strong>City tax (mandatory when applicable): </strong>
+                              {row.supplierCityTaxIncluded
+                                ? "Included in the contracted room price; do not add again."
+                                : `${formatMoney(Number(row.supplierCityTaxAmount), row.supplierCityTaxCurrency || row.supplierRateCurrency || currency)} / ${rateUnitLabel(row.supplierCityTaxUnit || "unit not specified")}. Already included once in the displayed room total only when its unit and currency are supported; otherwise verify and add separately without duplication.`}
+                            </p>
+                          )}
                           {extraDisplay.dinner ? (
                             <div className="flex flex-wrap items-center justify-between gap-3 rounded-md border p-3">
                               <label className="flex items-center gap-2">
@@ -1316,7 +1331,7 @@ export default function HotelsSection({
 
                       {row.supplierRateRequiresReconfirmation ? (
                         <p className="mt-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-900">
-                          Estimated from expired supplier rate — reconfirm before booking.
+                          Estimated from supplier rate outside the requested dates or pax range — reconfirm before booking.
                         </p>
                       ) : (
                         <p className="mt-2 text-xs text-emerald-700">
