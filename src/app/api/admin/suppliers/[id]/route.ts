@@ -4,6 +4,7 @@ import { Role, SupplierStatus, SupplierType } from "@prisma/client";
 
 import { authOptions } from "@/lib/authOptions";
 import { db } from "@/lib/db";
+import { isReferencedBySavedQuotation } from "@/lib/suppliers/quoteReferences";
 
 type Context = { params: Promise<{ id: string }> };
 
@@ -87,20 +88,26 @@ export async function DELETE(_request: Request, context: Context) {
 
   const supplier = await db.supplier.findUnique({
     where: { id },
-    select: { _count: { select: { massArrangements: true } } },
+    select: {
+      _count: { select: { contacts: true, services: true, rates: true, contracts: true, massArrangements: true } },
+    },
   });
+  if (!supplier) return NextResponse.json({ error: "Supplier not found." }, { status: 404 });
 
-  if (!supplier) {
-    return NextResponse.json({ error: "Supplier not found." }, { status: 404 });
+  const quoted = await isReferencedBySavedQuotation(id);
+  if (quoted) return NextResponse.json({ error: "Supplier appears in a saved quotation. Mark it INACTIVE instead to preserve quote history." }, { status: 409 });
+  const payables = await db.supplierPayable.count({ where: { supplierId: id } });
+  const linked = Object.values(supplier._count).reduce((total, value) => total + value, 0) + payables;
+  if (linked > 0) {
+    return NextResponse.json({
+      error: "Supplier has contacts, services, rates, contracts, Mass arrangements, or payables. Delete unused children first; otherwise mark the supplier INACTIVE to preserve history.",
+    }, { status: 409 });
   }
-
-  if (supplier._count.massArrangements > 0) {
-    return NextResponse.json(
-      { error: "This supplier has Mass arrangements and should be set inactive instead of deleted." },
-      { status: 409 },
-    );
+  try {
+    await db.supplier.delete({ where: { id } });
+    return NextResponse.json({ success: true });
+  } catch (error) {
+    console.error("SUPPLIER_DELETE_PROTECTED", error);
+    return NextResponse.json({ error: "Supplier is referenced by another record. Mark it INACTIVE instead." }, { status: 409 });
   }
-
-  await db.supplier.delete({ where: { id } });
-  return NextResponse.json({ success: true });
 }

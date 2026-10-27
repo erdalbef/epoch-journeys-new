@@ -37,6 +37,8 @@ type Rate = {
   id: string;
   name: string;
   description: string | null;
+  serviceId: string | null;
+  notes: string | null;
   validFrom: Date | string;
   validTo: Date | string;
   currency: string;
@@ -264,6 +266,39 @@ export default function SupplierWorkspace({
   const router =
     useRouter();
 
+  const [editingRateId, setEditingRateId] = useState<string | null>(null);
+  const [editingContactId, setEditingContactId] = useState<string | null>(null);
+  const [actionError, setActionError] = useState("");
+  const [busyId, setBusyId] = useState<string | null>(null);
+
+  async function writeAction(path: string, method: "PATCH" | "DELETE", payload?: Record<string, unknown>) {
+    setBusyId(path);
+    setActionError("");
+    try {
+      const response = await fetch(path, {
+        method,
+        ...(payload ? { headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) } : {}),
+      });
+      const result = await response.json() as { error?: string };
+      if (!response.ok) throw Error(result.error || `Could not ${method === "DELETE" ? "delete" : "update"} item.`);
+      setEditingRateId(null);
+      setEditingContactId(null);
+      setEditingServiceId(null);
+      router.refresh();
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Operation failed.";
+      setActionError(message);
+      throw error;
+    } finally {
+      setBusyId(null);
+    }
+  }
+
+  async function confirmDelete(path: string, label: string) {
+    if (!window.confirm(`Permanently delete ${label}? This cannot be undone. If this record has linked rates or payables, deletion will be refused.`)) return;
+    try { await writeAction(path, "DELETE"); } catch { /* Visible message above panels. */ }
+  }
+
   const [panel, setPanel] =
     useState<Panel>(
       "contacts",
@@ -275,7 +310,7 @@ export default function SupplierWorkspace({
   const [viewingServiceId, setViewingServiceId] = useState<string | null>(null);
   const [editingServiceId, setEditingServiceId] = useState<string | null>(null);
   const [serviceDraft, setServiceDraft] = useState({
-    name: "", country: "", city: "", description: "", notes: "",
+    type: "OTHER", name: "", country: "", city: "", description: "", notes: "",
   });
   const [savingServiceId, setSavingServiceId] = useState<string | null>(null);
   const [serviceError, setServiceError] = useState("");
@@ -285,7 +320,7 @@ export default function SupplierWorkspace({
     setViewingServiceId(service.id);
     setServiceError("");
     setServiceDraft({
-      name: service.name,
+      type: service.type, name: service.name,
       country: service.country ?? "",
       city: service.city ?? "",
       description: service.description ?? "",
@@ -371,6 +406,9 @@ export default function SupplierWorkspace({
               setAdding(false);
               setViewingServiceId(null);
               setEditingServiceId(null);
+              setEditingRateId(null);
+              setEditingContactId(null);
+              setActionError("");
               setServiceError("");
             }}
             className={`rounded-xl px-3 py-2 text-sm font-semibold ${
@@ -460,6 +498,7 @@ export default function SupplierWorkspace({
         </div>
       )}
 
+      {actionError && <div role="alert" className="m-4 rounded-xl border border-red-200 bg-red-50 p-3 text-sm font-semibold text-red-800">{actionError}</div>}
       <div className="p-5">
         {panel ===
           "contacts" && (
@@ -493,7 +532,9 @@ export default function SupplierWorkspace({
                       </p>
                     </div>
 
-                    <div className="flex gap-1">
+                    <div className="flex flex-wrap items-center justify-end gap-2">
+                      <button type="button" disabled={busyId !== null} onClick={() => { setActionError(""); setEditingContactId((previous) => previous === item.id ? null : item.id); }} className="rounded-lg border border-blue-300 px-3 py-1.5 text-xs font-semibold text-blue-800">{editingContactId === item.id ? "Cancel" : "Edit"}</button>
+                      <button type="button" disabled={busyId !== null} onClick={() => { void confirmDelete(`/api/admin/suppliers/${supplier.id}/contacts/${item.id}`, `contact ${[item.firstName, item.lastName].filter(Boolean).join(" ")}`); }} className="rounded-lg border border-red-300 px-3 py-1.5 text-xs font-semibold text-red-800">Delete</button>
                       {item.isPrimary && (
                         <Badge>
                           Primary
@@ -522,6 +563,13 @@ export default function SupplierWorkspace({
                       ) ||
                       "No contact details"}
                   </p>
+                  {editingContactId === item.id && (
+                    <div className="mt-4 rounded-xl border border-blue-200 bg-blue-50/30 p-4">
+                      <ContactForm key={item.id} initial={item} onSubmit={async (changes) => {
+                        await writeAction(`/api/admin/suppliers/${supplier.id}/contacts/${item.id}`, "PATCH", changes);
+                      }} />
+                    </div>
+                  )}
                 </div>
               ),
             )}
@@ -597,6 +645,9 @@ export default function SupplierWorkspace({
                       >
                         {editingServiceId === item.id ? "Cancel Edit" : "Edit"}
                       </button>
+                      <button type="button" disabled={savingServiceId !== null || busyId !== null} onClick={() => {
+                        void confirmDelete(`/api/admin/suppliers/${supplier.id}/services/${item.id}`, `service ${item.name}`);
+                      }} className="rounded-lg border border-red-300 px-3 py-1.5 text-xs font-semibold text-red-800 disabled:opacity-50">Delete</button>
                       <button
                         type="button"
                         disabled={savingServiceId !== null}
@@ -622,6 +673,11 @@ export default function SupplierWorkspace({
                       <p className="text-sm font-semibold text-slate-900">Edit service details</p>
                       <p className="text-xs text-slate-600">The service ID and linked rates will remain unchanged.</p>
                       <div className="grid gap-3 md:grid-cols-2">
+                        <label className="text-xs font-semibold text-slate-700">Service Type
+                          <select className={field + " mt-1"} value={serviceDraft.type} onChange={(event) => setServiceDraft((current) => ({ ...current, type: event.target.value }))}>
+                            {SERVICE_TYPES.map((kind) => <option key={kind.value} value={kind.value}>{kind.label}</option>)}
+                          </select>
+                        </label>
                         {(["name", "country", "city", "description", "notes"] as const).map((key) => (
                           <label key={key} className="text-xs font-semibold text-slate-700">
                             {key === "name" ? "Service Name *" : key[0].toUpperCase() + key.slice(1)}
@@ -751,8 +807,21 @@ export default function SupplierWorkspace({
                           ? "Active"
                           : "Inactive"}
                       </Badge>
+                      <div className="mt-2 flex flex-wrap justify-end gap-2">
+                        <button type="button" disabled={busyId !== null} onClick={() => { setActionError(""); setEditingRateId((current) => current === item.id ? null : item.id); }} className="rounded-lg border border-blue-300 px-3 py-1.5 text-xs font-semibold text-blue-800">{editingRateId === item.id ? "Cancel" : "Edit"}</button>
+                        <button type="button" disabled={busyId !== null} onClick={() => { void writeAction(`/api/admin/suppliers/${supplier.id}/rates/${item.id}`, "PATCH", { isActive: !item.isActive }).catch(() => undefined); }} className="rounded-lg border border-amber-300 px-3 py-1.5 text-xs font-semibold text-amber-800">{item.isActive ? "Deactivate" : "Reactivate"}</button>
+                        <button type="button" disabled={busyId !== null} onClick={() => { void confirmDelete(`/api/admin/suppliers/${supplier.id}/rates/${item.id}`, `rate ${item.name}`); }} className="rounded-lg border border-red-300 px-3 py-1.5 text-xs font-semibold text-red-800">Delete</button>
+                      </div>
                     </div>
                   </div>
+                  {editingRateId === item.id && (
+                    <div className="mt-4 rounded-xl border border-blue-200 bg-blue-50/30 p-4">
+                      <p className="mb-3 text-sm font-semibold text-slate-800">Edit rate — {item.roomType ? "edit this room type independently. Shared hotel extras on other room types must be updated separately." : "changes affect future supplier selections"}</p>
+                      <RateForm key={item.id} initial={item} services={supplier.services.filter((service) => service.isActive || service.id === item.serviceId)} onSubmit={async (changes) => {
+                        await writeAction(`/api/admin/suppliers/${supplier.id}/rates/${item.id}`, "PATCH", changes);
+                      }} />
+                    </div>
+                  )}
                   {item.roomType && (
                     <div className="mt-3 border-t border-slate-100 pt-3">
                       <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">Hotel rate details</p>
@@ -851,7 +920,9 @@ const field =
 
 function ContactForm({
   onSubmit,
+  initial,
 }: {
+  initial?: Contact;
   onSubmit: (
     data: Record<
       string,
@@ -861,14 +932,16 @@ function ContactForm({
 }) {
   const [form, setForm] =
     useState({
-      firstName: "",
-      lastName: "",
-      jobTitle: "",
-      email: "",
-      phone: "",
-      mobile: "",
-      isPrimary: false,
-      isEmergency: false,
+      firstName: initial?.firstName ?? "",
+      lastName: initial?.lastName ?? "",
+      jobTitle: initial?.jobTitle ?? "",
+      department: initial?.department ?? "",
+      notes: initial?.notes ?? "",
+      email: initial?.email ?? "",
+      phone: initial?.phone ?? "",
+      mobile: initial?.mobile ?? "",
+      isPrimary: initial?.isPrimary ?? false,
+      isEmergency: initial?.isEmergency ?? false,
     });
 
   return (
@@ -878,7 +951,6 @@ function ContactForm({
       }
     >
       <input
-        required
         placeholder="First name"
         className={field}
         value={
@@ -922,6 +994,18 @@ function ContactForm({
         }
       />
 
+      <input
+        placeholder="Department"
+        className={field}
+        value={form.department}
+        onChange={(event) => setForm({ ...form, department: event.target.value })}
+      />
+      <input
+        placeholder="Notes"
+        className={field}
+        value={form.notes}
+        onChange={(event) => setForm({ ...form, notes: event.target.value })}
+      />
       <input
         placeholder="Email"
         className={field}
@@ -1172,8 +1256,9 @@ function ServiceForm({
   );
 }
 
-function RateForm({ services, onSubmit }: {
+function RateForm({ services, onSubmit, initial }: {
   services: Service[];
+  initial?: Rate;
   onSubmit: (data: Record<string, unknown>) => Promise<void>;
 }) {
   const units = [
@@ -1181,20 +1266,22 @@ function RateForm({ services, onSubmit }: {
     "PER_ROOM_PER_NIGHT", "PER_GROUP", "PER_DAY", "PER_HALF_DAY",
     "PER_HOUR", "PER_TRANSFER", "PER_VEHICLE", "PER_MEAL", "PER_TICKET", "FLAT_RATE",
   ];
-  const [form, setForm] = useState({
-    serviceId: "", name: "", validFrom: "", validTo: "", currency: "EUR",
-    amount: "", unit: "PER_PERSON", roomType: "", mealBasis: "BB",
-    singleRate: "", doubleRate: "", tripleRate: "", hotelUnit: "PER_ROOM_PER_NIGHT",
-    breakfastIncluded: true, dinnerIncluded: false, dinnerAmount: "",
-    dinnerUnit: "PER_MEAL", dinnerNotes: "", cityTaxIncluded: false,
-    cityTaxAmount: "", cityTaxUnit: "PER_PERSON_PER_NIGHT",
-    porterageAvailable: false, porterageIncluded: false, porterageAmount: "",
-    porterageUnit: "PER_PERSON", beveragePackageIncluded: false,
-    beveragePackageDescription: "", beveragePackageAmount: "",
-    beveragePackageUnit: "PER_MEAL", minPax: "", maxPax: "",
-  });
+  const [form, setForm] = useState(() => ({
+    serviceId: initial?.serviceId ?? "", name: initial?.name ?? "", description: initial?.description ?? "",
+    validFrom: initial ? new Date(initial.validFrom).toISOString().slice(0, 10) : "", validTo: initial ? new Date(initial.validTo).toISOString().slice(0, 10) : "", currency: initial?.currency ?? "EUR",
+    amount: initial ? String(initial.amount) : "", unit: initial?.unit ?? "PER_PERSON", roomType: initial?.roomType ?? "", mealBasis: initial?.mealBasis ?? "BB",
+    singleRate: "", doubleRate: "", tripleRate: "", hotelUnit: initial?.unit ?? "PER_ROOM_PER_NIGHT",
+    breakfastIncluded: initial?.breakfastIncluded ?? true, dinnerIncluded: initial?.dinnerIncluded ?? false, dinnerAmount: initial?.dinnerAmount == null ? "" : String(initial.dinnerAmount),
+    dinnerUnit: initial?.dinnerUnit ?? "PER_MEAL", dinnerNotes: initial?.dinnerNotes ?? "", cityTaxIncluded: initial?.cityTaxIncluded ?? false,
+    cityTaxAmount: initial?.cityTaxAmount == null ? "" : String(initial.cityTaxAmount), cityTaxUnit: initial?.cityTaxUnit ?? "PER_PERSON_PER_NIGHT",
+    porterageAvailable: initial?.porterageAvailable ?? false, porterageIncluded: initial?.porterageIncluded ?? false, porterageAmount: initial?.porterageAmount == null ? "" : String(initial.porterageAmount),
+    porterageUnit: initial?.porterageUnit ?? "PER_PERSON", beveragePackageIncluded: initial?.beveragePackageIncluded ?? false,
+    beveragePackageDescription: initial?.beveragePackageDescription ?? "", beveragePackageAmount: initial?.beveragePackageAmount == null ? "" : String(initial.beveragePackageAmount),
+    beveragePackageUnit: initial?.beveragePackageUnit ?? "PER_MEAL", minPax: initial?.minPax == null ? "" : String(initial.minPax), maxPax: initial?.maxPax == null ? "" : String(initial.maxPax),
+    notes: initial?.notes ?? "", isActive: initial?.isActive ?? true,
+  }));
   const selectedService = services.find((service) => service.id === form.serviceId);
-  const isHotel = selectedService?.type === "ACCOMMODATION";
+  const isHotel = Boolean(initial?.roomType) || selectedService?.type === "ACCOMMODATION";
   const roomRates = ([
     { roomType: "SINGLE", amount: form.singleRate },
     { roomType: "DOUBLE_TWIN", amount: form.doubleRate },
@@ -1207,15 +1294,15 @@ function RateForm({ services, onSubmit }: {
     setForm((current) => ({ ...current, [key]: value }));
   }
   async function save() {
-    if (isHotel && roomRates.length === 0) {
-      throw new Error("Enter at least one hotel room rate. Leave unavailable types blank.");
+    if (isHotel && !initial && (!form.singleRate.trim() || !form.doubleRate.trim())) {
+      throw new Error("Hotel Supplier CRM requires Single and Double/Twin rates. Triple is optional.");
     }
     const payload: Record<string, unknown> = {
       ...form,
       serviceId: form.serviceId || null,
       unit: isHotel ? form.hotelUnit : form.unit,
-      amount: isHotel ? undefined : Number(form.amount),
-      roomType: isHotel ? null : form.roomType || null,
+      amount: isHotel && !initial ? undefined : Number(form.amount),
+      ...(initial ? {} : { roomType: isHotel ? null : form.roomType || null }),
       minPax: numberOrNull(form.minPax),
       maxPax: numberOrNull(form.maxPax),
       dinnerAmount: !form.dinnerIncluded ? numberOrNull(form.dinnerAmount) : null,
@@ -1228,7 +1315,12 @@ function RateForm({ services, onSubmit }: {
       beveragePackageAmount: !form.beveragePackageIncluded ? numberOrNull(form.beveragePackageAmount) : null,
       beveragePackageUnit: !form.beveragePackageIncluded && form.beveragePackageAmount !== "" ? form.beveragePackageUnit : null,
     };
-    if (isHotel) payload.roomRates = roomRates;
+    if (isHotel && !initial) payload.roomRates = roomRates;
+    if (initial) {
+      delete payload.singleRate; delete payload.doubleRate; delete payload.tripleRate; delete payload.hotelUnit;
+      delete payload.roomRates; delete payload.roomType;
+      delete payload.taxIncluded; delete payload.taxRate; delete payload.depositRequired;
+    }
     await onSubmit(payload);
   }
   const inputNumber = (label: string, key: keyof typeof form, required = false) => (
@@ -1261,6 +1353,9 @@ function RateForm({ services, onSubmit }: {
       <label className="text-xs font-semibold text-slate-600">Rate name *
         <input required className={field} value={form.name} onChange={(event) => update("name", event.target.value)} placeholder="e.g. 2027 group contract" />
       </label>
+      <label className="text-xs font-semibold text-slate-600">Description
+        <input className={field} value={form.description} onChange={(event) => update("description", event.target.value)} />
+      </label>
       <label className="text-xs font-semibold text-slate-600">Valid from *
         <input required type="date" className={field} value={form.validFrom} onChange={(event) => update("validFrom", event.target.value)} />
       </label>
@@ -1273,12 +1368,17 @@ function RateForm({ services, onSubmit }: {
       {isHotel ? (<>
         <div className="md:col-span-2 xl:col-span-3 rounded-xl border border-slate-200 bg-white p-4 space-y-3">
           <p className="font-semibold text-slate-900">Hotel room rates</p>
-          <p className="text-xs text-slate-500">Enter only available room types. Blank means not quoted, not zero. At least one is required.</p>
-          <div className="grid gap-3 md:grid-cols-3">
-            {inputNumber("Single room", "singleRate")}
-            {inputNumber("Double / Twin room", "doubleRate")}
-            {inputNumber("Triple room", "tripleRate")}
-          </div>
+          {initial ? (<>
+            <p className="text-xs text-slate-500">Each room type is a separate contracted rate. You are editing the {initial.roomType?.replaceAll("_", " / ")} entry only.</p>
+            {inputNumber("Contracted room rate *", "amount", true)}
+          </>) : (<>
+            <p className="text-xs text-slate-500">Single and Double/Twin rates are mandatory in Supplier CRM. Triple is optional; leave it blank when unavailable, never enter zero to mean unavailable.</p>
+            <div className="grid gap-3 md:grid-cols-3">
+              {inputNumber("Single room *", "singleRate", true)}
+              {inputNumber("Double / Twin room *", "doubleRate", true)}
+              {inputNumber("Triple room (optional)", "tripleRate")}
+            </div>
+          </>)}
           <label className="block text-xs font-semibold text-slate-600">Rate basis
             <select className={field} value={form.hotelUnit} onChange={(event) => update("hotelUnit", event.target.value)}>
               <option value="PER_ROOM_PER_NIGHT">Per room per night</option>
@@ -1330,12 +1430,16 @@ function RateForm({ services, onSubmit }: {
       </>) : <>
         {inputNumber("Amount *", "amount", true)}
         <label className="text-xs font-semibold text-slate-600">Rate unit{unitSelect("unit")}</label>
-        <label className="text-xs font-semibold text-slate-600">Room type (optional)
-          <select className={field} value={form.roomType} onChange={(event) => update("roomType", event.target.value)}>
-            <option value="">No room type</option><option value="SINGLE">Single</option>
-            <option value="DOUBLE_TWIN">Double / Twin</option><option value="TRIPLE">Triple</option>
-          </select>
-        </label>
+        {initial ? (
+          <p className="text-xs text-slate-600">Room type is fixed for an existing rate ({initial.roomType ?? "None"}). Delete an unused erroneous rate and create a new one to change the room type.</p>
+        ) : (
+          <label className="text-xs font-semibold text-slate-600">Room type (optional)
+            <select className={field} value={form.roomType} onChange={(event) => update("roomType", event.target.value)}>
+              <option value="">No room type</option><option value="SINGLE">Single</option>
+              <option value="DOUBLE_TWIN">Double / Twin</option><option value="TRIPLE">Triple</option>
+            </select>
+          </label>
+        )}
       </>}
       <label className="text-xs font-semibold text-slate-600">Minimum pax
         <input className={field} type="number" min="0" step="1" value={form.minPax} onChange={(event) => update("minPax", event.target.value)} />
@@ -1343,6 +1447,10 @@ function RateForm({ services, onSubmit }: {
       <label className="text-xs font-semibold text-slate-600">Maximum pax
         <input className={field} type="number" min="0" step="1" value={form.maxPax} onChange={(event) => update("maxPax", event.target.value)} />
       </label>
+      <label className="text-xs font-semibold text-slate-600">Notes
+        <input className={field} value={form.notes} onChange={(event) => update("notes", event.target.value)} />
+      </label>
+      {initial && <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={form.isActive} onChange={(event) => update("isActive", event.target.checked)} />Active for new quotations</label>}
     </MiniForm>
   );
 }

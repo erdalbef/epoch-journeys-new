@@ -802,14 +802,18 @@ export async function POST(
         const item = entry as Record<string, unknown>;
         const roomType = optionalRoomType(item.roomType);
         const roomAmount = optionalNonNegativeNumber(item.amount);
-        if (!roomType || !allowedTypes.includes(roomType) || seen.has(roomType) || roomAmount === null) {
+        if (!roomType || !allowedTypes.includes(roomType) || seen.has(roomType) || roomAmount === null || roomAmount <= 0) {
           return NextResponse.json(
-            { error: "Each room type must be unique and have a valid non-negative amount." },
+            { error: "Each room type must be unique and have a positive contracted rate. Leave unavailable Triple blank." },
             { status: 400 },
           );
         }
         seen.add(roomType);
         validatedRates.push({ roomType, amount: roomAmount });
+      }
+
+      if (!seen.has(RoomType.SINGLE) || !seen.has(RoomType.DOUBLE_TWIN)) {
+        return NextResponse.json({ error: "Hotel contracts require Single and Double/Twin room rates. Triple is optional." }, { status: 400 });
       }
 
       if (unit !== SupplierRateUnit.PER_ROOM_PER_NIGHT &&

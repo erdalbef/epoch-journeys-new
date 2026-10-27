@@ -10,6 +10,7 @@ import {
 
 import { db } from "@/lib/db";
 import SupplierWorkspace from "@/components/admin/suppliers/SupplierWorkspace";
+import DeleteSupplierButton from "@/components/admin/suppliers/DeleteSupplierButton";
 
 type Props = {
   params: Promise<{
@@ -369,6 +370,7 @@ export default async function SupplierDetailPage({
               <Pencil className="h-4 w-4" />
               Edit Supplier
             </Link>
+            <DeleteSupplierButton id={supplier.id} name={supplier.name} />
           </div>
         </div>
       </section>

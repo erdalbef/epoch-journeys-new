@@ -1,0 +1,963 @@
+import {
+  Role,
+  RoomType,
+  SupplierRateUnit,
+} from "@prisma/client";
+import { getServerSession } from "next-auth";
+import { NextResponse } from "next/server";
+
+import { authOptions } from "@/lib/authOptions";
+import { db } from "@/lib/db";
+
+type Context = {
+  params: Promise<{
+    id: string;
+  }>;
+};
+
+function text(
+  value: unknown,
+): string | null {
+  return typeof value === "string" &&
+    value.trim()
+    ? value.trim()
+    : null;
+}
+
+function optionalNumber(
+  value: unknown,
+): number | null {
+  if (
+    value === null ||
+    value === undefined ||
+    value === ""
+  ) {
+    return null;
+  }
+
+  const parsed = Number(value);
+
+  return Number.isFinite(parsed)
+    ? parsed
+    : null;
+}
+
+function optionalNonNegativeNumber(
+  value: unknown,
+): number | null {
+  const parsed =
+    optionalNumber(value);
+
+  if (
+    parsed === null ||
+    parsed < 0
+  ) {
+    return null;
+  }
+
+  return parsed;
+}
+
+function optionalInteger(
+  value: unknown,
+): number | null {
+  const parsed =
+    optionalNumber(value);
+
+  if (
+    parsed === null ||
+    !Number.isInteger(parsed)
+  ) {
+    return null;
+  }
+
+  return parsed;
+}
+
+function optionalNonNegativeInteger(
+  value: unknown,
+): number | null {
+  const parsed =
+    optionalInteger(value);
+
+  if (
+    parsed === null ||
+    parsed < 0
+  ) {
+    return null;
+  }
+
+  return parsed;
+}
+
+function optionalBoolean(
+  value: unknown,
+): boolean | null {
+  if (
+    typeof value === "boolean"
+  ) {
+    return value;
+  }
+
+  if (
+    value === "true"
+  ) {
+    return true;
+  }
+
+  if (
+    value === "false"
+  ) {
+    return false;
+  }
+
+  return null;
+}
+
+function optionalDate(
+  value: unknown,
+): Date | null {
+  if (
+    typeof value !== "string" ||
+    !value.trim()
+  ) {
+    return null;
+  }
+
+  const parsed =
+    new Date(
+      `${value.trim()}T00:00:00.000Z`,
+    );
+
+  return Number.isNaN(
+    parsed.getTime(),
+  )
+    ? null
+    : parsed;
+}
+
+function optionalRateUnit(
+  value: unknown,
+): SupplierRateUnit | null {
+  const parsed =
+    text(value);
+
+  if (
+    !parsed ||
+    !Object.values(
+      SupplierRateUnit,
+    ).includes(
+      parsed as SupplierRateUnit,
+    )
+  ) {
+    return null;
+  }
+
+  return parsed as SupplierRateUnit;
+}
+
+function optionalRoomType(
+  value: unknown,
+): RoomType | null {
+  const parsed =
+    text(value);
+
+  if (
+    !parsed ||
+    !Object.values(
+      RoomType,
+    ).includes(
+      parsed as RoomType,
+    )
+  ) {
+    return null;
+  }
+
+  return parsed as RoomType;
+}
+
+export async function POST(
+  request: Request,
+  context: Context,
+) {
+  try {
+    const session =
+      await getServerSession(
+        authOptions,
+      );
+
+    if (
+      !session?.user ||
+      session.user.role !==
+        Role.ADMIN
+    ) {
+      return NextResponse.json(
+        {
+          error:
+            "Unauthorized.",
+        },
+        {
+          status: 401,
+        },
+      );
+    }
+
+    const {
+      id: supplierId,
+    } =
+      await context.params;
+
+    const supplier =
+      await db.supplier.findUnique(
+        {
+          where: {
+            id:
+              supplierId,
+          },
+
+          select: {
+            id:
+              true,
+
+            defaultCurrency:
+              true,
+          },
+        },
+      );
+
+    if (!supplier) {
+      return NextResponse.json(
+        {
+          error:
+            "Supplier not found.",
+        },
+        {
+          status: 404,
+        },
+      );
+    }
+
+    const body =
+      (await request.json()) as Record<
+        string,
+        unknown
+      >;
+
+    // Optional hotel batch: three room-type prices in one atomic submission.
+    const roomRates = Array.isArray(body.roomRates) ? body.roomRates : null;
+    const isHotelBatch = roomRates !== null;
+
+    const name =
+      text(body.name);
+
+    const unit =
+      optionalRateUnit(
+        body.unit,
+      );
+
+    const amount =
+      optionalNonNegativeNumber(
+        body.amount,
+      );
+
+    const validFrom =
+      optionalDate(
+        body.validFrom,
+      );
+
+    const validTo =
+      optionalDate(
+        body.validTo,
+      );
+
+    if (
+      !name ||
+      !unit ||
+      (!isHotelBatch && amount === null) ||
+      !validFrom ||
+      !validTo
+    ) {
+      return NextResponse.json(
+        {
+          error:
+            "Rate name, valid dates, non-negative amount and valid unit are required.",
+        },
+        {
+          status: 400,
+        },
+      );
+    }
+
+    if (
+      validTo <
+      validFrom
+    ) {
+      return NextResponse.json(
+        {
+          error:
+            "Valid To cannot be earlier than Valid From.",
+        },
+        {
+          status: 400,
+        },
+      );
+    }
+
+    const serviceId =
+      text(
+        body.serviceId,
+      );
+
+    if (serviceId) {
+      const service =
+        await db.supplierService.findFirst(
+          {
+            where: {
+              id:
+                serviceId,
+
+              supplierId,
+            },
+
+            select: {
+              id:
+                true,
+            },
+          },
+        );
+
+      if (!service) {
+        return NextResponse.json(
+          {
+            error:
+              "Selected service does not belong to this supplier.",
+          },
+          {
+            status: 400,
+          },
+        );
+      }
+    }
+
+    const minPax =
+      optionalNonNegativeInteger(
+        body.minPax,
+      );
+
+    const maxPax =
+      optionalNonNegativeInteger(
+        body.maxPax,
+      );
+
+    if (
+      minPax !== null &&
+      maxPax !== null &&
+      maxPax < minPax
+    ) {
+      return NextResponse.json(
+        {
+          error:
+            "Maximum passengers cannot be lower than minimum passengers.",
+        },
+        {
+          status: 400,
+        },
+      );
+    }
+
+    const taxRate =
+      optionalNonNegativeNumber(
+        body.taxRate,
+      );
+
+    const depositPercent =
+      optionalNonNegativeNumber(
+        body.depositPercent,
+      );
+
+    if (
+      taxRate !== null &&
+      taxRate > 100
+    ) {
+      return NextResponse.json(
+        {
+          error:
+            "Tax rate cannot exceed 100%.",
+        },
+        {
+          status: 400,
+        },
+      );
+    }
+
+    if (
+      depositPercent !== null &&
+      depositPercent > 100
+    ) {
+      return NextResponse.json(
+        {
+          error:
+            "Deposit percentage cannot exceed 100%.",
+        },
+        {
+          status: 400,
+        },
+      );
+    }
+
+    const currency =
+      (
+        text(
+          body.currency,
+        ) ||
+        supplier.defaultCurrency ||
+        "EUR"
+      ).toUpperCase();
+
+    const cityTaxAmount =
+      optionalNonNegativeNumber(
+        body.cityTaxAmount,
+      );
+
+    const porterageAmount =
+      optionalNonNegativeNumber(
+        body.porterageAmount,
+      );
+
+    const beveragePackageAmount =
+      optionalNonNegativeNumber(
+        body.beveragePackageAmount,
+      );
+
+    const rateData = {
+            supplierId,
+
+            serviceId,
+
+            // ==================================================
+            // CORE RATE
+            // ==================================================
+
+            name,
+
+            description:
+              text(
+                body.description,
+              ),
+
+            validFrom,
+
+            validTo,
+
+            currency,
+
+            amount: amount ?? 0,
+
+            unit,
+
+            roomType:
+              optionalRoomType(
+                body.roomType,
+              ),
+
+            mealBasis:
+              text(
+                body.mealBasis,
+              ),
+
+            minPax,
+
+            maxPax,
+
+            // ==================================================
+            // TAX / VAT
+            // ==================================================
+
+            taxIncluded:
+              optionalBoolean(
+                body.taxIncluded,
+              ) ??
+              true,
+
+            taxRate,
+
+            taxNotes:
+              text(
+                body.taxNotes,
+              ),
+
+            // ==================================================
+            // CITY / LOCAL TAX
+            // ==================================================
+
+            cityTaxIncluded:
+              optionalBoolean(
+                body.cityTaxIncluded,
+              ) ??
+              false,
+
+            cityTaxAmount,
+
+            cityTaxCurrency:
+              cityTaxAmount !==
+              null
+                ? (
+                    text(
+                      body.cityTaxCurrency,
+                    ) ||
+                    currency
+                  ).toUpperCase()
+                : null,
+
+            cityTaxUnit:
+              optionalRateUnit(
+                body.cityTaxUnit,
+              ),
+
+            // ==================================================
+            // ACCOMMODATION / MEALS
+            // ==================================================
+
+            breakfastIncluded:
+              optionalBoolean(
+                body.breakfastIncluded,
+              ),
+
+            dinnerIncluded:
+              optionalBoolean(
+                body.dinnerIncluded,
+              ),
+
+            dinnerAmount:
+              optionalNonNegativeNumber(body.dinnerAmount),
+
+            dinnerUnit:
+              optionalRateUnit(body.dinnerUnit),
+
+            dinnerNotes:
+              text(body.dinnerNotes),
+
+            // ==================================================
+            // PORTERAGE
+            // ==================================================
+
+            porterageAvailable:
+              optionalBoolean(
+                body.porterageAvailable,
+              ),
+
+            porterageIncluded:
+              optionalBoolean(
+                body.porterageIncluded,
+              ),
+
+            porterageAmount,
+
+            porterageUnit:
+              optionalRateUnit(
+                body.porterageUnit,
+              ),
+
+            // ==================================================
+            // BEVERAGE PACKAGE
+            // ==================================================
+
+            beveragePackageIncluded:
+              optionalBoolean(
+                body.beveragePackageIncluded,
+              ),
+
+            beveragePackageDescription:
+              text(
+                body.beveragePackageDescription,
+              ),
+
+            beveragePackageAmount,
+
+            beveragePackageUnit:
+              optionalRateUnit(
+                body.beveragePackageUnit,
+              ),
+
+            beverageNotes:
+              text(
+                body.beverageNotes,
+              ),
+
+            // ==================================================
+            // FREE PLACES
+            // ==================================================
+
+            freePlaces:
+              text(
+                body.freePlaces,
+              ),
+
+            freePlaceRatio:
+              optionalNonNegativeInteger(
+                body.freePlaceRatio,
+              ),
+
+            freePlaceMax:
+              optionalNonNegativeInteger(
+                body.freePlaceMax,
+              ),
+
+            freePlaceNotes:
+              text(
+                body.freePlaceNotes,
+              ),
+
+            // ==================================================
+            // GROUP CONDITIONS
+            // ==================================================
+
+            minimumRooms:
+              optionalNonNegativeInteger(
+                body.minimumRooms,
+              ),
+
+            minimumNights:
+              optionalNonNegativeInteger(
+                body.minimumNights,
+              ),
+
+            rateRestrictions:
+              text(
+                body.rateRestrictions,
+              ),
+
+            // ==================================================
+            // SUPPLEMENTS / REDUCTIONS
+            // ==================================================
+
+            supplements:
+              text(
+                body.supplements,
+              ),
+
+            reductions:
+              text(
+                body.reductions,
+              ),
+
+            singleSupplement:
+              optionalNonNegativeNumber(
+                body.singleSupplement,
+              ),
+
+            tripleReduction:
+              optionalNonNegativeNumber(
+                body.tripleReduction,
+              ),
+
+            childRate:
+              optionalNonNegativeNumber(
+                body.childRate,
+              ),
+
+            extraBedRate:
+              optionalNonNegativeNumber(
+                body.extraBedRate,
+              ),
+
+            // ==================================================
+            // OPERATIONAL CONDITIONS
+            // ==================================================
+
+            driverRoomIncluded:
+              optionalBoolean(
+                body.driverRoomIncluded,
+              ),
+
+            driverMealIncluded:
+              optionalBoolean(
+                body.driverMealIncluded,
+              ),
+
+            guideRoomIncluded:
+              optionalBoolean(
+                body.guideRoomIncluded,
+              ),
+
+            guideMealIncluded:
+              optionalBoolean(
+                body.guideMealIncluded,
+              ),
+
+            tourManagerRoomIncluded:
+              optionalBoolean(
+                body.tourManagerRoomIncluded,
+              ),
+
+            tourManagerMealIncluded:
+              optionalBoolean(
+                body.tourManagerMealIncluded,
+              ),
+
+            // ==================================================
+            // COMMERCIAL TERMS
+            // ==================================================
+
+            cancellationTerms:
+              text(
+                body.cancellationTerms,
+              ),
+
+            paymentTerms:
+              text(
+                body.paymentTerms,
+              ),
+
+            depositRequired:
+              optionalBoolean(
+                body.depositRequired,
+              ),
+
+            depositAmount:
+              optionalNonNegativeNumber(
+                body.depositAmount,
+              ),
+
+            depositPercent,
+
+            paymentDeadlineDays:
+              optionalNonNegativeInteger(
+                body.paymentDeadlineDays,
+              ),
+
+            // ==================================================
+            // RATE SOURCE / INTERNAL CONTROL
+            // ==================================================
+
+            rateSource:
+              text(
+                body.rateSource,
+              ),
+
+            supplierReference:
+              text(
+                body.supplierReference,
+              ),
+
+            lastVerifiedAt:
+              optionalDate(
+                body.lastVerifiedAt,
+              ),
+
+            internalRateNotes:
+              text(
+                body.internalRateNotes,
+              ),
+
+            notes:
+              text(
+                body.notes,
+              ),
+
+            isActive:
+              optionalBoolean(
+                body.isActive,
+              ) ??
+              true,
+    };
+
+    if (isHotelBatch) {
+      const selectedService = serviceId
+        ? await db.supplierService.findFirst({
+            where: { id: serviceId, supplierId },
+            select: { type: true },
+          })
+        : null;
+
+      if (selectedService?.type !== "ACCOMMODATION") {
+        return NextResponse.json(
+          { error: "Select an Accommodation / Hotel service for room rates." },
+          { status: 400 },
+        );
+      }
+
+      if (!Array.isArray(roomRates) || roomRates.length < 1 || roomRates.length > 3) {
+        return NextResponse.json(
+          { error: "Enter at least one and at most three hotel room rates." },
+          { status: 400 },
+        );
+      }
+
+      const allowedTypes: RoomType[] = [
+        RoomType.SINGLE,
+        RoomType.DOUBLE_TWIN,
+        RoomType.TRIPLE,
+      ];
+      const seen = new Set<RoomType>();
+      const validatedRates: { roomType: RoomType; amount: number }[] = [];
+
+      for (const entry of roomRates) {
+        if (!entry || typeof entry !== "object" || Array.isArray(entry)) {
+          return NextResponse.json(
+            { error: "Each hotel room rate must be an object." },
+            { status: 400 },
+          );
+        }
+        const item = entry as Record<string, unknown>;
+        const roomType = optionalRoomType(item.roomType);
+        const roomAmount = optionalNonNegativeNumber(item.amount);
+        if (!roomType || !allowedTypes.includes(roomType) || seen.has(roomType) || roomAmount === null) {
+          return NextResponse.json(
+            { error: "Each room type must be unique and have a valid non-negative amount." },
+            { status: 400 },
+          );
+        }
+        seen.add(roomType);
+        validatedRates.push({ roomType, amount: roomAmount });
+      }
+
+      if (unit !== SupplierRateUnit.PER_ROOM_PER_NIGHT &&
+          unit !== SupplierRateUnit.PER_PERSON_PER_NIGHT) {
+        return NextResponse.json(
+          { error: "Hotel room rates must be per room per night or per person per night." },
+          { status: 400 },
+        );
+      }
+
+      const rates = await db.$transaction(
+        validatedRates.map(({ roomType, amount: roomAmount }) =>
+          db.supplierRate.create({
+            data: {
+              ...rateData,
+              amount: roomAmount,
+              roomType,
+              name: `${name} - ${roomType === RoomType.DOUBLE_TWIN ? "Double/Twin" : roomType === RoomType.SINGLE ? "Single" : "Triple"}`,
+            },
+          }),
+        ),
+      );
+
+      return NextResponse.json(
+        { success: true, rates: rates.map((rate) => ({
+          ...rate,
+          amount: Number(rate.amount),
+        })) },
+        { status: 201 },
+      );
+    }
+
+    const rate = await db.supplierRate.create({ data: rateData });
+
+    return NextResponse.json(
+      {
+        success:
+          true,
+
+        rate: {
+          ...rate,
+
+          amount:
+            Number(
+              rate.amount,
+            ),
+
+          taxRate:
+            rate.taxRate ===
+            null
+              ? null
+              : Number(
+                  rate.taxRate,
+                ),
+
+          cityTaxAmount:
+            rate.cityTaxAmount ===
+            null
+              ? null
+              : Number(
+                  rate.cityTaxAmount,
+                ),
+
+          porterageAmount:
+            rate.porterageAmount ===
+            null
+              ? null
+              : Number(
+                  rate.porterageAmount,
+                ),
+
+          beveragePackageAmount:
+            rate.beveragePackageAmount ===
+            null
+              ? null
+              : Number(
+                  rate.beveragePackageAmount,
+                ),
+
+          singleSupplement:
+            rate.singleSupplement ===
+            null
+              ? null
+              : Number(
+                  rate.singleSupplement,
+                ),
+
+          tripleReduction:
+            rate.tripleReduction ===
+            null
+              ? null
+              : Number(
+                  rate.tripleReduction,
+                ),
+
+          childRate:
+            rate.childRate ===
+            null
+              ? null
+              : Number(
+                  rate.childRate,
+                ),
+
+          extraBedRate:
+            rate.extraBedRate ===
+            null
+              ? null
+              : Number(
+                  rate.extraBedRate,
+                ),
+
+          depositAmount:
+            rate.depositAmount ===
+            null
+              ? null
+              : Number(
+                  rate.depositAmount,
+                ),
+
+          depositPercent:
+            rate.depositPercent ===
+            null
+              ? null
+              : Number(
+                  rate.depositPercent,
+                ),
+        },
+      },
+      {
+        status: 201,
+      },
+    );
+  } catch (error) {
+    console.error(
+      "SUPPLIER_RATE_CREATE_ERROR",
+      error,
+    );
+
+    return NextResponse.json(
+      {
+        error:
+          error instanceof Error
+            ? error.message
+            : "Could not save supplier rate.",
+      },
+      {
+        status: 500,
+      },
+    );
+  }
+}
