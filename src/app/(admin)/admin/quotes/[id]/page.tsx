@@ -198,7 +198,7 @@ export default async function QuoteDetailPage({ params }: Props) {
 
             <p>
               <span className="font-medium text-slate-900">PDF (Agent):</span>{" "}
-              {quote.agentClientPdfUrl || "Not generated"}
+              {quote.agentClientPdfUrl ? "Generated - private PDF" : "Not generated"}
             </p>
           </div>
         </div>

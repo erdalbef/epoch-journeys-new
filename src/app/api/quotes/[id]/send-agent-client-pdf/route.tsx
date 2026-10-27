@@ -5,21 +5,11 @@ import { Resend } from "resend";
 import { authOptions } from "@/lib/authOptions";
 import { db } from "@/lib/db";
 import { checkQuoteApprovalReadiness } from "@/lib/quotes/approvalReadiness";
+import { readPrivateAgentQuotePdf } from "@/lib/storage/agentQuotePdfStorage";
 
 export const runtime = "nodejs";
 
 const resend = new Resend(process.env.RESEND_API_KEY);
-
-const APP_URL =
-  process.env.NEXT_PUBLIC_APP_URL ||
-  process.env.NEXTAUTH_URL ||
-  "http://localhost:3000";
-
-function toAbsoluteUrl(path?: string | null) {
-  if (!path) return null;
-  if (path.startsWith("http")) return path;
-  return `${APP_URL}${path}`;
-}
 
 export async function POST(
   _req: NextRequest,
@@ -86,30 +76,16 @@ export async function POST(
       );
     }
 
-    const absoluteUrl = toAbsoluteUrl(quote.agentClientPdfUrl);
-
-    if (!absoluteUrl) {
+    // Load the saved PRIVATE snapshot; do not fetch a public URL or
+    // regenerate the proposal after it has been approved.
+    const pdfBytes = await readPrivateAgentQuotePdf(quote.agentClientPdfUrl, id);
+    if (!pdfBytes) {
       return NextResponse.json(
-        { ok: false, error: "PDF URL is invalid." },
-        { status: 400 }
+        { ok: false, error: "Saved agent PDF cannot be loaded. Regenerate it before sending." },
+        { status: 404 },
       );
     }
-
-    const pdfResponse = await fetch(absoluteUrl);
-
-    if (!pdfResponse.ok) {
-      return NextResponse.json(
-        {
-          ok: false,
-          error: `Could not load PDF. Status: ${pdfResponse.status}`,
-          pdfUrl: absoluteUrl,
-        },
-        { status: 500 }
-      );
-    }
-
-    const pdfArrayBuffer = await pdfResponse.arrayBuffer();
-    const pdfBase64 = Buffer.from(pdfArrayBuffer).toString("base64");
+    const pdfBase64 = pdfBytes.toString("base64");
 
     const result = await resend.emails.send({
       from: fromEmail,

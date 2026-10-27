@@ -514,7 +514,7 @@ export default function QuoteActions({ quote }: Props) {
                 type="button"
                 onClick={() =>
                   window.open(
-                    quote.agentClientPdfUrl!,
+                    `/api/quotes/${quote.id}/agent-client-pdf`,
                     "_blank"
                   )
                 }

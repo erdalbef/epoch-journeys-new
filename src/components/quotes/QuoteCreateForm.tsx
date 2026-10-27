@@ -3649,6 +3649,31 @@ export default function QuoteCreateForm({
     );
   }
 
+  // The summary editor targets the ACTUAL paying group size, which may not
+  // exist among the prefilled tiers (e.g. 24 travelers instead of 20 or 25).
+  // Save an exact tier so the Agent PDF and booking conversion use this price.
+  function updateCurrentGroupSellingPrice(patch: Partial<PaxPricingRow>) {
+    const payingPax = calculations.payingPassengers;
+    if (payingPax < 1) return;
+    setPaxPricingRows((previous) => {
+      const existingIndex = previous.findIndex((row) => row.paxCount === payingPax);
+      if (existingIndex >= 0) {
+        return previous.map((row, index) => index === existingIndex ? { ...row, ...patch } : row);
+      }
+      return [
+        ...previous,
+        {
+          ...createEmptyPaxPricingRow(payingPax),
+          calculatedSinglePrice: Math.round(exactGroupPrices.singleSellingPrice),
+          calculatedDoubleTwinPrice: Math.round(exactGroupPrices.doubleTwinSellingPrice),
+          calculatedTriplePrice: Math.round(exactGroupPrices.tripleSellingPrice),
+          ...patch,
+        },
+      ].sort((a, b) => a.paxCount - b.paxCount);
+    });
+    setPricingMode("MANUAL");
+  }
+
   function addPaxPricingRow() {
     setPaxPricingRows(
       (prev: PaxPricingRow[]) => [
@@ -5397,10 +5422,23 @@ Delphi - Sanctuary of Apollo, Archaeological Museum`}
           currency={currency}
           pricingMode={pricingMode}
           formatMoney={formatMoney}
+          calculatedSinglePrice={Math.round(exactGroupPrices.singleSellingPrice)}
+          calculatedDoubleTwinPrice={Math.round(exactGroupPrices.doubleTwinSellingPrice)}
+          finalSinglePrice={activeSinglePrice}
+          finalDoubleTwinPrice={activeDoubleTwinPrice}
+          manualSinglePrice={selectedPaxPricingRow?.manualSinglePrice ?? 0}
+          manualDoubleTwinPrice={selectedPaxPricingRow?.manualDoubleTwinPrice ?? 0}
+          onSetManualSingle={(value) => updateCurrentGroupSellingPrice({ manualSinglePrice: value })}
+          onSetManualDoubleTwin={(value) => updateCurrentGroupSellingPrice({ manualDoubleTwinPrice: value })}
+          onSetSingleSupplement={(value) => updateCurrentGroupSellingPrice({ manualSinglePrice: value === null ? 0 : Math.round((activeDoubleTwinPrice + value) * 100) / 100 })}
+          onUseCalculated={() => setPricingMode("CALCULATED")}
           missingCostWarnings={[
             ...mealQuantityCheck.errors.map((warning) => `Meal quantity requires correction: ${warning}`),
             ...calculations.unpricedCompAccommodations.map(
               (entry) => `COMP accommodation: ${entry}`
+            ),
+            ...hotels.filter((hotel) => hotel.stayType === "CORE" && toNumber(hotel.singlePerPerson) <= 0).map(
+              (hotel) => `Single room rate missing: ${hotel.hotelName || hotel.destination || "Unspecified hotel"}`
             ),
             ...hotels.filter((hotel) => hotel.stayType === "CORE" && toNumber(hotel.doubleTwinPerPerson) <= 0).map(
               (hotel) => `Double/Twin room rate missing: ${hotel.hotelName || hotel.destination || "Unspecified hotel"}`

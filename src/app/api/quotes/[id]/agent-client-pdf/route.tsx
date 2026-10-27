@@ -1,13 +1,16 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { pdf } from "@react-pdf/renderer";
-import { mkdir, readFile, writeFile } from "fs/promises";
+import { readFile } from "fs/promises";
 import path from "path";
 
 import { authOptions } from "@/lib/authOptions";
 import { db } from "@/lib/db";
 import AgentClientQuotePdfDocument from "@/lib/pdf/AgentClientQuotePdfDocument";
 import { buildAgentClientQuotePdfData } from "@/lib/pdf/buildAgentClientQuotePdfData";
+import { savePrivateAgentQuotePdf, readPrivateAgentQuotePdf } from "@/lib/storage/agentQuotePdfStorage";
+
+export const runtime = "nodejs";
 
 /**
  * @react-pdf/renderer renders on the server. A browser-relative /images URL
@@ -131,39 +134,27 @@ export async function POST(
     }
 
     try {
-      const dir = path.join(process.cwd(), "public", "agent-client-quotes");
-      await mkdir(dir, { recursive: true });
-
-      const safeReference =
-        quote.quoteReference?.trim() || `agent-quote-${quote.quoteNumber}`;
-
-      const sanitizedFileName = safeReference
-        .replace(/[<>:"/\\|?*\x00-\x1F]/g, "-")
-        .replace(/\s+/g, "-");
-
-      const fileName = `${sanitizedFileName}-agent.pdf`;
-      const filePath = path.join(dir, fileName);
-
-      await writeFile(filePath, pdfBuffer);
-
-      const publicUrl = `/agent-client-quotes/${fileName}`;
-
+      // Persist a private PDF snapshot. The stored Blob URL must never be
+      // opened directly; use the authenticated GET handler below instead.
+      const storedPath = await savePrivateAgentQuotePdf(quote.id, pdfBuffer);
       const updatedQuote = await db.quote.update({
         where: { id: quote.id },
         data: {
-          agentClientPdfUrl: publicUrl,
+          agentClientPdfUrl: storedPath,
           agentClientPdfGeneratedAt: new Date(),
         },
         select: {
           id: true,
-          agentClientPdfUrl: true,
           agentClientPdfGeneratedAt: true,
         },
       });
 
       return NextResponse.json({
         ok: true,
-        quote: updatedQuote,
+        quote: {
+          ...updatedQuote,
+          agentClientPdfUrl: `/api/quotes/${quote.id}/agent-client-pdf`,
+        },
       });
     } catch (error) {
       console.error("AGENT_PDF_SAVE_ERROR", error);
@@ -180,5 +171,40 @@ export async function POST(
       { ok: false, error: "Failed to generate agent PDF." },
       { status: 500 }
     );
+  }
+}
+/** Authenticated retrieval of the SAVED proposal (not a regenerated draft). */
+export async function GET(
+  _req: NextRequest,
+  context: { params: Promise<{ id: string }> }
+) {
+  try {
+    const session = await getServerSession(authOptions);
+    if (!session?.user || session.user.role !== "ADMIN") {
+      return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
+    }
+    const { id } = await context.params;
+    const quote = await db.quote.findUnique({
+      where: { id },
+      select: { agentClientPdfUrl: true },
+    });
+    if (!quote?.agentClientPdfUrl) {
+      return NextResponse.json({ ok: false, error: "No saved Agent PDF." }, { status: 404 });
+    }
+    const bytes = await readPrivateAgentQuotePdf(quote.agentClientPdfUrl, id);
+    if (!bytes) {
+      return NextResponse.json({ ok: false, error: "Stored Agent PDF could not be loaded. Regenerate from the quote." }, { status: 404 });
+    }
+    return new NextResponse(new Uint8Array(bytes), {
+      status: 200,
+      headers: {
+        "Content-Type": "application/pdf",
+        "Content-Disposition": 'inline; filename="epoch-agent-proposal.pdf"',
+        "Cache-Control": "private, no-store, max-age=0",
+      },
+    });
+  } catch (error) {
+    console.error("AGENT_PDF_READ_ERROR", error);
+    return NextResponse.json({ ok: false, error: "Unable to read saved Agent PDF." }, { status: 500 });
   }
 }

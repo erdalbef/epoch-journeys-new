@@ -134,7 +134,7 @@ export default function QuoteDetailActions({
 
           {agentClientPdfUrl && (
             <a
-              href={agentClientPdfUrl}
+              href={`/api/quotes/${quoteId}/agent-client-pdf`}
               target="_blank"
               rel="noreferrer"
               className="mt-2 block text-sm underline"
