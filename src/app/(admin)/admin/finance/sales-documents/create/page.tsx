@@ -15,6 +15,7 @@ import SalesDocumentForm from "../SalesDocumentForm";
 type PageProps = {
   searchParams: Promise<{
     creditFrom?: string;
+    bookingId?: string;
   }>;
 };
 
@@ -734,6 +735,12 @@ export default async function CreateSalesDocumentPage({
         }
         creditNoteSource={
           creditNoteSource
+        }
+        initialBookingId={
+          !creditNoteSource && typeof query.bookingId === "string" &&
+          bookingOptions.some((booking) => booking.id === query.bookingId)
+            ? query.bookingId
+            : ""
         }
       />
     </div>

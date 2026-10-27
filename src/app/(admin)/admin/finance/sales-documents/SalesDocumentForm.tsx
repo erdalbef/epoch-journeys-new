@@ -129,18 +129,22 @@ export default function SalesDocumentForm({
   bookings,
   billToOptions,
   creditNoteSource = null,
+  initialBookingId = "",
 }: {
   bookings: BookingOption[];
   billToOptions: BillToOption[];
   creditNoteSource?: CreditNoteSource | null;
+  initialBookingId?: string;
 }) {
   const router =
     useRouter();
 
   const isCreditNote =
-    Boolean(
-      creditNoteSource,
-    );
+    Boolean(creditNoteSource);
+
+  const initialBooking = !isCreditNote
+    ? bookings.find((booking) => booking.id === initialBookingId) ?? null
+    : null;
 
   const [
     busy,
@@ -170,6 +174,7 @@ export default function SalesDocumentForm({
   ] =
     useState(
       creditNoteSource?.bookingId ??
+        initialBooking?.id ??
         "",
     );
 
@@ -193,6 +198,7 @@ export default function SalesDocumentForm({
   ] =
     useState<BillToData>(
       creditNoteSource?.billTo ??
+        initialBooking?.billTo ??
         emptyBillTo,
     );
 
@@ -200,7 +206,7 @@ export default function SalesDocumentForm({
     amountPaid,
     setAmountPaid,
   ] =
-    useState(0);
+    useState(initialBooking?.amountPaid ?? 0);
 
   const [
     additionalNotes,
@@ -272,10 +278,16 @@ export default function SalesDocumentForm({
       creditNoteSource
         ?.items.length
         ? creditNoteSource.items
-        : [
+        : initialBooking
+          ? [{
+              description: `${initialBooking.tourTitleSnapshot} - Land Arrangements`,
+              quantity: 1,
+              unitPrice: initialBooking.netAmount,
+              taxRate: 0,
+            }]
+          : [
             {
-              description:
-                "Land arrangements",
+              description: "Land arrangements",
               quantity: 1,
               unitPrice: 0,
               taxRate: 0,

@@ -319,6 +319,15 @@ export default async function AdminBookingDetailPage({ params }: PageProps) {
             variant="secondary"
           />
 
+          {booking.status === BookingStatus.CONFIRMED && (
+            <Link
+              href={`/admin/finance/sales-documents/create?bookingId=${encodeURIComponent(booking.id)}`}
+              className="rounded-md border border-[#001F3F] bg-[#001F3F] px-4 py-2 text-sm font-semibold text-white hover:bg-[#153754]"
+            >
+              Prepare Invoice from Booking
+            </Link>
+          )}
+
           {booking.quoteId ? (
             <Link
               href={`/admin/quotes/${booking.quoteId}`}

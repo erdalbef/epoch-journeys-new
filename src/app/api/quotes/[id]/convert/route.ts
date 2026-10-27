@@ -21,9 +21,7 @@ type ConvertBody = {
 
 type PricingRow = {
   paxCount: number;
-  manualSinglePrice: number;
-  manualDoubleTwinPrice: number;
-  manualTriplePrice: number;
+  finalDoubleTwinPrice: number;
 };
 
 function record(
@@ -62,43 +60,21 @@ function pricingRows(
     return [];
   }
 
+  const isManual = summary.pricingMode === "MANUAL";
   return summary.paxPricingRows
     .map(record)
-    .filter(
-      (
-        row
-      ): row is Record<
-        string,
-        unknown
-      > => Boolean(row)
-    )
-    .map((row) => ({
-      paxCount: numberValue(
-        row.paxCount
-      ),
-
-      manualSinglePrice:
-        numberValue(
-          row.manualSinglePrice
-        ),
-
-      manualDoubleTwinPrice:
-        numberValue(
-          row.manualDoubleTwinPrice
-        ),
-
-      manualTriplePrice:
-        numberValue(
-          row.manualTriplePrice
-        ),
-    }))
-    .filter(
-      (row) =>
-        row.paxCount > 0 &&
-        row.manualSinglePrice > 0 &&
-        row.manualDoubleTwinPrice > 0 &&
-        row.manualTriplePrice > 0
-    )
+    .filter((row): row is Record<string, unknown> => Boolean(row))
+    .map((row) => {
+      const calculated = numberValue(row.calculatedDoubleTwinPrice);
+      const manual = numberValue(row.manualDoubleTwinPrice);
+      // Match the Quote form's getActivePrice logic exactly.
+      // Triple is optional: its absence cannot prevent booking conversion.
+      return {
+        paxCount: numberValue(row.paxCount),
+        finalDoubleTwinPrice: isManual && manual > 0 ? manual : calculated,
+      };
+    })
+    .filter((row) => row.paxCount > 0 && row.finalDoubleTwinPrice > 0)
     .sort(
       (a, b) =>
         a.paxCount - b.paxCount
@@ -284,7 +260,7 @@ export async function POST(
         {
           ok: false,
           error:
-            "The quote has no Final NET group-rate tiers.",
+            "The quote has no usable Double/Twin Final NET group-rate tiers.",
         },
         {
           status: 400,
@@ -376,7 +352,7 @@ export async function POST(
     }
 
     const netDoubleTwin =
-      selectedTier.manualDoubleTwinPrice;
+      selectedTier.finalDoubleTwinPrice;
 
     const totalNet =
       netDoubleTwin *

@@ -42,18 +42,18 @@ function getDisplayValue(
   field: "single" | "double" | "triple"
 ) {
   if (field === "single") {
-    return pricingMode === "MANUAL"
+    return pricingMode === "MANUAL" && row.manualSinglePrice > 0
       ? row.manualSinglePrice
       : row.calculatedSinglePrice;
   }
 
   if (field === "double") {
-    return pricingMode === "MANUAL"
+    return pricingMode === "MANUAL" && row.manualDoubleTwinPrice > 0
       ? row.manualDoubleTwinPrice
       : row.calculatedDoubleTwinPrice;
   }
 
-  return pricingMode === "MANUAL"
+  return pricingMode === "MANUAL" && row.manualTriplePrice > 0
     ? row.manualTriplePrice
     : row.calculatedTriplePrice;
 }
@@ -113,14 +113,14 @@ export default function PassengerPricingSection({
                 : "bg-white text-slate-700"
             }`}
           >
-            Manual NET Rates
+            Final Selling Price (Manual)
           </button>
         </div>
 
         <div className="rounded-md border bg-slate-50 p-3 text-sm text-slate-600">
           {pricingMode === "CALCULATED"
             ? "Calculated mode uses verified tour cost plus Epoch markup. Seasonal pricing remains a separate reference."
-            : "Manual mode is the final NET offer to the agency. Seasonal and calculated rates remain visible for comparison and never overwrite the final rate automatically."}
+            : "Enter the agreed NET price below the automated calculation for each paying-pax tier. These saved final prices are used for the Agency PDF and, after approval, booking/invoice preparation. Supplier costs remain unchanged."}
         </div>
 
         {seasonalReference && (
@@ -179,7 +179,7 @@ export default function PassengerPricingSection({
 
                   <div className="rounded-md border bg-slate-50 p-3 text-sm">
                     <div className="font-medium text-slate-700">
-                      Active NET Rates
+                      Final Agency NET Rates
                     </div>
                     <div className="mt-2 grid gap-2 md:grid-cols-3">
                       <div>
@@ -232,7 +232,7 @@ export default function PassengerPricingSection({
                       </div>
                     </div>
                     <div className="flex flex-wrap gap-2">
-                      <button type="button" onClick={() => applyFinalRates(row.calculatedSinglePrice, row.calculatedDoubleTwinPrice, row.calculatedTriplePrice)} className="rounded-md border bg-white px-3 py-2 text-xs font-medium">Use Calculated</button>
+                      <button type="button" onClick={() => onPricingModeChange("CALCULATED")} className="rounded-md border bg-white px-3 py-2 text-xs font-medium">Use Calculated</button>
                       {seasonalReference && <button type="button" onClick={() => applyFinalRates(seasonalReference.single, seasonalReference.doubleTwin, seasonalReference.triple)} className="rounded-md border bg-white px-3 py-2 text-xs font-medium">Use Seasonal</button>}
                       <button type="button" onClick={() => applyFinalRates(recommendedSingle, recommendedDouble, recommendedTriple)} className="rounded-md bg-[#8B0000] px-3 py-2 text-xs font-medium text-white">Use Recommended</button>
                     </div>
@@ -244,7 +244,7 @@ export default function PassengerPricingSection({
                   </div>
                 </div>
 
-                <div className="grid gap-4 lg:grid-cols-2">
+                <div className="grid gap-4">
                   <div className="rounded-md border p-4">
                     <h3 className="text-sm font-semibold mb-3 text-slate-700">
                       Calculated NET Rates
@@ -292,9 +292,12 @@ export default function PassengerPricingSection({
 
                   <div className="rounded-md border p-4">
                     <h3 className="text-sm font-semibold mb-3 text-slate-700">
-                      Final Manual NET Rates
+                      Final Selling Price — Optional Manual Override
                     </h3>
 
+                    <p className="mb-3 text-xs text-slate-600">
+                      Enter a positive agreed NET rate per paying traveler, or leave a field blank to use its automated rate. Editing activates manual selling prices. The selected final rates are saved with the quotation.
+                    </p>
                     <div className="grid gap-3 md:grid-cols-3">
                       <label className="block">
                         <span className="mb-1 block text-sm font-medium">
@@ -302,18 +305,17 @@ export default function PassengerPricingSection({
                         </span>
                         <input
                           type="number"
-                          className={`w-full rounded-md border p-2 ${
-                            pricingMode === "MANUAL"
-                              ? "bg-white"
-                              : "bg-slate-50"
-                          }`}
-                          value={row.manualSinglePrice}
-                          onChange={(e) =>
+                          min="0"
+                          step="0.01"
+                          className="w-full rounded-md border bg-white p-2"
+                          value={row.manualSinglePrice > 0 ? row.manualSinglePrice : ""}
+                          placeholder={`Auto: ${row.calculatedSinglePrice}`}
+                          onChange={(e) => {
+                            onPricingModeChange("MANUAL");
                             onUpdateRow(index, {
-                              manualSinglePrice: toNumber(e.target.value),
-                            })
-                          }
-                          disabled={pricingMode !== "MANUAL"}
+                              manualSinglePrice: Math.max(0, toNumber(e.target.value)),
+                            });
+                          }}
                         />
                       </label>
 
@@ -323,18 +325,17 @@ export default function PassengerPricingSection({
                         </span>
                         <input
                           type="number"
-                          className={`w-full rounded-md border p-2 ${
-                            pricingMode === "MANUAL"
-                              ? "bg-white"
-                              : "bg-slate-50"
-                          }`}
-                          value={row.manualDoubleTwinPrice}
-                          onChange={(e) =>
+                          min="0"
+                          step="0.01"
+                          className="w-full rounded-md border bg-white p-2"
+                          value={row.manualDoubleTwinPrice > 0 ? row.manualDoubleTwinPrice : ""}
+                          placeholder={`Auto: ${row.calculatedDoubleTwinPrice}`}
+                          onChange={(e) => {
+                            onPricingModeChange("MANUAL");
                             onUpdateRow(index, {
-                              manualDoubleTwinPrice: toNumber(e.target.value),
-                            })
-                          }
-                          disabled={pricingMode !== "MANUAL"}
+                              manualDoubleTwinPrice: Math.max(0, toNumber(e.target.value)),
+                            });
+                          }}
                         />
                       </label>
 
@@ -344,19 +345,18 @@ export default function PassengerPricingSection({
                         </span>
                         <input
                           type="number"
-                          className={`w-full rounded-md border p-2 ${
-                            pricingMode === "MANUAL"
-                              ? "bg-white"
-                              : "bg-slate-50"
-                          }`}
-                          value={tripleAvailable ? row.manualTriplePrice : ""}
-                           placeholder={tripleAvailable ? undefined : "Not available"}
-                          onChange={(e) =>
+                          min="0"
+                          step="0.01"
+                          className="w-full rounded-md border bg-white p-2"
+                          value={tripleAvailable && row.manualTriplePrice > 0 ? row.manualTriplePrice : ""}
+                          placeholder={tripleAvailable ? `Auto: ${row.calculatedTriplePrice}` : "N/A"}
+                          onChange={(e) => {
+                            onPricingModeChange("MANUAL");
                             onUpdateRow(index, {
-                              manualTriplePrice: toNumber(e.target.value),
-                            })
-                          }
-                          disabled={pricingMode !== "MANUAL" || !tripleAvailable}
+                              manualTriplePrice: Math.max(0, toNumber(e.target.value)),
+                            });
+                          }}
+                          disabled={!tripleAvailable}
                         />
                       </label>
                     </div>
@@ -365,8 +365,7 @@ export default function PassengerPricingSection({
 
                 {pricingMode === "MANUAL" && (
                   <div className="rounded-md border bg-amber-50 p-3 text-sm text-slate-700">
-                    Calculated prices remain visible for reference, but the manual
-                    values are the active selling prices for this pax row.
+                    Positive manual entries override the automated prices. Empty fields retain the automated price. Use Calculated to return to fully automatic pricing.
                   </div>
                 )}
               </div>
