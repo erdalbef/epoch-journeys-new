@@ -1,8 +1,9 @@
 import { withAuth } from "next-auth/middleware";
 import { NextResponse } from "next/server";
+import { db } from "@/lib/db";
 
 export default withAuth(
-  function middleware(req) {
+  async function middleware(req) {
     const token = req.nextauth.token;
     const { pathname } = req.nextUrl;
 
@@ -28,6 +29,30 @@ export default withAuth(
       }
 
       return NextResponse.next();
+    }
+
+    // A signed JWT remains cryptographically valid after a password reset.
+    // Recheck the database version here, since withAuth/getToken do not run
+    // the NextAuth callbacks.jwt version validation used by getServerSession.
+    // Requires the default Node.js proxy runtime in Next.js 16; verify in build.
+    const userId = typeof token.id === "string" ? token.id : "";
+    const version = token.credentialVersion;
+    try {
+      const current = userId && Number.isInteger(version)
+        ? await db.user.findUnique({
+            where: { id: userId },
+            select: { credentialVersion: true, role: true, approved: true, status: true },
+          })
+        : null;
+      if (!current || current.credentialVersion !== version ||
+          current.role !== token.role ||
+          (current.role === "AGENT" && (!current.approved || current.status !== "ACTIVE"))) {
+        const login = pathname.startsWith("/admin") ? "/admin-login" : "/agent-login";
+        return NextResponse.redirect(new URL(login, req.url));
+      }
+    } catch {
+      // Database unavailable: deny access rather than trusting a stale JWT.
+      return new NextResponse("Authentication temporarily unavailable", { status: 503 });
     }
 
     // Admin routes

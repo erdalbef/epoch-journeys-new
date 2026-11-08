@@ -13,6 +13,7 @@ model User {
   id                         String                   @id @default(cuid())
   email                      String                   @unique
   password                   String
+  credentialVersion          Int                      @default(0)
   role                       Role                     @default(AGENT)
   approved                   Boolean                  @default(false)
   status                     AgentStatus              @default(ACTIVE)
@@ -75,6 +76,7 @@ model User {
   supplierPayablesCreated    SupplierPayable[]        @relation("SupplierPayable_createdByIdToUser")
   supplierPayablePayments    SupplierPayablePayment[]
   supportMessages            SupportMessage[]
+  passwordResetTokens        PasswordResetToken[]
   partnerCompany             PartnerCompany?          @relation(fields: [partnerCompanyId], references: [id])
 
   @@index([role])
@@ -2723,4 +2725,26 @@ enum SupplierContractPaymentType {
   INSTALLMENT
   FINAL_BALANCE
   OTHER
+}
+
+// Password recovery: secure, single-use, time-limited reset tokens.
+model PasswordResetToken {
+  id        String    @id @default(cuid())
+  userId    String
+  tokenHash String    @unique
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, expiresAt])
+}
+
+// Database-backed throttling, shared among serverless instances.
+model PasswordResetThrottle {
+  key       String   @id
+  count     Int      @default(0)
+  expiresAt DateTime
+
+  @@index([expiresAt])
 }

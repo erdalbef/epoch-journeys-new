@@ -3,6 +3,7 @@
 import { useMemo, useState } from "react";
 import { signIn } from "next-auth/react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 
@@ -109,6 +110,11 @@ export function AdminLoginForm() {
             />
           </div>
 
+          <div className="text-right">
+            <Link href="/forgot-password" className="text-sm font-medium text-[#001F3F] hover:underline">
+              Forgot password?
+            </Link>
+          </div>
           {error ? (
             <div className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
               {error}

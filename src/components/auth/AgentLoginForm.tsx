@@ -3,6 +3,7 @@
 import { useMemo, useState, type FormEvent } from "react";
 import { signIn } from "next-auth/react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 
@@ -105,6 +106,11 @@ export function AgentLoginForm({ callbackUrl }: Props) {
         />
       </div>
 
+      <div className="text-right">
+        <Link href="/forgot-password" className="text-sm font-medium text-[#001F3F] hover:underline">
+          Forgot password?
+        </Link>
+      </div>
       {error ? (
         <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
           {error}
