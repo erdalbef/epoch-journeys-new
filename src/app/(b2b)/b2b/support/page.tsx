@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useSearchParams, useRouter } from "next/navigation";
 import { useState } from "react";
+import { AgentTicketHistory } from "@/components/support/AgentTicketHistory";
 
 export default function B2BSupportPage() {
   const searchParams = useSearchParams();
@@ -73,7 +74,11 @@ export default function B2BSupportPage() {
       setMessage("");
       setFile(null);
 
+      window.dispatchEvent(new Event("epoch:support-created"));
       router.refresh();
+    } catch (error) {
+      console.error("Support request submission failed:", error);
+      alert("Unable to send your support request. Please check your connection and try again.");
     } finally {
       setIsSubmitting(false);
     }
@@ -161,6 +166,8 @@ export default function B2BSupportPage() {
           </button>
         </form>
       </section>
+
+      <AgentTicketHistory />
 
       <section className="rounded-2xl border bg-white p-6 shadow-sm">
         <h2 className="mb-4 text-lg font-semibold text-[#001F3F]">

@@ -34,10 +34,10 @@ export async function requireAdminApiAccess(): Promise<NextResponse | null> {
 
     const currentUser = await db.user.findUnique({
       where: { id: session.user.id },
-      select: { role: true },
+      select: { role: true, status: true },
     });
 
-    if (currentUser?.role !== Role.ADMIN) {
+    if (currentUser?.role !== Role.ADMIN || currentUser.status !== "ACTIVE") {
       return NextResponse.json(
         { success: false, message: "Admin access required." },
         { status: 403 },

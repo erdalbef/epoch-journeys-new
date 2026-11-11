@@ -2,6 +2,7 @@
 
 import Image from "next/image";
 import Link from "next/link";
+import { AdminNotificationsBell } from "@/components/admin/AdminNotificationsBell";
 import { usePathname, useRouter } from "next/navigation";
 import { signOut } from "next-auth/react";
 import { useMemo, useState } from "react";
@@ -206,7 +207,7 @@ const navSections: NavSection[] = [
     items: [
       {
         label: "Support",
-        href: "/admin/requests",
+        href: "/admin/support",
         icon: Headphones,
       },
     ],
@@ -837,13 +838,7 @@ export function AdminShell({
 
               {/* ALERTS */}
 
-              <Link
-                href="/admin/agents"
-                title="Agent activity and alerts"
-                className="relative inline-flex h-10 w-10 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-600 shadow-sm transition hover:bg-slate-50 hover:text-[#001F3F]"
-              >
-                <Bell className="h-[18px] w-[18px]" />
-              </Link>
+              <AdminNotificationsBell />
 
               {/* PROFILE */}
 
