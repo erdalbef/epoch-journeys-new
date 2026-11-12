@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { AgentNotificationsBell } from "@/components/support/AgentNotificationsBell";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/authOptions";
 import { db } from "@/lib/db";
@@ -106,8 +107,11 @@ export default async function B2BLayout({
                 </div>
               </div>
 
-              <div className="hidden text-sm text-gray-600 md:block">
-                Welcome, {userName}
+              <div className="flex items-center gap-4">
+                <AgentNotificationsBell />
+                <div className="hidden text-sm text-gray-600 md:block">
+                  Welcome, {userName}
+                </div>
               </div>
             </div>
 

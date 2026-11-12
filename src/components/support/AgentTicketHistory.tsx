@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { SupportConversation } from "@/components/support/SupportConversation";
 import { SupportArchiveButton } from "@/components/support/SupportArchiveButton";
 
@@ -23,6 +23,52 @@ export function AgentTicketHistory() {
   const [loading, setLoading] = useState(true);
   const [expanded, setExpanded] = useState<string | null>(null);
   const [refreshKey, setRefreshKey] = useState(0);
+
+  // Open the requested ticket when arriving from a notification.
+  useEffect(() => {
+    const ticketId = new URLSearchParams(
+      window.location.search
+    ).get("ticketId");
+
+    if (!ticketId) return;
+
+    setArchived(false);
+    setExpanded(ticketId);
+  }, []); // epoch:notification-deeplink
+
+
+  const markTicketNotificationsRead = useCallback(
+    async (ticketId: string) => {
+      try {
+        const response = await fetch("/api/b2b/notifications", {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ ticketId }),
+        });
+
+        if (!response.ok) {
+          return;
+        }
+
+        window.dispatchEvent(
+          new Event("epoch:agent-notifications-updated")
+        );
+      } catch (error) {
+        console.error(
+          "Unable to mark Support notifications as read",
+          error
+        );
+      }
+    },
+    []
+  );
+
+  const onConversationLoaded = useCallback(
+    (ticketId: string) => {
+      void markTicketNotificationsRead(ticketId);
+    },
+    [markTicketNotificationsRead]
+  );
 
   const refresh = useCallback(() => {
     setRefreshKey((value) => value + 1);
@@ -74,6 +120,28 @@ export function AgentTicketHistory() {
       active = false;
     };
   }, [archived, refreshKey]);
+
+  // epoch:archived-notification-lookup
+  // Try Archived once if a linked ticket is absent from Active.
+  const checkedArchivedRef = useRef(false);
+
+  useEffect(() => {
+    if (loading || archived || checkedArchivedRef.current) return;
+
+    const ticketId = new URLSearchParams(
+      window.location.search
+    ).get("ticketId");
+
+    if (!ticketId) return;
+
+    if (tickets.some((ticket) => ticket.id === ticketId)) {
+      checkedArchivedRef.current = true;
+      return;
+    }
+
+    checkedArchivedRef.current = true;
+    setArchived(true);
+  }, [loading, archived, tickets]);
 
   return (
     <section className="rounded-2xl border bg-white p-6 shadow-sm">
@@ -186,7 +254,12 @@ export function AgentTicketHistory() {
 
               {expanded === ticket.id && (
                 <div className="mt-4">
-                  <SupportConversation ticketId={ticket.id} />
+                  <SupportConversation
+                    ticketId={ticket.id}
+                    onConversationLoaded={() =>
+                      onConversationLoaded(ticket.id)
+                    }
+                  />
                 </div>
               )}
             </div>

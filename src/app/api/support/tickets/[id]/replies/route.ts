@@ -74,6 +74,32 @@ export async function POST(request:Request,{params}:Ctx){
       }
     }
   }catch(e){console.error("Reply could not be stored",e);return NextResponse.json({error:"Reply could not be saved; check database migration"},{status:503});}
+  if (isAdmin) {
+    try {
+      await db.$executeRaw`
+        INSERT INTO "EpochAgentAlert"
+          ("id", "eventKey", "agentId", "ticketId",
+           "title", "description", "href", "createdAt")
+        VALUES (
+          ${randomUUID()},
+          ${"support-agent-reply:" + replyId},
+          ${ticket.userId},
+          ${id},
+          ${"New Support Reply"},
+          ${"Epoch Journeys Support replied to: " + ticket.subject},
+          ${"/b2b/support?ticketId=" + encodeURIComponent(id)},
+          NOW()
+        )
+        ON CONFLICT ("eventKey") DO NOTHING
+      `;
+    } catch (error) {
+      console.error(
+        "Support reply saved, but Agent notification failed",
+        error
+      );
+    }
+  }
+
   const recipient=isAdmin?await db.user.findUnique({where:{id:ticket.userId},select:{email:true}}):null;
   const to=isAdmin?(recipient?.email||""):supportAdminEmail();
   const link=absoluteAdminUrl(isAdmin?`/b2b/support`:`/admin/support/${id}`);

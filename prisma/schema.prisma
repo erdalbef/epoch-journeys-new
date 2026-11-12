@@ -2798,3 +2798,18 @@ model EpochEmailOutbox {
 
   @@index([status, nextAttemptAt], map: "EpochEmailOutbox_status_retry_idx")
 }
+
+model EpochAgentAlert {
+  id          String    @id
+  eventKey    String    @unique
+  agentId     String
+  ticketId    String
+  title       String
+  description String
+  href        String
+  readAt      DateTime? @db.Timestamptz(6)
+  createdAt   DateTime  @default(now()) @db.Timestamptz(6)
+
+  @@index([agentId, readAt, createdAt], map: "EpochAgentAlert_agent_unread_idx")
+  @@index([ticketId], map: "EpochAgentAlert_ticket_idx")
+}
