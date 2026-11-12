@@ -210,6 +210,11 @@ const navSections: NavSection[] = [
         href: "/admin/support",
         icon: Headphones,
       },
+      {
+        label: "Email Delivery",
+        href: "/admin/email-delivery",
+        icon: Bell,
+      },
     ],
   },
 ];
