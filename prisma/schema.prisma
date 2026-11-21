@@ -2813,3 +2813,15 @@ model EpochAgentAlert {
   @@index([agentId, readAt, createdAt], map: "EpochAgentAlert_agent_unread_idx")
   @@index([ticketId], map: "EpochAgentAlert_ticket_idx")
 }
+
+model EpochSupplierDeliveryEvent {
+  id                String   @id // Signed svix-id: stable duplicate-event key
+  outboxId          String
+  providerMessageId String
+  type              String
+  occurredAt        DateTime @db.Timestamptz(6)
+  createdAt         DateTime @default(now()) @db.Timestamptz(6)
+
+  @@index([outboxId, createdAt])
+  @@index([providerMessageId])
+}
