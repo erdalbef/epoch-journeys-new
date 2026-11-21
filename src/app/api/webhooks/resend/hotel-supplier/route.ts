@@ -19,7 +19,15 @@ export async function POST(request: Request) {
   try {
     const result = await db.$transaction(async (tx) => {
       const sent = await tx.epochEmailOutbox.findFirst({ where: { providerMessageId: event.providerMessageId, eventKey: { startsWith: "supplier:hotel-inquiry:" } } });
-      if (!sent) return "unmatched";
+      if (!sent) {
+        // Persist authentic early events; the supplier-send finalization reconciles them.
+        // Unrelated messages remain unlinked and are not shown as supplier delivery.
+        await tx.epochSupplierWebhookInbox.createMany({
+          data:[{id:event.eventId,providerMessageId:event.providerMessageId,type:event.type,occurredAt:event.occurredAt}],
+          skipDuplicates:true
+        });
+        return "pending";
+      }
       const inserted = await tx.epochSupplierDeliveryEvent.createMany({
         data: [{ id: event.eventId, outboxId: sent.id, providerMessageId: event.providerMessageId, type: event.type, occurredAt: event.occurredAt }],
         skipDuplicates: true,
