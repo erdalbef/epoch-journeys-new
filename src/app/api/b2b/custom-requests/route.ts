@@ -9,6 +9,7 @@ import {
 
 import { authOptions } from "@/lib/authOptions";
 import { db } from "@/lib/db";
+import { sendEmail } from "@/lib/email/sendEmail";
 
 type RequestInputSource =
   | FormData
@@ -809,6 +810,75 @@ export async function POST(
           },
         },
       });
+
+    // Email delivery is best-effort; the saved request must remain intact.
+    // Each recipient is attempted independently and Resend responses are logged.
+    try {
+      const agent = await db.user.findUnique({
+        where: { id: session.user.id },
+        select: { fullName: true, email: true, travelAgency: true },
+      });
+      const agentEmail = agent?.email || session.user.email;
+      const adminEmail = (
+        process.env.QUOTE_REQUEST_ADMIN_EMAIL ||
+        process.env.ADMIN_NOTIFICATION_EMAIL ||
+        "quotes@epochjourneys.com"
+      ).trim();
+      const esc = (v: unknown) => String(v ?? "-").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c] || c));
+      const packageLabel = needsFlights ? "Land + International Flights" : "Land Only";
+      const airport = (notes || "").match(/International flight departure airport\/city: ([^\n]+)/)?.[1];
+      const dateText = [startDate?.toISOString().slice(0, 10), endDate?.toISOString().slice(0, 10)].filter(Boolean).join(" – ") || "To be confirmed";
+      const detailRow = (label: string, value: unknown) => `<tr><td style="padding:9px 12px;color:#64748b;font-size:13px;border-bottom:1px solid #e2e8f0">${esc(label)}</td><td style="padding:9px 12px;font-weight:600;color:#14263f;border-bottom:1px solid #e2e8f0">${esc(value)}</td></tr>`;
+      const summary = `<table role="presentation" style="width:100%;border-collapse:collapse;background:#f8fafc;border-radius:8px">${detailRow("Reference",customRequest.requestReference)}${detailRow("Journey",title)}${detailRow("Agency",agent?.travelAgency)}${detailRow("Total passengers (including COMPs)",estimatedPax)}${detailRow("Preferred dates",dateText)}${detailRow("Package type",packageLabel)}${airport ? detailRow("Departure airport / city",airport) : ""}</table>`;
+      const emailLogoUrl = process.env.EMAIL_LOGO_URL || `${(process.env.NEXT_PUBLIC_APP_URL || "https://epochjourneys.com").replace(/\/$/, "")}/logo.png`;
+      const logoHeader = `<img src="${esc(emailLogoUrl)}" alt="Epoch Journeys" width="190" style="max-width:190px;height:auto;display:block;margin:0 auto 8px" /><div style="font-size:16px;letter-spacing:2px;font-weight:700">EPOCH JOURNEYS</div>`;
+      const emailLayout = (intro: string, isAdmin: boolean) => `<!doctype html><html><body style="margin:0;padding:24px;background:#f1f5f9;font-family:Arial,Helvetica,sans-serif;color:#243247"><div style="max-width:620px;margin:auto;background:#fff;border-radius:12px;overflow:hidden"><div style="background:#14263f;padding:28px;text-align:center;color:#fff">${logoHeader}<div style="color:#d8b986;font-size:12px;margin-top:7px">Thoughtfully Planned. Faithfully Delivered.</div></div><div style="padding:30px"><h2 style="color:#14263f;margin-top:0">${isAdmin ? "New Agent Quotation Request" : "Quotation Request Received"}</h2><p>${intro}</p>${summary}${isAdmin ? `<p><strong>Agent:</strong> ${esc(agent?.fullName)}<br/><strong>Email:</strong> ${esc(agentEmail)}</p>` : `<p>Our team will review your requirements and contact you if further information is needed before preparing your official quotation.</p><p>Please keep your reference number for future correspondence.</p>`}<p style="margin-top:28px">Warm regards,<br/><strong>Epoch Journeys Team</strong><br/><a href="mailto:quotes@epochjourneys.com">quotes@epochjourneys.com</a></p></div><div style="background:#14263f;text-align:center;color:#d8b986;padding:17px;font-size:12px">epochjourneys.com</div></div></body></html>`;
+      const notify = async (kind: "AGENT" | "ADMIN", recipient: string, subject: string, intro: string) => {
+        try {
+          const result = await sendEmail({
+            to: recipient,
+            subject,
+            html: emailLayout(intro, kind === "ADMIN"),
+          });
+          if (!result || result.error) {
+            console.error("QUOTE_REQUEST_EMAIL_FAILED", {
+              kind,
+              reference: customRequest.requestReference,
+              recipient,
+              error: result?.error ?? "No response from email provider",
+            });
+          } else {
+            console.info("QUOTE_REQUEST_EMAIL_ACCEPTED", {
+              kind,
+              reference: customRequest.requestReference,
+              recipient,
+              messageId: result.data?.id ?? null,
+            });
+          }
+        } catch (error) {
+          console.error("QUOTE_REQUEST_EMAIL_EXCEPTION", {
+            kind,
+            reference: customRequest.requestReference,
+            recipient,
+            error,
+          });
+        }
+      };
+      if (agentEmail) {
+        await notify("AGENT", agentEmail,
+          `Epoch Journeys | Quotation Request Received | ${customRequest.requestReference}`,
+          `Dear ${esc((agent?.fullName || "Partner").split(" ")[0])},<br/><br/>Thank you for choosing Epoch Journeys. We are pleased to confirm receipt of your quotation request.`);
+      }
+      if (adminEmail) {
+        await notify("ADMIN", adminEmail,
+          `New Quote Request — ${customRequest.requestReference}`,
+          "A new request has been submitted through the Agent Portal. Please review the details below.");
+      } else {
+        console.error("QUOTE_REQUEST_ADMIN_EMAIL_NOT_CONFIGURED");
+      }
+    } catch (emailError) {
+      console.error("QUOTE_REQUEST_NOTIFICATION_ERROR", emailError);
+    }
 
     // ========================================================
     // RESPONSE

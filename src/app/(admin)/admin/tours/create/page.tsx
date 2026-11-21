@@ -634,17 +634,9 @@ async function createTour(
         // PUBLISHING
         // --------------------------------------
 
-        featured:
-          parseCheckbox(
-            formData,
-            "featured",
-          ),
+        featured: false,
 
-        isPublished:
-          parseCheckbox(
-            formData,
-            "isPublished",
-          ),
+        isPublished: false,
       },
     });
 
@@ -663,7 +655,7 @@ async function createTour(
    */
 
   redirect(
-    `/admin/tours/${tour.id}/seasonal-prices`,
+    `/admin/tours/${tour.id}`,
   );
 }
 

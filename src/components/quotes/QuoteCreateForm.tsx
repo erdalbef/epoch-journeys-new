@@ -14,6 +14,8 @@ import QuoteTemplatePicker, {
 } from "./QuoteTemplatePicker";
 
 import IncludesExcludesBuilder from "@/components/quotes/IncludesExcludesBuilder";
+import { isServiceTermsConfirmed, reviewServiceTerms } from "@/lib/quotes/serviceTermsReview";
+import { reviewQuoteServiceConsistency } from "@/lib/quotes/serviceConsistency";
 import PolicySelector from "@/components/quotes/PolicySelector";
 import TermsSelector from "@/components/quotes/TermsSelector";
 import QuoteValiditySection from "@/components/quotes/create/QuoteValiditySection";
@@ -47,6 +49,30 @@ import ComplimentaryTravelersSection, {
   type ComplimentarySetup,
 } from "@/components/quotes/sections/ComplimentaryTravelersSection";
 
+/** Use the actual Tour Master daily program, not its marketing overview. */
+function briefDailyTourItinerary(tour: TourOption): string {
+  const source = (tour.itinerary || "").trim();
+  if (!source) return (tour.overviewItinerary || "").trim();
+
+  // Support the numbered day headings used in the Tour Master editor.
+  const normalized = source.replace(/\r\n?/g, "\n");
+  const dayHeading = /(?:^|\n)\s*(?:\*\*)?Day\s+(\d{1,2})\s*(?:[,.:\-–—]|\b)/gi;
+  const matches = [...normalized.matchAll(dayHeading)];
+  if (matches.length < 2) return source; // Never discard unrecognized itinerary content.
+
+  return matches.map((match, index) => {
+    const start = (match.index ?? 0) + match[0].length;
+    const end = index + 1 < matches.length ? (matches[index + 1].index ?? normalized.length) : normalized.length;
+    const content = normalized.slice(start, end).replace(/\*\*/g, "").replace(/\s+/g, " ").trim();
+    // Keep the day heading and the first two narrative sentences, where possible.
+    // Protect common saint/church abbreviations so sentence splitting never ends at "St.".
+    const protectedContent = content.replace(/\b(St|Dr|Fr|Mr|Mrs)\./gi, "$1__DOT__");
+    const sentences = protectedContent.match(/[^.!?]+[.!?]+|[^.!?]+$/g) || [];
+    const shortText = sentences.slice(0, 2).join(" ").replace(/__DOT__/g, ".").trim();
+    return `Day ${match[1]} - ${shortText || content}`;
+  }).join("\n");
+}
+
 type TourOption = {
   id: string;
   title: string;
@@ -55,6 +81,8 @@ type TourOption = {
   currency: string;
   overviewItinerary: string | null;
   itinerary: string | null;
+  inclusions: string | null;
+  exclusions: string | null;
 };
 
 type SeasonalRateReference = {
@@ -261,6 +289,7 @@ type QuoteBuilderSummary = {
   endDate?: string | null;
 
   briefItinerary?: string | null;
+  serviceConsistencyReview?: { confirmed?: boolean; fingerprint?: string; confirmedAt?: string; warningsAcknowledged?: boolean };
 
   totalPassengers?: number;
   freePassengers?: number;
@@ -295,6 +324,7 @@ type QuoteBuilderSummary = {
   tourManagerRows?: LegacyStaffCostRow[];
   guideRows?: LegacyStaffCostRow[];
   driverRows?: LegacyDriverCostRow[];
+  serviceTermsReview?: unknown;
 };
 
 type InitialQuoteData = {
@@ -344,11 +374,28 @@ type InitialQuoteData = {
   nextStepNotes?: string | null;
 };
 
+type RequestPrefill = {
+  requestId: string;
+  reference: string;
+  agentId: string;
+  title: string;
+  tourId: string | null;
+  recipientName: string;
+  recipientEmail: string;
+  company: string;
+  payingPax: number | null;
+  complimentaryPax: number | null;
+  startDate: string;
+  endDate: string;
+  notes: string;
+};
+
 type Props = {
   tours: TourOption[];
   agents: AgentOption[];
 
   initialData?: InitialQuoteData;
+  requestPrefill?: RequestPrefill;
 
   mode?: "create" | "edit";
 };
@@ -1394,6 +1441,7 @@ export default function QuoteCreateForm({
   tours,
   agents,
   initialData,
+  requestPrefill,
   mode = "create",
 }: Props) {
   const router =
@@ -1523,6 +1571,23 @@ export default function QuoteCreateForm({
     setClientExcludes,
   ] =
     useState("");
+
+  const [serviceTermsConfirmed, setServiceTermsConfirmed] = useState(false);
+  const [serviceConsistencyAcknowledged, setServiceConsistencyAcknowledged] = useState(false);
+  const [verifiedConsistencyFingerprint, setVerifiedConsistencyFingerprint] = useState<string | null>(null);
+  const termsReview = useMemo(
+    () => reviewServiceTerms(clientIncludes, clientExcludes),
+    [clientIncludes, clientExcludes]
+  );
+
+  const updateIncludes = (value: string) => {
+    setClientIncludes(value);
+    setServiceTermsConfirmed(false);
+  };
+  const updateExcludes = (value: string) => {
+    setClientExcludes(value);
+    setServiceTermsConfirmed(false);
+  };
 
   const [
     paymentPolicy,
@@ -1679,6 +1744,23 @@ export default function QuoteCreateForm({
   const totalComplimentaryPassengers =
     complimentarySummary
       .totalComplimentary;
+
+  // Request quotations keep the agent's requested group size fixed when Admin
+  // adjusts the number of complimentary places. Other quotes retain legacy behavior.
+  useEffect(() => {
+    if (mode !== "create" || !requestPrefill || requestPrefill.payingPax == null) return;
+    const requestedTotal = Math.floor(Number(requestPrefill.payingPax));
+    if (!Number.isFinite(requestedTotal) || requestedTotal < 1) return;
+    const free = totalComplimentaryPassengers;
+    // A group must have at least one paying traveler. Reject an excessive COMP
+    // allowance in the UI rather than silently inflating the group size.
+    if (free >= requestedTotal) return;
+    setGroup(prev => {
+      const paying = requestedTotal - free;
+      if (prev.totalPassengers === paying && prev.freePassengers === free) return prev;
+      return { ...prev, totalPassengers: paying, freePassengers: free };
+    });
+  }, [mode, requestPrefill, totalComplimentaryPassengers]);
 
   useEffect(() => {
     setGroup(
@@ -1868,16 +1950,49 @@ export default function QuoteCreateForm({
       return;
     }
 
+    if (mode === "create") {
+      setClientDocumentTitle((previous) => previous.trim() || selectedTour.title);
+    }
+
     setBriefItinerary(
-      selectedTour.overviewItinerary?.trim() ||
-      selectedTour.itinerary?.trim() ||
-      ""
+      briefDailyTourItinerary(selectedTour)
     );
   }, [
     tourId,
     tours,
     briefItineraryTouched,
   ]);
+
+  useEffect(() => {
+    if (!requestPrefill || mode !== "create") return;
+    setPurpose("CUSTOM_REQUEST");
+    setTitle(requestPrefill.title);
+    setAgentId(requestPrefill.agentId);
+    setAgentCompany(requestPrefill.company);
+    setRecipientName(requestPrefill.recipientName);
+    setRecipientEmail(requestPrefill.recipientEmail);
+    setTourId(requestPrefill.tourId || "");
+    setGroup(previous => ({
+      ...previous,
+      // The agent's requested pax is the TOTAL group, including COMPs.
+      // Legacy group.totalPassengers stores PAYING pax for pricing compatibility.
+      totalPassengers: Math.max(1, (requestPrefill.payingPax ?? previous.totalPassengers) - Math.max(0, requestPrefill.complimentaryPax ?? 0)),
+      freePassengers: Math.max(0, requestPrefill.complimentaryPax ?? 0),
+      startDate: requestPrefill.startDate,
+      endDate: requestPrefill.endDate,
+    }));
+    // Do not auto-add free places on top of the requested total.
+    setComplimentarySetup(prev => ({
+      ...prev,
+      complimentaryMode: "MANUAL",
+      manualComplimentaryPassengers: Math.max(0, requestPrefill.complimentaryPax ?? 0),
+      useFreePlaceRule: false,
+      additionalFreePassengers: 0,
+      priestComplimentary: false,
+      groupLeaderComplimentary: false,
+    }));
+    setInternalNotes(`Source request: ${requestPrefill.reference}\n${requestPrefill.notes}`);
+  }, [requestPrefill, mode]);
 
   useEffect(() => {
     if (!initialData) {
@@ -2026,6 +2141,15 @@ export default function QuoteCreateForm({
         "object"
         ? (initialData.quoteBuilderSummary as QuoteBuilderSummary)
         : null;
+
+    setServiceTermsConfirmed(isServiceTermsConfirmed(
+      summary,
+      initialData.clientIncludes,
+      initialData.clientExcludes
+    ));
+    const savedConsistency = summary?.serviceConsistencyReview;
+    setVerifiedConsistencyFingerprint(savedConsistency?.confirmed === true ? (savedConsistency.fingerprint || null) : null);
+    setServiceConsistencyAcknowledged(savedConsistency?.warningsAcknowledged === true);
 
     const savedBriefItinerary =
       typeof summary?.briefItinerary === "string"
@@ -3377,6 +3501,27 @@ export default function QuoteCreateForm({
 
   // Validate meal quantities across both Hotel CRM and separately arranged
   // Per-Person Services. This does not change supplier costs or NET pricing.
+  const selectedTourForConsistency = tours.find((tour) => tour.id === tourId);
+  const serviceConsistency = useMemo(() => reviewQuoteServiceConsistency({
+    tourId,
+    tourInclusions: selectedTourForConsistency?.inclusions,
+    tourExclusions: selectedTourForConsistency?.exclusions,
+    briefItinerary,
+    includes: clientIncludes,
+    excludes: clientExcludes,
+    hotels,
+    fixedCostRows,
+    operationalCostRows: pricedOperationalCostRows,
+    payingPassengers: calculations.payingPassengers,
+    freePassengers: calculations.freePassengers,
+  }), [tourId, selectedTourForConsistency?.inclusions, selectedTourForConsistency?.exclusions,
+       briefItinerary, clientIncludes, clientExcludes, hotels, fixedCostRows,
+       pricedOperationalCostRows, calculations.payingPassengers, calculations.freePassengers]);
+  const consistencyConfirmed = serviceTermsConfirmed &&
+    verifiedConsistencyFingerprint === serviceConsistency.fingerprint &&
+    serviceConsistency.blockers.length === 0 &&
+    (serviceConsistency.warnings.length === 0 || serviceConsistencyAcknowledged);
+
   const mealQuantityCheck = useMemo(() => validateMealQuantities({
     services: fixedCostRows,
     hotels,
@@ -4093,6 +4238,7 @@ export default function QuoteCreateForm({
       ];
 
       const payload = {
+        requestId: mode === "create" ? requestPrefill?.requestId || null : null,
         templateId,
 
         purpose,
@@ -4452,6 +4598,9 @@ export default function QuoteCreateForm({
 
         clientExcludes,
 
+        serviceTermsConfirmed: consistencyConfirmed,
+        serviceConsistencyWarningsAcknowledged: serviceConsistencyAcknowledged,
+
         paymentPolicy,
 
         cancellationPolicy,
@@ -4676,6 +4825,15 @@ export default function QuoteCreateForm({
                     false
                   );
 
+                  const previousTour = tours.find((tour) => tour.id === tourId);
+                  const nextTour = tours.find((tour) => tour.id === e.target.value);
+                  if (nextTour) {
+                    setClientDocumentTitle((previous) =>
+                      !previous.trim() || previous === previousTour?.title
+                        ? nextTour.title
+                        : previous
+                    );
+                  }
                   setTourId(
                     e.target.value
                   );
@@ -5168,9 +5326,7 @@ export default function QuoteCreateForm({
                   );
 
                 setBriefItinerary(
-                  selectedTour?.overviewItinerary?.trim() ||
-                  selectedTour?.itinerary?.trim() ||
-                  ""
+                  selectedTour ? briefDailyTourItinerary(selectedTour) : ""
                 );
 
                 setBriefItineraryTouched(
@@ -5200,6 +5356,30 @@ Delphi - Sanctuary of Apollo, Archaeological Museum`}
               );
             }}
           />
+        </div>
+
+        <div data-epoch-flexible-quote-form-link="true" className="rounded-lg border border-indigo-200 bg-indigo-50 p-4">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <h3 className="text-sm font-semibold text-indigo-950">Flexible Group Pricing</h3>
+              <p className="mt-1 text-xs text-indigo-800">
+                Review calculated group-size alternatives, complimentary pilgrims and verified NET rates before publishing to agents.
+                Save the quotation first to include the latest pricing calculations.
+              </p>
+            </div>
+            {mode === "edit" && initialData?.id ? (
+              <a
+                href={`/admin/quotes/${initialData.id}/flexible-pricing`}
+                className="inline-flex items-center rounded-lg bg-indigo-800 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-900"
+              >
+                Flexible Group Pricing
+              </a>
+            ) : (
+              <span className="rounded-lg border bg-white px-3 py-2 text-xs font-medium text-slate-600">
+                Save quotation to enable
+              </span>
+            )}
+          </div>
         </div>
 
         <PassengerPricingSection
@@ -5270,6 +5450,20 @@ Delphi - Sanctuary of Apollo, Archaeological Museum`}
           }
         />
 
+        <div className="rounded-md border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700">
+          Select only the services that are actually included or excluded for this pilgrimage quotation.
+          These exact lists will appear in the Agent Proposal PDF. You may save an unfinished draft,
+          but the Agent PDF cannot be generated or sent until you confirm both lists below.
+        </div>
+        {termsReview.errors.length > 0 && (
+          <div role="alert" className="rounded-md border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900">
+            <strong>Review Rates Include / Exclude:</strong>
+            <ul className="mt-1 list-disc pl-5">
+              {termsReview.errors.map((error) => <li key={error}>{error}</li>)}
+            </ul>
+          </div>
+        )}
+
         <div>
           <h3 className="mb-2 font-medium">
             Included Services
@@ -5278,7 +5472,7 @@ Delphi - Sanctuary of Apollo, Archaeological Museum`}
           <IncludesExcludesBuilder
             label=""
             value={clientIncludes}
-            onChange={setClientIncludes}
+            onChange={updateIncludes}
             type="includes"
           />
         </div>
@@ -5291,9 +5485,98 @@ Delphi - Sanctuary of Apollo, Archaeological Museum`}
           <IncludesExcludesBuilder
             label=""
             value={clientExcludes}
-            onChange={setClientExcludes}
+            onChange={updateExcludes}
             type="excludes"
           />
+        </div>
+
+        <div data-epoch-service-consistency="true" className="space-y-3 rounded-lg border border-indigo-200 bg-indigo-50 p-4 text-sm">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <h3 className="font-semibold text-indigo-950">Itinerary - Quotation Consistency Check</h3>
+            <span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${serviceConsistency.blockers.length ? "bg-red-100 text-red-800" : serviceConsistency.warnings.length ? "bg-amber-100 text-amber-900" : "bg-emerald-100 text-emerald-800"}`}>
+              {serviceConsistency.blockers.length} conflict(s) / {serviceConsistency.warnings.length} review item(s)
+            </span>
+          </div>
+          <p className="text-slate-700">Compares the selected Tour Master inclusions and exclusions, this proposal's brief itinerary, Rates Include / Exclude, and costed services. Tour Master reference pricing may differ from a custom quotation. A service may be included in a supplier package or provided without a separate fee.</p>
+          <div data-epoch-exclusion-audit="true" className="rounded-md border border-slate-200 bg-white p-3">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <h4 className="font-semibold text-slate-900">Tour Master Exclusions vs. Rates Exclude</h4>
+              <span className="text-xs text-slate-600">
+                {serviceConsistency.exclusionComparisons.filter(item => item.status === "MATCHED").length}
+                {" / "}{serviceConsistency.exclusionComparisons.length} matched
+              </span>
+            </div>
+            {!tourId ? (
+              <p className="mt-2 text-xs text-amber-900">Select a Tour Master to compare its reference exclusions.</p>
+            ) : serviceConsistency.exclusionComparisons.length === 0 ? (
+              <p className="mt-2 text-xs text-amber-900">This Tour Master has no saved exclusions to compare. Check the itinerary and add the quotation's exclusions manually.</p>
+            ) : (
+              <ul className="mt-2 max-h-72 space-y-2 overflow-y-auto">
+                {serviceConsistency.exclusionComparisons.map((item, index) => (
+                  <li key={`${index}-${item.tourMasterTerm}`} className="flex items-start gap-2 border-b border-slate-100 pb-2 last:border-b-0 last:pb-0">
+                    <span className={`mt-0.5 shrink-0 rounded px-2 py-0.5 text-xs font-medium ${item.status === "MATCHED" ? "bg-emerald-100 text-emerald-800" : "bg-amber-100 text-amber-900"}`}>
+                      {item.status === "MATCHED" ? "Matched" : item.status === "INCLUDED_IN_QUOTE" ? "Included in quote - review" : "Missing - review"}
+                    </span>
+                    <div className="min-w-0 text-xs text-slate-800">
+                      <span>{item.tourMasterTerm}</span>
+                      {item.quoteTerm && <p className="mt-1 text-slate-600">Quote says: {item.quoteTerm}</p>}
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            )}
+            <p className="mt-2 text-xs text-slate-600">This is a comparison, not an automatic copy. Missing or differently worded exclusions require Admin review before the Agent Proposal.</p>
+          </div>
+          {serviceConsistency.matched.length > 0 && (
+            <p className="text-emerald-900"><strong>Costing evidence found:</strong> {serviceConsistency.matched.join(", ")}</p>
+          )}
+          {serviceConsistency.blockers.length > 0 && (
+            <div role="alert" className="rounded-md border border-red-300 bg-red-50 p-3 text-red-950">
+              <strong>Conflicts - correct before confirmation</strong>
+              <ul className="mt-1 list-disc space-y-1 pl-5">{serviceConsistency.blockers.map((item) => <li key={item.code}><strong>{item.label}:</strong> {item.message}</li>)}</ul>
+            </div>
+          )}
+          {serviceConsistency.warnings.length > 0 && (
+            <div role="alert" className="rounded-md border border-amber-300 bg-amber-50 p-3 text-amber-950">
+              <strong>Review before issuing the Agent Proposal</strong>
+              <ul className="mt-1 max-h-64 list-disc space-y-1 overflow-y-auto pl-5">{serviceConsistency.warnings.map((item) => <li key={item.code}><strong>{item.label}:</strong> {item.message}</li>)}</ul>
+              <label className="mt-3 flex cursor-pointer items-start gap-2 border-t border-amber-200 pt-3">
+                <input type="checkbox" className="mt-0.5 h-4 w-4" checked={serviceConsistencyAcknowledged} onChange={(event) => setServiceConsistencyAcknowledged(event.target.checked)} />
+                <span>I checked these warnings against the actual supplier package, prices and itinerary and accept any documented reference-package differences.</span>
+              </label>
+            </div>
+          )}
+          {!tourId && <p className="text-amber-900">No Tour Master selected. This check can assess your quotation and prices but cannot compare a Tour Master reference package.</p>}
+          <p className="text-xs text-slate-600">Checks are advisory for draft saving. Unresolved red conflicts, or unacknowledged yellow warnings, block Admin verification and a new Agent PDF. This tool does not change your pricing or service lists.</p>
+        </div>
+
+        <div data-epoch-service-terms-confirm="true" className={`rounded-lg border p-4 ${consistencyConfirmed ? "border-emerald-300 bg-emerald-50" : "border-amber-300 bg-amber-50"}`}>
+
+          <label className="flex cursor-pointer items-start gap-3 text-sm text-slate-800">
+            <input
+              type="checkbox"
+              className="mt-1 h-4 w-4"
+              checked={consistencyConfirmed}
+              disabled={termsReview.errors.length > 0 || serviceConsistency.blockers.length > 0 || (serviceConsistency.warnings.length > 0 && !serviceConsistencyAcknowledged)}
+              onChange={(event) => {
+                const checked = event.target.checked;
+                setServiceTermsConfirmed(checked);
+                setVerifiedConsistencyFingerprint(checked ? serviceConsistency.fingerprint : null);
+              }}
+            />
+            <span>
+              <strong>Admin verification - Rates Include / Exclude</strong>
+              <span className="mt-1 block text-slate-700">
+                I have checked the inclusions and exclusions against this quotation and its itinerary.
+                Only the stated services will be represented as included. I confirm these lists are
+                ready for the Agent Proposal PDF.
+              </span>
+              <span className="mt-1 block text-xs text-slate-600">
+                {termsReview.inclusions.length} inclusions and {termsReview.exclusions.length} exclusions.
+                Editing the itinerary, pricing inputs, hotel services, or lists invalidates the confirmation. Save the quotation after confirming.
+              </span>
+            </span>
+          </label>
         </div>
 
         <div>

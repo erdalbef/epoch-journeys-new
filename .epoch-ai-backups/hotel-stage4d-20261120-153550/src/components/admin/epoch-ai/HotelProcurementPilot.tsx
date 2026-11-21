@@ -1,0 +1,197 @@
+"use client";
+import { useMemo, useState } from "react";
+import Link from "next/link";
+import HotelInquiryWorkspace from "./HotelInquiryWorkspace";
+import { leadsForCity, hotelResearchSearchUrl, compareLeadToCrm } from "@/lib/epoch-ai/hotelDiscoveryLeads";
+import { leadEvidence, screenGroupCapacity } from "@/lib/epoch-ai/hotelLeadScreening";
+import { assessHotelCoverage, reviewHotelCandidates } from "@/lib/epoch-ai/hotelDiscoveryReview";
+import type { LiveHotelLead } from "@/lib/epoch-ai/hotelLiveResearch";
+import { publishedHotelVerification } from "@/lib/epoch-ai/hotelPublicVerification";
+import { balkanStays, contactEmail, inquiry, searchCrmHotels, nights, type HotelContact, type Stay } from "@/lib/epoch-ai/hotelProcurement";
+
+export default function HotelProcurementPilot({tourId,tourTitle,destinations,hotels}:{tourId:string;tourTitle:string;destinations:string[];hotels:HotelContact[]}) {
+  const isBalkan=/balkan|mother teresa/i.test(tourTitle);
+  const [stays,setStays]=useState<Stay[]>(()=>isBalkan?balkanStays.map(s=>({...s})):destinations.slice(0,20).map(city=>({city,checkIn:"",checkOut:"",rooms:20,massRoom:false})));
+  const [active,setActive]=useState(0);
+  const [crmSearch,setCrmSearch]=useState<Record<number,string>>({});
+  const [supplierId,setSupplierId]=useState<Record<number,string>>({});
+  const [leadByStay,setLeadByStay]=useState<Record<number,string>>({});
+  const [manualLead,setManualLead]=useState<Record<number,string>>({});
+  const [verifiedEmail,setVerifiedEmail]=useState<Record<number,string>>({});
+  const [researchCountry,setResearchCountry]=useState<Record<number,string>>({});
+  const [researchPhone,setResearchPhone]=useState<Record<number,string>>({});
+  const [contactSource,setContactSource]=useState<Record<number,string>>({});
+  const [facilitiesSource,setFacilitiesSource]=useState<Record<number,string>>({});
+  const [contactChecked,setContactChecked]=useState<Record<number,boolean>>({});
+  const [facilitiesChecked,setFacilitiesChecked]=useState<Record<number,boolean>>({});
+  const [checkStatus,setCheckStatus]=useState<Record<number,Record<string,boolean>>>({});
+  const countryForCity:Record<string,string>={"Sarajevo":"Bosnia and Herzegovina","Kotor Bay":"Montenegro","Tirana":"Albania","Ohrid":"North Macedonia","Pristina":"Kosovo","Skopje":"North Macedonia","Belgrade":"Serbia"};
+  const researchChecklist = ["20 rooms / allotment confirmed", "4-star standard verified", "Walk-in showers and lifts confirmed", "Coach access and parking confirmed", "Group dinners and beverages confirmed", "Porterage confirmed", "Private Mass room confirmed where required"];
+
+  const [copyStatus,setCopyStatus]=useState("");
+  const [crmSaveState,setCrmSaveState]=useState("");
+  const [crmSaving,setCrmSaving]=useState(false);
+  const [savedSupplierByStay,setSavedSupplierByStay]=useState<Record<number,string>>({});
+  const [liveByStay,setLiveByStay]=useState<Record<number,LiveHotelLead[]>>({});
+  const [liveError,setLiveError]=useState<Record<number,string>>({});
+  const [liveLoading,setLiveLoading]=useState(false);
+  async function searchLiveHotels(){
+    const index=active;const current=stays[index];
+    if(!current?.city.trim()){setLiveError(p=>({...p,[index]:"Enter destination first."}));return;}
+    setLiveLoading(true);setLiveError(p=>({...p,[index]:""}));
+    try {
+      const response=await fetch("/api/admin/epoch-ai/hotel-research/live",{
+        method:"POST",headers:{"Content-Type":"application/json"},
+        body:JSON.stringify({city:current.city,country:researchCountry[index]||countryForCity[current.city]||""})
+      });
+      const result=await response.json() as {error?:string;leads?:LiveHotelLead[]};
+      if(!response.ok)throw Error(result.error||"Live hotel search unavailable");
+      setLiveByStay(p=>({...p,[index]:result.leads||[]}));
+    }catch(err){setLiveError(p=>({...p,[index]:err instanceof Error?err.message:"Hotel research unavailable"}));}
+    finally{setLiveLoading(false);}
+  }
+
+  async function saveApprovedLead() {
+    const selected = selectedLeadName;
+    const profile = publishedHotelVerification(selected);
+    const recipient = verifiedEmail[active]?.trim() || profile?.email || "";
+    const phone = researchPhone[active]?.trim() || profile?.phone || "";
+    const source = contactSource[active]?.trim() || profile?.source || "";
+    const facilities = facilitiesSource[active]?.trim() || profile?.facilitiesSource || "";
+    const country = researchCountry[active]?.trim() || (stay ? countryForCity[stay.city] : "") || "";
+    if (!stay || !selected || !recipient || !phone || !country || !source || !facilities ||
+       !contactChecked[active] || !facilitiesChecked[active]) {
+      setCrmSaveState("Verify hotel country, email, phone and both public evidence URLs; tick both review confirmations before registration."); return;
+    }
+    const confirmation = `Register ${selected} in ${stay.city}, ${country} as an INACTIVE research candidate?\n\nContact: ${recipient}\nContact evidence: ${source}\nFacilities evidence: ${facilities}\n\nThis creates a CRM candidate only. No email will be sent.`;
+    if (!window.confirm(confirmation)) return;
+    setCrmSaving(true); setCrmSaveState("");
+    try {
+      const response = await fetch("/api/admin/epoch-ai/hotel-research/register", {
+        method:"POST", headers:{"Content-Type":"application/json"},
+        body: JSON.stringify({name:selected,city:stay.city,country,email:recipient,phone,source,facilitiesSource:facilities,adminVerification:{confirmation:"REGISTER VERIFIED RESEARCH LEAD",contactChecked:true,facilitiesChecked:true},hotelStay:{checkIn:stay.checkIn,checkOut:stay.checkOut,rooms:stay.rooms}}),
+      });
+      const result = await response.json() as {error?:string;supplierId?:string;alreadyExists?:boolean};
+      if (!response.ok || !result.supplierId) throw new Error(result.error || "CRM registration did not complete.");
+      setSavedSupplierByStay(current=>({...current,[active]:result.supplierId!}));
+      setCrmSaveState(result.alreadyExists ? "Hotel already exists in CRM; no duplicate created." : "Approved research candidate added to Supplier CRM (INACTIVE). No inquiry sent.");
+    } catch(err) {setCrmSaveState(err instanceof Error ? err.message : "Could not register supplier.");}
+    finally {setCrmSaving(false);}
+  }
+  const stay=stays[active];
+  const referenceStay=isBalkan?balkanStays[active]:undefined;
+  const referenceMismatch=Boolean(referenceStay&&stay&&(stay.city!==referenceStay.city||stay.checkIn!==referenceStay.checkIn||stay.checkOut!==referenceStay.checkOut||stay.rooms!==referenceStay.rooms));
+  const matches=useMemo(()=>stay?searchCrmHotels(hotels,stay.city,crmSearch[active]||""):[],[stay,hotels,crmSearch,active]);
+  const chosen=hotels.find(h=>h.id===supplierId[active]);
+  const selectedLeadName=manualLead[active]?.trim() || leadByStay[active] || "";
+  const draft=stay?inquiry(stay,chosen?.name||selectedLeadName):null;
+  const selectedName=chosen?.name||selectedLeadName;
+  const leadEmail=verifiedEmail[active]?.trim()||"";
+  const sourcedLeads=stay?leadsForCity(stay.city):[];
+  const coverage=stay?assessHotelCoverage(stay,hotels):null;
+  const candidateReviews=stay?reviewHotelCandidates(stay,hotels):[];
+  function update<K extends keyof Stay>(field:K,value:Stay[K]) {setStays(current=>current.map((s,i)=>i===active?{...s,[field]:value}:s));setCopyStatus("")}
+  async function copy(text:string,label:string){try{await navigator.clipboard.writeText(text);setCopyStatus(label+" copied. Review and add approved email signature before sending.")}catch{setCopyStatus("Clipboard unavailable; select and copy the draft manually.")}}
+  return <div className="space-y-5">
+    <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-950"><strong>Preparation only.</strong> This page does not send email, book hotels or change supplier rates. Saving a draft records it in Hotel Inquiry History only. {isBalkan?"The seven Balkan stays below are editable reference dates, not confirmed hotel bookings.":"Add and verify the hotel dates before preparing inquiries."} Include the official Epoch Journeys signature in any approved message.</div>
+    <div className="flex flex-wrap gap-2">{stays.map((s,i)=><button key={i} type="button" onClick={()=>{setActive(i);setCopyStatus("")}} className={`rounded-lg px-3 py-2 text-sm font-medium ${active===i?"bg-[#001F3F] text-white":"border border-slate-200 bg-white text-slate-700"}`}>{s.city||`Stay ${i+1}`}</button>)}</div>
+    {stay?<div className="grid gap-6 lg:grid-cols-2"><div className="space-y-4 rounded-xl border bg-white p-5">
+      <h2 className="text-lg font-bold text-[#001F3F]">Stay details — review before use</h2>
+      <label className="block text-sm font-medium">Destination<input className="mt-1 w-full rounded-lg border p-2" value={stay.city} onChange={e=>update("city",e.target.value)}/></label>
+      <div className="grid grid-cols-2 gap-3"><label className="text-sm font-medium">Check-in<input className="mt-1 w-full rounded-lg border p-2" type="date" value={stay.checkIn} onChange={e=>update("checkIn",e.target.value)}/></label><label className="text-sm font-medium">Check-out<input className="mt-1 w-full rounded-lg border p-2" type="date" value={stay.checkOut} onChange={e=>update("checkOut",e.target.value)}/></label></div>
+      {referenceStay?<section className={`rounded-lg border p-3 text-xs ${referenceMismatch?"border-amber-400 bg-amber-50 text-amber-950":"border-sky-200 bg-sky-50 text-sky-950"}`}>
+        <strong>2027 Balkan reference schedule (not a confirmed hotel booking):</strong> {referenceStay.city} · check-in {referenceStay.checkIn} · check-out {referenceStay.checkOut} · {referenceStay.rooms} rooms.
+        {referenceMismatch?<><p className="mt-1 font-semibold">The editable stay fields differ from the 2027 reference. Verify the intended tour schedule before saving any inquiry.</p><button type="button" className="mt-2 rounded border border-amber-600 bg-white px-2 py-1 font-semibold" onClick={()=>{setStays(current=>current.map((s,i)=>i===active?{...referenceStay}:s));setCopyStatus("")}}>Restore 2027 reference stay (no database write)</button></>:<p className="mt-1">Current editable stay fields match the reference. Check the year and dates before approving.</p>}
+      </section>:null}
+      <p className="text-sm text-slate-600">Calculated nights: {nights(stay)||"Review dates"}</p>
+      <label className="block text-sm font-medium">Number of rooms<input type="number" min={1} max={250} className="mt-1 w-full rounded-lg border p-2" value={stay.rooms} onChange={e=>update("rooms",Number(e.target.value))}/></label>
+      <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={stay.massRoom} onChange={e=>update("massRoom",e.target.checked)}/> Ask about private Mass meeting room (only where needed)</label>
+      {coverage?<section className="rounded-lg border border-indigo-200 bg-indigo-50/50 p-3 space-y-2 text-sm">
+        <h3 className="font-bold text-[#001F3F]">Stage 4B — supplier coverage &amp; candidate comparison</h3>
+        <p>CRM hotels in destination: <strong>{coverage.crmCount}</strong> · with recorded email: <strong>{coverage.contactableCrmCount}</strong> · curated research leads: <strong>{coverage.leadCount}</strong>.</p>
+        <p className="text-xs text-amber-900">{coverage.status==="NO_CRM_HOTELS"?"No matching CRM hotels: verify candidates and register approved research records before preparing supplier inquiries.":coverage.status==="CRM_CONTACTS_MISSING"?"CRM hotel records exist, but their contact emails require verification.":"Some hotels have CRM contact emails; independently verify details, current rates and availability."} A CRM email is not proof that it is current.</p>
+        <div className="overflow-x-auto"><table className="w-full text-left text-xs"><thead><tr className="border-b"><th className="py-1 pr-2">Hotel</th><th className="pr-2">CRM</th><th className="pr-2">Contact evidence</th><th className="pr-2">Size screen</th><th>Next review</th></tr></thead><tbody>
+        {candidateReviews.map(item=><tr key={item.name} className="border-b align-top"><td className="py-2 pr-2 font-medium">{item.name}</td><td className="pr-2">{item.inCrm?"Recorded":"Research only"}</td><td className="pr-2">{item.contactEvidence?"Snapshot; recheck":"Not verified"}</td><td className="pr-2">{item.capacityStatus==="unknown"?"Unknown":item.capacityStatus==="capacity-caution"?"Caution":"Preliminary pass"}</td><td>{item.questions[0]}</td></tr>)}
+        {!candidateReviews.length?<tr><td colSpan={5} className="py-2">No candidates on file. Use independent hotel research and enter a verified hotel below.</td></tr>:null}
+        </tbody></table></div>
+        <p className="text-xs text-slate-600">Comparison is based on recorded CRM data and existing research snapshots, not live web search. Unknown ratings, group rates, availability, access and amenities are never inferred. All candidate registration and sending remain separately controlled.</p>
+      </section>:null}
+      <h3 className="font-bold text-[#001F3F]">Existing Supplier CRM matches</h3>
+      <p className="text-xs text-slate-600">Hotels in this destination are listed first. Search any CRM hotel by name, city or country, including inactive research candidates. Selecting a hotel does not activate or contract it.</p>
+      <label className="block text-sm font-medium">Search Supplier CRM
+        <input type="search" className="mt-1 w-full rounded-lg border p-2" placeholder="Hotel name, city or country" value={crmSearch[active]||""} onChange={e=>setCrmSearch(p=>({...p,[active]:e.target.value}))}/>
+      </label>
+      <select className="w-full rounded-lg border p-2 text-sm" value={supplierId[active]||""} onChange={e=>{setSupplierId(p=>({...p,[active]:e.target.value}));setCopyStatus("")}}><option value="">Choose existing CRM hotel — optional</option>{chosen&&!matches.some(h=>h.id===chosen.id)?<option value={chosen.id}>{chosen.name} (currently selected)</option>:null}{matches.map(h=><option key={h.id} value={h.id}>{h.name}{h.preferred?" (preferred)":""} — {h.city||"city not recorded"}</option>)}</select>
+      {chosen?<p className="text-sm">Selected CRM hotel: <strong>{chosen.name}</strong>. Recipient: <strong>{contactEmail(chosen)||"No email in CRM — verify contact"}</strong> · <Link className="text-blue-700 underline" href={`/admin/suppliers/${chosen.id}`}>Open supplier CRM</Link></p>:<p className="text-sm text-slate-500">{matches.length?`${matches.length} CRM hotel match(es) found. Select one above.`:"No matches. Try a hotel name, another city or country; no new record will be created."}</p>}
+      <Link href="/admin/suppliers?type=HOTEL" className="inline-block text-sm font-semibold text-blue-700 underline">Find hotels in existing Supplier CRM</Link>
+      <section className="space-y-3 rounded-xl border border-blue-200 bg-blue-50/30 p-4">
+        <h3 className="font-bold text-[#001F3F]">Discover hotels not yet in Supplier CRM</h3>
+        <p className="text-xs leading-5 text-slate-600">Chain and capacity screening first; these are still research leads, not approved suppliers. Published room counts are property totals, not a confirmed group allotment. Verify reviews, room types, access, contacts and rates. No CRM record or email is created.</p>
+        <section className="rounded-lg border border-indigo-200 bg-white p-3 space-y-2 text-xs">
+          <p className="font-semibold text-[#001F3F]">Stage 4C — Live hotel discovery (Admin-initiated)</p>
+          <p>Search Google Places for hotels in this destination. Requires a separately configured Google Places API key and billing. Results are temporary research suggestions, not confirmed 4-star hotels or verified group suppliers; no emails or CRM writes.</p>
+          <button type="button" disabled={liveLoading} onClick={()=>void searchLiveHotels()} className="rounded bg-[#001F3F] px-3 py-2 font-semibold text-white disabled:opacity-40">{liveLoading?"Researching...":"Search live hotels"}</button>
+          {liveError[active]?<p role="alert" className="text-amber-900">{liveError[active]}</p>:null}
+          {(liveByStay[active]||[]).map(lead=><div key={lead.placeId} className="border-t py-2 flex flex-wrap justify-between gap-2">
+            <div><p className="font-semibold">{lead.name}{compareLeadToCrm(lead.name,hotels.map(h=>h.name))?<span className="ml-2 text-amber-800">Possible existing CRM supplier</span>:null}</p><p className="text-slate-600">{lead.address||"Address not supplied"} · Capacity, amenities and email not verified</p>{lead.mapsUrl?<a className="text-blue-700 underline" href={lead.mapsUrl} target="_blank" rel="noopener noreferrer">Google Maps source</a>:null}</div>
+            <button type="button" className="rounded border px-2 py-1" onClick={()=>{setManualLead(p=>({...p,[active]:lead.name}));setLeadByStay(p=>({...p,[active]:""}));setSupplierId(p=>({...p,[active]:""}));setVerifiedEmail(p=>({...p,[active]:""}));setContactChecked(p=>({...p,[active]:false}));setFacilitiesChecked(p=>({...p,[active]:false}));setSavedSupplierByStay(p=>{const n={...p};delete n[active];return n;});}}>Review as research candidate</button>
+          </div>)}
+          {liveByStay[active]?.length===0?<p>No hotels returned for this search. Research other sources manually.</p>:null}
+          <p className="text-slate-500">Google Maps information: verify independently on the hotel's official website before registering an inactive research record. No group rates or availability inferred.</p>
+        </section>
+        {sourcedLeads.length ? <div className="space-y-2">{sourcedLeads.map(lead=><div key={lead.name} className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-200 py-2 text-sm">
+          <span className="flex-1">{lead.name}{compareLeadToCrm(lead.name,hotels.map(h=>h.name)) ? <span className="ml-2 text-xs text-amber-700">Check CRM for duplicate</span> : null}
+            {(() => { const evidence=leadEvidence(lead.name); const size=screenGroupCapacity(stay.rooms,evidence?.totalRooms); return <span className="mt-1 block text-xs text-slate-600">{evidence ? `${evidence.brand} · ${evidence.totalRooms} published rooms · requested ${size.sharePercent}% of total` : "Hotel size and brand not yet independently verified"} <strong className={size.status==="capacity-caution"?"text-amber-700":"text-slate-600"}>{size.status==="capacity-caution"?"Capacity caution":size.status==="unknown"?"Research needed":"Initial size screen passed"}</strong>{evidence?.note?<span className="block text-amber-800">{evidence.note}</span>:null}{evidence?<a className="ml-1 text-blue-700 underline" target="_blank" rel="noopener noreferrer" href={evidence.source}>Official/brand source</a>:null}</span>; })()}
+          </span>
+          <span className="flex flex-wrap gap-2"><a href={hotelResearchSearchUrl(stay.city,lead.name)} target="_blank" rel="noopener noreferrer" className="text-blue-700 underline">Research</a><button type="button" className="rounded border bg-white px-2 py-1 text-xs font-semibold" onClick={()=>{setLeadByStay(p=>({...p,[active]:lead.name}));setManualLead(p=>({...p,[active]:""}));setSupplierId(p=>({...p,[active]:""}));setVerifiedEmail(p=>({...p,[active]:""}));setContactChecked(p=>({...p,[active]:false}));setFacilitiesChecked(p=>({...p,[active]:false}));setSavedSupplierByStay(p=>{const next={...p};delete next[active];return next;});setCrmSaveState("");setCopyStatus("")}}>Use lead</button></span>
+        </div>)}</div> : <p className="text-xs text-slate-600">No curated leads for this destination. Research hotels and enter a hotel name below.</p>}
+        <label className="block text-sm font-medium">Other researched hotel (optional)<input value={manualLead[active]||""} onChange={e=>{setManualLead(p=>({...p,[active]:e.target.value}));setSupplierId(p=>({...p,[active]:""}));setSavedSupplierByStay(p=>{const next={...p};delete next[active];return next;});setContactChecked(p=>({...p,[active]:false}));setFacilitiesChecked(p=>({...p,[active]:false}));setCopyStatus("")}} placeholder="Enter the exact verified hotel name" className="mt-1 w-full rounded-lg border bg-white p-2" /></label>
+        {selectedName ? <div className="space-y-2 rounded-lg border bg-white p-3"><p className="text-sm"><strong>Selected:</strong> {selectedName} {chosen?"(CRM)":"(research lead — not yet in CRM)"}</p>
+          {(() => { const profile=publishedHotelVerification(selectedName); return profile ? <div className="rounded-lg border border-sky-200 bg-sky-50 p-3 text-xs text-slate-800 space-y-2">
+            <p className="font-bold text-[#001F3F]">Public-source verification (18 Nov 2026)</p>
+            <p><strong>Published contact:</strong> {profile.email} ({profile.contactType})</p>
+            <p><strong>Phone:</strong> {profile.phone}</p>
+            <p><strong>Publicly advertised:</strong> {profile.publishedFacts.join("; ")}</p>
+            <p className="text-amber-900"><strong>Confirm with hotel:</strong> {profile.openQuestions.join("; ")}</p>
+            <div className="flex flex-wrap items-center gap-2"><a href={profile.source} target="_blank" rel="noopener noreferrer" className="text-blue-700 underline">Contact evidence</a><a href={profile.facilitiesSource} target="_blank" rel="noopener noreferrer" className="text-blue-700 underline">Facilities evidence</a>
+              <button type="button" onClick={()=>setVerifiedEmail(p=>({...p,[active]:profile.email}))} className="rounded border border-blue-300 bg-white px-2 py-1 font-semibold">Use published contact in draft</button></div>
+            <p className="text-slate-600">This research snapshot is not live monitoring, and the published address may be a general inbox. Check recipient and terms before approval. No message is sent or CRM record created.</p>
+          </div>:<p className="text-xs text-amber-800">No reviewed public contact profile yet for this hotel. Research its official site before entering a contact.</p>; })()}
+          <label className="block text-sm font-medium">Verified reservations email (optional; no sending)<input type="email" value={verifiedEmail[active]||""} onChange={e=>setVerifiedEmail(p=>({...p,[active]:e.target.value}))} placeholder="Only enter after checking an official source" className="mt-1 w-full rounded-lg border p-2"/></label>
+          <div className="rounded-lg bg-slate-50 p-3 text-xs text-slate-700"><strong>Preliminary capacity screen:</strong> {screenGroupCapacity(stay.rooms,leadEvidence(selectedName)?.totalRooms).message} {leadEvidence(selectedName)?.totalRooms ? `(${stay.rooms} rooms requested / ${leadEvidence(selectedName)?.totalRooms} published rooms)` : ""} <span className="block mt-1">Do not mark the 20-room allotment confirmed until the hotel replies.</span></div>
+          <p className="text-xs font-semibold text-slate-700">Supplier diligence checklist (your verification)</p>
+          {researchChecklist.filter(s=>!s.includes("Mass room")||stay.massRoom).map(item=><label key={item} className="flex items-start gap-2 text-xs"><input type="checkbox" checked={Boolean(checkStatus[active]?.[item])} onChange={e=>setCheckStatus(prev=>({...prev,[active]:{...(prev[active]||{}),[item]:e.target.checked}}))}/>{item}</label>)}
+          <section className="rounded-lg border border-slate-200 bg-slate-50 p-3 space-y-2">
+            <p className="text-xs font-semibold text-[#001F3F]">Supplier CRM research registration</p>
+            <p className="text-xs text-slate-600">After your explicit approval, a published-contact hotel lead can be stored as an INACTIVE research candidate, with evidence and source date. This is not a booking or email approval. Existing matches are checked for duplicates.</p>
+            {!chosen ? <div className="space-y-2 rounded border p-2 text-xs">
+              <p>Enter independently checked information from the hotel's official website or other attributable public evidence. This form does not perform live research.</p>
+              <label className="block">Country<input className="mt-1 w-full rounded border p-2" value={researchCountry[active] ?? countryForCity[stay.city] ?? ""} onChange={e=>setResearchCountry(p=>({...p,[active]:e.target.value}))}/></label>
+              <label className="block">Published phone<input className="mt-1 w-full rounded border p-2" value={researchPhone[active] ?? publishedHotelVerification(selectedLeadName)?.phone ?? ""} onChange={e=>setResearchPhone(p=>({...p,[active]:e.target.value}))}/></label>
+              <label className="block">Contact source HTTPS URL<input type="url" className="mt-1 w-full rounded border p-2" value={contactSource[active] ?? publishedHotelVerification(selectedLeadName)?.source ?? ""} onChange={e=>setContactSource(p=>({...p,[active]:e.target.value}))}/></label>
+              <label className="block">Facilities source HTTPS URL<input type="url" className="mt-1 w-full rounded border p-2" value={facilitiesSource[active] ?? publishedHotelVerification(selectedLeadName)?.facilitiesSource ?? ""} onChange={e=>setFacilitiesSource(p=>({...p,[active]:e.target.value}))}/></label>
+              <label className="flex gap-2"><input type="checkbox" checked={Boolean(contactChecked[active])} onChange={e=>setContactChecked(p=>({...p,[active]:e.target.checked}))}/>I independently checked the published contact and email</label>
+              <label className="flex gap-2"><input type="checkbox" checked={Boolean(facilitiesChecked[active])} onChange={e=>setFacilitiesChecked(p=>({...p,[active]:e.target.checked}))}/>I reviewed the hotel/facilities evidence; unconfirmed group amenities remain open questions</label>
+            </div> : null}
+            {!chosen ? <button type="button" disabled={crmSaving || Boolean(savedSupplierByStay[active])} onClick={()=>void saveApprovedLead()} className="rounded-lg bg-[#001F3F] px-3 py-2 text-xs font-semibold text-white disabled:opacity-50">{crmSaving?"Registering...":savedSupplierByStay[active]?"Research lead registered":"Approve & register research lead in CRM"}</button>:null}
+            {savedSupplierByStay[active]?<button type="button" className="block text-xs text-blue-700 underline" onClick={()=>window.location.reload()}>Refresh CRM hotel list to select the newly registered supplier</button>:null}
+            {savedSupplierByStay[active]?<Link href={`/admin/suppliers/${savedSupplierByStay[active]}`} className="block text-xs text-blue-700 underline">Open registered CRM record</Link>:null}
+            {crmSaveState?<p role="status" className="text-xs text-slate-700">{crmSaveState}</p>:null}
+          </section>
+          <p className="text-xs text-slate-600">Unapproved research selections and diligence checks stay in this browser session only. No message is sent. Supplier confirmations require actual offer evidence.</p>
+        </div>:null}
+      </section>
+
+    </div><div className="space-y-4 rounded-xl border bg-white p-5">
+      <h2 className="text-lg font-bold text-[#001F3F]">Approved hotel inquiry — draft only</h2>
+      <p className="text-sm text-slate-700">Hotel to approach: <strong>{selectedName || "Not selected"}</strong>. Contact email: <strong>{chosen?contactEmail(chosen)||"Not in CRM":leadEmail||"Not verified"}</strong>.</p>
+      {draft?.errors.length?<div role="alert" className="rounded-lg bg-red-50 p-3 text-sm text-red-700">{draft.errors.join("; ")}</div>:null}
+      <label className="block text-sm font-medium">Subject<input readOnly value={draft?.subject||""} className="mt-1 w-full rounded-lg border bg-slate-50 p-2"/></label>
+      <label className="block text-sm font-medium">Email body<textarea readOnly rows={23} value={draft?.body||""} className="mt-1 w-full rounded-lg border bg-slate-50 p-3 font-mono text-xs leading-5"/></label>
+      <div className="flex flex-wrap gap-2"><button type="button" disabled={Boolean(draft?.errors.length)||!selectedName} onClick={()=>void copy(`Selected hotel: ${selectedName}\nRecipient: ${chosen?contactEmail(chosen):leadEmail||"CONTACT NOT VERIFIED"}\n\n${draft?.subject}\n\n${draft?.body}`,"Inquiry")} className="rounded-lg bg-[#001F3F] px-4 py-2 text-sm font-semibold text-white disabled:opacity-40">Copy inquiry</button>{(chosen?contactEmail(chosen):leadEmail)?<button type="button" onClick={()=>void copy(chosen?contactEmail(chosen):leadEmail,"Recipient email")} className="rounded-lg border px-4 py-2 text-sm">Copy recipient email</button>:null}</div>
+      <p className="text-sm text-slate-600" role="status">{copyStatus||"Select a hotel or research lead before copying. No email is sent from this page."}</p>
+      {chosen?<HotelInquiryWorkspace key={`${active}:${chosen.id}:${stay.city}:${stay.checkIn}:${stay.checkOut}:${stay.rooms}:${stay.massRoom}`} tourId={tourId} hotel={chosen} stay={stay}/>:<p className="rounded-lg border p-3 text-sm text-slate-600">Select an existing Supplier CRM hotel above to save, approve and view inquiry history. Research leads must be registered in CRM first.</p>}
+    </div></div>:<p className="text-sm text-slate-600">No hotel stays found. Add a stay to begin.</p>}
+    <button type="button" onClick={()=>{setStays(v=>[...v,{city:"",checkIn:"",checkOut:"",rooms:20,massRoom:false}]);setActive(stays.length)}} className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-medium">+ Add hotel stay</button>
+  </div>;
+}

@@ -1,0 +1,68 @@
+import { Resend } from "resend";
+
+const RESEND_API_KEY =
+  process.env.RESEND_API_KEY;
+
+const FROM_EMAIL =
+  "Epoch Journeys <no-reply@epochjourneys.com>";
+
+type EmailAttachment = {
+  filename: string;
+  content: Buffer;
+};
+
+type SendEmailInput = {
+  to: string | string[];
+  cc?: string | string[];
+  bcc?: string | string[];
+  subject: string;
+  html: string;
+  text?: string;
+  attachments?: EmailAttachment[];
+};
+
+export async function sendEmail({
+  to,
+  cc,
+  bcc,
+  subject,
+  html,
+  text,
+  attachments,
+}: SendEmailInput) {
+  if (!RESEND_API_KEY) {
+    console.error(
+      "Missing RESEND_API_KEY",
+    );
+
+    return null;
+  }
+
+  try {
+    const resend =
+      new Resend(
+        RESEND_API_KEY,
+      );
+
+    const response =
+      await resend.emails.send({
+        from: FROM_EMAIL,
+        to,
+        cc,
+        bcc,
+        subject,
+        html,
+        text,
+        attachments,
+      });
+
+    return response;
+  } catch (err) {
+    console.error(
+      "Email send error:",
+      err,
+    );
+
+    return null;
+  }
+}

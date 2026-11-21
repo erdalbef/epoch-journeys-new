@@ -1,3 +1,4 @@
+import { resolveSupplierPaymentAmounts } from "@/lib/epoch-ai/finance/resolveSupplierPaymentAmounts";
 import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { revalidatePath } from "next/cache";
@@ -305,6 +306,8 @@ export async function POST(
           "amount",
         ),
       );
+
+    const bankDebitAmountRaw = stringValue(formData.get("bankDebitAmount"));
 
     const paymentDateRaw =
       stringValue(
@@ -621,20 +624,35 @@ export async function POST(
       );
     }
 
-    if (
-      bank.currency !==
-      payable.currency
-    ) {
+    const paymentAmounts = (() => {
+      try {
+        return {
+          value: resolveSupplierPaymentAmounts({
+            payableCurrency: payable.currency,
+            bankCurrency: bank.currency,
+            supplierAmount: amount,
+            bankDebitAmount: bankDebitAmountRaw || null,
+          }),
+          error: null,
+        };
+      } catch (error) {
+        return {
+          value: null,
+          error: error instanceof Error
+            ? error.message
+            : "Invalid multi-currency payment amounts.",
+        };
+      }
+    })();
+
+    if (!paymentAmounts.value) {
       return NextResponse.json(
-        {
-          error:
-            "Bank account currency must match the payable currency in this version.",
-        },
-        {
-          status: 400,
-        },
+        { error: paymentAmounts.error },
+        { status: 400 },
       );
     }
+
+    const resolvedPaymentAmounts = paymentAmounts.value;
 
     // ======================================================
     // OPTIONAL CONTRACT PAYMENT SCHEDULE
@@ -840,6 +858,37 @@ export async function POST(
     const result =
       await db.$transaction(
         async (tx) => {
+          // Serialize settlements for the same payable on PostgreSQL.
+          // All payment mutation routes must acquire this lock first.
+          const payableRows = await tx.$queryRaw<Array<{ id: string }>>`
+            SELECT "id" FROM "SupplierPayable"
+            WHERE "id" = ${payable.id} FOR UPDATE
+          `;
+          if (payableRows.length !== 1) {
+            throw new Error("Supplier payable no longer exists.");
+          }
+          const currentPayable = await tx.supplierPayable.findUnique({
+            where: { id: payable.id },
+            select: {
+              approvalStatus: true,
+              paymentStatus: true,
+              balance: true,
+              amountPaid: true,
+              approvedAmount: true,
+              creditAmount: true,
+            },
+          });
+          if (
+            !currentPayable ||
+            currentPayable.approvalStatus !== "APPROVED" ||
+            ["PAID", "CANCELLED"].includes(currentPayable.paymentStatus) ||
+            amount.gt(currentPayable.balance)
+          ) {
+            throw new Error(
+              "Supplier payable is no longer open or has insufficient outstanding balance.",
+            );
+          }
+
           // --------------------------------------------------
           // SUPPLIER PAYMENT
           // --------------------------------------------------
@@ -896,10 +945,8 @@ export async function POST(
                 status:
                   BankTransactionStatus.POSTED,
 
-                amount,
-
-                currency:
-                  payable.currency,
+                amount: resolvedPaymentAmounts.bankDebitAmount,
+                currency: bank.currency,
 
                 transactionDate:
                   paymentDate,
@@ -1076,7 +1123,7 @@ export async function POST(
           // --------------------------------------------------
 
           const nextAmountPaid =
-            payable.amountPaid.plus(
+            currentPayable.amountPaid.plus(
               amount,
             );
 
@@ -1086,9 +1133,9 @@ export async function POST(
                 0,
               ),
 
-              payable.approvedAmount
+              currentPayable.approvedAmount
                 .minus(
-                  payable.creditAmount,
+                  currentPayable.creditAmount,
                 )
                 .minus(
                   nextAmountPaid,

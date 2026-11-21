@@ -1,3 +1,5 @@
+import { isRegisteredEvidenceDocument } from "@/lib/epoch-ai/finance/isRegisteredEvidenceDocument";
+import { validateSupplierDocumentLink } from "@/lib/epoch-ai/finance/validateSupplierDocumentLink";
 import crypto from "crypto";
 import { readFile } from "fs/promises";
 import path from "path";
@@ -163,6 +165,21 @@ async function validateLinkedRecords(values: {
   supplierId: string | null;
 }) {
   const checks: Promise<boolean>[] = [];
+  if (values.supplierPayableId) {
+    const payable = await db.supplierPayable.findUnique({
+      where: { id: values.supplierPayableId },
+      select: { supplierId: true },
+    });
+
+    const link = validateSupplierDocumentLink({
+      documentSupplierId: values.supplierId,
+      payableId: values.supplierPayableId,
+      payableSupplierId: payable?.supplierId ?? null,
+    });
+
+    if (!link.valid) return false;
+  }
+
 
   if (values.expenseId) {
     checks.push(
@@ -456,6 +473,18 @@ export async function POST(
       return NextResponse.redirect(confirmUrl, 303);
     }
 
+    // Protect registered original evidence from every write action.
+    // The delete confirmation preview remains read-only.
+    if (
+      requestedAction !== "delete" &&
+      await isRegisteredEvidenceDocument(id)
+    ) {
+      return redirectToEdit(
+        request,
+        id,
+        "This document is registered commercial evidence and cannot be changed or deleted."
+      );
+    }
     if (requestedAction === "delete-confirmed") {
       const protectedDocument = await db.financeDocument.findUnique({
         where: { id },

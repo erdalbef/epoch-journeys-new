@@ -6,13 +6,39 @@ import { db } from "@/lib/db";
 import { getToursForQuoteForm } from "@/lib/quote-queries";
 import QuoteCreateForm from "@/components/quotes/QuoteCreateForm";
 
-export default async function NewQuotePage() {
+export default async function NewQuotePage({ searchParams }: { searchParams: Promise<{ requestId?: string }> }) {
   const session = await getServerSession(authOptions);
 
   if (!session?.user || session.user.role !== "ADMIN") {
     redirect("/admin-login");
   }
 
+  const { requestId } = await searchParams;
+  const request = requestId ? await db.customTourRequest.findUnique({
+    where: { id: requestId },
+    include: { user: { select: { id: true, fullName: true, email: true, travelAgency: true } } },
+  }) : null;
+  if (requestId && !request) redirect("/admin/custom-requests");
+  const requestPrefill = request ? {
+    requestId: request.id,
+    reference: request.requestReference,
+    agentId: request.userId,
+    title: request.requestName || request.title || request.groupName || "Quotation",
+    tourId: request.tourId,
+    recipientName: request.user.fullName || "",
+    recipientEmail: request.user.email,
+    company: request.companyName || request.user.travelAgency || "",
+    payingPax: request.estimatedPax, // Legacy property name; value is requested TOTAL group size.
+    complimentaryPax: request.complimentaryPlaces,
+    startDate: request.startDate?.toISOString().slice(0,10) || "",
+    endDate: request.endDate?.toISOString().slice(0,10) || "",
+    notes: [request.specialRequests, request.notes, request.extensionRequest, request.specialChurchRequests,
+      request.needsFlights ? "Package: Land + International Flights" : "Package: Land Only",
+      request.dailyMassRequested ? "Daily Mass requested" : "Daily Mass not requested",
+      request.priestTraveling ? "Priest traveling with group" : "",
+      request.guideLanguage ? `Guide language: ${request.guideLanguage}` : "",
+      request.datesFlexible ? "Travel dates flexible" : ""].filter(Boolean).join("\n"),
+  } : undefined;
   const tours = await getToursForQuoteForm();
 
   /*
@@ -93,6 +119,7 @@ export default async function NewQuotePage() {
       <QuoteCreateForm
         tours={tours}
         agents={agents}
+        requestPrefill={requestPrefill}
       />
     </div>
   );

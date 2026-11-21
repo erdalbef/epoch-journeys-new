@@ -1,5 +1,6 @@
 import { Prisma } from "@prisma/client";
 import { notFound } from "next/navigation";
+import Link from "next/link";
 
 import { db } from "@/lib/db";
 import QuoteActions from "./QuoteActions";
@@ -77,6 +78,19 @@ export default async function QuoteDetailPage({ params }: Props) {
             </p>
           </div>
         </div>
+      </div>
+
+      <div className="flex flex-wrap items-center gap-3 rounded-2xl border border-indigo-200 bg-indigo-50 p-4">
+        <Link
+          data-epoch-flexible-pricing-link="true"
+          href={`/admin/quotes/${id}/flexible-pricing`}
+          className="inline-flex rounded-lg bg-indigo-700 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-800"
+        >
+          Flexible Group Pricing
+        </Link>
+        <p className="text-sm text-slate-700">
+          Manage and approve alternative pilgrim group sizes and NET rates for this quotation.
+        </p>
       </div>
 
       <QuoteActions quote={quote} />

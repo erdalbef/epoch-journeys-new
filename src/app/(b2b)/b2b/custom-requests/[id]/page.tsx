@@ -7,9 +7,9 @@ import { authOptions } from "@/lib/authOptions";
 import { db } from "@/lib/db";
 
 type Props = {
-  params: {
+  params: Promise<{
     id: string;
-  };
+  }>;
 };
 
 function formatDate(value: Date | null) {
@@ -60,26 +60,35 @@ export default async function Page({ params }: Props) {
     redirect("/agent-login");
   }
 
-  const { id } = params;
+  const { id } = await params;
+  if (!id || typeof id !== "string") notFound();
 
-  const request = await db.customTourRequest.findFirst({
-    where: {
-      id,
-      userId: session.user.id,
-    },
+  const request = await db.customTourRequest.findUnique({
+    where: { id },
   });
 
-  if (!request) {
+  if (!request || request.userId !== session.user.id) {
     notFound();
   }
 
+  const agent = await db.user.findUnique({
+    where: { id: session.user.id },
+    select: { fullName: true, travelAgency: true, email: true },
+  });
+  const dateNotes = request.notes?.match(/Preferred travel dates: (\d{4}-\d{2}-\d{2}) to (\d{4}-\d{2}-\d{2})/);
+  const monthNotes = request.notes?.match(/Preferred travel month: ([^\n]+)/);
+  const start = request.startDate || (dateNotes ? new Date(dateNotes[1] + "T12:00:00Z") : null);
+  const end = request.endDate || (dateNotes ? new Date(dateNotes[2] + "T12:00:00Z") : null);
+  const mass = request.notes?.match(/Mass preference: ([^\n]+)/)?.[1];
+  const priest = request.notes?.match(/Priest \/ Chaplain: ([^\n]+)/)?.[1];
+  const notesClean = (request.notes || "").split("\n").filter(line => !/^(Preferred travel dates:|Preferred travel month:|Mass preference:|Priest \/ Chaplain:)/.test(line)).join("\n").trim();
   return (
     <div className="mx-auto max-w-6xl p-6 md:p-8">
       <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
         <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
           <div>
             <h1 className="text-2xl font-bold text-[#001F3F]">
-              Custom Request {request.requestReference}
+              Quote Request {request.requestReference}
             </h1>
             <p className="mt-2 text-sm text-slate-600">
               Review your tailor-made tour request details and current status.
@@ -127,7 +136,7 @@ export default async function Page({ params }: Props) {
                       request.status
                     )}`}
                   >
-                    {formatLabel(request.status)}
+                    {request.status === CustomRequestStatus.NEW ? "Request Received" : formatLabel(request.status)}
                   </span>
                 </div>
               </div>
@@ -175,6 +184,14 @@ export default async function Page({ params }: Props) {
           </div>
 
           <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+            <h2 className="text-xl font-semibold text-[#001F3F]">Agent Information</h2>
+            <div className="mt-5 grid gap-4 md:grid-cols-3 text-sm">
+              <div><div className="text-slate-500">Travel Agency</div><div className="font-medium">{agent?.travelAgency || "-"}</div></div>
+              <div><div className="text-slate-500">Agent Name</div><div className="font-medium">{agent?.fullName || session.user.name || "-"}</div></div>
+              <div><div className="text-slate-500">Agent Email</div><div className="font-medium">{agent?.email || session.user.email || "-"}</div></div>
+            </div>
+          </div>
+          <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
             <h2 className="text-xl font-semibold text-[#001F3F]">
               Travel Timing
             </h2>
@@ -182,16 +199,17 @@ export default async function Page({ params }: Props) {
             <div className="mt-6 grid gap-6 md:grid-cols-3">
               <div>
                 <div className="text-sm text-slate-500">Start Date</div>
-                <div className="font-medium">{formatDate(request.startDate)}</div>
+                <div className="font-medium">{formatDate(start)}</div>
               </div>
 
               <div>
                 <div className="text-sm text-slate-500">End Date</div>
-                <div className="font-medium">{formatDate(request.endDate)}</div>
+                <div className="font-medium">{formatDate(end)}</div>
               </div>
 
+              {monthNotes && !start && <div><div className="text-sm text-slate-500">Preferred Month</div><div className="font-medium">{monthNotes[1]}</div></div>}
               <div>
-                <div className="text-sm text-slate-500">Duration</div>
+                <div className="text-sm text-slate-500">Tour Duration</div>
                 <div className="font-medium">
                   {request.durationDays ? `${request.durationDays} days` : "-"}
                 </div>
@@ -200,112 +218,24 @@ export default async function Page({ params }: Props) {
           </div>
 
           <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-            <h2 className="text-xl font-semibold text-[#001F3F]">
-              Passenger & Group Details
-            </h2>
-
-            <div className="mt-6 grid gap-6 md:grid-cols-3">
-              <div>
-                <div className="text-sm text-slate-500">Estimated Pax</div>
-                <div className="font-medium">{request.estimatedPax ?? "-"}</div>
-              </div>
-
-              <div>
-                <div className="text-sm text-slate-500">Adults</div>
-                <div className="font-medium">{request.adults ?? "-"}</div>
-              </div>
-
-              <div>
-                <div className="text-sm text-slate-500">Children</div>
-                <div className="font-medium">{request.children ?? "-"}</div>
-              </div>
-
-              <div>
-                <div className="text-sm text-slate-500">Group Name</div>
-                <div className="font-medium">{request.groupName || "-"}</div>
-              </div>
-
-              <div>
-                <div className="text-sm text-slate-500">Group Leader</div>
-                <div className="font-medium">
-                  {request.groupLeaderName || "-"}
-                </div>
-              </div>
-            </div>
+            <h2 className="text-xl font-semibold text-[#001F3F]">Group Size</h2>
+            <p className="mt-4 text-sm text-slate-500">Approximate Paying Passengers</p>
+            <p className="font-medium">{request.estimatedPax ?? "-"}</p>
           </div>
-
-          <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-            <h2 className="text-xl font-semibold text-[#001F3F]">
-              Budget & Preferences
-            </h2>
-
-            <div className="mt-6 grid gap-6 md:grid-cols-3">
-              <div>
-                <div className="text-sm text-slate-500">Budget per Person</div>
-                <div className="font-medium">
-                  {formatMoney(request.budgetPerPerson, request.currency)}
-                </div>
-              </div>
-
-              <div>
-                <div className="text-sm text-slate-500">
-                  Accommodation Level
-                </div>
-                <div className="font-medium">
-                  {request.accommodationLevel || "-"}
-                </div>
-              </div>
-
-              <div>
-                <div className="text-sm text-slate-500">Room Preference</div>
-                <div className="font-medium">{request.roomPreference || "-"}</div>
-              </div>
-
-              <div>
-                <div className="text-sm text-slate-500">Include Flights</div>
-                <div className="font-medium">
-                  {request.needsFlights ? "Yes" : "No"}
-                </div>
-              </div>
-
-              <div>
-                <div className="text-sm text-slate-500">Land Only</div>
-                <div className="font-medium">
-                  {request.landOnly ? "Yes" : "No"}
-                </div>
+          {(mass || priest || request.specialChurchRequests || request.guideLanguage) && (
+            <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+              <h2 className="text-xl font-semibold text-[#001F3F]">Pilgrimage &amp; Spiritual Requirements</h2>
+              <div className="mt-4 space-y-2 text-sm">
+                {mass && <p><span className="text-slate-500">Mass:</span> {mass}</p>}
+                {priest && <p><span className="text-slate-500">Priest / Chaplain:</span> {priest}</p>}
+                {request.guideLanguage && <p><span className="text-slate-500">Guide Language:</span> {request.guideLanguage}</p>}
+                {request.specialChurchRequests && <p><span className="text-slate-500">Churches / Shrines:</span> {request.specialChurchRequests}</p>}
               </div>
             </div>
-          </div>
-
+          )}
           <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-            <h2 className="text-xl font-semibold text-[#001F3F]">
-              Contact Information
-            </h2>
-
-            <div className="mt-6 grid gap-6 md:grid-cols-3">
-              <div>
-                <div className="text-sm text-slate-500">Contact Name</div>
-                <div className="font-medium">{request.customerName || "-"}</div>
-              </div>
-
-              <div>
-                <div className="text-sm text-slate-500">Contact Email</div>
-                <div className="font-medium">{request.customerEmail || "-"}</div>
-              </div>
-
-              <div>
-                <div className="text-sm text-slate-500">Contact Phone</div>
-                <div className="font-medium">{request.customerPhone || "-"}</div>
-              </div>
-            </div>
-          </div>
-
-          <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-            <h2 className="text-xl font-semibold text-[#001F3F]">Notes</h2>
-
-            <div className="mt-4 rounded-lg bg-slate-50 p-4 text-sm text-slate-700">
-              {request.notes || "No notes provided."}
-            </div>
+            <h2 className="text-xl font-semibold text-[#001F3F]">Special / Additional Requests</h2>
+            <p className="mt-4 whitespace-pre-wrap text-sm text-slate-700">{[request.specialRequests, notesClean].filter(Boolean).join("\n") || "No additional requests."}</p>
           </div>
 
           {request.adminReply ? (
@@ -342,7 +272,7 @@ export default async function Page({ params }: Props) {
                     request.status
                   )}`}
                 >
-                  {formatLabel(request.status)}
+                  {request.status === CustomRequestStatus.NEW ? "Request Received" : formatLabel(request.status)}
                 </span>
               </div>
 
@@ -365,12 +295,7 @@ export default async function Page({ params }: Props) {
                 </span>
               </div>
 
-              <div className="flex items-center justify-between gap-4">
-                <span className="text-slate-500">Budget</span>
-                <span className="font-medium">
-                  {formatMoney(request.budgetPerPerson, request.currency)}
-                </span>
-              </div>
+
             </div>
           </div>
 

@@ -46,7 +46,7 @@ export default async function CustomRequestsPage() {
       <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h1 className="text-2xl font-bold text-slate-900">
-            Custom Tour Requests
+            My Requests
           </h1>
           <p className="mt-1 text-sm text-slate-600">
             View and manage your tailor-made tour requests.
@@ -87,7 +87,7 @@ export default async function CustomRequestsPage() {
                     Reference
                   </th>
                   <th className="px-4 py-3 text-left font-semibold text-slate-700">
-                    Destination
+                    Tour
                   </th>
                   <th className="px-4 py-3 text-left font-semibold text-slate-700">
                     Pax
@@ -117,7 +117,7 @@ export default async function CustomRequestsPage() {
                     </td>
 
                     <td className="px-4 py-4 text-slate-700">
-                      {request.destination || "-"}
+                      {request.title || request.destination || "-"}
                     </td>
 
                     <td className="px-4 py-4 text-slate-700">
@@ -130,7 +130,7 @@ export default async function CustomRequestsPage() {
                           request.status
                         )}`}
                       >
-                        {formatStatus(request.status)}
+                        {request.status === "NEW" ? "Request Received" : formatStatus(request.status)}
                       </span>
                     </td>
 

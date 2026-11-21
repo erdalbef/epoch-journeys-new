@@ -1,8 +1,16 @@
 "use client";
 
 import Image from "next/image";
+import EpochItineraryAssistant from "@/components/admin/epoch-ai/EpochItineraryAssistant";
+import EpochTourDocumentImport from "@/components/admin/epoch-ai/EpochTourDocumentImport";
+import EpochPilgrimageStoryAssistant from "@/components/admin/epoch-ai/EpochPilgrimageStoryAssistant";
+import type { PilgrimageStoryDraft } from "@/lib/epoch-ai/pilgrimageStoryDraft";
+import { summarizeMealPlan } from "@/lib/epoch-ai/pilgrimageMealPolicy";
+import { readDailyMealsFromItinerary, mergeDailyMealsIntoItinerary, missingMealDayHeadings } from "@/lib/epoch-ai/persistDailyMeals";
+import type { TourImportDraft } from "@/lib/epoch-ai/tourImportDraft";
+import { proposeTourInclusions, type InclusionProposal } from "@/lib/epoch-ai/proposeTourInclusions";
 import { useMemo, useState } from "react";
-import type { ReactNode } from "react";
+import type { FormEvent, ReactNode } from "react";
 import {
   BookOpen,
   Church,
@@ -480,6 +488,91 @@ export default function TourForm({
   initialValues,
   initialImages,
 }: TourFormProps) {
+  const [activeStep, setActiveStep] = useState(0);
+  const steps = ["Tour Essentials", "AI & Itinerary", "Travel & Accommodation", "Review & Save"];
+  const [stepError, setStepError] = useState("");
+  const [tourTitle, setTourTitle] = useState(initialValues?.title ?? "");
+  const [destinationsText, setDestinationsText] = useState(joinArray(initialValues?.destinations));
+  const [arrivalCity, setArrivalCity] = useState(initialValues?.arrivalCity ?? "");
+  const [departureCity, setDepartureCity] = useState(initialValues?.departureCity ?? "");
+  const [importedTour, setImportedTour] = useState<TourImportDraft | null>(null);
+  const [subtitle, setSubtitle] = useState(initialValues?.subtitle ?? "");
+  const [internalTags, setInternalTags] = useState(joinArray(initialValues?.tags));
+  const [shortDescription, setShortDescription] = useState(initialValues?.shortDescription ?? "");
+  const [overviewStory, setOverviewStory] = useState(initialValues?.overview ?? "");
+  const [tourIntroduction, setTourIntroduction] = useState(initialValues?.tourIntroduction ?? "");
+  const [tourSignificance, setTourSignificance] = useState(initialValues?.tourSignificance ?? "");
+  const [whyWeOffer, setWhyWeOffer] = useState(initialValues?.whyWeOfferThisTour ?? "");
+  const [destinationBriefs, setDestinationBriefs] = useState(initialValues?.destinationBriefs ?? "");
+  const [mealPlan, setMealPlan] = useState(initialValues?.mealPlan ?? "");
+  const [storyNotes, setStoryNotes] = useState<string[]>([]);
+  const [mealLines, setMealLines] = useState<PilgrimageStoryDraft["dailyMeals"]>(() => readDailyMealsFromItinerary(initialValues?.itinerary ?? ""));
+  const [storyExpanded, setStoryExpanded] = useState(false);
+  const [storySource, setStorySource] = useState<"none" | "draft">("none");
+  function applyStory(story: PilgrimageStoryDraft) {
+    setSubtitle(story.subtitle);
+    setThemes(story.themes.join(", "));
+    setInternalTags(story.tags.join(", "));
+    setShortDescription(story.shortDescription);
+    setOverviewStory(story.overview);
+    setTourIntroduction(story.tourIntroduction);
+    setTourSignificance(story.tourSignificance);
+    setWhyWeOffer(story.whyWeOfferThisTour);
+    setDestinationBriefs(story.destinationBriefs);
+    setHighlights(story.highlights.join(", "));
+    setMealPlan(summarizeMealPlan(story.dailyMeals));
+    setStoryNotes(story.reviewNotes);
+    setMealLines(story.dailyMeals);
+    setStoryExpanded(true);
+    setStorySource("draft");
+  }
+  function changeMealStatus(day: number, meal: "breakfast" | "lunch" | "dinner", status: "Included" | "Own" | "?") {
+    // An included lunch is a commercial choice and requires explicit approval.
+    if (meal === "lunch" && status === "Included" && !window.confirm(`Approve included lunch on Day ${day}? Ensure quotation costs and supplier arrangements are updated separately.`)) return;
+    const revised = mealLines.map((entry) => entry.day === day ? { ...entry, [meal]: status } : entry);
+    setMealLines(revised);
+    setMealPlan(summarizeMealPlan(revised));
+  }
+  function addMealsToItinerary() {
+    if (!mealLines.length || !window.confirm("Show the reviewed meal markers in the editable daily itinerary? Saving the Tour is still a separate action.")) return;
+    const missing = missingMealDayHeadings(itineraryText, mealLines);
+    if (missing.length) {
+      setStepError(`Cannot add meals: day heading(s) missing for Day ${missing.join(", ")}. Review the daily itinerary.`);
+      return;
+    }
+    setItineraryText(mergeDailyMealsIntoItinerary(itineraryText, mealLines));
+    setStepError("");
+  }
+  function validateBeforeSave(event: FormEvent<HTMLFormElement>) {
+    if (missingMealHeadings.length) {
+      event.preventDefault();
+      setStepError(`Cannot save daily meal choices: missing Day ${missingMealHeadings.join(", ")} heading(s). Review Step 2.`);
+      setActiveStep(1);
+      window.scrollTo({ top: 0, behavior: "smooth" });
+    }
+  }
+  function applyImportedTour(draft: TourImportDraft) {
+    setImportedTour(draft);
+    setTourTitle(draft.title);
+    setDestinationsText(draft.destinations.join(", "));
+    setTourDuration(draft.duration);
+    setArrivalCity(draft.arrivalCity);
+    setDepartureCity(draft.departureCity);
+    setItineraryText(draft.itinerary);
+    setOverviewItineraryText(draft.overviewItinerary);
+    setStepError("");
+    setActiveStep(0);
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  }
+  function goToStep(next: number) {
+    if (next > activeStep && activeStep === 0 && (!tourTitle.trim() || !destinationsText.trim() || tourDuration < 1)) {
+      setStepError("Enter a title, destination and valid duration before continuing.");
+      return;
+    }
+    setStepError("");
+    setActiveStep(next);
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  }
   // ==========================================================
   // STORY STATES
   // ==========================================================
@@ -538,6 +631,17 @@ export default function TourForm({
     ),
   );
 
+  const [commercialProposal, setCommercialProposal] = useState<InclusionProposal | null>(null);
+  function prepareCommercialProposal() {
+    setCommercialProposal(proposeTourInclusions(itineraryText, mealLines));
+  }
+  function applyCommercialProposal() {
+    if (!commercialProposal || !window.confirm("Apply the reviewed inclusion/exclusion proposal to the editable Tour form? Saving requires Update Journey separately.")) return;
+    setInclusions(commercialProposal.inclusions.join(", "));
+    setExclusions(commercialProposal.exclusions.join(", "));
+    setCommercialProposal(null);
+  }
+
   const [
     accommodations,
     setAccommodations,
@@ -582,6 +686,13 @@ export default function TourForm({
     initialValues?.singleSupplementFrom ??
       "",
   );
+
+  // AI-generated drafts use the same stored master-tour fields as manual edits.
+  const [tourDuration, setTourDuration] = useState<number>(initialValues?.duration ?? 10);
+  const [itineraryText, setItineraryText] = useState(initialValues?.itinerary ?? "");
+  const [overviewItineraryText, setOverviewItineraryText] = useState(initialValues?.overviewItinerary ?? "");
+  const missingMealHeadings = useMemo(() => missingMealDayHeadings(itineraryText, mealLines), [itineraryText, mealLines]);
+  const itineraryForSave = useMemo(() => mergeDailyMealsIntoItinerary(itineraryText, mealLines), [itineraryText, mealLines]);
 
   // ==========================================================
   // MEDIA
@@ -740,6 +851,7 @@ export default function TourForm({
   return (
     <form
       action={action}
+      onSubmit={validateBeforeSave}
       className="space-y-7"
     >
       {/* ====================================================
@@ -850,6 +962,19 @@ export default function TourForm({
         </div>
       </div>
 
+      <div className="rounded-2xl border border-slate-200 bg-white p-4">
+        <div className="grid grid-cols-2 gap-2 md:grid-cols-4">
+          {steps.map((label, index) => (
+            <button key={label} type="button" onClick={() => goToStep(index)}
+              className={`rounded-xl px-3 py-3 text-left text-sm font-semibold ${activeStep === index ? "bg-[#001F3F] text-white" : "bg-slate-100 text-slate-700 hover:bg-slate-200"}`}>
+              <span className="mr-2 opacity-70">{index + 1}.</span>{label}
+            </button>
+          ))}
+        </div>
+        {stepError && <p role="alert" className="mt-3 text-sm font-semibold text-red-700">{stepError}</p>}
+      </div>
+      <div hidden={activeStep !== 0} className="space-y-7">
+      {mode === "create" && <EpochTourDocumentImport onApply={applyImportedTour} />}
       {/* ====================================================
           01 JOURNEY IDENTITY
       ==================================================== */}
@@ -870,10 +995,8 @@ export default function TourForm({
               id="title"
               name="title"
               required
-              defaultValue={
-                initialValues?.title ??
-                ""
-              }
+              value={tourTitle}
+              onChange={(event) => setTourTitle(event.target.value)}
               className={inputClass}
               placeholder="Footsteps of St. Paul: Greece & Turkey"
             />
@@ -893,10 +1016,8 @@ export default function TourForm({
             <input
               id="subtitle"
               name="subtitle"
-              defaultValue={
-                initialValues?.subtitle ??
-                ""
-              }
+              value={subtitle}
+              onChange={(event) => setSubtitle(event.target.value)}
               className={inputClass}
               placeholder="An apostolic journey through the lands where the early Church took root"
             />
@@ -919,10 +1040,8 @@ export default function TourForm({
                 type="number"
                 min="1"
                 required
-                defaultValue={
-                  initialValues?.duration ??
-                  10
-                }
+                value={tourDuration}
+                onChange={(event) => setTourDuration(Number(event.target.value))}
                 className={inputClass}
               />
 
@@ -955,10 +1074,8 @@ export default function TourForm({
 
             <input
               name="arrivalCity"
-              defaultValue={
-                initialValues?.arrivalCity ??
-                ""
-              }
+              value={arrivalCity}
+                onChange={(event) => setArrivalCity(event.target.value)}
               className={inputClass}
               placeholder="Athens"
             />
@@ -971,10 +1088,8 @@ export default function TourForm({
 
             <input
               name="departureCity"
-              defaultValue={
-                initialValues?.departureCity ??
-                ""
-              }
+              value={departureCity}
+                onChange={(event) => setDepartureCity(event.target.value)}
               className={inputClass}
               placeholder="Istanbul"
             />
@@ -988,9 +1103,8 @@ export default function TourForm({
             <input
               id="destinations"
               name="destinations"
-              defaultValue={joinArray(
-                initialValues?.destinations,
-              )}
+              value={destinationsText}
+              onChange={(event) => setDestinationsText(event.target.value)}
               className={inputClass}
               placeholder="Greece, Turkey"
             />
@@ -1045,9 +1159,8 @@ export default function TourForm({
             <input
               id="tags"
               name="tags"
-              defaultValue={joinArray(
-                initialValues?.tags,
-              )}
+              value={internalTags}
+              onChange={(event) => setInternalTags(event.target.value)}
               className={inputClass}
               placeholder="St Paul, Greece, Turkey, Catholic, Biblical"
             />
@@ -1061,149 +1174,96 @@ export default function TourForm({
         </div>
       </JourneySection>
 
+      </div>
+      <div hidden={activeStep !== 1} className="space-y-7">
       {/* ====================================================
-          02 STORY
+          06 DAY BY DAY
       ==================================================== */}
 
       <JourneySection
         number="02"
-        eyebrow="Tell the Story"
-        title="Create the emotional foundation"
-        description="This is the master narrative from which agent pages, brochures and sales material can eventually be generated."
+        eyebrow="Day-by-Day Journey"
+        title="Tell the pilgrimage day by day"
+        description="For now, keep the full narrative here. Later this can become structured Day 1 / Day 2 / Day 3 records."
       >
-        <div className="grid gap-6">
-          <label>
-            <FieldLabel>
-              Short Agent Summary
-            </FieldLabel>
+        <div className="rounded-xl border border-amber-200 bg-amber-50 p-4">
+          <div className="flex gap-3">
+            <BookOpen className="mt-0.5 h-5 w-5 shrink-0 text-amber-700" />
 
-            <textarea
-              id="shortDescription"
-              name="shortDescription"
-              defaultValue={
-                initialValues?.shortDescription ??
-                ""
-              }
-              className={
-                textareaClass
-              }
-              rows={3}
-              placeholder="In two or three sentences, explain what makes this pilgrimage special."
-            />
+            <div>
+              <p className="font-semibold text-amber-950">
+                Write for the pilgrim,
+                not the database
+              </p>
 
-            <HelperText>
-              This should work on a tour
-              card or agent search result.
-            </HelperText>
-          </label>
-
-          <label>
-            <FieldLabel>
-              Journey Overview
-            </FieldLabel>
-
-            <textarea
-              id="overview"
-              name="overview"
-              defaultValue={
-                initialValues?.overview ??
-                ""
-              }
-              className={
-                textareaClass
-              }
-              rows={5}
-              placeholder="Give the travel advisor a clear, inspiring overview of the pilgrimage."
-            />
-          </label>
-
-          <label>
-            <FieldLabel>
-              The Journey Begins
-            </FieldLabel>
-
-            <textarea
-              id="tourIntroduction"
-              name="tourIntroduction"
-              defaultValue={
-                initialValues?.tourIntroduction ??
-                ""
-              }
-              className={
-                textareaClass
-              }
-              rows={6}
-              placeholder="Open the story. What are the pilgrims about to experience, discover and reflect upon?"
-            />
-
-            <HelperText>
-              Write this as narrative,
-              not as a technical itinerary.
-            </HelperText>
-          </label>
-
-          <label>
-            <FieldLabel>
-              Why This Journey Matters
-            </FieldLabel>
-
-            <textarea
-              id="tourSignificance"
-              name="tourSignificance"
-              defaultValue={
-                initialValues?.tourSignificance ??
-                ""
-              }
-              className={
-                textareaClass
-              }
-              rows={6}
-              placeholder="Explain the biblical, historical, spiritual, Marian or apostolic significance of the journey."
-            />
-          </label>
-
-          <label>
-            <FieldLabel>
-              Why Epoch Offers This Journey
-            </FieldLabel>
-
-            <textarea
-              id="whyWeOfferThisTour"
-              name="whyWeOfferThisTour"
-              defaultValue={
-                initialValues?.whyWeOfferThisTour ??
-                ""
-              }
-              className={
-                textareaClass
-              }
-              rows={5}
-              placeholder="Explain the philosophy behind the itinerary and what Epoch has intentionally designed differently."
-            />
-          </label>
-
-          <label>
-            <FieldLabel>
-              Destination Story & Context
-            </FieldLabel>
-
-            <textarea
-              id="destinationBriefs"
-              name="destinationBriefs"
-              defaultValue={
-                initialValues?.destinationBriefs ??
-                ""
-              }
-              className={
-                textareaClass
-              }
-              rows={5}
-              placeholder="Provide brief context about the principal regions, cities and sacred destinations."
-            />
-          </label>
+              <p className="mt-1 text-sm leading-6 text-amber-800">
+                Use descriptive day
+                titles, explain why
+                places matter, and
+                connect the days into a
+                coherent spiritual
+                journey.
+              </p>
+            </div>
+          </div>
         </div>
+
+        <EpochPilgrimageStoryAssistant
+          title={tourTitle}
+          duration={tourDuration}
+          destinations={destinationsText}
+          itinerary={itineraryText}
+          onApply={applyStory}
+        />
+        {mealLines.length > 0 && <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50 p-4 text-sm">
+          <p className="font-semibold text-[#001F3F]">Daily meal decisions — retained with your saved Tour</p>
+          <p className="mt-1 text-xs text-slate-600">These choices will be saved with the itinerary when you click Update Journey or Create Journey. Reopening a saved draft restores them. B/D are planned package inclusions; approve individual L inclusions. Supplier confirmation is separate.</p>
+          <div className="mt-3 space-y-2">{mealLines.map((m) => <div key={m.day} className="grid items-center gap-2 rounded-lg border border-slate-200 bg-white p-2 sm:grid-cols-[85px_repeat(3,minmax(0,1fr))]">
+            <span className="font-semibold">Day {m.day}</span>
+            {(["breakfast", "lunch", "dinner"] as const).map((meal) => <label key={meal} className="text-xs font-medium text-slate-600">
+              {meal === "breakfast" ? "🍳 Breakfast (B)" : meal === "lunch" ? "🥗 Lunch (L)" : "🍽️ Dinner (D)"}
+              <select aria-label={`Day ${m.day} ${meal}`} value={m[meal]} onChange={(e) => changeMealStatus(m.day, meal, e.target.value as "Included" | "Own" | "?")} className="mt-1 block w-full rounded border border-slate-300 bg-white px-2 py-2 text-sm text-slate-900">
+                <option value="Included">Included (planned)</option><option value="Own">At own expense</option><option value="?">Review / not confirmed</option>
+              </select>
+            </label>)}
+          </div>)}</div>
+          <p className="mt-2 text-xs text-slate-600"><strong>Current meal plan:</strong> {mealPlan}</p>
+          <button type="button" onClick={addMealsToItinerary} className="mt-3 rounded-lg border border-slate-300 bg-white px-4 py-2 font-semibold">Show meal markers in the itinerary editor</button>
+          {missingMealHeadings.length > 0 && <p role="alert" className="mt-2 text-sm text-red-700">Missing day headings: {missingMealHeadings.join(", ")}. Please correct before saving meal decisions.</p>}
+        </div>}
+
+        <EpochItineraryAssistant
+          importedTour={importedTour}
+          currentItinerary={itineraryText}
+          currentOverview={overviewItineraryText}
+          tourDuration={tourDuration}
+          isPublished={Boolean(initialValues?.isPublished)}
+          onApply={(itinerary, overview) => {
+            setItineraryText(itinerary);
+            setOverviewItineraryText(overview);
+          }}
+        />
+
+        <input type="hidden" name="itinerary" value={itineraryForSave} />
+        <textarea
+          id="itinerary"
+          value={itineraryText}
+          onChange={(event) => setItineraryText(event.target.value)}
+          className={`${textareaClass} mt-5`}
+          rows={18}
+          placeholder={`Day 1 — Arrive Athens
+Welcome to Greece and begin the pilgrimage...
+
+Day 2 — Athens: In the Footsteps of St. Paul
+Visit the Acropolis, Mars Hill and the ancient Agora...
+
+Day 3 — Corinth
+Travel to ancient Corinth where Paul lived and preached...`}
+        />
       </JourneySection>
 
+      </div>
+      <div hidden={activeStep !== 2} className="space-y-7">
       {/* ====================================================
           03 SPIRITUAL EXPERIENCE
       ==================================================== */}
@@ -1337,6 +1397,329 @@ export default function TourForm({
       </JourneySection>
 
       {/* ====================================================
+          05 JOURNEY AT A GLANCE
+      ==================================================== */}
+
+      <JourneySection
+        number="05"
+        eyebrow="Journey at a Glance"
+        title="Summarize the Epoch experience"
+        description="Capture the practical characteristics an advisor needs when deciding whether the pilgrimage suits a particular group."
+      >
+        <div className="grid gap-5 md:grid-cols-2">
+          <label>
+            <FieldLabel>
+              Hotel Standard
+            </FieldLabel>
+
+            <input
+              name="hotelStandard"
+              defaultValue={
+                initialValues?.hotelStandard ??
+                ""
+              }
+              className={inputClass}
+              placeholder="Carefully selected 4-star hotels"
+            />
+          </label>
+
+          <label>
+            <FieldLabel>
+              Meal Plan
+            </FieldLabel>
+
+            <input
+              name="mealPlan"
+              value={mealPlan}
+              onChange={(event) => setMealPlan(event.target.value)}
+              className={inputClass}
+              placeholder="Breakfast daily and selected dinners"
+            />
+          </label>
+
+          <label className="md:col-span-2">
+            <FieldLabel>
+              Transportation Summary
+            </FieldLabel>
+
+            <input
+              name="transportationSummary"
+              defaultValue={
+                initialValues?.transportationSummary ??
+                ""
+              }
+              className={inputClass}
+              placeholder="Private air-conditioned coach with internal flights or ferries where required"
+            />
+          </label>
+
+          <label className="md:col-span-2">
+            <FieldLabel>
+              Journey at a Glance
+            </FieldLabel>
+
+            <textarea
+              id="overviewItinerary"
+              name="overviewItinerary"
+              value={overviewItineraryText}
+              onChange={(event) => setOverviewItineraryText(event.target.value)}
+              className={
+                textareaClass
+              }
+              rows={5}
+              placeholder="Athens • Corinth • Thessaloniki • Philippi • Kavala • Istanbul • Ephesus..."
+            />
+
+            <HelperText>
+              Keep this compact enough to
+              use as a brochure overview.
+            </HelperText>
+          </label>
+        </div>
+      </JourneySection>
+
+      </div>
+      <div hidden={activeStep !== 3} className="space-y-7">
+      {/* ====================================================
+          12 REVIEW & PUBLISH
+      ==================================================== */}
+
+      <section className="rounded-2xl border border-slate-200 bg-white p-5 sm:p-7 space-y-3">
+        <h2 className="text-lg font-bold text-[#001F3F]">Review the pilgrimage before saving</h2>
+        <p className="text-sm text-slate-600">{storySource === "draft" ? "AI story prepared and inserted into editable fields." : "Existing saved story fields are shown below; regenerate only when needed."} Source itinerary remains under your control.</p>
+        <dl className="grid gap-3 text-sm md:grid-cols-2">
+          <div><dt className="font-semibold">Title</dt><dd>{tourTitle || "Missing"}</dd></div>
+          <div><dt className="font-semibold">Duration</dt><dd>{tourDuration} days</dd></div>
+          <div><dt className="font-semibold">Route</dt><dd>{arrivalCity || "Not entered"} → {departureCity || "Not entered"}</dd></div>
+          <div><dt className="font-semibold">Destinations</dt><dd>{destinationsText || "Missing"}</dd></div>
+          <div><dt className="font-semibold">Subtitle</dt><dd>{subtitle || "Not prepared"}</dd></div>
+          <div><dt className="font-semibold">Day-by-day program</dt><dd>{itineraryText ? "Entered — inspect Step 2 for full details" : "Missing"}</dd></div>
+          <div><dt className="font-semibold">Hotel nights</dt><dd>{importedTour?.hotelNights ?? "Not independently verified in this session"}</dd></div>
+          <div><dt className="font-semibold">Meals</dt><dd>{mealPlan || "Not confirmed"}</dd></div>
+        </dl>
+        <p className="text-sm"><strong>Journey overview:</strong> {overviewStory || "Missing — generate or enter the pilgrimage story before publishing."}</p>
+        <p className="text-sm"><strong>Daily meal review:</strong> {mealLines.length ? `${mealLines.length} day labels prepared` : "No saved meal markers detected"}.</p>
+        <p className="text-sm"><strong>Inclusions:</strong> {inclusions || "Not entered — review Step 4 commercial fields before publishing."}</p>
+        <p className="text-sm"><strong>Exclusions:</strong> {exclusions || "Not entered — review Step 4 commercial fields before publishing."}</p>
+        {([...importedTour?.reviewNotes ?? [], ...storyNotes]).length > 0 && <div className="rounded-xl border border-amber-200 p-3 text-sm"><strong>Unresolved review notes</strong><ul className="list-disc pl-5">{[...importedTour?.reviewNotes ?? [], ...storyNotes].map((note, i) => <li key={i}>{note}</li>)}</ul></div>}
+        <p className="text-sm font-medium text-[#8B0000]">Creating or updating a draft requires your deliberate click. Publishing is a separate decision.</p>
+      </section>
+
+      <JourneySection
+        number="04"
+        eyebrow="Review & Publish"
+        title="Control how the journey is released"
+        description="A journey can remain a draft while content, pricing and media are being prepared."
+      >
+        {mode === "edit" && <div className="grid gap-4 md:grid-cols-2">
+          <label className="flex cursor-pointer items-start gap-3 rounded-xl border border-slate-200 p-4 transition hover:border-[#8B0000]">
+            <input
+              type="checkbox"
+              name="isPublished"
+              defaultChecked={
+                initialValues?.isPublished ??
+                false
+              }
+              className="mt-1 h-4 w-4"
+            />
+
+            <div>
+              <p className="font-semibold text-[#001F3F]">
+                Publish to Agents
+              </p>
+
+              <p className="mt-1 text-xs leading-5 text-slate-500">
+                Make this journey
+                available in the B2B
+                tour catalogue when its
+                content is ready.
+              </p>
+            </div>
+          </label>
+
+          <label className="flex cursor-pointer items-start gap-3 rounded-xl border border-slate-200 p-4 transition hover:border-[#8B0000]">
+            <input
+              type="checkbox"
+              name="featured"
+              defaultChecked={
+                initialValues?.featured ??
+                false
+              }
+              className="mt-1 h-4 w-4"
+            />
+
+            <div>
+              <p className="font-semibold text-[#001F3F]">
+                Featured Journey
+              </p>
+
+              <p className="mt-1 text-xs leading-5 text-slate-500">
+                Give the journey
+                additional prominence
+                in agent-facing areas.
+              </p>
+            </div>
+          </label>
+        </div>}
+
+        <div className="mt-5 rounded-xl border border-emerald-200 bg-emerald-50 p-4">
+          <div className="flex gap-3">
+            <Sparkles className="mt-0.5 h-5 w-5 shrink-0 text-emerald-700" />
+
+            <div>
+              <p className="font-semibold text-emerald-950">
+                Next commercial step
+              </p>
+
+              <p className="mt-1 text-sm leading-6 text-emerald-800">
+                After the journey is
+                created, seasonal rate
+                guidance can be added
+                before preparing
+                official group
+                quotations.
+              </p>
+            </div>
+          </div>
+        </div>
+      </JourneySection>
+
+        {(
+          <details open={storyExpanded} onToggle={(event) => setStoryExpanded(event.currentTarget.open)} className="rounded-2xl border border-slate-200 bg-white p-5">
+            <summary className="cursor-pointer font-semibold text-[#001F3F]">Pilgrimage story, highlights and other tour details</summary>
+            <div className="mt-5 space-y-7">
+      {/* ====================================================
+          02 STORY
+      ==================================================== */}
+
+      <JourneySection
+        number="02"
+        eyebrow="Tell the Story"
+        title="Create the emotional foundation"
+        description="This is the master narrative from which agent pages, brochures and sales material can eventually be generated."
+      >
+        <div className="grid gap-6">
+          <label>
+            <FieldLabel>
+              Short Agent Summary
+            </FieldLabel>
+
+            <textarea
+              id="shortDescription"
+              name="shortDescription"
+              value={shortDescription}
+              onChange={(event) => setShortDescription(event.target.value)}
+              className={
+                textareaClass
+              }
+              rows={3}
+              placeholder="In two or three sentences, explain what makes this pilgrimage special."
+            />
+
+            <HelperText>
+              This should work on a tour
+              card or agent search result.
+            </HelperText>
+          </label>
+
+          <label>
+            <FieldLabel>
+              Journey Overview
+            </FieldLabel>
+
+            <textarea
+              id="overview"
+              name="overview"
+              value={overviewStory}
+              onChange={(event) => setOverviewStory(event.target.value)}
+              className={
+                textareaClass
+              }
+              rows={5}
+              placeholder="Give the travel advisor a clear, inspiring overview of the pilgrimage."
+            />
+          </label>
+
+          <label>
+            <FieldLabel>
+              The Journey Begins
+            </FieldLabel>
+
+            <textarea
+              id="tourIntroduction"
+              name="tourIntroduction"
+              value={tourIntroduction}
+              onChange={(event) => setTourIntroduction(event.target.value)}
+              className={
+                textareaClass
+              }
+              rows={6}
+              placeholder="Open the story. What are the pilgrims about to experience, discover and reflect upon?"
+            />
+
+            <HelperText>
+              Write this as narrative,
+              not as a technical itinerary.
+            </HelperText>
+          </label>
+
+          <label>
+            <FieldLabel>
+              Why This Journey Matters
+            </FieldLabel>
+
+            <textarea
+              id="tourSignificance"
+              name="tourSignificance"
+              value={tourSignificance}
+              onChange={(event) => setTourSignificance(event.target.value)}
+              className={
+                textareaClass
+              }
+              rows={6}
+              placeholder="Explain the biblical, historical, spiritual, Marian or apostolic significance of the journey."
+            />
+          </label>
+
+          <label>
+            <FieldLabel>
+              Why Epoch Offers This Journey
+            </FieldLabel>
+
+            <textarea
+              id="whyWeOfferThisTour"
+              name="whyWeOfferThisTour"
+              value={whyWeOffer}
+              onChange={(event) => setWhyWeOffer(event.target.value)}
+              className={
+                textareaClass
+              }
+              rows={5}
+              placeholder="Explain the philosophy behind the itinerary and what Epoch has intentionally designed differently."
+            />
+          </label>
+
+          <label>
+            <FieldLabel>
+              Destination Story & Context
+            </FieldLabel>
+
+            <textarea
+              id="destinationBriefs"
+              name="destinationBriefs"
+              value={destinationBriefs}
+              onChange={(event) => setDestinationBriefs(event.target.value)}
+              className={
+                textareaClass
+              }
+              rows={5}
+              placeholder="Provide brief context about the principal regions, cities and sacred destinations."
+            />
+          </label>
+        </div>
+      </JourneySection>
+
+      {/* ====================================================
           04 SIGNATURE EXPERIENCES
       ==================================================== */}
 
@@ -1382,144 +1765,6 @@ export default function TourForm({
       </JourneySection>
 
       {/* ====================================================
-          05 JOURNEY AT A GLANCE
-      ==================================================== */}
-
-      <JourneySection
-        number="05"
-        eyebrow="Journey at a Glance"
-        title="Summarize the Epoch experience"
-        description="Capture the practical characteristics an advisor needs when deciding whether the pilgrimage suits a particular group."
-      >
-        <div className="grid gap-5 md:grid-cols-2">
-          <label>
-            <FieldLabel>
-              Hotel Standard
-            </FieldLabel>
-
-            <input
-              name="hotelStandard"
-              defaultValue={
-                initialValues?.hotelStandard ??
-                ""
-              }
-              className={inputClass}
-              placeholder="Carefully selected 4-star hotels"
-            />
-          </label>
-
-          <label>
-            <FieldLabel>
-              Meal Plan
-            </FieldLabel>
-
-            <input
-              name="mealPlan"
-              defaultValue={
-                initialValues?.mealPlan ??
-                ""
-              }
-              className={inputClass}
-              placeholder="Breakfast daily and selected dinners"
-            />
-          </label>
-
-          <label className="md:col-span-2">
-            <FieldLabel>
-              Transportation Summary
-            </FieldLabel>
-
-            <input
-              name="transportationSummary"
-              defaultValue={
-                initialValues?.transportationSummary ??
-                ""
-              }
-              className={inputClass}
-              placeholder="Private air-conditioned coach with internal flights or ferries where required"
-            />
-          </label>
-
-          <label className="md:col-span-2">
-            <FieldLabel>
-              Journey at a Glance
-            </FieldLabel>
-
-            <textarea
-              id="overviewItinerary"
-              name="overviewItinerary"
-              defaultValue={
-                initialValues?.overviewItinerary ??
-                ""
-              }
-              className={
-                textareaClass
-              }
-              rows={5}
-              placeholder="Athens • Corinth • Thessaloniki • Philippi • Kavala • Istanbul • Ephesus..."
-            />
-
-            <HelperText>
-              Keep this compact enough to
-              use as a brochure overview.
-            </HelperText>
-          </label>
-        </div>
-      </JourneySection>
-
-      {/* ====================================================
-          06 DAY BY DAY
-      ==================================================== */}
-
-      <JourneySection
-        number="06"
-        eyebrow="Day-by-Day Journey"
-        title="Tell the pilgrimage day by day"
-        description="For now, keep the full narrative here. Later this can become structured Day 1 / Day 2 / Day 3 records."
-      >
-        <div className="rounded-xl border border-amber-200 bg-amber-50 p-4">
-          <div className="flex gap-3">
-            <BookOpen className="mt-0.5 h-5 w-5 shrink-0 text-amber-700" />
-
-            <div>
-              <p className="font-semibold text-amber-950">
-                Write for the pilgrim,
-                not the database
-              </p>
-
-              <p className="mt-1 text-sm leading-6 text-amber-800">
-                Use descriptive day
-                titles, explain why
-                places matter, and
-                connect the days into a
-                coherent spiritual
-                journey.
-              </p>
-            </div>
-          </div>
-        </div>
-
-        <textarea
-          id="itinerary"
-          name="itinerary"
-          defaultValue={
-            initialValues?.itinerary ??
-            ""
-          }
-          className={`${textareaClass} mt-5`}
-          rows={18}
-          placeholder={`Day 1 — Arrive Athens
-Welcome to Greece and begin the pilgrimage...
-
-Day 2 — Athens: In the Footsteps of St. Paul
-Visit the Acropolis, Mars Hill and the ancient Agora...
-
-Day 3 — Corinth
-Travel to ancient Corinth where Paul lived and preached...`}
-        />
-      </JourneySection>
-
-      {/* ====================================================
           07 INCLUSIONS
       ==================================================== */}
 
@@ -1529,6 +1774,21 @@ Travel to ancient Corinth where Paul lived and preached...`}
         title="Clarify what Epoch provides"
         description="Keep the commercial inclusions consistent so agents understand exactly what is normally built into the pilgrimage."
       >
+        <div className="mb-5 rounded-xl border border-blue-200 bg-blue-50 p-4 space-y-3">
+          <p className="font-semibold text-[#001F3F]">Epoch AI — Prepare Inclusions &amp; Exclusions</p>
+          <p className="text-sm text-slate-700">Uses the current itinerary and reviewed daily meals. This is a proposal, not a supplier confirmation or cost approval. Existing fields remain unchanged until you apply it.</p>
+          <button type="button" onClick={prepareCommercialProposal} className="rounded-lg bg-[#001F3F] px-4 py-2 text-sm font-semibold text-white">Prepare commercial inclusions</button>
+          {commercialProposal && <div className="space-y-3 rounded-lg border border-blue-200 bg-white p-4 text-sm">
+            <p className="font-semibold">Proposed inclusions</p>
+            {commercialProposal.inclusions.length ? <ul className="list-disc pl-5">{commercialProposal.inclusions.map(x => <li key={x}>{x}</li>)}</ul> : <p>None supported by the available source and reviewed meal choices.</p>}
+            <p className="font-semibold">Proposed exclusions</p>
+            {commercialProposal.exclusions.length ? <ul className="list-disc pl-5">{commercialProposal.exclusions.map(x => <li key={x}>{x}</li>)}</ul> : <p>No exclusions established. Review separately.</p>}
+            <p className="font-semibold">Review before applying</p>
+            <ul className="list-disc pl-5 text-amber-900">{commercialProposal.warnings.map(x => <li key={x}>{x}</li>)}</ul>
+            <p className="font-medium text-red-800">Applying replaces both editable text fields. Copy any customized wording first. It does not save the Tour.</p>
+            <div className="flex flex-wrap gap-2"><button type="button" onClick={applyCommercialProposal} className="rounded-lg bg-[#8B0000] px-4 py-2 font-semibold text-white">Apply to Tour Form (not saved)</button><button type="button" onClick={() => setCommercialProposal(null)} className="rounded-lg border px-4 py-2">Discard proposal</button></div>
+          </div>}
+        </div>
         <div className="grid gap-6 lg:grid-cols-2">
           <div>
             <FieldLabel>
@@ -2267,88 +2527,10 @@ Travel to ancient Corinth where Paul lived and preached...`}
         </div>
       </JourneySection>
 
-      {/* ====================================================
-          12 REVIEW & PUBLISH
-      ==================================================== */}
-
-      <JourneySection
-        number="12"
-        eyebrow="Review & Publish"
-        title="Control how the journey is released"
-        description="A journey can remain a draft while content, pricing and media are being prepared."
-      >
-        <div className="grid gap-4 md:grid-cols-2">
-          <label className="flex cursor-pointer items-start gap-3 rounded-xl border border-slate-200 p-4 transition hover:border-[#8B0000]">
-            <input
-              type="checkbox"
-              name="isPublished"
-              defaultChecked={
-                initialValues?.isPublished ??
-                false
-              }
-              className="mt-1 h-4 w-4"
-            />
-
-            <div>
-              <p className="font-semibold text-[#001F3F]">
-                Publish to Agents
-              </p>
-
-              <p className="mt-1 text-xs leading-5 text-slate-500">
-                Make this journey
-                available in the B2B
-                tour catalogue when its
-                content is ready.
-              </p>
             </div>
-          </label>
-
-          <label className="flex cursor-pointer items-start gap-3 rounded-xl border border-slate-200 p-4 transition hover:border-[#8B0000]">
-            <input
-              type="checkbox"
-              name="featured"
-              defaultChecked={
-                initialValues?.featured ??
-                false
-              }
-              className="mt-1 h-4 w-4"
-            />
-
-            <div>
-              <p className="font-semibold text-[#001F3F]">
-                Featured Journey
-              </p>
-
-              <p className="mt-1 text-xs leading-5 text-slate-500">
-                Give the journey
-                additional prominence
-                in agent-facing areas.
-              </p>
-            </div>
-          </label>
-        </div>
-
-        <div className="mt-5 rounded-xl border border-emerald-200 bg-emerald-50 p-4">
-          <div className="flex gap-3">
-            <Sparkles className="mt-0.5 h-5 w-5 shrink-0 text-emerald-700" />
-
-            <div>
-              <p className="font-semibold text-emerald-950">
-                Next commercial step
-              </p>
-
-              <p className="mt-1 text-sm leading-6 text-emerald-800">
-                After the journey is
-                created, seasonal rate
-                guidance can be added
-                before preparing
-                official group
-                quotations.
-              </p>
-            </div>
-          </div>
-        </div>
-      </JourneySection>
+          </details>
+        )}
+      </div>
 
       {/* ====================================================
           SUBMIT
@@ -2370,7 +2552,9 @@ Travel to ancient Corinth where Paul lived and preached...`}
             </p>
           </div>
 
-          <button
+          {activeStep > 0 && <button type="button" onClick={() => goToStep(activeStep - 1)} className="rounded-xl border border-slate-300 px-5 py-3 font-semibold">Back</button>}
+          {activeStep < 3 && <button type="button" onClick={() => goToStep(activeStep + 1)} className="rounded-xl bg-[#001F3F] px-6 py-3 font-semibold text-white">Continue</button>}
+          {activeStep === 3 && <button
             type="submit"
             className="inline-flex min-w-44 items-center justify-center gap-2 rounded-xl bg-[#8B0000] px-6 py-3 text-sm font-bold text-white transition hover:bg-[#6f0000]"
           >
@@ -2379,7 +2563,7 @@ Travel to ancient Corinth where Paul lived and preached...`}
             {mode === "edit"
               ? "Update Journey"
               : "Create Journey"}
-          </button>
+          </button>}
         </div>
       </div>
     </form>

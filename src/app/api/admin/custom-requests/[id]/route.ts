@@ -94,7 +94,7 @@ function buildCustomRequestUpdateEmail(params: {
 
 export async function PATCH(
   req: Request,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     const session = await getServerSession(authOptions);
@@ -104,7 +104,8 @@ export async function PATCH(
     }
 
     const body = await req.json();
-    const { id } = params;
+    const { id } = await params;
+    if (!id) return new NextResponse("Missing request ID", { status: 400 });
 
     const existingRequest = await db.customTourRequest.findUnique({
       where: { id },

@@ -33,6 +33,7 @@ export default async function B2BLayout({
   const navItems = [
     { href: "/b2b/dashboard", label: "Dashboard" },
     { href: "/b2b/tours", label: "Tours" },
+    { href: "/b2b/custom-requests", label: "My Requests" },
     { href: "/b2b/bookings", label: "Bookings" },
     {
       href: "/b2b/commissions",

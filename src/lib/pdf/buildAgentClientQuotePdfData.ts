@@ -1,3 +1,4 @@
+import { getApprovedFlexiblePricing } from "@/lib/quotes/flexibleGroupPricing";
 type PaxPricingRow = {
   paxCount: number;
   calculatedSinglePrice?: number;
@@ -18,6 +19,9 @@ type ComplimentarySetup = {
   groupLeaderCount?: number;
   groupLeaderComplimentaryBasis?: "USES_FREE_PLACE" | "ADDITIONAL";
   additionalFreePassengers?: number;
+  priestCostProfile?: { accommodation?: "SINGLE" | "DOUBLE_TWIN" | "TRIPLE" | "NONE" };
+  leaderCostProfile?: { accommodation?: "SINGLE" | "DOUBLE_TWIN" | "TRIPLE" | "NONE" };
+  otherCostProfile?: { accommodation?: "SINGLE" | "DOUBLE_TWIN" | "TRIPLE" | "NONE" };
 };
 
 type HotelRow = {
@@ -65,6 +69,8 @@ type QuoteTour = {
 };
 
 type QuoteWithRelations = {
+  id: string;
+  version: number;
   quoteNumber: number;
   quoteReference: string | null;
   title: string | null;
@@ -212,29 +218,60 @@ function stripExistingDayAndDate(value: string): string {
 }
 
 function compactItineraryText(value: string): string {
-  const cleaned = value
-    .replace(/\s+/g, " ")
-    .replace(/\s+([,.;:])/g, "$1")
-    .trim();
+  // Preserve complete place and saint names. The editable form supplies the brief text.
+  return value.replace(/\s+/g, " ").replace(/\s+([,.;:])/g, "$1").trim();
+}
 
-  if (cleaned.length <= 320) {
-    return cleaned;
+/**
+ * Tour Master often stores a full day's heading and narrative on ONE line:
+ * "Day 2 - Arrival in Istanbul Arrive in Istanbul ...".
+ * A PDF must not accidentally bold that entire line as the day's title.
+ *
+ * Split only when a recognizable narrative opener starts after an apparent
+ * destination/heading. Otherwise render the full original text as ordinary
+ * body copy rather than guessing a title. No itinerary wording is rewritten.
+ */
+function separateDayHeadingAndNarrative(rawHeading: string): {
+  title: string;
+  inlineNarrative: string;
+} {
+  const heading = compactItineraryText(rawHeading);
+  if (!heading) return { title: "", inlineNarrative: "" };
+
+  // The openers are case-sensitive: a capitalized new instruction after a
+  // destination is a high-confidence boundary, unlike ordinary lower-case
+  // verbs inside a destination name.
+  const narrativeOpener = /\s+(?=(?:Depart|Arrive|Explore|Visit|Transfer|Travel|Drive|Continue|Enjoy|Begin|Return|Celebrate|Attend|Take|Board|Cross|Discover|Proceed|Spend|Experience|Reflect|Fly|Head|Full day|After breakfast|Following breakfast|Upon arrival|This morning|Today)\b)/g;
+  for (const match of heading.matchAll(narrativeOpener)) {
+    const index = match.index ?? 0;
+    const before = heading.slice(0, index).trim();
+    const after = heading.slice(index).trim();
+    // Only split after a plausible, nontrivial heading, and avoid treating
+    // a short title such as "Visit Ephesus" as if it had a preceding title.
+    if (before.length >= 12 && after.length >= 16) {
+      return { title: before, inlineNarrative: after };
+    }
   }
 
-  const shortened =
-    cleaned.slice(0, 317);
+  // "Tour historical sites" is also used as a narrative opener in legacy
+  // itineraries; require a following object to avoid splitting a tour title.
+  const tourMatch = heading.match(/\s+Tour\s+(?:historical|the|ancient|local|nearby|important|several)\b/);
+  if (tourMatch?.index !== undefined && tourMatch.index >= 12) {
+    return {
+      title: heading.slice(0, tourMatch.index).trim(),
+      inlineNarrative: heading.slice(tourMatch.index).trim(),
+    };
+  }
 
-  const lastBoundary = Math.max(
-    shortened.lastIndexOf(". "),
-    shortened.lastIndexOf("; "),
-    shortened.lastIndexOf(", ")
-  );
-
-  return `${
-    lastBoundary > 180
-      ? shortened.slice(0, lastBoundary + 1)
-      : shortened
-  }...`;
+  // If the line contains sentence prose, a Mass/Overnight note, or is very
+  // long, we cannot reliably tell where the heading ends. Keep it all in
+  // regular-weight text; a false heading is worse than no bold heading.
+  const likelyProse = /[.!?]$/.test(heading) ||
+    /\b(?:Mass|Overnight):/i.test(heading) ||
+    heading.split(/\s+/).length > 13;
+  return likelyProse
+    ? { title: "", inlineNarrative: heading }
+    : { title: heading, inlineNarrative: "" };
 }
 
 function buildBriefItinerary(
@@ -256,10 +293,12 @@ function buildBriefItinerary(
   const start =
     parseLocalDate(startDate);
 
-  const normalized =
-    source
-      .replace(/\r/g, "")
-      .trim();
+  // Normalize common inline Day 2 / Day 3 headings into distinct day blocks.
+  // Do not split ordinary prose mentions such as "on day 2".
+  const normalized = source
+    .replace(/\r/g, "")
+    .replace(/([^\n])\s+(?=Day\s+\d{1,2}\s*[-–—:,.])/gi, "$1\n")
+    .trim();
 
   const dayHeaderRegex =
     /(?:^|\n)\s*Day\s*(\d+)\s*[-–—,:.]?\s*([^\n]*)/gi;
@@ -300,16 +339,17 @@ function buildBriefItinerary(
             )
             .trim();
 
-        const details =
-          compactItineraryText(
-            [heading, body]
-              .filter(Boolean)
-              .join(
-                body && heading
-                  ? ". "
-                  : ""
-              )
-          );
+        // Some saved itinerary days put both the destination heading and
+        // the complete narrative on the header line. Separate when safe;
+        // otherwise keep it in normal-weight narrative text.
+        const separated = separateDayHeadingAndNarrative(heading);
+        const title = separated.title;
+        const description = compactItineraryText(
+          [separated.inlineNarrative, body].filter(Boolean).join(" ")
+        );
+        const details = compactItineraryText(
+          [title, description].filter(Boolean).join(title && description ? ". " : "")
+        );
 
         const date =
           start
@@ -325,9 +365,9 @@ function buildBriefItinerary(
             date
               ? formatItineraryDate(date)
               : `Day ${dayNumber}`,
-          details:
-            details ||
-            `Day ${dayNumber}`,
+          title,
+          description: description || (title ? "" : details),
+          details: details || `Day ${dayNumber}`,
         };
       }
     );
@@ -360,10 +400,11 @@ function buildBriefItinerary(
           date
             ? formatItineraryDate(date)
             : `Day ${index + 1}`,
-        details:
-          compactItineraryText(
-            line
-          ),
+        // A line without an explicit day heading stays intact; never guess
+        // which words are a destination title versus itinerary narrative.
+        title: "",
+        description: compactItineraryText(line),
+        details: compactItineraryText(line),
       };
     }
   );
@@ -374,71 +415,78 @@ function buildComplimentaryPolicy(
   payingPassengers: number,
   freePassengers: number
 ) {
-  if (!setup) {
-    return freePassengers > 0
-      ? `${freePassengers} complimentary place${freePassengers === 1 ? "" : "s"} included for this group.`
-      : null;
+  if (freePassengers <= 0) {
+    return `Group basis: ${payingPassengers} paying pilgrims; no complimentary pilgrims included.`;
   }
 
-  const lines: string[] = [];
+  const roomLabel = (room?: string) => {
+    switch (room) {
+      case "SINGLE": return "Single room";
+      case "DOUBLE_TWIN": return "Per person sharing a Double/Twin room";
+      case "TRIPLE": return "Per person sharing a Triple room";
+      case "NONE": return "No accommodation included";
+      default: return "Per person sharing a Double/Twin room";
+    }
+  };
 
-  if (setup.useFreePlaceRule) {
-    const ratio = Math.max(Math.floor(toNumber(setup.freePlaceRatio)) || 10, 1);
-    lines.push(
-      `1 complimentary place is provided for every ${ratio} full-paying pilgrims.`
-    );
+  // Keep named allocations within the approved complimentary count. The
+  // complimentary-expense calculator uses the same priest/leader/other order.
+  let remaining = freePassengers;
+  const allocations: string[] = [];
+  const priestCount = setup?.priestComplimentary
+    ? Math.min(remaining, Math.max(0, Math.floor(Number(setup.priestCount) || 0)))
+    : 0;
+  if (priestCount > 0) {
+    allocations.push(`Spiritual Leader${priestCount > 1 ? "s" : ""}: ${priestCount} complimentary pilgrim${priestCount > 1 ? "s" : ""} - ${roomLabel(setup?.priestCostProfile?.accommodation)}`);
+    remaining -= priestCount;
+  }
+  const leaderCount = setup?.groupLeaderComplimentary
+    ? Math.min(remaining, Math.max(0, Math.floor(Number(setup.groupLeaderCount) || 0)))
+    : 0;
+  if (leaderCount > 0) {
+    allocations.push(`Group leader${leaderCount > 1 ? "s" : ""}: ${leaderCount} complimentary pilgrim${leaderCount > 1 ? "s" : ""} - ${roomLabel(setup?.leaderCostProfile?.accommodation)}`);
+    remaining -= leaderCount;
+  }
+  if (remaining > 0) {
+    allocations.push(`Other complimentary pilgrim${remaining > 1 ? "s" : ""}: ${remaining} - ${roomLabel(setup?.otherCostProfile?.accommodation)}`);
   }
 
-  if (setup.priestComplimentary) {
-    const count = Math.max(Math.floor(toNumber(setup.priestCount)) || 1, 1);
-    const basis =
-      setup.priestComplimentaryBasis === "ADDITIONAL"
-        ? "in addition to the standard complimentary allocation"
-        : "using the complimentary allocation generated by the free-place rule";
-
-    lines.push(
-      `${count} priest${count === 1 ? "" : "s"} travel${count === 1 ? "s" : ""} on a complimentary basis, ${basis}.`
-    );
-  }
-
-  if (setup.groupLeaderComplimentary) {
-    const count = Math.max(Math.floor(toNumber(setup.groupLeaderCount)) || 1, 1);
-    const basis =
-      setup.groupLeaderComplimentaryBasis === "ADDITIONAL"
-        ? "in addition to the standard complimentary allocation"
-        : "using the complimentary allocation generated by the free-place rule";
-
-    lines.push(
-      `${count} group leader${count === 1 ? "" : "s"} travel${count === 1 ? "s" : ""} on a complimentary basis, ${basis}.`
-    );
-  }
-
-  const additional = Math.max(
-    Math.floor(toNumber(setup.additionalFreePassengers)),
-    0
-  );
-
-  if (additional > 0) {
-    lines.push(
-      `${additional} additional complimentary traveler${additional === 1 ? " is" : "s are"} included.`
-    );
-  }
-
-  if (freePassengers > 0) {
-    lines.push(
-      `Current quotation basis: ${payingPassengers} paying + ${freePassengers} complimentary = ${payingPassengers + freePassengers} travelers.`
-    );
-  }
-
-  return lines.length > 0 ? lines.join("\n") : null;
+  return [
+    `${freePassengers} complimentary pilgrim${freePassengers === 1 ? "" : "s"} included in this quotation.`,
+    ...allocations,
+    `Group basis: ${payingPassengers} paying + ${freePassengers} complimentary = ${payingPassengers + freePassengers} total pilgrims.`,
+    "Any change to complimentary allocation or room arrangements requires a revised quotation."
+  ].join("\n");
 }
 
-export function buildAgentClientQuotePdfData(quote: QuoteWithRelations) {
+function validAppOrigin(value: string | null | undefined): string | null {
+  if (!value) return null;
+  try {
+    const url = new URL(value);
+    if (url.protocol === "https:" ||
+        (url.protocol === "http:" && ["localhost", "127.0.0.1", "[::1]"].includes(url.hostname))) {
+      return url.origin;
+    }
+  } catch {
+    // No usable absolute URL was configured.
+  }
+  return null;
+}
+
+export function buildAgentClientQuotePdfData(
+  quote: QuoteWithRelations,
+  options?: { publicBaseUrl?: string | null }
+) {
   const summary: QuoteBuilderSummary | null = isQuoteBuilderSummary(
     quote.quoteBuilderSummary
   )
     ? quote.quoteBuilderSummary
     : null;
+
+  const approvedFlexiblePricing = getApprovedFlexiblePricing(quote);
+  const publicBaseUrl = validAppOrigin(
+    options?.publicBaseUrl || process.env.NEXT_PUBLIC_APP_URL || process.env.NEXTAUTH_URL
+  );
 
   const paxPricingRows = Array.isArray(summary?.paxPricingRows)
     ? summary.paxPricingRows
@@ -476,11 +524,29 @@ export function buildAgentClientQuotePdfData(quote: QuoteWithRelations) {
     .filter((row) => row.amount > 0 || row.label.trim().length > 0);
 
   return {
+    alternativePricingUrl: approvedFlexiblePricing && publicBaseUrl
+      ? `${publicBaseUrl}/b2b/quotes/${encodeURIComponent(quote.id)}/alternative-pricing`
+      : null,
+    // IMPORTANT: never show unsent or unapproved calculated pricing rows.
+    approvedAlternativePricing: approvedFlexiblePricing
+      ? [...approvedFlexiblePricing.tiers]
+          .sort((first, second) => first.payingPilgrims - second.payingPilgrims)
+          .map((tier) => ({
+            payingPilgrims: tier.payingPilgrims,
+            complimentaryPilgrims: tier.complimentaryPilgrims,
+            totalPilgrims: tier.payingPilgrims + tier.complimentaryPilgrims,
+            singlePrice: tier.single,
+            doubleTwinPrice: tier.doubleTwin,
+            triplePrice: tier.triple,
+            roomArrangements: tier.roomArrangements || "",
+            note: tier.note || "",
+          }))
+      : [],
     quoteNumber: quote.quoteNumber,
     quoteReference: quote.quoteReference,
     issueDate: quote.createdAt || null,
     title: quote.title,
-    clientDocumentTitle: quote.clientDocumentTitle,
+    clientDocumentTitle: quote.clientDocumentTitle?.trim() || quote.tour?.title?.trim() || quote.title,
     recipientName: quote.recipientName,
     recipientEmail: quote.recipientEmail,
     currency: quote.currency,
@@ -550,7 +616,11 @@ export function buildAgentClientQuotePdfData(quote: QuoteWithRelations) {
     optionalHotels,
     optionalServices,
 
-    paxPricingRows: paxPricingRows.map((row) => ({
+    // Only the requested group size is published by default. Alternative
+    // tiers remain stored in the quotation builder for internal use.
+    paxPricingRows: paxPricingRows
+      .filter((row) => payingPassengers <= 0 || toNumber(row.paxCount) === payingPassengers)
+      .map((row) => ({
       paxCount: toNumber(row.paxCount),
       singlePrice: resolvePrice(
         summary?.pricingMode,
@@ -567,6 +637,6 @@ export function buildAgentClientQuotePdfData(quote: QuoteWithRelations) {
         row.manualTriplePrice,
         row.calculatedTriplePrice
       ),
-    })),
+      })),
   };
 }

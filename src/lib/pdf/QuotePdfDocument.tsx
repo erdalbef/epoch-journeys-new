@@ -489,7 +489,7 @@ export default function QuotePdfDocument({ quote }: { quote: QuotePdfData }) {
         {costing ? (
           <>
             <Text style={detailStyles.micro}>
-              Paying pilgrims: {costing.payingPassengers}    |    COMPs: {costing.freePassengers}    |    Total travelers: {costing.totalTravelers}
+              Paying pilgrims: {costing.payingPassengers}    |    COMPs: {costing.freePassengers}    |    Total pilgrims: {costing.totalTravelers}
             </Text>
             {/* 01: HOTELS FIRST. Room figures represent complete stay cost per person. */}
             <View style={detailStyles.section}>
@@ -535,7 +535,7 @@ export default function QuotePdfDocument({ quote }: { quote: QuotePdfData }) {
                     <Text style={{width:"43%", fontSize:8, fontWeight:700}}>Service</Text>
                     <Text style={{width:"12%", fontSize:8, textAlign:"right"}}>Qty</Text>
                     <Text style={{width:"22%", fontSize:8, textAlign:"right"}}>Unit cost</Text>
-                    <Text style={{width:"23%", fontSize:8, textAlign:"right"}}>Per traveler</Text>
+                    <Text style={{width:"23%", fontSize:8, textAlign:"right"}}>Per pilgrim</Text>
                   </View>
                   {audit.perPersonLines.map((line,i) => (
                     <View key={`service-${i}`} style={detailStyles.tableLine} wrap={false}>
@@ -559,7 +559,7 @@ export default function QuotePdfDocument({ quote }: { quote: QuotePdfData }) {
                   <Text style={detailStyles.heading}>Porterage cross-check</Text>
                   {audit.porterage.hotelIncluded.length > 0 && <Text style={detailStyles.micro}>Included by hotel: {audit.porterage.hotelIncluded.join(", ")}</Text>}
                   {audit.porterage.hotelExtrasSelected.length > 0 && <Text style={detailStyles.micro}>Selected hotel porterage: {audit.porterage.hotelExtrasSelected.join(", ")}</Text>}
-                  {audit.porterage.perPersonEntries.map((line,i) => <Text key={`porterage-${i}`} style={detailStyles.micro}>Separate porterage: {line.label} - {fmt(line.perTraveler)} / traveler</Text>)}
+                  {audit.porterage.perPersonEntries.map((line,i) => <Text key={`porterage-${i}`} style={detailStyles.micro}>Separate porterage: {line.label} - {fmt(line.perTraveler)} / pilgrim</Text>)}
                   {audit.porterage.possibleOverlap && <Text style={detailStyles.notice}>POSSIBLE DOUBLE CHARGE: Check the relevant hotel stay before including separate porterage. No cost has been automatically removed.</Text>}
                 </View>
               )}
@@ -618,7 +618,7 @@ export default function QuotePdfDocument({ quote }: { quote: QuotePdfData }) {
 
             {/* 04: COMPS */}
             <View style={detailStyles.section}>
-              <Text style={detailStyles.heading} minPresenceAhead={24}>04  Complimentary Traveler Expenses</Text>
+              <Text style={detailStyles.heading} minPresenceAhead={24}>04  Complimentary Pilgrim Expenses</Text>
               <Text style={detailStyles.micro}>Hotel rooms and all applicable individually charged services for COMPs are recovered across paying pilgrims. Fixed group contracts are NOT charged again.</Text>
               {(costing.complimentaryExpenseLines || []).filter((line) => line.travelers > 0).map((line,i) => (
                 <View key={`comp-${i}`} style={detailStyles.row} wrap={false}>
@@ -654,7 +654,7 @@ export default function QuotePdfDocument({ quote }: { quote: QuotePdfData }) {
             {financial && (
               <View style={detailStyles.section} wrap={false}>
                 <Text style={detailStyles.heading}>06  Group Financial Summary - Internal Only</Text>
-                <Text style={detailStyles.micro}>Reference: Double/Twin for paying travelers | {financial.payingPassengers} paying + {financial.freePassengers} COMPs = {financial.totalTravelers} travelers</Text>
+                <Text style={detailStyles.micro}>Reference: Double/Twin for paying pilgrims | {financial.payingPassengers} paying + {financial.freePassengers} COMPs = {financial.totalTravelers} pilgrims</Text>
                 <View style={detailStyles.table}>
                   <View style={detailStyles.tableHead}>
                     <Text style={{width:"56%",fontWeight:700}}>Expense category</Text>

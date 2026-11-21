@@ -1,3 +1,4 @@
+import { isRegisteredEvidenceDocument } from "@/lib/epoch-ai/finance/isRegisteredEvidenceDocument";
 import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { Role } from "@prisma/client";
@@ -79,56 +80,42 @@ export async function DELETE(
     }
 
     /*
-     * First delete the Blob.
-     *
-     * storagePath contains the private
-     * Blob pathname, for example:
-     *
-     * finance/expenses/123-file.pdf
+     * Delete the database record first.
+     * Foreign-key restrictions must be checked before
+     * the original file can be removed from storage.
      */
-    try {
-      await del(
-        document.storagePath,
-      );
-    } catch (error) {
-      console.error(
-        "FINANCE_DOCUMENT_BLOB_DELETE_ERROR",
-        {
-          documentId:
-            document.id,
-
-          storagePath:
-            document.storagePath,
-
-          error,
-        },
-      );
-
+    if (await isRegisteredEvidenceDocument(document.id)) {
       return NextResponse.json(
         {
           error:
-            "The finance document could not be removed from private storage.",
+            "This document is registered commercial evidence and cannot be deleted.",
         },
+        { status: 409 },
+      );
+    }
+    await db.financeDocument.delete({
+      where: {
+        id: document.id,
+      },
+    });
+
+    /*
+     * Database deletion succeeded.
+     * Clean up the Blob without reversing the database result.
+     * Cleanup failures must be logged for follow-up.
+     */
+    try {
+      await del(document.storagePath);
+    } catch (error) {
+      console.error(
+        "FINANCE_DOCUMENT_BLOB_CLEANUP_REQUIRED",
         {
-          status: 500,
+          documentId: document.id,
+          storagePath: document.storagePath,
+          error,
         },
       );
     }
-
-    /*
-     * Only delete the database record
-     * after Blob deletion succeeds.
-     *
-     * This avoids leaving a database
-     * record pointing to a file we
-     * failed to remove.
-     */
-    await db.financeDocument.delete({
-      where: {
-        id:
-          document.id,
-      },
-    });
 
     return NextResponse.json(
       {

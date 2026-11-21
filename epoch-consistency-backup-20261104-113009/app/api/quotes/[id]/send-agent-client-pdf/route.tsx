@@ -1,0 +1,175 @@
+import { NextRequest, NextResponse } from "next/server";
+import { getServerSession } from "next-auth";
+import { Resend } from "resend";
+
+import { authOptions } from "@/lib/authOptions";
+import { db } from "@/lib/db";
+import { getApprovedFlexiblePricing } from "@/lib/quotes/flexibleGroupPricing";
+import { checkQuoteApprovalReadiness } from "@/lib/quotes/approvalReadiness";
+import { readPrivateAgentQuotePdf } from "@/lib/storage/agentQuotePdfStorage";
+import { isAgentPricingPdfStale } from "@/lib/quotes/agentPricingPdfFreshness";
+import { isServiceTermsConfirmed, isServiceTermsPdfOutdated, reviewServiceTerms } from "@/lib/quotes/serviceTermsReview";
+
+export const runtime = "nodejs";
+
+const resend = new Resend(process.env.RESEND_API_KEY);
+
+export async function POST(
+  _req: NextRequest,
+  context: { params: Promise<{ id: string }> }
+) {
+  try {
+    const session = await getServerSession(authOptions);
+
+    if (!session?.user || session.user.role !== "ADMIN") {
+      return NextResponse.json(
+        { ok: false, error: "Unauthorized." },
+        { status: 401 }
+      );
+    }
+
+    if (!process.env.RESEND_API_KEY) {
+      return NextResponse.json(
+        { ok: false, error: "RESEND_API_KEY is missing." },
+        { status: 500 }
+      );
+    }
+
+    const fromEmail =
+      process.env.RESEND_FROM_EMAIL ||
+      "Epoch Journeys Quotes <quotes@epochjourneys.com>";
+
+    const { id } = await context.params;
+
+    const quote = await db.quote.findUnique({
+      where: { id },
+    });
+
+    if (!quote) {
+      return NextResponse.json(
+        { ok: false, error: "Quote not found." },
+        { status: 404 }
+      );
+    }
+
+    if (!isServiceTermsConfirmed(quote.quoteBuilderSummary, quote.clientIncludes, quote.clientExcludes)) {
+      const review = reviewServiceTerms(quote.clientIncludes, quote.clientExcludes);
+      return NextResponse.json({
+        ok: false,
+        error: review.errors.length
+          ? `Review Rates Include / Exclude: ${review.errors.join(" | ")}`
+          : "Rates Include / Exclude require Admin confirmation. Review and save the quotation, then regenerate the Agent PDF.",
+      }, { status: 409 });
+    }
+
+    // Saved alternatives must still match the quotation cost basis.
+    const rawSummary = quote.quoteBuilderSummary;
+    const flexible = rawSummary && typeof rawSummary === "object" && !Array.isArray(rawSummary)
+      ? (rawSummary as Record<string, unknown>).flexibleGroupPricing : null;
+    if (flexible && typeof flexible === "object" && !Array.isArray(flexible) &&
+        (flexible as Record<string, unknown>).enabled === true && !getApprovedFlexiblePricing(quote)) {
+      return NextResponse.json({
+        ok: false,
+        error: "Flexible Group Pricing approval is no longer valid for the saved quotation. Review and reapprove the alternatives before sending the Agent PDF.",
+      }, { status: 409 });
+    }
+
+    const readiness = checkQuoteApprovalReadiness({
+      quoteBuilderSummary: quote.quoteBuilderSummary,
+      recipientEmail: quote.recipientEmail,
+    });
+    if (!readiness.ready) {
+      return NextResponse.json({
+        ok: false,
+        error: `Sending blocked: ${readiness.errors.join(" | ")}`,
+        issues: readiness.errors,
+        warnings: readiness.warnings,
+      }, { status: 400 });
+    }
+
+    if (!quote.recipientEmail) {
+      return NextResponse.json(
+        { ok: false, error: "Recipient email is missing." },
+        { status: 400 }
+      );
+    }
+
+    if (!quote.agentClientPdfUrl) {
+      return NextResponse.json(
+        { ok: false, error: "Agent PDF not generated." },
+        { status: 400 }
+      );
+    }
+
+    if (isServiceTermsPdfOutdated(quote.quoteBuilderSummary, quote.agentClientPdfGeneratedAt)) {
+      return NextResponse.json({
+        ok: false,
+        error: "Rates Include / Exclude were confirmed after the saved Agent PDF was created. Regenerate the Agent PDF before sending.",
+      }, { status: 409 });
+    }
+
+    if (isAgentPricingPdfStale(quote.quoteBuilderSummary, quote.agentClientPdfGeneratedAt, Boolean(quote.agentClientPdfUrl))) {
+      return NextResponse.json({
+        ok: false,
+        error: "Flexible Group Pricing changed after the Agent PDF was generated. Regenerate the Agent PDF before sending.",
+      }, { status: 409 });
+    }
+
+    // Load the saved PRIVATE snapshot; do not fetch a public URL or
+    // regenerate the proposal after it has been approved.
+    const pdfBytes = await readPrivateAgentQuotePdf(quote.agentClientPdfUrl, id);
+    if (!pdfBytes) {
+      return NextResponse.json(
+        { ok: false, error: "Saved agent PDF cannot be loaded. Regenerate it before sending." },
+        { status: 404 },
+      );
+    }
+    const pdfBase64 = pdfBytes.toString("base64");
+
+    const result = await resend.emails.send({
+      from: fromEmail,
+      to: quote.recipientEmail,
+      subject: `Travel Proposal - ${
+        quote.quoteReference || quote.quoteNumber || "Quote"
+      }`,
+      html: `
+        <p>Dear ${quote.recipientName || "Guest"},</p>
+        <p>Please find attached your travel proposal.</p>
+        <p>Kind regards,</p>
+        <p>Epoch Journeys</p>
+      `,
+      attachments: [
+        {
+          filename: `proposal-${quote.quoteNumber || quote.id}.pdf`,
+          content: pdfBase64,
+        },
+      ],
+    });
+
+    if (result.error) {
+      console.error("RESEND_SEND_ERROR:", result.error);
+
+      return NextResponse.json(
+        {
+          ok: false,
+          error: result.error.message || "Resend failed to send email.",
+        },
+        { status: 500 }
+      );
+    }
+
+    console.log("RESEND_SEND_SUCCESS:", result.data);
+
+    return NextResponse.json({
+      ok: true,
+      resendId: result.data?.id,
+    });
+  } catch (err) {
+    console.error("SEND AGENT PDF ERROR:", err);
+
+    return NextResponse.json(
+      { ok: false, error: "Failed to send email." },
+      { status: 500 }
+    );
+  }
+}

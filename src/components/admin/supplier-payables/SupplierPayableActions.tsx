@@ -223,6 +223,7 @@ export default function SupplierPayableActions({
   ] = useState("");
 
   const [contractPaymentScheduleId, setContractPaymentScheduleId] = useState("");
+  const [bankDebitAmount, setBankDebitAmount] = useState("");
 
   const [
     paymentProof,
@@ -390,7 +391,14 @@ export default function SupplierPayableActions({
     );
   }
 
-  async function recordPayment(
+  const selectedBankCurrency =
+    bankAccounts.find((account) => account.id === bankAccountId)?.currency ?? null;
+
+  const isCrossCurrency =
+    selectedBankCurrency !== null &&
+    selectedBankCurrency !== currency;
+
+async function recordPayment(
     event:
       React.FormEvent<HTMLFormElement>,
   ) {
@@ -464,7 +472,11 @@ export default function SupplierPayableActions({
       ),
     );
 
-    formData.set(
+    if (isCrossCurrency) {
+      formData.set("bankDebitAmount", bankDebitAmount.trim());
+    }
+
+formData.set(
       "paymentDate",
       parsedPaymentDate,
     );
@@ -857,15 +869,7 @@ export default function SupplierPayableActions({
                   value={
                     bankAccountId
                   }
-                  onChange={(
-                    event,
-                  ) =>
-                    setBankAccountId(
-                      event
-                        .target
-                        .value,
-                    )
-                  }
+                  onChange={(event) => { setBankAccountId(event.target.value); setBankDebitAmount(""); }}
                   className={
                     inputClass
                   }
@@ -900,6 +904,27 @@ export default function SupplierPayableActions({
                   )}
                 </select>
               </label>
+
+              {isCrossCurrency && (
+                <label>
+                  <span className={labelClass}>
+                    Actual bank debit ({selectedBankCurrency}) *
+                  </span>
+                  <input
+                    type="number"
+                    min="0.01"
+                    step="0.01"
+                    required
+                    value={bankDebitAmount}
+                    onChange={(event) => setBankDebitAmount(event.target.value)}
+                    className={inputClass}
+                  />
+                  <p className="mt-1 text-xs text-slate-500">
+                    Enter the actual amount debited in the bank account currency.
+                    Do not estimate the exchange rate.
+                  </p>
+                </label>
+              )}
 
               <label>
                 <span

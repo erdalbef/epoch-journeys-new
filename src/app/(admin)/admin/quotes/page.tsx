@@ -269,6 +269,14 @@ export default async function QuotesPage({ searchParams }: PageProps) {
                         </Link>
                       )}
 
+                      <Link
+                        data-epoch-flexible-pricing-link="true"
+                        href={`/admin/quotes/${quote.id}/flexible-pricing`}
+                        className="text-indigo-700 hover:underline"
+                      >
+                        Flexible Pricing
+                      </Link>
+
                       <DuplicateQuoteButton quoteId={quote.id} />
 
                       {quote.status === "DRAFT" && (

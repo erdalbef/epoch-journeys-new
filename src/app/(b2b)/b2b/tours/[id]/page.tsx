@@ -441,6 +441,25 @@ export default async function TourDetailPage({
       )}
 
       {/* ======================================================
+          DAY-BY-DAY ITINERARY
+      ====================================================== */}
+
+      {tour.itinerary?.trim() && (
+        <ContentSection
+          eyebrow="Your Pilgrimage"
+          title="Day-by-Day Itinerary"
+          icon={<BookOpen className="h-5 w-5" />}
+        >
+          <div className="whitespace-pre-wrap rounded-xl border border-slate-200 bg-slate-50 p-5 text-sm leading-7 text-slate-700">
+            {tour.itinerary}
+          </div>
+          <p className="mt-3 text-xs text-slate-500">
+            Proposed itinerary for planning purposes. Arrangements are subject to confirmation in the official quotation.
+          </p>
+        </ContentSection>
+      )}
+
+      {/* ======================================================
           WHY EPOCH
       ====================================================== */}
 

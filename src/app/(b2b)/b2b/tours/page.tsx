@@ -141,7 +141,7 @@ export default async function B2BToursPage({
   const params = (await searchParams) ?? {};
   const q = params.q?.trim() ?? "";
   const categoryFilter = params.category?.trim() ?? "";
-  const availabilityFilter = params.availability?.trim() ?? "available";
+  const availabilityFilter = "all"; // Published B2B journeys are not dependent on scheduled departures.
 
   const [overrides, tours] = await Promise.all([
     db.agentTourCommission.findMany({
@@ -241,13 +241,12 @@ export default async function B2BToursPage({
             </p>
 
             <h1 className="mt-2 text-3xl font-bold">
-              Tours to Sell
+              Explore Our Journeys
             </h1>
 
             <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-200">
-              Find the right journey for your clients, review live departures,
-              see your commission and net price, and move directly into a
-              booking or custom request.
+              Explore our published group pilgrimages and request an official quotation
+              for your preferred travel dates and paying group size.
             </p>
           </div>
 
@@ -268,8 +267,8 @@ export default async function B2BToursPage({
         />
 
         <SummaryCard
-          label="Tours with Availability"
-          value={availableTourCount}
+          label="Group Travel"
+          value="Dates on request"
         />
 
         <SummaryCard
@@ -291,7 +290,7 @@ export default async function B2BToursPage({
           </h2>
         </div>
 
-        <form className="mt-5 grid gap-4 lg:grid-cols-[1.4fr_1fr_1fr_auto]">
+        <form className="mt-5 grid gap-4 lg:grid-cols-[1.4fr_1fr_auto]">
           <label>
             <span className="text-sm font-semibold text-slate-700">
               Search
@@ -326,25 +325,6 @@ export default async function B2BToursPage({
             </select>
           </label>
 
-          <label>
-            <span className="text-sm font-semibold text-slate-700">
-              Availability
-            </span>
-
-            <select
-              name="availability"
-              defaultValue={availabilityFilter}
-              className={inputClass}
-            >
-              <option value="available">
-                Available Tours
-              </option>
-              <option value="all">
-                All Published Tours
-              </option>
-            </select>
-          </label>
-
           <div className="flex items-end gap-2">
             <button
               type="submit"
@@ -371,7 +351,7 @@ export default async function B2BToursPage({
             </p>
 
             <h2 className="mt-1 text-xl font-semibold text-[#001F3F]">
-              Available Journeys
+              Our Pilgrimage Collections
             </h2>
           </div>
 
@@ -387,7 +367,7 @@ export default async function B2BToursPage({
               No tours matched your filters
             </p>
             <p className="mt-1 text-sm text-slate-500">
-              Try changing the search or availability filter.
+              Try changing your search or category filter.
             </p>
           </div>
         ) : (
@@ -472,7 +452,7 @@ export default async function B2BToursPage({
                       </span>
                     ) : (
                       <span className="absolute left-4 top-4 rounded-full bg-slate-900/80 px-3 py-1.5 text-xs font-bold text-white">
-                        No current availability
+                        Group dates on request
                       </span>
                     )}
                   </div>
@@ -502,62 +482,9 @@ export default async function B2BToursPage({
                       </div>
                     </div>
 
-                    {nextDeparture ? (
-                      <div className="rounded-xl bg-slate-50 p-4">
-                        <p className="text-xs font-bold uppercase tracking-wide text-slate-500">
-                          {firstAvailableDeparture
-                            ? "Next Available Departure"
-                            : "Next Departure"}
-                        </p>
-
-                        <p className="mt-1 font-semibold text-[#001F3F]">
-                          {formatDate(nextDeparture.date)}
-                        </p>
-
-                        <p className="mt-1 text-xs text-slate-500">
-                          {getSeasonLabel(nextDeparture.season)} ·{" "}
-                          {getStatusLabel(nextDeparture.status)}
-                        </p>
-                      </div>
-                    ) : (
-                      <div className="rounded-xl bg-slate-50 p-4 text-sm text-slate-500">
-                        Departure dates will be announced.
-                      </div>
-                    )}
-
-                    {firstAvailableDeparture ? (
-                      <div className="grid gap-3 sm:grid-cols-3">
-                        <PriceBlock
-                          label="Gross"
-                          value={formatCurrency(price)}
-                        />
-
-                        <PriceBlock
-                          label="Commission"
-                          value={formatCurrency(commission)}
-                          emphasis="green"
-                        />
-
-                        <PriceBlock
-                          label="Net"
-                          value={formatCurrency(net)}
-                          emphasis="navy"
-                        />
-                      </div>
-                    ) : null}
-
-                    {firstAvailableDeparture ? (
-                      <div className="flex items-center justify-between rounded-xl border px-4 py-3 text-sm">
-                        <div className="inline-flex items-center gap-2 text-slate-600">
-                          <Users className="h-4 w-4" />
-                          Seats available
-                        </div>
-
-                        <span className="font-bold text-[#001F3F]">
-                          {seatsLeft}
-                        </span>
-                      </div>
-                    ) : null}
+                    <div className="rounded-xl bg-slate-50 p-4 text-sm text-slate-600">
+                      Private group travel · Preferred dates on request
+                    </div>
 
                     {override ? (
                       <div className="rounded-lg bg-blue-50 px-3 py-2 text-xs font-semibold text-blue-700">
@@ -573,25 +500,12 @@ export default async function B2BToursPage({
                         View Tour
                       </Link>
 
-                      {firstAvailableDeparture && !tour.requiresQuote ? (
-                        <Link
-                          href={`/b2b/tours/${tour.id}/book?departureId=${firstAvailableDeparture.id}`}
-                          className="inline-flex items-center justify-center rounded-xl bg-[#8B0000] px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-[#6f0000]"
-                        >
-                          Book Now
-                        </Link>
-                      ) : tour.requiresQuote ? (
-                        <Link
-                          href="/b2b/custom-requests"
-                          className="inline-flex items-center justify-center rounded-xl bg-[#8B0000] px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-[#6f0000]"
-                        >
-                          Request Quote
-                        </Link>
-                      ) : (
-                        <span className="inline-flex items-center justify-center rounded-xl bg-slate-100 px-4 py-2.5 text-sm font-semibold text-slate-400">
-                          Not Available
-                        </span>
-                      )}
+                      <Link
+                        href={`/b2b/custom-requests/new?tourId=${tour.id}`}
+                        className="inline-flex items-center justify-center rounded-xl bg-[#8B0000] px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-[#6f0000]"
+                      >
+                        Request Official Quote
+                      </Link>
                     </div>
                   </div>
                 </article>

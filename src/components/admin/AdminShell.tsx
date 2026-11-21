@@ -65,6 +65,11 @@ const navSections: NavSection[] = [
         href: "/admin/dashboard",
         icon: LayoutDashboard,
       },
+      {
+        label: "Epoch AI",
+        href: "/admin/epoch-ai",
+        icon: Sparkles,
+      },
     ],
   },
   {
@@ -81,12 +86,12 @@ const navSections: NavSection[] = [
         icon: FileText,
       },
       {
-        label: "Quote Requests",
+        label: "Quote Requests (Legacy)",
         href: "/admin/quote-requests",
         icon: MessageSquareText,
       },
       {
-        label: "Custom Requests",
+        label: "Agent Quote Requests",
         href: "/admin/custom-requests",
         icon: Sparkles,
       },
@@ -99,6 +104,11 @@ const navSections: NavSection[] = [
         label: "Tours",
         href: "/admin/tours",
         icon: Map,
+      },
+      {
+        label: "Tour Packages",
+        href: "/admin/tour-packages",
+        icon: FolderOpen,
       },
       {
         label: "Booking Calendar",

@@ -27,6 +27,7 @@ type Props = {
     amount: number;
     currency: string;
     bankAccountId: string | null;
+    bankDebitAmount: string | null;
     paymentDate: string;
     method: string;
     reference: string | null;
@@ -200,6 +201,9 @@ export default function EditSupplierPaymentForm({
   const router = useRouter();
 
   const [amount, setAmount] = useState(String(payment.amount));
+  const [bankDebitAmount, setBankDebitAmount] = useState(
+    payment.bankDebitAmount ?? "",
+  );
   const [bankAccountId, setBankAccountId] = useState(
     payment.bankAccountId || "",
   );
@@ -215,9 +219,14 @@ export default function EditSupplierPaymentForm({
   const [paymentProof, setPaymentProof] = useState<File | null>(null);
   const [loading, setLoading] = useState(false);
 
-  const matchingBanks = bankAccounts.filter(
-    (account) => account.currency === payable.currency,
-  );
+  const matchingBanks = bankAccounts;
+
+  const selectedBankCurrency =
+    bankAccounts.find((account) => account.id === bankAccountId)?.currency ?? null;
+
+  const isCrossCurrency =
+    selectedBankCurrency !== null &&
+    selectedBankCurrency !== payable.currency;
 
   async function submit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -248,6 +257,9 @@ export default function EditSupplierPaymentForm({
 
       formData.set("amount", String(numericAmount));
       formData.set("bankAccountId", bankAccountId);
+    if (isCrossCurrency) {
+      formData.set("bankDebitAmount", bankDebitAmount.trim());
+    }
       formData.set("paymentDate", parsedPaymentDate);
       formData.set("method", method);
       formData.set("reference", reference.trim());
@@ -322,7 +334,7 @@ export default function EditSupplierPaymentForm({
         <Field label="Bank / Cash Account *">
           <select
             value={bankAccountId}
-            onChange={(event) => setBankAccountId(event.target.value)}
+            onChange={(event) => { setBankAccountId(event.target.value); setBankDebitAmount(""); }}
             className={inputClass}
           >
             <option value="">Select account</option>
@@ -334,6 +346,23 @@ export default function EditSupplierPaymentForm({
             ))}
           </select>
         </Field>
+
+        {isCrossCurrency && (
+          <Field label={`Actual Bank Debit (${selectedBankCurrency}) *`}>
+            <input
+              type="number"
+              min="0.01"
+              step="0.01"
+              required
+              value={bankDebitAmount}
+              onChange={(event) => setBankDebitAmount(event.target.value)}
+              className={inputClass}
+            />
+            <p className="mt-1 text-xs text-slate-500">
+              Enter the actual amount debited from the selected bank account.
+            </p>
+          </Field>
+        )}
 
         <Field label="Payment Method *">
           <select

@@ -39,6 +39,17 @@ export default async function EditSupplierPaymentPage({ params }: Props) {
         reference: true,
         notes: true,
         contractPaymentScheduleId: true,
+
+        bankTransactions: {
+          where: { status: "POSTED" },
+          orderBy: { createdAt: "desc" },
+          take: 1,
+          select: {
+            id: true,
+            amount: true,
+            currency: true,
+          },
+        },
         documents: {
           where: { type: "SUPPLIER_PAYMENT_PROOF" },
           orderBy: { createdAt: "desc" },
@@ -138,6 +149,8 @@ export default async function EditSupplierPaymentPage({ params }: Props) {
         payment={{
           id: payment.id,
           amount: Number(payment.amount),
+          bankDebitAmount:
+            payment.bankTransactions[0]?.amount.toString() ?? null,
           currency: payment.currency,
           bankAccountId: payment.bankAccountId,
           paymentDate: payment.paymentDate.toISOString(),

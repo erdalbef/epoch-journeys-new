@@ -41,8 +41,8 @@ export default async function SupportTicketDetails({ params }: Props) {
     <Link href="/admin/support" className="text-sm text-red-800 underline">Back to Support inbox</Link>
     <div className="rounded-xl border bg-white p-6 space-y-4">
       <h1 className="text-2xl font-bold">{ticket.subject}</h1>
-      <p className="text-sm text-slate-600">{agent?.travelAgency || agent?.fullName || "Agency"} Â· {agent?.email || ""}</p>
-      <p className="text-sm">Status: <b>{ticket.status.replaceAll("_", " ")}</b> Â· <strong>{view.label}</strong> Â· Last activity: {view.lastActivity.toLocaleString("en-GB")}</p>
+      <p className="text-sm text-slate-600">{agent?.travelAgency || agent?.fullName || "Agency"} · {agent?.email || ""}</p>
+      <p className="text-sm">Status: <b>{ticket.status.replaceAll("_", " ")}</b> · <strong>{view.label}</strong> · Last activity: {view.lastActivity.toLocaleString("en-GB")}</p>
       {ticket.bookingId && <p className="text-sm">Booking reference: {ticket.bookingId}</p>}
       <div className="whitespace-pre-wrap rounded-lg bg-slate-50 p-4 text-sm">{ticket.message}</div>
       {ticket.attachmentPath && <a href={`/api/support/attachments/${ticket.id}`} className="text-sm text-red-800 underline">Download attachment: {ticket.attachmentName || "File"}</a>}

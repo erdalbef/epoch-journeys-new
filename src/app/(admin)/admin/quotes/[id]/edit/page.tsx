@@ -1,4 +1,5 @@
 import { notFound, redirect } from "next/navigation";
+import Link from "next/link";
 import { getServerSession } from "next-auth";
 
 import { authOptions } from "@/lib/authOptions";
@@ -169,6 +170,17 @@ export default async function EditQuotePage({ params }: PageProps) {
           Update the quote pricing, recipient, and client-facing content. Permanent
           agency information is loaded from Agent Master.
         </p>
+      </div>
+
+      <div className="mb-6 flex flex-wrap items-center gap-3">
+        <Link
+          data-epoch-flexible-pricing-link="true"
+          href={`/admin/quotes/${id}/flexible-pricing`}
+          className="inline-flex rounded-lg bg-indigo-700 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-800"
+        >
+          Flexible Group Pricing
+        </Link>
+        <span className="text-sm text-slate-600">Approve alternative group sizes and NET prices separately.</span>
       </div>
 
       <QuoteCreateForm

@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 
 import { db } from "@/lib/db";
 import SupplierPayableActions from "@/components/admin/supplier-payables/SupplierPayableActions";
+import EpochInvoiceAudit from "@/components/admin/supplier-payables/EpochInvoiceAudit";
 import SupplierDocumentDeleteButton from "@/components/admin/supplier-payables/SupplierDocumentDeleteButton";
 
 type Props = {
@@ -252,7 +253,7 @@ export default async function SupplierPayableDetailPage({ params }: Props) {
           href="/admin/supplier-payables"
           className="text-sm font-semibold text-[#001F3F]"
         >
-          ← Supplier Payables
+          â† Supplier Payables
         </Link>
       </div>
 
@@ -319,6 +320,8 @@ export default async function SupplierPayableDetailPage({ params }: Props) {
           strong
         />
       </div>
+
+      <EpochInvoiceAudit payableId={payable.id} />
 
       <div className="grid gap-6 xl:grid-cols-[1.35fr_.65fr]">
         <div className="space-y-6">

@@ -6,6 +6,7 @@ import {
   Text,
   View,
   Image,
+  Link,
   StyleSheet,
 } from "@react-pdf/renderer";
 
@@ -321,40 +322,74 @@ const styles = StyleSheet.create({
     lineHeight: 1.45,
   },
 
+  // Group each payment milestone or cancellation clause into a readable unit.
+  // A short clause stays on one PDF page; long clauses can wrap naturally.
+  policyParagraph: {
+    marginBottom: 10,
+  },
+  policyParagraphLast: {
+    marginBottom: 0,
+  },
+  policyHeading: {
+    fontSize: 9.5,
+    lineHeight: 1.45,
+    fontWeight: "bold",
+    color: NAVY,
+    marginBottom: 3,
+  },
+  policyLine: {
+    fontSize: 9.3,
+    lineHeight: 1.55,
+    color: "#334155",
+    marginBottom: 2,
+  },
+
+  // Every day is its own compact card, so page breaks never cut a day in half.
+  // Avoid overflow: hidden on a View that can span PDF pages.
   itineraryList: {
-    borderWidth: 1,
-    borderColor: BORDER,
-    borderRadius: 4,
-    overflow: "hidden",
+    marginTop: 1,
   },
 
   itineraryRow: {
     flexDirection: "row",
-    paddingVertical: 7,
-    paddingHorizontal: 9,
-    borderBottomWidth: 1,
-    borderBottomColor: "#E9EEF4",
+    paddingVertical: 8,
+    paddingHorizontal: 10,
+    borderWidth: 1,
+    borderColor: BORDER,
+    borderRadius: 4,
+    marginBottom: 6,
   },
 
-  itineraryRowLast: {
-    flexDirection: "row",
-    paddingVertical: 7,
-    paddingHorizontal: 9,
+  // The date and pilgrimage-day title form one visual unit at left.
+  itineraryDateBlock: {
+    width: "35%",
+    paddingRight: 14,
   },
 
   itineraryDate: {
-    width: "29%",
-    paddingRight: 8,
-    color: NAVY,
-    fontSize: 8.8,
+    color: SLATE,
+    fontSize: 8.2,
+    lineHeight: 1.35,
     fontWeight: "bold",
   },
 
-  itineraryDetails: {
+  itineraryContent: {
     flex: 1,
+  },
+
+  itineraryTitle: {
+    // Distinctive Epoch burgundy accent for the destination heading.
+    color: "#9B2C4B",
+    fontSize: 9.4,
+    fontWeight: "bold",
+    lineHeight: 1.35,
+    marginTop: 5,
+  },
+
+  itineraryDetails: {
     color: "#334155",
     fontSize: 9,
-    lineHeight: 1.4,
+    lineHeight: 1.45,
   },
 
   footer: {
@@ -524,6 +559,63 @@ function renderStructuredText(text?: string | null) {
     });
 }
 
+/**
+ * Render already-saved payment and cancellation wording without rewriting it.
+ * Blank lines separate policy clauses. Keep normal-length clauses together to
+ * avoid isolated due dates and orphaned cancellation statements on PDF pages.
+ * A very long clause remains splittable to avoid page overflow.
+ */
+function renderPolicyParagraphs(text?: string | null) {
+  if (!text?.trim()) {
+    return <Text style={styles.bodyText}>-</Text>;
+  }
+
+  const paragraphs = text
+    .replace(/\r\n?/g, "\n")
+    .trim()
+    .split(/\n\s*\n+/)
+    .map((paragraph) => paragraph.trim())
+    .filter(Boolean);
+
+  return paragraphs.map((paragraph, index) => {
+    const lines = paragraph.split("\n").map((line) => line.trim()).filter(Boolean);
+    const firstLine = lines[0] || "";
+    const isHeading =
+      lines.length > 1 &&
+      (/^\d{1,3}%\s+\S/.test(firstLine) || /^[A-Z][A-Z0-9 &/\-]{4,}$/.test(firstLine));
+    const bodyLines = isHeading ? lines.slice(1) : lines;
+
+    return (
+      <View
+        key={index}
+        style={index === paragraphs.length - 1 ? styles.policyParagraphLast : styles.policyParagraph}
+        wrap={paragraph.length > 500}
+      >
+        {isHeading ? <Text style={styles.policyHeading}>{firstLine}</Text> : null}
+        {bodyLines.map((line, lineIndex) => (
+          <Text key={lineIndex} style={styles.policyLine}>{line}</Text>
+        ))}
+      </View>
+    );
+  });
+}
+
+/**
+ * An Agent Proposal is a high-level pilgrimage program, not a confirmed
+ * operational schedule. Omit labelled Mass and Overnight notes from the
+ * BRIEF ITINERARY display only; do not alter the saved itinerary, operational
+ * Mass requests, hotel arrangements, or quote costing data.
+ *
+ * Keep descriptive terms such as "overnight flight" in the narrative/title.
+ */
+function briefItineraryNarrative(description: string): string {
+  const operationalNote = /\b(?:Mass|Overnight)\s*:\s*/i.exec(description);
+  const narrative = operationalNote
+    ? description.slice(0, operationalNote.index)
+    : description;
+  return narrative.trim();
+}
+
 export default function AgentClientQuotePdfDocument(props: Props) {
   const {
     quoteNumber,
@@ -555,6 +647,8 @@ export default function AgentClientQuotePdfDocument(props: Props) {
 
     paxPricingRows,
     complimentaryPolicy,
+    alternativePricingUrl,
+    approvedAlternativePricing,
     briefItinerary,
     optionalHotels,
     optionalServices,
@@ -640,7 +734,7 @@ export default function AgentClientQuotePdfDocument(props: Props) {
           </View>
         </View>
 
-        {heroImageUrl ? <Image src={heroImageUrl} style={styles.heroImage} /> : null}
+        {/* Keep the proposal compact: no hero image block between header and group details. */}
 
         <View style={styles.section} wrap={false}>
           <Text style={styles.sectionTitle}>Group Information</Text>
@@ -650,11 +744,11 @@ export default function AgentClientQuotePdfDocument(props: Props) {
               <Text style={styles.infoValue}>{payingPassengers ?? 0}</Text>
             </View>
             <View style={styles.infoRow}>
-              <Text style={styles.infoLabel}>Complimentary Travelers</Text>
+              <Text style={styles.infoLabel}>Complimentary Pilgrims</Text>
               <Text style={styles.infoValue}>{freePassengers ?? 0}</Text>
             </View>
             <View style={styles.infoRowLast}>
-              <Text style={styles.infoLabel}>Total Travelers</Text>
+              <Text style={styles.infoLabel}>Total Pilgrims</Text>
               <Text style={styles.infoValue}>{totalPassengers ?? 0}</Text>
             </View>
           </View>
@@ -662,31 +756,28 @@ export default function AgentClientQuotePdfDocument(props: Props) {
 
         {briefItinerary.length > 0 ? (
           <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Brief Itinerary</Text>
+            <Text style={styles.sectionTitle} minPresenceAhead={65}>Brief Itinerary</Text>
 
             <View style={styles.itineraryList}>
               {briefItinerary.map((item, index) => {
-                const isLast =
-                  index ===
-                  briefItinerary.length - 1;
-
+                const narrative = briefItineraryNarrative(item.description);
                 return (
                   <View
                     key={`${item.dayNumber}-${index}`}
-                    style={
-                      isLast
-                        ? styles.itineraryRowLast
-                        : styles.itineraryRow
-                    }
+                    style={styles.itineraryRow}
                     wrap={false}
                   >
-                    <Text style={styles.itineraryDate}>
-                      {item.dateLabel}
-                    </Text>
-
-                    <Text style={styles.itineraryDetails}>
-                      {item.details}
-                    </Text>
+                    <View style={styles.itineraryDateBlock}>
+                      <Text style={styles.itineraryDate}>{item.dateLabel}</Text>
+                      {item.title ? (
+                        <Text style={styles.itineraryTitle}>{item.title}</Text>
+                      ) : null}
+                    </View>
+                    <View style={styles.itineraryContent}>
+                      {narrative ? (
+                        <Text style={styles.itineraryDetails}>{narrative}</Text>
+                      ) : null}
+                    </View>
                   </View>
                 );
               })}
@@ -696,7 +787,7 @@ export default function AgentClientQuotePdfDocument(props: Props) {
               style={[
                 styles.bodyText,
                 {
-                  marginTop: 6,
+                  marginTop: 3,
                   fontSize: 8.5,
                   color: "#64748B",
                 },
@@ -713,7 +804,7 @@ export default function AgentClientQuotePdfDocument(props: Props) {
 
           <View style={styles.table}>
             <View style={styles.tableHeader}>
-              <Text style={[styles.tableHeaderText, styles.colPax]}>Paying Pax</Text>
+              <Text style={[styles.tableHeaderText, styles.colPax]}>Paying Pilgrims</Text>
               <Text style={[styles.tableHeaderText, styles.colPrice]}>Double/Twin</Text>
               <Text style={[styles.tableHeaderText, styles.colPrice]}>Single</Text>
               <Text style={[styles.tableHeaderText, styles.colPrice]}>Triple</Text>
@@ -741,6 +832,60 @@ export default function AgentClientQuotePdfDocument(props: Props) {
             </Text>
           </View>
         </View>
+
+        {approvedAlternativePricing.length > 0 ? (
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Alternative Group Pricing</Text>
+            <Text style={[styles.bodyText, { marginBottom: 7, fontSize: 8.7 }]}>
+              Agency NET rates per paying pilgrim. Each alternative has its own
+              complimentary-pilgrim allocation and total group size.
+            </Text>
+            <View style={styles.table}>
+              <View style={styles.tableHeader} wrap={false}>
+                <Text style={[styles.tableHeaderText, { width: "13%", fontSize: 7.4 }]}>Paying</Text>
+                <Text style={[styles.tableHeaderText, { width: "16%", fontSize: 7.4 }]}>Compl.</Text>
+                <Text style={[styles.tableHeaderText, { width: "13%", fontSize: 7.4 }]}>Total</Text>
+                <Text style={[styles.tableHeaderText, { width: "20%", fontSize: 7.4, textAlign: "right" }]}>Double/Twin</Text>
+                <Text style={[styles.tableHeaderText, { width: "19%", fontSize: 7.4, textAlign: "right" }]}>Single</Text>
+                <Text style={[styles.tableHeaderText, { width: "19%", fontSize: 7.4, textAlign: "right" }]}>Triple</Text>
+              </View>
+              {approvedAlternativePricing.map((tier, index) => (
+                <View key={`${tier.payingPilgrims}-${index}`} style={styles.tableRow} wrap={false}>
+                  <Text style={{ width: "13%" }}>{tier.payingPilgrims}</Text>
+                  <Text style={{ width: "16%" }}>{tier.complimentaryPilgrims}</Text>
+                  <Text style={{ width: "13%" }}>{tier.totalPilgrims}</Text>
+                  <Text style={{ width: "20%", textAlign: "right" }}>{formatRoomRate(tier.doubleTwinPrice, currency)}</Text>
+                  <Text style={{ width: "19%", textAlign: "right" }}>{formatRoomRate(tier.singlePrice, currency)}</Text>
+                  <Text style={{ width: "19%", textAlign: "right" }}>{formatRoomRate(tier.triplePrice, currency)}</Text>
+                </View>
+              ))}
+            </View>
+            {approvedAlternativePricing.some((tier) => tier.roomArrangements || tier.note) ? (
+              <View style={{ marginTop: 7 }}>
+                {approvedAlternativePricing
+                  .filter((tier) => tier.roomArrangements || tier.note)
+                  .map((tier) => (
+                    <Text key={`notes-${tier.payingPilgrims}`} style={[styles.bodyText, { fontSize: 8.3, marginBottom: 3 }]}>
+                      {`${tier.payingPilgrims} paying pilgrims: `}
+                      {tier.roomArrangements ? `Complimentary rooms: ${tier.roomArrangements}. ` : ""}
+                      {tier.note || ""}
+                    </Text>
+                  ))}
+              </View>
+            ) : null}
+            {alternativePricingUrl ? (
+              <View style={{ marginTop: 8 }}>
+                <Link src={alternativePricingUrl} style={{ fontSize: 9, color: NAVY, textDecoration: "underline" }}>
+                  View Alternative Group Pricing Online (agent sign-in required)
+                </Link>
+              </View>
+            ) : null}
+            <Text style={[styles.bodyText, { marginTop: 7, fontSize: 8.3, color: SLATE }]}>
+              Prices are subject to supplier availability and reconfirmation. Changes in group size,
+              complimentary pilgrims or room arrangements require a revised quotation.
+            </Text>
+          </View>
+        ) : null}
 
         {complimentaryPolicy ? (
           <View style={styles.section} wrap={false}>
@@ -817,15 +962,15 @@ export default function AgentClientQuotePdfDocument(props: Props) {
 
         {paymentPolicy ? (
           <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Payment Schedule</Text>
-            <View style={styles.box}>{renderStructuredText(paymentPolicy)}</View>
+            <Text style={styles.sectionTitle} minPresenceAhead={65}>Payment Schedule</Text>
+            <View style={styles.box}>{renderPolicyParagraphs(paymentPolicy)}</View>
           </View>
         ) : null}
 
         {cancellationPolicy ? (
           <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Cancellation Terms</Text>
-            <View style={styles.noteBox}>{renderStructuredText(cancellationPolicy)}</View>
+            <Text style={styles.sectionTitle} minPresenceAhead={65}>Cancellation Terms</Text>
+            <View style={styles.noteBox}>{renderPolicyParagraphs(cancellationPolicy)}</View>
           </View>
         ) : null}
 

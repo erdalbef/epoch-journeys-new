@@ -1,0 +1,180 @@
+import { getServerSession } from "next-auth";
+import { NextResponse } from "next/server";
+import { ZodError } from "zod";
+
+import { authOptions } from "@/lib/authOptions";
+import { db } from "@/lib/db";
+import { checkRateLimit } from "@/lib/rate-limit";
+import { requireAdminApiAccess } from "@/lib/security/requireAdminApiAccess";
+import { registerCommercialEvidence } from "@/lib/epoch-ai/finance/registerCommercialEvidence";
+
+export const runtime = "nodejs";
+
+const MAX_BODY_LENGTH = 8192;
+
+const SAFE_VALIDATION_ERRORS = new Set([
+  "A contract or contract document is required.",
+  "A quotation document is required.",
+  "A traceable email source is required.",
+  "Supplier not found.",
+  "Payable does not belong to this supplier.",
+  "Contract does not belong to this supplier.",
+  "Source document not found.",
+  "Source document belongs to another supplier.",
+  "Source document supplier is not established.",
+  "Document classification is not valid for this evidence source.",
+]);
+
+export async function POST(request: Request) {
+  const denied = await requireAdminApiAccess();
+  if (denied) return denied;
+  // Registration requires active document protection.
+  // Do not register evidence while its source can be replaced.
+  if (process.env.EPOCH_COMMERCIAL_EVIDENCE_PROTECTION !== "enabled") {
+    return NextResponse.json(
+      {
+        error: "Commercial evidence registration is not enabled.",
+      },
+      { status: 503 },
+    );
+  }
+
+
+  const origin = request.headers.get("origin");
+
+  // Require a matching browser origin for this write endpoint.
+  if (!origin) {
+    return NextResponse.json(
+      { error: "Request origin is required." },
+      { status: 403 },
+    );
+  }
+
+  try {
+    const originUrl = new URL(origin);
+
+    const allowedHosts = [
+      request.headers.get("host"),
+      request.headers.get("x-forwarded-host"),
+    ]
+      .filter((host): host is string => Boolean(host))
+      .map((host) => host.toLowerCase());
+
+    if (
+      !["http:", "https:"].includes(originUrl.protocol) ||
+      !allowedHosts.includes(originUrl.host.toLowerCase())
+    ) {
+      return NextResponse.json(
+        { error: "Invalid request origin." },
+        { status: 403 },
+      );
+    }
+  } catch {
+    return NextResponse.json(
+      { error: "Invalid request origin." },
+      { status: 403 },
+    );
+  }
+
+  const session = await getServerSession(authOptions);
+  const userId = session?.user?.id;
+
+  if (!userId) {
+    return NextResponse.json(
+      { error: "Authentication required." },
+      { status: 401 },
+    );
+  }
+
+  const limit = checkRateLimit(
+    `commercial-evidence-registration:${userId}`,
+    10,
+    10 * 60 * 1000,
+  );
+
+  if (!limit.allowed) {
+    return NextResponse.json(
+      { error: "Registration rate limit reached." },
+      {
+        status: 429,
+        headers: {
+          "Retry-After": String(limit.retryAfter),
+        },
+      },
+    );
+  }
+
+  const contentType = request.headers.get("content-type") ?? "";
+
+  if (!/^application\/json(?:\s*;|$)/i.test(contentType)) {
+    return NextResponse.json(
+      { error: "JSON request required." },
+      { status: 415 },
+    );
+  }
+
+  try {
+    const rawBody = await request.text();
+
+    if (rawBody.length > MAX_BODY_LENGTH) {
+      return NextResponse.json(
+        { error: "Request is too large." },
+        { status: 413 },
+      );
+    }
+
+    let body: unknown;
+
+    try {
+      body = JSON.parse(rawBody);
+    } catch {
+      return NextResponse.json(
+        { error: "Invalid JSON request." },
+        { status: 400 },
+      );
+    }
+
+    const evidence = await registerCommercialEvidence(
+      db,
+      userId,
+      body,
+    );
+
+    return NextResponse.json(
+      {
+        success: true,
+        evidence,
+        message:
+          "Evidence registered. Acceptance and commercial terms remain unverified.",
+      },
+      { status: 201 },
+    );
+  } catch (error) {
+    if (error instanceof ZodError) {
+      return NextResponse.json(
+        { error: "Invalid registration data." },
+        { status: 400 },
+      );
+    }
+
+    if (
+      error instanceof Error &&
+      SAFE_VALIDATION_ERRORS.has(error.message)
+    ) {
+      return NextResponse.json(
+        { error: error.message },
+        { status: 400 },
+      );
+    }
+
+    console.error(
+      "COMMERCIAL_EVIDENCE_REGISTRATION_ERROR",
+      error,
+    );
+
+    return NextResponse.json(
+      { error: "Commercial evidence registration failed." },
+      { status: 500 },
+    );
+  }
+}

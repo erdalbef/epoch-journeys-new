@@ -16,6 +16,8 @@ export async function getToursForQuoteForm() {
       category: true,
       overviewItinerary: true,
       itinerary: true,
+      inclusions: true,
+      exclusions: true,
 
       pricingTiers: {
         where: {
@@ -44,6 +46,8 @@ export async function getToursForQuoteForm() {
       category: tour.category,
       overviewItinerary: tour.overviewItinerary,
       itinerary: tour.itinerary,
+      inclusions: tour.inclusions.join("\n"),
+      exclusions: tour.exclusions.join("\n"),
 
       /*
        * Tour no longer stores startingPrice

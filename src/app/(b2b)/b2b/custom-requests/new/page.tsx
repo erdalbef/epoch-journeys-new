@@ -77,6 +77,8 @@ type FormState = {
   notes: string;
 };
 
+type AgentContext = { agency: string | null; name: string | null; email: string | null };
+
 type SubmitResponse = {
   success?: boolean;
   id?: string;
@@ -230,6 +232,17 @@ export default function NewCustomRequestPage() {
   const [loading, setLoading] =
     useState(false);
 
+  const [spiritualOpen, setSpiritualOpen] = useState(false);
+  const [departureAirport, setDepartureAirport] = useState("");
+  const [massPreference, setMassPreference] = useState("daily");
+  const [priestPreference, setPriestPreference] = useState("unknown");
+  const [travelPeriod, setTravelPeriod] = useState("");
+  const [travelDateMode, setTravelDateMode] = useState<"dates" | "month" | "undecided">("month");
+  const [travelStart, setTravelStart] = useState("");
+  const [travelEnd, setTravelEnd] = useState("");
+
+  const [agentContext, setAgentContext] = useState<AgentContext | null>(null);
+
   const [error, setError] =
     useState("");
 
@@ -239,8 +252,17 @@ export default function NewCustomRequestPage() {
   const inputClass =
     "w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-[#8B0000] focus:ring-2 focus:ring-[#8B0000]/10";
 
-  const checkboxClass =
-    "h-4 w-4 rounded border-slate-300 accent-[#8B0000]";
+  useEffect(() => {
+    let active = true;
+    fetch("/api/b2b/quote-request-context", { cache: "no-store" })
+      .then(async (response) => {
+        if (!response.ok) throw new Error("Agent context unavailable");
+        return response.json() as Promise<AgentContext>;
+      })
+      .then((data) => { if (active) setAgentContext(data); })
+      .catch(() => { /* Quote request remains available if profile lookup fails. */ });
+    return () => { active = false; };
+  }, []);
 
   useEffect(() => {
     if (!tourId) {
@@ -482,19 +504,17 @@ export default function NewCustomRequestPage() {
             : form.destinations.trim(),
 
         startDate:
-          form.startDate ||
-          null,
+          travelDateMode === "dates" ? (travelStart || null) : null,
 
         alternativeStartDate:
           form.alternativeStartDate ||
           null,
 
         endDate:
-          form.endDate ||
-          null,
+          travelDateMode === "dates" ? (travelEnd || null) : null,
 
         datesFlexible:
-          form.datesFlexible,
+          travelDateMode !== "dates",
 
         durationDays:
           form.durationDays
@@ -568,11 +588,9 @@ export default function NewCustomRequestPage() {
               )
             : 0,
 
-        priestTraveling:
-          form.priestTraveling,
+        priestTraveling: priestPreference === "yes",
 
-        dailyMassRequested:
-          form.dailyMassRequested,
+        dailyMassRequested: massPreference === "daily",
 
         specialChurchRequests:
           form.specialChurchRequests.trim() ||
@@ -633,9 +651,17 @@ export default function NewCustomRequestPage() {
           form.specialRequests.trim() ||
           null,
 
-        notes:
-          form.notes.trim() ||
-          null,
+        notes: [
+          travelDateMode === "dates" && travelStart
+            ? `Preferred travel dates: ${travelStart}${travelEnd ? ` to ${travelEnd}` : ""}`
+            : travelDateMode === "month" && travelPeriod
+              ? `Preferred travel month: ${travelPeriod}`
+              : "Preferred travel dates: To be confirmed",
+          spiritualOpen ? `Mass preference: ${massPreference === "daily" ? "Daily Mass" : massPreference === "selected" ? "Mass on selected days" : "No Mass arrangements"}` : "",
+          spiritualOpen ? `Priest / Chaplain: ${priestPreference === "yes" ? "Yes" : priestPreference === "no" ? "No" : "To be confirmed"}` : "",
+          form.needsFlights ? `International flight departure airport/city: ${departureAirport.trim()}` : "",
+          form.notes.trim(),
+        ].filter(Boolean).join("\n") || null,
       };
 
       const response =
@@ -728,6 +754,20 @@ export default function NewCustomRequestPage() {
             : "Tell us what your group has in mind. Epoch Journeys will develop a private pilgrimage program and tailored NET quotation for your agency or organization."}
         </p>
       </div>
+
+      {/* Automatically sourced agent identity. Reference and timestamp are assigned on submission. */}
+      <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
+        <h2 className="text-base font-bold text-[#001F3F]">Quote Request Information</h2>
+        <div className="mt-4 grid gap-4 text-sm sm:grid-cols-2 lg:grid-cols-3">
+          <div><p className="text-slate-500">Request No.</p><p className="mt-1 font-semibold text-slate-900">Assigned on submission</p></div>
+          <div><p className="text-slate-500">Request Date</p><p className="mt-1 font-semibold text-slate-900">Recorded on submission</p></div>
+          <div><p className="text-slate-500">Request Status</p><p className="mt-1 font-semibold text-slate-900">Request Received (after submission)</p></div>
+          <div><p className="text-slate-500">Travel Agency</p><p className="mt-1 font-semibold text-slate-900">{agentContext?.agency || "From your agent account"}</p></div>
+          <div><p className="text-slate-500">Agent Name</p><p className="mt-1 font-semibold text-slate-900">{agentContext?.name || "From your agent account"}</p></div>
+          <div><p className="text-slate-500">Agent Email</p><p className="mt-1 font-semibold text-slate-900">{agentContext?.email || "From your agent account"}</p></div>
+        </div>
+        <p className="mt-4 text-xs text-slate-500">No need to enter these details. Your unique reference and official submission date will be saved automatically.</p>
+      </section>
 
       {/* JOURNEY LOADING */}
 
@@ -849,922 +889,102 @@ export default function NewCustomRequestPage() {
           </div>
         ) : null}
 
-        {/* 1 JOURNEY */}
-
         {!journey ? (
-          <section className="space-y-5 rounded-2xl border bg-white p-6 shadow-sm">
-            <SectionTitle
-              number="1"
-              title="Journey Request"
-              description="Give us the basic idea for the private pilgrimage you would like us to prepare."
-            />
-
-            <div className="grid gap-5 md:grid-cols-2">
-              <label>
-                <FieldLabel>
-                  Request Type
-                </FieldLabel>
-
-                <select
-                  name="requestType"
-                  value={
-                    form.requestType
-                  }
-                  onChange={
-                    handleChange
-                  }
-                  className={
-                    inputClass
-                  }
-                >
-                  <option value="TAILOR_MADE">
-                    Tailor-Made
-                    Pilgrimage
-                  </option>
-
-                  <option value="BESPOKE_GROUP">
-                    Bespoke Group
-                  </option>
-                </select>
-              </label>
-
-              <label>
-                <FieldLabel>
-                  Working Title
-                </FieldLabel>
-
-                <input
-                  name="title"
-                  value={form.title}
-                  onChange={
-                    handleChange
-                  }
-                  placeholder="Example: St. Paul Pilgrimage in Greece"
-                  className={
-                    inputClass
-                  }
-                />
-              </label>
-
-              <label>
-                <FieldLabel
-                  required
-                >
-                  Main Destination
-                </FieldLabel>
-
-                <input
-                  name="destination"
-                  value={
-                    form.destination
-                  }
-                  onChange={
-                    handleChange
-                  }
-                  required
-                  placeholder="Example: Greece"
-                  className={
-                    inputClass
-                  }
-                />
-              </label>
-
-              <label>
-                <FieldLabel>
-                  Countries /
-                  Destinations
-                </FieldLabel>
-
-                <input
-                  name="destinations"
-                  value={
-                    form.destinations
-                  }
-                  onChange={
-                    handleChange
-                  }
-                  placeholder="Greece, Turkey"
-                  className={
-                    inputClass
-                  }
-                />
-              </label>
-            </div>
+          <section className="space-y-4 rounded-2xl border bg-white p-6 shadow-sm">
+            <SectionTitle number="1" title="Your Journey" description="A few details are enough to get started." />
+            <label className="block"><FieldLabel required>Main Destination</FieldLabel>
+              <input name="destination" value={form.destination} onChange={handleChange} required className={inputClass} placeholder="e.g. Italy, Portugal or Greece" />
+            </label>
+            <label className="block"><FieldLabel>Other Destinations (Optional)</FieldLabel>
+              <input name="destinations" value={form.destinations} onChange={handleChange} className={inputClass} placeholder="Additional countries or destinations" />
+            </label>
           </section>
         ) : null}
 
-        {/* TRAVEL DATES */}
-
         <section className="space-y-5 rounded-2xl border bg-white p-6 shadow-sm">
-          <SectionTitle
-            number={
-              journey ? "1" : "2"
-            }
-            title="Travel Dates"
-            description="Approximate dates are sufficient. Flexible dates can often provide better hotel availability and pricing."
-          />
-
-          <div className="grid gap-5 md:grid-cols-2 lg:grid-cols-4">
-            <label>
-              <FieldLabel>
-                Preferred Start
-              </FieldLabel>
-
-              <input
-                type="date"
-                name="startDate"
-                value={
-                  form.startDate
-                }
-                onChange={
-                  handleChange
-                }
-                className={
-                  inputClass
-                }
-              />
-            </label>
-
-            <label>
-              <FieldLabel>
-                Alternative Start
-              </FieldLabel>
-
-              <input
-                type="date"
-                name="alternativeStartDate"
-                value={
-                  form.alternativeStartDate
-                }
-                onChange={
-                  handleChange
-                }
-                className={
-                  inputClass
-                }
-              />
-            </label>
-
-            <label>
-              <FieldLabel>
-                Preferred End
-              </FieldLabel>
-
-              <input
-                type="date"
-                name="endDate"
-                value={form.endDate}
-                onChange={
-                  handleChange
-                }
-                className={
-                  inputClass
-                }
-              />
-            </label>
-
-            <label>
-              <FieldLabel>
-                Duration
-              </FieldLabel>
-
-              <input
-                type="number"
-                min="1"
-                name="durationDays"
-                value={
-                  form.durationDays
-                }
-                onChange={
-                  handleChange
-                }
-                readOnly={
-                  Boolean(journey)
-                }
-                className={`${inputClass} ${
-                  journey
-                    ? "bg-slate-50 text-slate-500"
-                    : ""
-                }`}
-              />
-            </label>
-          </div>
-
-          <label className="flex items-center gap-3 rounded-xl bg-slate-50 px-4 py-3 text-sm text-slate-700">
-            <input
-              type="checkbox"
-              name="datesFlexible"
-              checked={
-                form.datesFlexible
-              }
-              onChange={
-                handleChange
-              }
-              className={
-                checkboxClass
-              }
-            />
-
-            Our dates are flexible.
-          </label>
-        </section>
-
-        {/* GROUP */}
-
-        <section className="space-y-5 rounded-2xl border bg-white p-6 shadow-sm">
-          <SectionTitle
-            number={
-              journey ? "2" : "3"
-            }
-            title="Your Group"
-            description="Group size is one of the most important factors in preparing an accurate NET quotation."
-          />
-
-          <div className="grid gap-5 md:grid-cols-2 lg:grid-cols-4">
-            <label>
-              <FieldLabel
-                required
-              >
-                Estimated Pilgrims
-              </FieldLabel>
-
-              <input
-                type="number"
-                min="1"
-                name="estimatedPax"
-                value={
-                  form.estimatedPax
-                }
-                onChange={
-                  handleChange
-                }
-                required
-                placeholder="30"
-                className={
-                  inputClass
-                }
-              />
-            </label>
-
-            <label>
-              <FieldLabel>
-                Adults
-              </FieldLabel>
-
-              <input
-                type="number"
-                min="0"
-                name="adults"
-                value={form.adults}
-                onChange={
-                  handleChange
-                }
-                placeholder="30"
-                className={
-                  inputClass
-                }
-              />
-            </label>
-
-            <label>
-              <FieldLabel>
-                Children
-              </FieldLabel>
-
-              <input
-                type="number"
-                min="0"
-                name="children"
-                value={
-                  form.children
-                }
-                onChange={
-                  handleChange
-                }
-                placeholder="0"
-                className={
-                  inputClass
-                }
-              />
-            </label>
-
-            <label>
-              <FieldLabel>
-                Infants
-              </FieldLabel>
-
-              <input
-                type="number"
-                min="0"
-                name="infants"
-                value={
-                  form.infants
-                }
-                onChange={
-                  handleChange
-                }
-                placeholder="0"
-                className={
-                  inputClass
-                }
-              />
-            </label>
-
-            <label className="lg:col-span-2">
-              <FieldLabel>
-                Group / Parish /
-                Organization
-              </FieldLabel>
-
-              <input
-                name="groupName"
-                value={
-                  form.groupName
-                }
-                onChange={
-                  handleChange
-                }
-                placeholder="Example: St. Joseph Parish"
-                className={
-                  inputClass
-                }
-              />
-            </label>
-
-            <label>
-              <FieldLabel>
-                Group Leader
-              </FieldLabel>
-
-              <input
-                name="groupLeaderName"
-                value={
-                  form.groupLeaderName
-                }
-                onChange={
-                  handleChange
-                }
-                placeholder="Name"
-                className={
-                  inputClass
-                }
-              />
-            </label>
-
-            <label>
-              <FieldLabel>
-                Complimentary Places
-              </FieldLabel>
-
-              <input
-                type="number"
-                min="0"
-                name="complimentaryPlaces"
-                value={
-                  form.complimentaryPlaces
-                }
-                onChange={
-                  handleChange
-                }
-                placeholder="1"
-                className={
-                  inputClass
-                }
-              />
-            </label>
-          </div>
-        </section>
-
-        {/* ROOMING */}
-
-        <section className="space-y-5 rounded-2xl border bg-white p-6 shadow-sm">
-          <SectionTitle
-            number={
-              journey ? "3" : "4"
-            }
-            title="Room Requirements"
-            description="An estimate is enough at quotation stage. The final rooming list can be supplied later."
-          />
-
-          <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-4">
-            <label>
-              <FieldLabel>
-                Twin Rooms
-              </FieldLabel>
-
-              <input
-                type="number"
-                min="0"
-                name="twinRooms"
-                value={
-                  form.twinRooms
-                }
-                onChange={
-                  handleChange
-                }
-                placeholder="12"
-                className={
-                  inputClass
-                }
-              />
-            </label>
-
-            <label>
-              <FieldLabel>
-                Double Rooms
-              </FieldLabel>
-
-              <input
-                type="number"
-                min="0"
-                name="doubleRooms"
-                value={
-                  form.doubleRooms
-                }
-                onChange={
-                  handleChange
-                }
-                placeholder="2"
-                className={
-                  inputClass
-                }
-              />
-            </label>
-
-            <label>
-              <FieldLabel>
-                Single Rooms
-              </FieldLabel>
-
-              <input
-                type="number"
-                min="0"
-                name="singleRooms"
-                value={
-                  form.singleRooms
-                }
-                onChange={
-                  handleChange
-                }
-                placeholder="2"
-                className={
-                  inputClass
-                }
-              />
-            </label>
-
-            <label>
-              <FieldLabel>
-                Triple Rooms
-              </FieldLabel>
-
-              <input
-                type="number"
-                min="0"
-                name="tripleRooms"
-                value={
-                  form.tripleRooms
-                }
-                onChange={
-                  handleChange
-                }
-                placeholder="0"
-                className={
-                  inputClass
-                }
-              />
-            </label>
-          </div>
-        </section>
-
-        {/* PILGRIMAGE */}
-
-        <section className="space-y-5 rounded-2xl border bg-white p-6 shadow-sm">
-          <SectionTitle
-            number={
-              journey ? "4" : "5"
-            }
-            title="Pilgrimage & Spiritual Requirements"
-            description="These details help us build the spiritual rhythm of the journey, not simply its sightseeing program."
-          />
-
-          <div className="grid gap-4 md:grid-cols-2">
-            <label className="flex items-start gap-3 rounded-xl border border-slate-200 p-4">
-              <input
-                type="checkbox"
-                name="dailyMassRequested"
-                checked={
-                  form.dailyMassRequested
-                }
-                onChange={
-                  handleChange
-                }
-                className={`mt-0.5 ${checkboxClass}`}
-              />
-
-              <div>
-                <p className="text-sm font-semibold text-[#001F3F]">
-                  Daily Mass
-                </p>
-
-                <p className="mt-1 text-xs leading-5 text-slate-500">
-                  Request Mass
-                  arrangements where
-                  operationally possible.
-                </p>
-              </div>
-            </label>
-
-            <label className="flex items-start gap-3 rounded-xl border border-slate-200 p-4">
-              <input
-                type="checkbox"
-                name="priestTraveling"
-                checked={
-                  form.priestTraveling
-                }
-                onChange={
-                  handleChange
-                }
-                className={`mt-0.5 ${checkboxClass}`}
-              />
-
-              <div>
-                <p className="text-sm font-semibold text-[#001F3F]">
-                  Priest / Chaplain
-                  Traveling
-                </p>
-
-                <p className="mt-1 text-xs leading-5 text-slate-500">
-                  A priest or chaplain
-                  will accompany the
-                  group.
-                </p>
-              </div>
-            </label>
-          </div>
-
+          <SectionTitle number={journey ? "1" : "2"} title="Your Group & Travel Dates" description="Approximate information is perfectly fine. No need to confirm dates yet." />
           <div className="grid gap-5 md:grid-cols-2">
-            <label>
-              <FieldLabel>
-                Guide Language
-              </FieldLabel>
-
-              <input
-                name="guideLanguage"
-                value={
-                  form.guideLanguage
-                }
-                onChange={
-                  handleChange
-                }
-                placeholder="English"
-                className={
-                  inputClass
-                }
-              />
-            </label>
-
-            <label>
-              <FieldLabel>
-                Special Churches /
-                Shrines
-              </FieldLabel>
-
-              <textarea
-                rows={3}
-                name="specialChurchRequests"
-                value={
-                  form.specialChurchRequests
-                }
-                onChange={
-                  handleChange
-                }
-                placeholder="Any church, shrine, saint, devotion or special Mass location important to the group..."
-                className={
-                  inputClass
-                }
-              />
+            <div className="space-y-2">
+              <label className="block"><FieldLabel>Preferred Travel Dates / Month</FieldLabel>
+                <select value={travelDateMode} onChange={(e) => setTravelDateMode(e.target.value as "dates" | "month" | "undecided")} className={inputClass}>
+                  <option value="month">Preferred month</option>
+                  <option value="dates">Specific travel dates</option>
+                  <option value="undecided">Dates not decided yet</option>
+                </select>
+              </label>
+              {travelDateMode === "month" ? (
+                <label className="block"><span className="sr-only">Choose preferred travel month</span>
+                  <input type="month" value={travelPeriod} onChange={(e) => setTravelPeriod(e.target.value)} className={inputClass} aria-label="Preferred travel month" />
+                </label>
+              ) : travelDateMode === "dates" ? (
+                <div className="grid grid-cols-2 gap-2">
+                  <label className="block"><span className="mb-1 block text-xs text-slate-600">From</span>
+                    <input type="date" value={travelStart} max={travelEnd || undefined} onChange={(e) => setTravelStart(e.target.value)} className={inputClass} />
+                  </label>
+                  <label className="block"><span className="mb-1 block text-xs text-slate-600">To (optional)</span>
+                    <input type="date" value={travelEnd} min={travelStart || undefined} onChange={(e) => setTravelEnd(e.target.value)} className={inputClass} />
+                  </label>
+                </div>
+              ) : (
+                <p className="text-sm text-slate-500">No problem. We can confirm travel dates later.</p>
+              )}
+            </div>
+            <label className="block"><FieldLabel required>Approximate Total Passengers (including complimentary travelers)</FieldLabel>
+              <input type="number" min="1" name="estimatedPax" value={form.estimatedPax} onChange={handleChange} required className={inputClass} placeholder="e.g. 30" />
             </label>
           </div>
         </section>
 
-        {/* SERVICES */}
+        <section className="space-y-4 rounded-2xl border bg-white p-6 shadow-sm">
+          <h2 className="text-lg font-bold text-[#001F3F]">Quotation Package Type <span className="text-sm text-red-700">*</span></h2>
+          <p className="text-sm text-slate-600">Please tell us whether international airfare should be included in your quotation.</p>
+          <div className="grid gap-3 md:grid-cols-2">
+            <label className={`flex cursor-pointer gap-3 rounded-xl border p-4 ${form.landOnly ? "border-[#001F3F] bg-slate-50" : "border-slate-200"}`}>
+              <input type="radio" name="packageType" checked={form.landOnly} onChange={() => setForm(prev => ({ ...prev, landOnly: true, needsFlights: false }))} />
+              <span><strong className="block">Land Only</strong><span className="text-sm text-slate-600">International flights not included</span></span>
+            </label>
+            <label className={`flex cursor-pointer gap-3 rounded-xl border p-4 ${form.needsFlights ? "border-[#001F3F] bg-slate-50" : "border-slate-200"}`}>
+              <input type="radio" name="packageType" checked={form.needsFlights} onChange={() => setForm(prev => ({ ...prev, landOnly: false, needsFlights: true }))} />
+              <span><strong className="block">Land + International Flights</strong><span className="text-sm text-slate-600">Please include international airfare</span></span>
+            </label>
+          </div>
+          {form.needsFlights && <label className="block"><span className="mb-2 block text-sm font-medium">Departure airport or city <span className="text-red-700">*</span></span>
+            <input className={inputClass} required value={departureAirport} onChange={e => setDepartureAirport(e.target.value)} placeholder="e.g. Newark (EWR) or New York (JFK)" />
+          </label>}
+          <p className="text-xs text-slate-500">Land Only may still include internal transportation specified in the itinerary.</p>
+        </section>
 
-        <section className="space-y-5 rounded-2xl border bg-white p-6 shadow-sm">
-          <SectionTitle
-            number={
-              journey ? "5" : "6"
-            }
-            title="Hotels, Flights & Additional Services"
-            description="Tell us how you would like the journey positioned. These preferences can be adjusted during quotation."
-          />
-
-          <div className="grid gap-5 md:grid-cols-3">
-            <label>
-              <FieldLabel>
-                Hotel Standard
-              </FieldLabel>
-
-              <select
-                name="accommodationLevel"
-                value={
-                  form.accommodationLevel
-                }
-                onChange={
-                  handleChange
-                }
-                className={
-                  inputClass
-                }
-              >
-                <option value="">
-                  Select
-                </option>
-
-                <option value="STANDARD_3_STAR">
-                  Standard 3-Star
-                </option>
-
-                <option value="COMFORT_4_STAR">
-                  Comfort 4-Star
-                </option>
-
-                <option value="PREMIUM_5_STAR">
-                  Premium 5-Star
-                </option>
-
-                <option value="MIXED">
-                  Best Appropriate
-                  Mix
-                </option>
+        <section className="rounded-2xl border bg-white shadow-sm">
+          <button type="button" aria-expanded={spiritualOpen} onClick={() => setSpiritualOpen((open) => !open)} className="flex w-full items-center justify-between gap-4 p-6 text-left">
+            <span><span className="block text-lg font-bold text-[#001F3F]">Pilgrimage & Spiritual Requirements <span className="text-sm font-normal text-slate-500">(Optional)</span></span>
+              <span className="mt-1 block text-sm text-slate-500">Customize Mass, chaplain, language and shrine preferences if needed.</span></span>
+            <span className="shrink-0 text-sm font-semibold text-[#8B0000]">{spiritualOpen ? "Hide −" : "Expand +"}</span>
+          </button>
+          {spiritualOpen ? <div className="space-y-5 border-t border-slate-100 p-6">
+            <label className="block"><FieldLabel>Mass Arrangements</FieldLabel>
+              <select value={massPreference} onChange={(e) => setMassPreference(e.target.value)} className={inputClass}>
+                <option value="daily">Daily Mass requested</option><option value="selected">Mass on selected days</option><option value="none">No Mass arrangements required</option>
               </select>
             </label>
-
-            <label>
-              <FieldLabel>
-                Target Budget /
-                Person
-              </FieldLabel>
-
-              <input
-                type="number"
-                min="0"
-                step="0.01"
-                name="budgetPerPerson"
-                value={
-                  form.budgetPerPerson
-                }
-                onChange={
-                  handleChange
-                }
-                placeholder="Optional"
-                className={
-                  inputClass
-                }
-              />
-            </label>
-
-            <label>
-              <FieldLabel>
-                Currency
-              </FieldLabel>
-
-              <select
-                name="currency"
-                value={
-                  form.currency
-                }
-                onChange={
-                  handleChange
-                }
-                className={
-                  inputClass
-                }
-              >
-                <option value="EUR">
-                  EUR
-                </option>
-
-                <option value="USD">
-                  USD
-                </option>
-
-                <option value="GBP">
-                  GBP
-                </option>
+            <label className="block"><FieldLabel>Priest / Chaplain Traveling</FieldLabel>
+              <select value={priestPreference} onChange={(e) => setPriestPreference(e.target.value)} className={inputClass}>
+                <option value="unknown">To be confirmed</option><option value="yes">Yes</option><option value="no">No</option>
               </select>
             </label>
-          </div>
-
-          <div className="grid gap-4 sm:grid-cols-2">
-            <label className="flex items-center gap-3 rounded-xl border border-slate-200 p-4 text-sm font-medium text-slate-700">
-              <input
-                type="checkbox"
-                name="landOnly"
-                checked={
-                  form.landOnly
-                }
-                onChange={
-                  handleChange
-                }
-                className={
-                  checkboxClass
-                }
-              />
-
-              Land arrangements
-              only
+            <label className="block"><FieldLabel>Guide Language</FieldLabel>
+              <select name="guideLanguage" value={form.guideLanguage} onChange={handleChange} className={inputClass}>
+                {["English", "Spanish", "Portuguese", "Italian", "French", "German", "Other (specify below)"].map((lang) => <option key={lang} value={lang}>{lang}</option>)}
+              </select>
             </label>
-
-            <label className="flex items-center gap-3 rounded-xl border border-slate-200 p-4 text-sm font-medium text-slate-700">
-              <input
-                type="checkbox"
-                name="needsFlights"
-                checked={
-                  form.needsFlights
-                }
-                onChange={
-                  handleChange
-                }
-                className={
-                  checkboxClass
-                }
-              />
-
-              Please quote flights
-              where possible
+            <label className="block"><FieldLabel>Special Churches / Shrines</FieldLabel>
+              <textarea rows={3} name="specialChurchRequests" value={form.specialChurchRequests} onChange={handleChange} className={inputClass} placeholder="Optional" />
             </label>
-          </div>
-
-          <label>
-            <FieldLabel>
-              Extension / Additional
-              Program
-            </FieldLabel>
-
-            <textarea
-              rows={3}
-              name="extensionRequest"
-              value={
-                form.extensionRequest
-              }
-              onChange={
-                handleChange
-              }
-              placeholder="Example: Add 2 nights in Rome, Assisi extension, additional leisure day..."
-              className={
-                inputClass
-              }
-            />
-          </label>
+          </div> : null}
         </section>
 
-        {/* CONTACT */}
-
-        <section className="space-y-5 rounded-2xl border bg-white p-6 shadow-sm">
-          <SectionTitle
-            number={
-              journey ? "6" : "7"
-            }
-            title="Group Contact"
-            description="Use this section for the parish, organization or principal group contact when applicable."
-          />
-
-          <div className="grid gap-5 md:grid-cols-2">
-            <label>
-              <FieldLabel>
-                Organization /
-                Company
-              </FieldLabel>
-
-              <input
-                name="companyName"
-                value={
-                  form.companyName
-                }
-                onChange={
-                  handleChange
-                }
-                placeholder="Parish, church, organization or company"
-                className={
-                  inputClass
-                }
-              />
-            </label>
-
-            <label>
-              <FieldLabel>
-                Contact Name
-              </FieldLabel>
-
-              <input
-                name="customerName"
-                value={
-                  form.customerName
-                }
-                onChange={
-                  handleChange
-                }
-                placeholder="Full name"
-                className={
-                  inputClass
-                }
-              />
-            </label>
-
-            <label>
-              <FieldLabel>
-                Contact Email
-              </FieldLabel>
-
-              <input
-                type="email"
-                name="customerEmail"
-                value={
-                  form.customerEmail
-                }
-                onChange={
-                  handleChange
-                }
-                placeholder="email@example.com"
-                className={
-                  inputClass
-                }
-              />
-            </label>
-
-            <label>
-              <FieldLabel>
-                Contact Phone
-              </FieldLabel>
-
-              <input
-                name="customerPhone"
-                value={
-                  form.customerPhone
-                }
-                onChange={
-                  handleChange
-                }
-                placeholder="+1 ..."
-                className={
-                  inputClass
-                }
-              />
-            </label>
-          </div>
-        </section>
-
-        {/* NOTES */}
-
-        <section className="space-y-5 rounded-2xl border bg-white p-6 shadow-sm">
-          <SectionTitle
-            number={
-              journey ? "7" : "8"
-            }
-            title="Final Requirements"
-            description="Tell us anything that could help us prepare a more accurate and thoughtful proposal."
-          />
-
-          <label>
-            <FieldLabel>
-              Special Requirements
-            </FieldLabel>
-
-            <textarea
-              rows={4}
-              name="specialRequests"
-              value={
-                form.specialRequests
-              }
-              onChange={
-                handleChange
-              }
-              placeholder="Mobility considerations, dietary requirements, special celebrations, preferred hotels, transportation requirements..."
-              className={
-                inputClass
-              }
-            />
-          </label>
-
-          <label>
-            <FieldLabel>
-              Additional Notes
-            </FieldLabel>
-
-            <textarea
-              rows={5}
-              name="notes"
-              value={form.notes}
-              onChange={
-                handleChange
-              }
-              placeholder="Anything else our pilgrimage planning team should know..."
-              className={
-                inputClass
-              }
-            />
-          </label>
+        <section className="space-y-4 rounded-2xl border bg-white p-6 shadow-sm">
+          <SectionTitle number={journey ? "2" : "3"} title="Special / Additional Requests" description="Optional — leave blank if there is nothing else to add." />
+          <textarea rows={4} name="specialRequests" value={form.specialRequests} onChange={handleChange} className={inputClass} aria-label="Special or additional requests" />
         </section>
 
         {/* SUBMIT */}

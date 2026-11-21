@@ -1,3 +1,4 @@
+import { validateSupplierDocumentLink } from "@/lib/epoch-ai/finance/validateSupplierDocumentLink";
 import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { AccountingCategory, FinanceDocumentType, Role } from "@prisma/client";
@@ -134,6 +135,21 @@ async function validateLinkedRecords({
   supplierId: string | null;
 }) {
   const checks: Promise<boolean>[] = [];
+  if (supplierPayableId) {
+    const payable = await db.supplierPayable.findUnique({
+      where: { id: supplierPayableId },
+      select: { supplierId: true },
+    });
+
+    const link = validateSupplierDocumentLink({
+      documentSupplierId: supplierId,
+      payableId: supplierPayableId,
+      payableSupplierId: payable?.supplierId ?? null,
+    });
+
+    if (!link.valid) return false;
+  }
+
 
   if (expenseId) {
     checks.push(

@@ -6,11 +6,46 @@ import path from "path";
 
 import { authOptions } from "@/lib/authOptions";
 import { db } from "@/lib/db";
+import { getApprovedFlexiblePricing } from "@/lib/quotes/flexibleGroupPricing";
 import AgentClientQuotePdfDocument from "@/lib/pdf/AgentClientQuotePdfDocument";
 import { buildAgentClientQuotePdfData } from "@/lib/pdf/buildAgentClientQuotePdfData";
 import { savePrivateAgentQuotePdf, readPrivateAgentQuotePdf } from "@/lib/storage/agentQuotePdfStorage";
+import { isServiceTermsConfirmed, reviewServiceTerms } from "@/lib/quotes/serviceTermsReview";
+import { checkStoredServiceConsistency } from "@/lib/quotes/serviceConsistencyServer";
 
 export const runtime = "nodejs";
+
+function resolvePdfWebsiteOrigin(request: NextRequest): string | null {
+  const candidates = [
+    process.env.NEXT_PUBLIC_APP_URL,
+    process.env.NEXTAUTH_URL,
+    process.env.APP_URL,
+    process.env.VERCEL_PROJECT_PRODUCTION_URL
+      ? `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}` : null,
+    process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : null,
+  ];
+  for (const candidate of candidates) {
+    if (!candidate) continue;
+    try {
+      const url = new URL(candidate);
+      const isLocalhost = ["localhost", "127.0.0.1", "[::1]"].includes(url.hostname);
+      if (url.protocol === "https:" || (isLocalhost && url.protocol === "http:")) {
+        return url.origin;
+      }
+    } catch {
+      // Ignore invalid optional configuration.
+    }
+  }
+
+  // Localhost links support testing with npm run dev AND npm run start.
+  // Do not use arbitrary request Host values for production PDF links.
+  const url = request.nextUrl;
+  if (["localhost", "127.0.0.1", "[::1]"].includes(url.hostname) &&
+      (url.protocol === "http:" || url.protocol === "https:")) {
+    return url.origin;
+  }
+  return null;
+}
 
 /**
  * @react-pdf/renderer renders on the server. A browser-relative /images URL
@@ -99,10 +134,42 @@ export async function POST(
       );
     }
 
+    if (!isServiceTermsConfirmed(quote.quoteBuilderSummary, quote.clientIncludes, quote.clientExcludes)) {
+      const review = reviewServiceTerms(quote.clientIncludes, quote.clientExcludes);
+      return NextResponse.json({
+        ok: false,
+        error: review.errors.length
+          ? `Please review Rates Include / Exclude in the quotation form: ${review.errors.join(" | ")}`
+          : "Confirm Rates Include / Exclude in the quotation form and save before generating the Agent PDF.",
+      }, { status: 409 });
+    }
+
+    const consistencyCheck = await checkStoredServiceConsistency(quote);
+    if (!consistencyCheck.confirmed) {
+      return NextResponse.json({ ok: false,
+        error: "Itinerary / Quotation Consistency Check requires Admin review. Correct conflicts, acknowledge warnings, verify and save the quotation before generating or sending the Agent PDF.",
+        conflicts: consistencyCheck.review.blockers.map(i => i.message),
+        warnings: consistencyCheck.review.warnings.map(i => i.message),
+      }, { status: 409 });
+    }
+
+    // An approval belongs to one exact quotation cost basis. Do not silently
+    // generate or send a proposal without alternatives if that basis changed.
+    const rawSummary = quote.quoteBuilderSummary;
+    const flexible = rawSummary && typeof rawSummary === "object" && !Array.isArray(rawSummary)
+      ? (rawSummary as Record<string, unknown>).flexibleGroupPricing : null;
+    if (flexible && typeof flexible === "object" && !Array.isArray(flexible) &&
+        (flexible as Record<string, unknown>).enabled === true && !getApprovedFlexiblePricing(quote)) {
+      return NextResponse.json({
+        ok: false,
+        error: "Flexible Group Pricing approval is no longer valid for the saved quotation. Review and reapprove the alternatives before generating or sending the Agent PDF.",
+      }, { status: 409 });
+    }
+
     let pdfData: ReturnType<typeof buildAgentClientQuotePdfData>;
 
     try {
-      pdfData = buildAgentClientQuotePdfData(quote);
+      pdfData = buildAgentClientQuotePdfData(quote, { publicBaseUrl: resolvePdfWebsiteOrigin(_req) });
       // Keep the existing PDF text fallback if the logo file is missing.
       pdfData.logoUrl = (await embedProjectLogo(pdfData.logoUrl)) || "";
     } catch (error) {
@@ -153,7 +220,7 @@ export async function POST(
         ok: true,
         quote: {
           ...updatedQuote,
-          agentClientPdfUrl: `/api/quotes/${quote.id}/agent-client-pdf`,
+          agentClientPdfUrl: `/api/quotes/${quote.id}/agent-client-pdf?v=${updatedQuote.agentClientPdfGeneratedAt?.getTime() || Date.now()}`,
         },
       });
     } catch (error) {

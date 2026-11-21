@@ -243,12 +243,7 @@ export default async function AdminCustomRequestDetailPage({
               Prepare Quote
             </Link>
 
-            <Link
-              href={`/admin/bookings/new?requestId=${request.id}`}
-              className="rounded-xl bg-[#001F3F] px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-[#001633]"
-            >
-              Convert to Booking
-            </Link>
+            <span className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-2.5 text-sm text-slate-600">Booking conversion follows quotation acceptance and Admin confirmation</span>
           </div>
         </div>
       </section>
@@ -640,9 +635,10 @@ export default async function AdminCustomRequestDetailPage({
             <Plane className="h-5 w-5" />
           }
           eyebrow="Services"
-          title="Service Preferences"
+          title="Package & Service Preferences"
         >
           <InfoGrid>
+            <InfoItem label="Quotation Package" value={request.needsFlights ? "Land + International Flights" : "Land Only"} />
             <InfoItem
               label="Land Only"
               value={yesNo(

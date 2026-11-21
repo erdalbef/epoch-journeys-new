@@ -57,12 +57,17 @@ export default async function TourDetailPage({
         </div>
 
         <div className="flex flex-wrap gap-2">
+          <Link href={`/admin/tours/${tour.id}/hotel-procurement`} className="rounded-xl bg-[#001F3F] px-4 py-2.5 text-sm font-semibold text-white">Prepare Hotel Inquiries</Link>
+          <Link href={`/admin/tours/${tour.id}/hotel-inquiry-history`} className="rounded-xl border border-blue-200 bg-white px-4 py-2.5 text-sm font-semibold text-blue-800">Hotel Inquiry History</Link>
+
           <Link
             href={`/admin/tours/${tour.id}/private-group-pricing`}
             className="rounded-xl bg-[#8B0000] px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-[#6f0000]"
           >
             Private Group Pricing
           </Link>
+
+          <Link href={`/admin/tour-packages/${tour.id}`} className="rounded-xl bg-[#001F3F] px-4 py-2.5 text-sm font-semibold text-white">Manage Tour Package</Link>
 
           <Link
             href={`/admin/tours/${tour.id}/edit`}

@@ -35,7 +35,11 @@ function getStatusClasses(status: CustomRequestStatus) {
   }
 }
 
-export default async function AdminCustomRequestsPage() {
+export default async function AdminCustomRequestsPage({ searchParams }: { searchParams: Promise<{ q?: string; status?: string; sort?: string }> }) {
+  const filters = await searchParams;
+  const q = (filters.q || "").trim().slice(0, 120);
+  const status = filters.status || "all";
+  const sort = filters.sort === "oldest" ? "asc" : "desc";
   const session = await getServerSession(authOptions);
 
   if (!session?.user || session.user.role !== Role.ADMIN) {
@@ -43,9 +47,17 @@ export default async function AdminCustomRequestsPage() {
   }
 
   const requests = await db.customTourRequest.findMany({
-    orderBy: {
-      createdAt: "desc",
+    where: {
+      ...(status !== "all" && Object.values(CustomRequestStatus).includes(status as CustomRequestStatus) ? { status: status as CustomRequestStatus } : {}),
+      ...(q ? { OR: [
+        { requestReference: { contains: q, mode: "insensitive" as const } },
+        { title: { contains: q, mode: "insensitive" as const } },
+        { destination: { contains: q, mode: "insensitive" as const } },
+        { user: { is: { fullName: { contains: q, mode: "insensitive" as const } } } },
+        { user: { is: { travelAgency: { contains: q, mode: "insensitive" as const } } } },
+      ] } : {}),
     },
+    orderBy: { createdAt: sort },
     include: {
       user: true,
     },
@@ -55,13 +67,25 @@ export default async function AdminCustomRequestsPage() {
     <div className="mx-auto max-w-7xl p-6 md:p-8">
       <div className="mb-6">
         <h1 className="text-2xl font-bold text-[#001F3F]">
-          Custom Tour Requests
+          Quote Requests
         </h1>
         <p className="mt-1 text-sm text-slate-600">
           Manage all tailor-made tour requests submitted by agents.
         </p>
       </div>
 
+      <form method="get" className="mb-5 grid gap-3 rounded-xl border border-slate-200 bg-white p-4 md:grid-cols-[1fr_190px_160px_auto]">
+        <input type="search" name="q" defaultValue={q} placeholder="Reference, agent, agency, tour..." aria-label="Search requests" className="rounded-lg border border-slate-300 px-3 py-2 text-sm" />
+        <select name="status" defaultValue={status} aria-label="Filter by status" className="rounded-lg border border-slate-300 px-3 py-2 text-sm">
+          <option value="all">All statuses</option>
+          {Object.values(CustomRequestStatus).map(value => <option key={value} value={value}>{formatLabel(value)}</option>)}
+        </select>
+        <select name="sort" defaultValue={filters.sort || "newest"} aria-label="Sort requests" className="rounded-lg border border-slate-300 px-3 py-2 text-sm">
+          <option value="newest">Newest first</option><option value="oldest">Oldest first</option>
+        </select>
+        <div className="flex items-center gap-2"><button type="submit" className="rounded-lg bg-[#001F3F] px-4 py-2 text-sm font-semibold text-white">Search</button><Link href="/admin/custom-requests" className="text-sm text-slate-600 underline">Clear</Link></div>
+      </form>
+      <p className="mb-3 text-xs text-slate-500">{requests.length} matching requests</p>
       {requests.length === 0 ? (
         <div className="rounded-xl border border-dashed border-slate-300 bg-white p-10 text-center">
           <h2 className="text-lg font-semibold text-slate-900">
@@ -87,7 +111,7 @@ export default async function AdminCustomRequestsPage() {
                     Travel Agency
                   </th>
                   <th className="p-3 text-left font-semibold text-slate-700">
-                    Destination
+                    Tour
                   </th>
                   <th className="p-3 text-left font-semibold text-slate-700">
                     Pax

@@ -4,8 +4,13 @@ import { Resend } from "resend";
 
 import { authOptions } from "@/lib/authOptions";
 import { db } from "@/lib/db";
+import { getApprovedFlexiblePricing } from "@/lib/quotes/flexibleGroupPricing";
 import { checkQuoteApprovalReadiness } from "@/lib/quotes/approvalReadiness";
 import { readPrivateAgentQuotePdf } from "@/lib/storage/agentQuotePdfStorage";
+import { isAgentPricingPdfStale } from "@/lib/quotes/agentPricingPdfFreshness";
+import { isServiceTermsConfirmed, isServiceTermsPdfOutdated, reviewServiceTerms } from "@/lib/quotes/serviceTermsReview";
+import { checkStoredServiceConsistency } from "@/lib/quotes/serviceConsistencyServer";
+import { isServiceConsistencyPdfOutdated } from "@/lib/quotes/serviceConsistency";
 
 export const runtime = "nodejs";
 
@@ -49,6 +54,37 @@ export async function POST(
       );
     }
 
+    if (!isServiceTermsConfirmed(quote.quoteBuilderSummary, quote.clientIncludes, quote.clientExcludes)) {
+      const review = reviewServiceTerms(quote.clientIncludes, quote.clientExcludes);
+      return NextResponse.json({
+        ok: false,
+        error: review.errors.length
+          ? `Review Rates Include / Exclude: ${review.errors.join(" | ")}`
+          : "Rates Include / Exclude require Admin confirmation. Review and save the quotation, then regenerate the Agent PDF.",
+      }, { status: 409 });
+    }
+
+    const consistencyCheck = await checkStoredServiceConsistency(quote);
+    if (!consistencyCheck.confirmed) {
+      return NextResponse.json({ ok: false,
+        error: "Itinerary / Quotation Consistency Check requires Admin review. Correct conflicts, acknowledge warnings, verify and save the quotation before generating or sending the Agent PDF.",
+        conflicts: consistencyCheck.review.blockers.map(i => i.message),
+        warnings: consistencyCheck.review.warnings.map(i => i.message),
+      }, { status: 409 });
+    }
+
+    // Saved alternatives must still match the quotation cost basis.
+    const rawSummary = quote.quoteBuilderSummary;
+    const flexible = rawSummary && typeof rawSummary === "object" && !Array.isArray(rawSummary)
+      ? (rawSummary as Record<string, unknown>).flexibleGroupPricing : null;
+    if (flexible && typeof flexible === "object" && !Array.isArray(flexible) &&
+        (flexible as Record<string, unknown>).enabled === true && !getApprovedFlexiblePricing(quote)) {
+      return NextResponse.json({
+        ok: false,
+        error: "Flexible Group Pricing approval is no longer valid for the saved quotation. Review and reapprove the alternatives before sending the Agent PDF.",
+      }, { status: 409 });
+    }
+
     const readiness = checkQuoteApprovalReadiness({
       quoteBuilderSummary: quote.quoteBuilderSummary,
       recipientEmail: quote.recipientEmail,
@@ -74,6 +110,25 @@ export async function POST(
         { ok: false, error: "Agent PDF not generated." },
         { status: 400 }
       );
+    }
+
+    if (isServiceConsistencyPdfOutdated(quote.quoteBuilderSummary, quote.agentClientPdfGeneratedAt)) {
+      return NextResponse.json({ ok: false,
+        error: "Service consistency was verified after the saved Agent PDF was generated. Regenerate the Agent PDF before sending." }, { status: 409 });
+    }
+
+    if (isServiceTermsPdfOutdated(quote.quoteBuilderSummary, quote.agentClientPdfGeneratedAt)) {
+      return NextResponse.json({
+        ok: false,
+        error: "Rates Include / Exclude were confirmed after the saved Agent PDF was created. Regenerate the Agent PDF before sending.",
+      }, { status: 409 });
+    }
+
+    if (isAgentPricingPdfStale(quote.quoteBuilderSummary, quote.agentClientPdfGeneratedAt, Boolean(quote.agentClientPdfUrl))) {
+      return NextResponse.json({
+        ok: false,
+        error: "Flexible Group Pricing changed after the Agent PDF was generated. Regenerate the Agent PDF before sending.",
+      }, { status: 409 });
     }
 
     // Load the saved PRIVATE snapshot; do not fetch a public URL or

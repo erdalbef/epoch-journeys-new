@@ -8,6 +8,8 @@ import {
 import { authOptions } from "@/lib/authOptions";
 import { db } from "@/lib/db";
 import { calculateQuoteTotals } from "@/lib/quote-utils";
+import { reviewServiceTerms, serviceTermsFingerprint } from "@/lib/quotes/serviceTermsReview";
+import { reviewQuoteServiceConsistency } from "@/lib/quotes/serviceConsistency";
 
 type GeneratedQuoteItemType =
   | "SERVICE"
@@ -42,6 +44,7 @@ type QuoteItemInput = {
 };
 
 type QuotePayload = {
+  requestId?: string | null;
   templateId?: string | null;
 
   purpose?: string;
@@ -135,6 +138,8 @@ type QuotePayload = {
 
   clientIncludes?: string;
   clientExcludes?: string;
+  serviceTermsConfirmed?: boolean;
+  serviceConsistencyWarningsAcknowledged?: boolean;
 
   paymentPolicy?: string;
   cancellationPolicy?: string;
@@ -266,6 +271,15 @@ export async function POST(
     const body =
       (await req.json()) as QuotePayload;
 
+    const sourceRequest = body.requestId
+      ? await db.customTourRequest.findUnique({ where: { id: body.requestId }, select: { id: true, userId: true } })
+      : null;
+    if (body.requestId && !sourceRequest) {
+      return NextResponse.json({ ok: false, error: "Source request not found." }, { status: 400 });
+    }
+    if (sourceRequest && body.agentId !== sourceRequest.userId) {
+      return NextResponse.json({ ok: false, error: "Agent must match the source request." }, { status: 400 });
+    }
     const agentId =
       body.agentId?.trim() ||
       null;
@@ -607,10 +621,61 @@ export async function POST(
         "",
     };
 
+    // Each confirmation applies only to the exact Include / Exclude text saved.
+    // Draft quotes may remain unconfirmed; generating or sending Agent PDFs may not.
+    const serviceReview = reviewServiceTerms(body.clientIncludes, body.clientExcludes);
+    if (body.serviceTermsConfirmed === true && serviceReview.errors.length) {
+      return NextResponse.json({
+        ok: false,
+        error: `Rates Include / Exclude cannot be confirmed: ${serviceReview.errors.join(" | ")}`,
+      }, { status: 400 });
+    }
+    const referenceTour = body.tourId ? await db.tour.findUnique({
+      where: { id: body.tourId },
+      select: { inclusions: true, exclusions: true },
+    }) : null;
+    if (body.tourId && !referenceTour) {
+      return NextResponse.json({ ok: false, error: "Selected Tour Master not found. Review the quotation's tour reference." }, { status: 400 });
+    }
+    const consistency = reviewQuoteServiceConsistency({
+      tourId: body.tourId,
+      tourInclusions: referenceTour?.inclusions.join("\n"),
+      tourExclusions: referenceTour?.exclusions.join("\n"),
+      briefItinerary: body.briefItinerary,
+      includes: body.clientIncludes,
+      excludes: body.clientExcludes,
+      hotels: body.hotels,
+      fixedCostRows: body.fixedCostRows,
+      operationalCostRows: body.operationalCostRows,
+      payingPassengers: body.payingPassengers,
+      freePassengers: body.freePassengers,
+    });
+    if (body.serviceTermsConfirmed === true && consistency.blockers.length) {
+      return NextResponse.json({ ok: false,
+        error: `Itinerary / quotation conflicts: ${consistency.blockers.map(i => i.message).join(" | ")}` }, { status: 400 });
+    }
+    if (body.serviceTermsConfirmed === true && consistency.warnings.length && body.serviceConsistencyWarningsAcknowledged !== true) {
+      return NextResponse.json({ ok: false,
+        error: "Acknowledge the Itinerary - Quotation review warnings before confirming services." }, { status: 400 });
+    }
+    quoteBuilderSummary.serviceConsistencyReview = body.serviceTermsConfirmed === true
+      ? { confirmed: true, fingerprint: consistency.fingerprint,
+          warningsAcknowledged: true, confirmedAt: new Date().toISOString() }
+      : { confirmed: false };
+
+    quoteBuilderSummary.serviceTermsReview = body.serviceTermsConfirmed === true
+      ? {
+          confirmed: true,
+          fingerprint: serviceTermsFingerprint(body.clientIncludes, body.clientExcludes),
+          confirmedAt: new Date().toISOString(),
+        }
+      : { confirmed: false };
+
     const quote =
       await db.quote.create({
         data: {
           quoteNumber,
+          requestId: sourceRequest?.id || null,
 
           quoteReference:
             `Q-${quoteNumber}`,

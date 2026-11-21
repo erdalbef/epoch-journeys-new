@@ -1,3 +1,4 @@
+import { resolveSupplierPaymentAmounts } from "@/lib/epoch-ai/finance/resolveSupplierPaymentAmounts";
 import fs from "fs/promises";
 import path from "path";
 
@@ -655,6 +656,8 @@ export async function PATCH(
         ),
       );
 
+    const bankDebitAmountRaw = stringValue(formData.get("bankDebitAmount"));
+
     const paymentDateRaw =
       stringValue(
         formData.get(
@@ -957,20 +960,35 @@ export async function PATCH(
       );
     }
 
-    if (
-      bank.currency !==
-      payable.currency
-    ) {
+    const paymentAmounts = (() => {
+      try {
+        return {
+          value: resolveSupplierPaymentAmounts({
+            payableCurrency: payable.currency,
+            bankCurrency: bank.currency,
+            supplierAmount: amount,
+            bankDebitAmount: bankDebitAmountRaw || null,
+          }),
+          error: null,
+        };
+      } catch (error) {
+        return {
+          value: null,
+          error: error instanceof Error
+            ? error.message
+            : "Invalid multi-currency payment amounts.",
+        };
+      }
+    })();
+
+    if (!paymentAmounts.value) {
       return NextResponse.json(
-        {
-          error:
-            "Bank account currency must match the payable currency in this version.",
-        },
-        {
-          status: 400,
-        },
+        { error: paymentAmounts.error },
+        { status: 400 },
       );
     }
+
+    const resolvedPaymentAmounts = paymentAmounts.value;
 
     // An installment can only be newly selected when it belongs to the
     // contract explicitly linked to this payable. Do not change existing
@@ -1182,16 +1200,85 @@ export async function PATCH(
       payment.documents[0] ??
       null;
 
-    const existingBankTransaction =
-      payment.bankTransactions[0] ??
-      null;
-
     const previousStoragePath =
       existingDocument?.storagePath ??
       null;
 
     await db.$transaction(
       async (tx) => {
+        // Serialize edits with other payments of this payable.
+        const payableRows = await tx.$queryRaw<Array<{ id: string }>>`
+          SELECT "id" FROM "SupplierPayable"
+          WHERE "id" = ${payable.id} FOR UPDATE
+        `;
+        if (payableRows.length !== 1) {
+          throw new Error("Supplier payable no longer exists.");
+        }
+
+        const currentPayable = await tx.supplierPayable.findUnique({
+          where: { id: payable.id },
+          select: { approvedAmount: true, creditAmount: true },
+        });
+        if (!currentPayable) {
+          throw new Error("Supplier payable no longer exists.");
+        }
+        const currentNetApproved = currentPayable.approvedAmount.minus(
+          currentPayable.creditAmount,
+        );
+
+        // Lock associated ledger records before checking their current status.
+        // This prevents updates racing with bank transaction row updates.
+        await tx.$queryRaw<Array<{ id: string }>>`
+          SELECT "id" FROM "BankTransaction"
+          WHERE "supplierPayablePaymentId" = ${paymentId} FOR UPDATE
+        `;
+        const existingLedgers = await tx.bankTransaction.findMany({
+          where: { supplierPayablePaymentId: paymentId },
+          select: {
+            id: true,
+            reconciliationId: true,
+            reconciledAt: true,
+            reversedAt: true,
+            reversalOfId: true,
+            status: true,
+            statementLine: { select: { id: true } },
+            reversals: { select: { id: true } },
+          },
+        });
+        if (
+          existingLedgers.length > 1 ||
+          existingLedgers.some((ledger) =>
+            ledger.reconciliationId !== null ||
+            ledger.reconciledAt !== null ||
+            ledger.reversedAt !== null ||
+            ledger.reversalOfId !== null ||
+            ledger.statementLine !== null ||
+            ledger.reversals !== null ||
+            ledger.status !== BankTransactionStatus.POSTED
+          )
+        ) {
+          throw new Error(
+            "SUPPLIER_PAYMENT_LEDGER_LOCKED: Linked bank transactions are reconciled, matched, reversed, non-posted, or ambiguous. Use an authorized correction process.",
+          );
+        }
+        const existingBankTransaction = existingLedgers[0] ?? null;
+
+        // Recheck the approved ceiling after acquiring the payable row lock.
+        // The earlier HTTP validation does not protect against concurrent edits.
+        const concurrentOtherPayments = await tx.supplierPayablePayment.aggregate({
+          where: { payableId: payable.id, id: { not: paymentId } },
+          _sum: { amount: true },
+        });
+        if (
+          new Prisma.Decimal(concurrentOtherPayments._sum.amount ?? 0)
+            .plus(amount)
+            .gt(currentNetApproved)
+        ) {
+          throw new Error(
+            "The corrected payment would exceed the approved payable amount.",
+          );
+        }
+
         const updatedPayment =
           await tx.supplierPayablePayment.update({
             where: {
@@ -1244,10 +1331,8 @@ export async function PATCH(
                 bankAccountId:
                   bank.id,
 
-                amount,
-
-                currency:
-                  payable.currency,
+                amount: resolvedPaymentAmounts.bankDebitAmount,
+                currency: bank.currency,
 
                 transactionDate:
                   paymentDate,
@@ -1296,10 +1381,8 @@ export async function PATCH(
                 status:
                   BankTransactionStatus.POSTED,
 
-                amount,
-
-                currency:
-                  payable.currency,
+                amount: resolvedPaymentAmounts.bankDebitAmount,
+                currency: bank.currency,
 
                 transactionDate:
                   paymentDate,
@@ -1486,7 +1569,7 @@ export async function PATCH(
               0,
             ),
 
-            netApproved.minus(
+            currentNetApproved.minus(
               nextAmountPaid,
             ),
           );

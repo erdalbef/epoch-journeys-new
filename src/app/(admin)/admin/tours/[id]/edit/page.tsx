@@ -677,17 +677,10 @@ export default async function EditTourPage({
         // PUBLISHING
         // --------------------------------------
 
-        featured:
-          parseCheckbox(
-            formData,
-            "featured",
-          ),
-
-        isPublished:
-          parseCheckbox(
-            formData,
-            "isPublished",
-          ),
+        // Phase 2: publication is managed only in Tour Packages.
+        // Preserve the existing status when editing operational fields.
+        featured: safeTour.featured,
+        isPublished: safeTour.isPublished,
       },
     });
 

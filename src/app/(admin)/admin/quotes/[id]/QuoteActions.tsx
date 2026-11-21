@@ -6,6 +6,7 @@ import Link from "next/link";
 import { Prisma } from "@prisma/client";
 
 import SendClientQuoteButton from "@/components/quotes/SendClientQuoteButton";
+import { isAgentPricingPdfStale } from "@/lib/quotes/agentPricingPdfFreshness";
 
 type QuoteWithRelations = Prisma.QuoteGetPayload<{
   include: {
@@ -59,6 +60,11 @@ export default function QuoteActions({ quote }: Props) {
   const isConverted = quote.status === "CONVERTED";
   const isCancelled = quote.status === "CANCELLED";
   const isApproved = Boolean(quote.approvedAt);
+  const agentPdfNeedsRefresh = isAgentPricingPdfStale(
+    quote.quoteBuilderSummary,
+    quote.agentClientPdfGeneratedAt,
+    Boolean(quote.agentClientPdfUrl)
+  );
 
   async function parseResponse(
     res: Response
@@ -461,6 +467,14 @@ export default function QuoteActions({ quote }: Props) {
             PDF Generation
           </h3>
 
+          {agentPdfNeedsRefresh ? (
+            <p className="mb-3 rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm font-medium text-amber-950">
+              The saved Agent PDF predates the latest Flexible Group Pricing approval or unpublication.
+              Click Agent PDF again to generate an updated proposal before sending. View Agent
+              opens the older saved version until you regenerate it.
+            </p>
+          ) : null}
+
           <div className="flex flex-wrap gap-3">
             <button
               type="button"
@@ -514,7 +528,7 @@ export default function QuoteActions({ quote }: Props) {
                 type="button"
                 onClick={() =>
                   window.open(
-                    `/api/quotes/${quote.id}/agent-client-pdf`,
+                    `/api/quotes/${quote.id}/agent-client-pdf?v=${quote.agentClientPdfGeneratedAt?.getTime() || "latest"}`,
                     "_blank"
                   )
                 }
@@ -538,7 +552,8 @@ export default function QuoteActions({ quote }: Props) {
               mode="agent"
               disabled={
                 loading ||
-                !quote.agentClientPdfUrl
+                !quote.agentClientPdfUrl ||
+                agentPdfNeedsRefresh
               }
             />
           </div>

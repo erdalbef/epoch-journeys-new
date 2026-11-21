@@ -15,8 +15,10 @@ type SendEmailInput = {
   to: string | string[];
   cc?: string | string[];
   bcc?: string | string[];
+  replyTo?: string;
   subject: string;
   html: string;
+  text?: string;
   attachments?: EmailAttachment[];
 };
 
@@ -24,8 +26,10 @@ export async function sendEmail({
   to,
   cc,
   bcc,
+  replyTo,
   subject,
   html,
+  text,
   attachments,
 }: SendEmailInput) {
   if (!RESEND_API_KEY) {
@@ -48,8 +52,10 @@ export async function sendEmail({
         to,
         cc,
         bcc,
+        replyTo,
         subject,
         html,
+        text,
         attachments,
       });
 
