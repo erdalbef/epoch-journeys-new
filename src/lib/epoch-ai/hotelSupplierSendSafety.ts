@@ -4,8 +4,17 @@ import { HOTEL_SUPPLIER_CC } from "./hotelTestEmail";
 export const SUPPLIER_SEND_ENABLED = false as boolean;
 export const SUPPLIER_CC = HOTEL_SUPPLIER_CC;
 export function supplierEventKey(inquiryId:string){return `supplier:hotel-inquiry:${inquiryId}:v1`;}
+/** Unique across revised inquiry records for one hotel on one tour stay.
+ * Existing EpochEmailOutbox.eventKey UNIQUE constraint serializes concurrent attempts.
+ * No sending is enabled by this helper.
+ */
+export function supplierStayEventKey(stay:{tourId:string;supplierId:string;destination:string;checkIn:string;checkOut:string;rooms:number}):string{
+ const normalized=JSON.stringify([stay.tourId,stay.supplierId,stay.destination.trim().toLowerCase(),stay.checkIn,stay.checkOut,stay.rooms]);
+ return `supplier:hotel-inquiry:stay:${createHash("sha256").update(normalized).digest("hex")}:v1`;
+}
+
 const emailPattern=/^[^\s@<>]+@[^\s@<>]+\.[^\s@<>]+$/;
-export function reviewSupplierSend(input:{inquiryId:string;recipient:string;supplierType:string;supplierEmail:string|null;contactEmails:string[];contentReady:boolean;isNewest:boolean;outboxExists:boolean}){
+export function reviewSupplierSend(input:{inquiryId:string;recipient:string;supplierType:string;supplierEmail:string|null;contactEmails:string[];contentReady:boolean;isNewest:boolean;outboxExists:boolean;priorStayAttemptExists?:boolean}){
  const blocks:string[]=[];const checks:string[]=[];
  const recipient=input.recipient.trim().toLowerCase();
  const permitted=[input.supplierEmail,...input.contactEmails].filter((e):e is string=>typeof e==="string"&&!!e.trim()).map(e=>e.trim().toLowerCase());
@@ -16,6 +25,7 @@ export function reviewSupplierSend(input:{inquiryId:string;recipient:string;supp
  if(!input.contentReady)blocks.push("Approved inquiry failed the saved-content readiness checks.");else checks.push("Approved inquiry content passes readiness review.");
  if(!input.isNewest)blocks.push("This inquiry was superseded by a newer record for the same hotel stay.");else checks.push("Inquiry is the most recent record for this hotel stay.");
  if(input.outboxExists)blocks.push("A supplier send attempt is already recorded for this inquiry; manual investigation is required before any further action.");else checks.push("No supplier-email attempt is recorded under this inquiry's unique outbox key.");
+ if(input.priorStayAttemptExists)blocks.push("A supplier send attempt already exists for this hotel, tour, dates and room count on another inquiry version. Review existing correspondence; do not send again.");else checks.push("No prior supplier send attempt recorded for this hotel stay on another inquiry version.");
  checks.push(`Required CC: ${SUPPLIER_CC}`);
  blocks.push("Stage 3B safety lock: live supplier delivery is not yet enabled.");
  return {readyForActivation:blocks.length===1,canSend:false as const,checks,blocks,cc:SUPPLIER_CC};

@@ -7,7 +7,7 @@ import { requireAdminApiAccess } from "@/lib/security/requireAdminApiAccess";
 import { evaluateHotelSendReadiness } from "@/lib/epoch-ai/hotelSendReadiness";
 import { formatHotelInquiryEmail } from "@/lib/epoch-ai/hotelInquiryEmailFormat";
 import { sendEmail } from "@/lib/email/sendEmail";
-import { reviewSupplierSend, supplierEventKey, SUPPLIER_SEND_ENABLED, SUPPLIER_CC, supplierSendSnapshot, supplierMessageFingerprint, validateSupplierSendConfirmation, validateSupplierAuthorizationRehearsal, supplierDeliveryStateWithEvents } from "@/lib/epoch-ai/hotelSupplierSendSafety";
+import { reviewSupplierSend, supplierEventKey, supplierStayEventKey, SUPPLIER_SEND_ENABLED, SUPPLIER_CC, supplierSendSnapshot, supplierMessageFingerprint, validateSupplierSendConfirmation, validateSupplierAuthorizationRehearsal, supplierDeliveryStateWithEvents } from "@/lib/epoch-ai/hotelSupplierSendSafety";
 import { isAuthorizedTestDatabase } from "@/lib/epoch-ai/hotelTestEmail";
 
 export const runtime = "nodejs";
@@ -19,17 +19,36 @@ async function getReview(id:string){
  const entry=await db.hotelInquiry.findUnique({where:{id},select:{id:true,tourId:true,supplierId:true,destination:true,checkIn:true,checkOut:true,rooms:true,status:true,recipient:true,subject:true,body:true,approvedAt:true,approvedBy:true,supplier:{select:{id:true,name:true,type:true,status:true,email:true,contacts:{select:{email:true}}}}}});
  if(!entry)return null;
  const latest=await db.hotelInquiry.findFirst({where:{tourId:entry.tourId,supplierId:entry.supplierId,destination:entry.destination,checkIn:entry.checkIn,checkOut:entry.checkOut,rooms:entry.rooms},select:{id:true},orderBy:[{createdAt:"desc"},{id:"desc"}]});
- const outbox=await db.epochEmailOutbox.findUnique({where:{eventKey:supplierEventKey(id)},select:{id:true,status:true,providerMessageId:true,acceptedAt:true,lastAttemptAt:true,lastError:true}});
+ // One reservation applies to all revised versions of the same hotel stay.
+ const stayKey=supplierStayEventKey(entry);
+ const outbox=await db.epochEmailOutbox.findFirst({where:{eventKey:{in:[stayKey,supplierEventKey(id)]}},select:{id:true,status:true,providerMessageId:true,acceptedAt:true,lastAttemptAt:true,lastError:true}});
+ // Read across ALL inquiry versions for the same supplier/tour/stay.
+ // This is a fail-closed review safeguard; production activation also needs an atomic stay-level reservation.
+ const stayVersions=await db.hotelInquiry.findMany({
+   where:{tourId:entry.tourId,supplierId:entry.supplierId,destination:entry.destination,checkIn:entry.checkIn,checkOut:entry.checkOut,rooms:entry.rooms},
+   select:{id:true}
+ });
+ const priorStayAttempt=stayVersions.length>1
+   ? await db.epochEmailOutbox.findFirst({
+       where:{eventKey:{in:stayVersions.filter(v=>v.id!==id).map(v=>supplierEventKey(v.id))}},
+       select:{status:true,providerMessageId:true,lastAttemptAt:true,acceptedAt:true}
+     })
+   : null;
  const deliveryEvents=outbox
   ? await db.epochSupplierDeliveryEvent.findMany({
-      where:{outboxId:outbox.id},
+      // Signed events can arrive before the sender saves providerMessageId.
+      // Include those already persisted as pending when the IDs match.
+      where:{OR:[
+        {outboxId:outbox.id},
+        ...(outbox.providerMessageId ? [{outboxId:"PENDING_PROVIDER_MATCH",providerMessageId:outbox.providerMessageId}] : [])
+      ]},
       select:{type:true,occurredAt:true},
       orderBy:{occurredAt:"asc"}
     })
   : [];
 const content=evaluateHotelSendReadiness(entry);
- const review=reviewSupplierSend({inquiryId:id,recipient:entry.recipient,supplierType:String(entry.supplier.type),supplierEmail:entry.supplier.email,contactEmails:entry.supplier.contacts.map(c=>c.email).filter((v):v is string=>!!v),contentReady:content.ready,isNewest:latest?.id===id,outboxExists:!!outbox});
- return {entry,content,review,outbox,deliveryEvents};
+ const review=reviewSupplierSend({inquiryId:id,recipient:entry.recipient,supplierType:String(entry.supplier.type),supplierEmail:entry.supplier.email,contactEmails:entry.supplier.contacts.map(c=>c.email).filter((v):v is string=>!!v),contentReady:content.ready,isNewest:latest?.id===id,outboxExists:!!outbox,priorStayAttemptExists:!!priorStayAttempt});
+ return {entry,content,review,outbox,priorStayAttempt,deliveryEvents};
 }
 
 export async function GET(_request:Request,{params}:InquiryIdParams){
@@ -39,7 +58,7 @@ export async function GET(_request:Request,{params}:InquiryIdParams){
  const {entry,content,review,outbox}=record;
  const preview=formatHotelInquiryEmail(entry.subject,entry.body,false);
  const fingerprint=supplierMessageFingerprint({inquiryId:id,supplierId:entry.supplierId,to:entry.recipient,cc:SUPPLIER_CC,subject:entry.subject,html:preview.html,text:preview.text});
- return reply({previewHtml:preview.html,previewText:preview.text,fingerprint,inquiryId:id,supplier:{id:entry.supplier.id,name:entry.supplier.name,status:String(entry.supplier.status)},to:entry.recipient,subject:entry.subject,body:entry.body,stay:{destination:entry.destination,checkIn:entry.checkIn,checkOut:entry.checkOut,rooms:entry.rooms},approvedAt:entry.approvedAt,contentBlocks:content.blocks,outbox:outbox||null,deliveryTracking:supplierDeliveryStateWithEvents(outbox,record.deliveryEvents),sendEnabled:SUPPLIER_SEND_ENABLED,...review});
+ return reply({previewHtml:preview.html,previewText:preview.text,fingerprint,inquiryId:id,supplier:{id:entry.supplier.id,name:entry.supplier.name,status:String(entry.supplier.status)},to:entry.recipient,subject:entry.subject,body:entry.body,stay:{destination:entry.destination,checkIn:entry.checkIn,checkOut:entry.checkOut,rooms:entry.rooms},approvedAt:entry.approvedAt,contentBlocks:content.blocks,outbox:outbox||null,priorStayAttempt:record.priorStayAttempt||null,deliveryTracking:supplierDeliveryStateWithEvents(outbox,record.deliveryEvents),sendEnabled:SUPPLIER_SEND_ENABLED,...review});
 }
 
 /** Prepared Stage 3B implementation; disabled by a constant, not an environment toggle.
@@ -80,7 +99,8 @@ export async function POST(request:Request,{params}:InquiryIdParams){
  const session=await getServerSession(authOptions);
  if(!session?.user?.id)return reply({error:"Admin identity unavailable; no sending attempted."},403);
  const actor=session.user.id;
- const key=supplierEventKey(id);
+ // Atomic unique outbox event key shared across inquiry revisions.
+ const key=supplierStayEventKey(entry);
  const snapshot=supplierSendSnapshot({inquiryId:id,supplierId:entry.supplierId,to:entry.recipient,cc:SUPPLIER_CC,subject:entry.subject,html:formatted.html,text:formatted.text,authorizedBy:actor,authorizedAt:new Date().toISOString(),fingerprint});
  try{
   await db.epochEmailOutbox.create({data:{id:randomUUID(),eventKey:key,recipient:entry.recipient,subject:entry.subject,body:snapshot,targetUrl:`supplier:hotel-inquiry:${id}`,status:"SENDING",attempts:1,lastAttemptAt:new Date(),leaseExpiresAt:new Date(Date.now()+10*60*1000)}});

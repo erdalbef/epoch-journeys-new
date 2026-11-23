@@ -54,6 +54,53 @@ export default async function SuppliersPage({ searchParams }: PageProps) {
     },
   });
 
+  // Read-only hotel inquiry summary. Supplier CRM approval remains independent.
+  const hotelIds = suppliers.filter((item) => item.type === "HOTEL").map((item) => item.id);
+  const hotelInquiries = hotelIds.length
+    ? await db.hotelInquiry.findMany({
+        where: { supplierId: { in: hotelIds } },
+        orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+        select: {
+          id: true,
+          tourId: true,
+          supplierId: true,
+          status: true,
+          destination: true,
+          checkIn: true,
+          checkOut: true,
+          rooms: true,
+          createdAt: true,
+        },
+      })
+    : [];
+
+  const inquiryKeys = hotelInquiries.map((item) => `supplier:hotel-inquiry:${item.id}:v1`);
+  const sendAttempts = inquiryKeys.length
+    ? await db.epochEmailOutbox.findMany({
+        where: { eventKey: { in: inquiryKeys } },
+        select: { id: true, eventKey: true, status: true, acceptedAt: true, createdAt: true },
+      })
+    : [];
+  const eventRows = sendAttempts.length
+    ? await db.epochSupplierDeliveryEvent.findMany({
+        where: { outboxId: { in: sendAttempts.map((item) => item.id) } },
+        select: { outboxId: true, type: true },
+      })
+    : [];
+  const attemptsByKey = new Map(sendAttempts.map((item) => [item.eventKey, item]));
+  const eventTypesByOutbox = new Map<string, Set<string>>();
+  for (const event of eventRows) {
+    const types = eventTypesByOutbox.get(event.outboxId) ?? new Set<string>();
+    types.add(event.type);
+    eventTypesByOutbox.set(event.outboxId, types);
+  }
+  const inquiriesBySupplier = new Map<string, typeof hotelInquiries>();
+  for (const inquiry of hotelInquiries) {
+    const rows = inquiriesBySupplier.get(inquiry.supplierId) ?? [];
+    rows.push(inquiry);
+    inquiriesBySupplier.set(inquiry.supplierId, rows);
+  }
+
   const [total, preferredCount, churchCount] = await Promise.all([
     db.supplier.count(),
     db.supplier.count({ where: { preferred: true, status: "ACTIVE" } }),
@@ -134,7 +181,7 @@ export default async function SuppliersPage({ searchParams }: PageProps) {
 
       <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
         <div className="overflow-x-auto">
-          <table className="w-full min-w-[1050px] text-left text-sm">
+          <table className="w-full min-w-[1250px] text-left text-sm">
             <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
               <tr>
                 <th className="px-5 py-3">Supplier</th>
@@ -144,6 +191,7 @@ export default async function SuppliersPage({ searchParams }: PageProps) {
                 <th className="px-5 py-3">CRM</th>
                 <th className="px-5 py-3">Rates</th>
                 <th className="px-5 py-3">Contracts</th>
+                <th className="px-5 py-3">Inquiries</th>
                 <th className="px-5 py-3"></th>
               </tr>
             </thead>
@@ -173,6 +221,51 @@ export default async function SuppliersPage({ searchParams }: PageProps) {
                   </td>
                   <td className="px-5 py-4 font-semibold text-slate-800">{supplier._count.rates}</td>
                   <td className="px-5 py-4 text-slate-600">{supplier._count.contracts}</td>
+                  <td className="px-5 py-4 text-slate-700">
+                    {supplier.type === "HOTEL" ? (() => {
+                      const inquiries = inquiriesBySupplier.get(supplier.id) ?? [];
+                      if (!inquiries.length) return <span className="text-slate-400">No inquiry</span>;
+                      const attempted = inquiries.find((item) => attemptsByKey.has(`supplier:hotel-inquiry:${item.id}:v1`));
+                      const selected = attempted ?? inquiries[0];
+                      const outbox = attemptsByKey.get(`supplier:hotel-inquiry:${selected.id}:v1`);
+                      const events = outbox ? eventTypesByOutbox.get(outbox.id) : undefined;
+                      let label = selected.status === "APPROVED" ? "Approved - awaiting send" : "Draft";
+                      let className = "text-slate-700";
+                      if (outbox) {
+                        const status = outbox.status.toUpperCase();
+                        if (events?.has("email.bounced") || events?.has("email.complained") || status === "BOUNCED" || status === "COMPLAINED") {
+                          label = "Delivery issue";
+                          className = "text-red-800";
+                        } else if (events?.has("email.delivered")) {
+                          label = "Delivered (provider reported)";
+                          className = "text-green-800";
+                        } else if (events?.has("email.delivery_delayed")) {
+                          label = "Delivery delayed";
+                          className = "text-amber-800";
+                        } else if (status === "ACCEPTED") {
+                          label = "Quotation Requested";
+                          className = "text-blue-800";
+                        } else if (status === "FAILED") {
+                          label = "Send failed - review";
+                          className = "text-red-800";
+                        } else {
+                          label = "Send attempted - investigate";
+                          className = "text-amber-800";
+                        }
+                      }
+                      return (
+                        <div className="min-w-[190px]">
+                          <Link href={`/admin/tours/${selected.tourId}/hotel-inquiry-history`} className={`font-semibold hover:underline ${className}`}>
+                            {label}
+                          </Link>
+                          <div className="mt-1 text-xs text-slate-500">
+                            {selected.destination} · {selected.checkIn} to {selected.checkOut}
+                          </div>
+                          <div className="text-xs text-slate-500">{inquiries.length} saved inquiry record{inquiries.length === 1 ? "" : "s"}</div>
+                        </div>
+                      );
+                    })() : <span className="text-slate-400">—</span>}
+                  </td>
                   <td className="px-5 py-4 text-right">
                     <Link href={`/admin/suppliers/${supplier.id}`} className="font-semibold text-[#8B0000]">
                       Open
@@ -182,7 +275,7 @@ export default async function SuppliersPage({ searchParams }: PageProps) {
               ))}
               {suppliers.length === 0 && (
                 <tr>
-                  <td colSpan={8} className="px-5 py-14 text-center text-slate-500">
+                  <td colSpan={9} className="px-5 py-14 text-center text-slate-500">
                     No suppliers match the current filters.
                   </td>
                 </tr>

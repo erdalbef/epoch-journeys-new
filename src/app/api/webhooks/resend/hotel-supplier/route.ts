@@ -19,15 +19,28 @@ export async function POST(request: Request) {
   try {
     const result = await db.$transaction(async (tx) => {
       const sent = await tx.epochEmailOutbox.findFirst({ where: { providerMessageId: event.providerMessageId, eventKey: { startsWith: "supplier:hotel-inquiry:" } } });
-      if (!sent) return "unmatched";
+      // The provider may emit a signed delivery event before the send API has
+      // persisted its providerMessageId. Preserve that event only while there is
+      // a recently started supplier send; unrelated Resend traffic is ignored.
+      if (!sent) {
+        const pendingSend = await tx.epochEmailOutbox.findFirst({
+          where: {
+            eventKey: { startsWith: "supplier:hotel-inquiry:" },
+            status: "SENDING",
+            lastAttemptAt: { gte: new Date(Date.now() - 10 * 60 * 1000) },
+          },
+          select: { id: true },
+        });
+        if (!pendingSend) return "unmatched";
+      }
       const inserted = await tx.epochSupplierDeliveryEvent.createMany({
-        data: [{ id: event.eventId, outboxId: sent.id, providerMessageId: event.providerMessageId, type: event.type, occurredAt: event.occurredAt }],
+        data: [{ id: event.eventId, outboxId: sent?.id ?? "PENDING_PROVIDER_MATCH", providerMessageId: event.providerMessageId, type: event.type, occurredAt: event.occurredAt }],
         skipDuplicates: true,
       });
       if (!inserted.count) return "duplicate";
-      // Delivery outcomes are recorded in EpochSupplierDeliveryEvent.
+      // The sender's GET review can resolve early events by providerMessageId.
       // Keep the shared EpochEmailOutbox status unchanged.
-      return "recorded";
+      return sent ? "recorded" : "pending_provider_match";
     });
     return json({ ok: true, result });
   } catch (error) {
