@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 
-import EpochAiWorkspace from "@/components/admin/epoch-ai/EpochAiWorkspace";
+import EpochAiSuite from "@/components/admin/epoch-ai/EpochAiSuite";
 
 export const metadata: Metadata = {
   title: "Epoch AI | Epoch Journeys Admin",
@@ -8,5 +8,5 @@ export const metadata: Metadata = {
 };
 
 export default function EpochAiPage() {
-  return <EpochAiWorkspace />;
+  return <EpochAiSuite />;
 }
