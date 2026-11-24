@@ -39,7 +39,30 @@ export const SARAJEVO_PUBLIC_VERIFICATION: Record<string, PublicHotelVerificatio
     openQuestions: [...common, "beverage package including wine/beer may be unavailable"]
   }
 };
+export const HUMA_PUBLIC_VERIFICATION: Record<string, PublicHotelVerification> = {
+  "huma kotor bay hotel and villas": {
+    email: "groups@humahotel.me",
+    contactType: "sales",
+    phone: "+382 67 075 484",
+    source: "https://www.humahotel.me/reservation-policy/",
+    facilitiesSource: "https://www.humahotel.me/accomodation/",
+    publishedFacts: [
+      "Official reservation policy directs groups of five or more rooms to the group reservations team",
+      "Official contact page publishes the hotel telephone number"
+    ],
+    openQuestions: [
+      "20-room availability for 8-10 May 2027",
+      "Double/twin and single room availability",
+      "Published property capacity and suitable room inventory",
+      "Walk-in showers, lifts and accessible rooms",
+      "Coach access and parking",
+      "Porterage and group dinner arrangements",
+      "Private Mass meeting room",
+      "BB/HB rates, payment and cancellation terms"
+    ]
+  }
+};
 export function publishedHotelVerification(name: string): PublicHotelVerification | undefined {
   const key = name.trim().toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
-  return SARAJEVO_PUBLIC_VERIFICATION[key];
+  return SARAJEVO_PUBLIC_VERIFICATION[key] || HUMA_PUBLIC_VERIFICATION[key];
 }

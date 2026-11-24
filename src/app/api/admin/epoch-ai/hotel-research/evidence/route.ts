@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 import { requireAdminApiAccess } from "@/lib/security/requireAdminApiAccess";
 import {compileHotelEvidence,mapBraveHotelResults,validHotelEvidenceRequest} from "@/lib/epoch-ai/hotelEvidenceResearch";
+import {extractStructuredHotelResearch} from "@/lib/epoch-ai/hotelStructuredResearch";
+import {selectHotelOfficialSiteCandidates} from "@/lib/epoch-ai/hotelOfficialSiteSelection";
 export const runtime="nodejs";
 export const dynamic="force-dynamic";
 const respond=(data:Record<string,unknown>,status=200)=>NextResponse.json(data,{status,headers:{"Cache-Control":"no-store"}});
@@ -24,7 +26,7 @@ export async function POST(request:Request){
       return mapBraveHotelResults(await res.json());
     }));
     const urls=new Set<string>();const pages=batches.flat().filter(page=>{if(urls.has(page.url))return false;urls.add(page.url);return true;});
-    return respond({report:compileHotelEvidence(hotelName,city,country,pages,new Date().toISOString()),pagesReviewed:pages.length});
+    return respond({report:compileHotelEvidence(hotelName,city,country,pages,new Date().toISOString()),structuredResearch:extractStructuredHotelResearch(hotelName,pages),officialSiteCandidates:selectHotelOfficialSiteCandidates(hotelName,pages),pagesReviewed:pages.length});
   }catch(error){console.error("HOTEL_EVIDENCE_SEARCH_FAILED",error instanceof Error?error.message:"unknown");return respond({error:"Hotel research could not complete; no data changed"},502)}
   finally{clearTimeout(timer)}
 }
