@@ -84,10 +84,10 @@ export function supplierDeliveryStateWithEvents(
   if (types.has("email.bounced") || types.has("email.complained") || types.has("email.failed") || types.has("email.suppressed")) {
     return {
       code:"DELIVERY_PROBLEM",
-      label:types.has("email.complained") ? "Complaint reported Î“Ã‡Ã¶ manual investigation required"
-        : types.has("email.bounced") ? "Bounced Î“Ã‡Ã¶ manual investigation required"
-        : types.has("email.suppressed") ? "Suppressed by provider Î“Ã‡Ã¶ manual investigation required"
-        : "Provider reported delivery failure Î“Ã‡Ã¶ manual investigation required",
+      label:types.has("email.complained") ? "Complaint reported - manual investigation required"
+        : types.has("email.bounced") ? "Bounced - manual investigation required"
+        : types.has("email.suppressed") ? "Suppressed by provider - manual investigation required"
+        : "Provider reported delivery failure - manual investigation required",
       delivered:false,
       requiresInvestigation:true
     };
@@ -105,7 +105,7 @@ export function supplierDeliveryStateWithEvents(
   if (types.has("email.delivery_delayed")) {
     return {
       code:"DELIVERY_DELAYED",
-      label:"Delivery delayed Î“Ã‡Ã¶ monitor; do not resend automatically",
+      label:"Delivery delayed - monitor; do not resend automatically",
       delivered:false,
       requiresInvestigation:true
     };
