@@ -99,7 +99,7 @@ export async function POST(request:Request,{params}:InquiryIdParams){
  if(!review.readyForActivation)return reply({error:"Supplier sending is blocked by review checks.",blocks:review.blocks},409);
  const formatted=formatHotelInquiryEmail(entry.subject,entry.body,false);
  const fingerprint=supplierMessageFingerprint({inquiryId:id,supplierId:entry.supplierId,to:entry.recipient,cc:SUPPLIER_CC,subject:entry.subject,html:formatted.html,text:formatted.text});
- if(!validateSupplierSendConfirmation(body,{inquiryId:id,to:entry.recipient,cc:SUPPLIER_CC,subject:entry.subject,fingerprint}))return reply({error:"Exact fingerprint, supplier, recipient, CC, subject and SEND SUPPLIER confirmation required."},400);
+ if(!validateSupplierSendConfirmation(body,{inquiryId:id,to:entry.recipient,cc:SUPPLIER_CC,subject:entry.subject,fingerprint}))return reply({error:"Exact fingerprint, supplier, recipient, CC, subject and SEND confirmation required."},400);
  const session=await getServerSession(authOptions);
  if(!session?.user?.id)return reply({error:"Admin identity unavailable; no sending attempted."},403);
  const actor=session.user.id;

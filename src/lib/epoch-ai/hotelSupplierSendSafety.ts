@@ -40,7 +40,7 @@ type SendConfirmation={confirmation:string;inquiryId:string;to:string;cc:string;
 export function validateSupplierSendConfirmation(value:unknown,expected:Omit<SendConfirmation,"confirmation">):boolean{
  if(!value||typeof value!=="object")return false;
  const v=value as Partial<SendConfirmation>;
- return v.confirmation==="SEND SUPPLIER"&&v.inquiryId===expected.inquiryId&&v.to===expected.to&&v.cc===expected.cc&&v.subject===expected.subject&&v.fingerprint===expected.fingerprint;
+ return v.confirmation==="SEND"&&v.inquiryId===expected.inquiryId&&v.to===expected.to&&v.cc===expected.cc&&v.subject===expected.subject&&v.fingerprint===expected.fingerprint;
 }
 export function supplierSendSnapshot(input:{inquiryId:string;supplierId:string;to:string;cc:string;subject:string;html:string;text:string;authorizedBy?:string;authorizedAt?:string;fingerprint?:string}):string{
  return JSON.stringify({schema:"epoch-hotel-supplier-email-v1",test:false,supplierSentAttempted:true,...input});
@@ -50,7 +50,7 @@ export function supplierSendSnapshot(input:{inquiryId:string;supplierId:string;t
 export function validateSupplierAuthorizationRehearsal(value:unknown,expected:{inquiryId:string;to:string;cc:string;subject:string;fingerprint:string}):boolean{
  if(!value || typeof value!=="object")return false;
  const v=value as Record<string,unknown>;
- return v.mode==="VALIDATE_ONLY" && v.confirmation==="VALIDATE ONLY" &&
+ return v.mode==="VALIDATE_ONLY" && v.confirmation==="VALIDATE" &&
    v.inquiryId===expected.inquiryId && v.to===expected.to && v.cc===expected.cc &&
    v.subject===expected.subject && v.fingerprint===expected.fingerprint;
 }
