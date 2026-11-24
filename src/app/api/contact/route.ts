@@ -1,7 +1,13 @@
 import { NextResponse } from "next/server";
 import { Resend } from "resend";
 
-const resend = new Resend(process.env.RESEND_API_KEY);
+function getResend(): Resend {
+  const apiKey = process.env.RESEND_API_KEY;
+  if (!apiKey) {
+    throw new Error("RESEND_API_KEY is not configured.");
+  }
+  return new Resend(apiKey);
+}
 
 type ContactBody = {
   fullName?: string;
@@ -47,7 +53,7 @@ export async function POST(request: Request) {
     }
 
     // 1️⃣ Send to you
-    const internal = await resend.emails.send({
+    const internal = await getResend().emails.send({
       from: "Epoch Journeys <info@epochjourneys.com>",
       to: "info@epochjourneys.com",
       replyTo: email,
@@ -77,7 +83,7 @@ export async function POST(request: Request) {
     }
 
     // 2️⃣ Auto-reply to sender
-    const confirmation = await resend.emails.send({
+    const confirmation = await getResend().emails.send({
       from: "Epoch Journeys <info@epochjourneys.com>",
       to: email,
       subject: "We received your message",

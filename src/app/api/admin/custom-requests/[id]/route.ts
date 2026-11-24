@@ -6,7 +6,13 @@ import { Resend } from "resend";
 import { authOptions } from "@/lib/authOptions";
 import { db } from "@/lib/db";
 
-const resend = new Resend(process.env.RESEND_API_KEY);
+function getResend(): Resend {
+  const apiKey = process.env.RESEND_API_KEY;
+  if (!apiKey) {
+    throw new Error("RESEND_API_KEY is not configured.");
+  }
+  return new Resend(apiKey);
+}
 
 function formatStatus(status: CustomRequestStatus) {
   return status.replaceAll("_", " ");
@@ -136,7 +142,7 @@ export async function PATCH(
       (updated.adminReply || "").trim();
 
     if ((statusChanged || replyChanged) && updated.user?.email) {
-      await resend.emails.send({
+      await getResend().emails.send({
         from: process.env.RESEND_FROM_EMAIL || "onboarding@resend.dev",
         to: updated.user.email,
         subject: `Update on your custom request ${updated.requestReference}`,

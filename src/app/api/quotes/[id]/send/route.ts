@@ -7,7 +7,13 @@ import { authOptions } from "@/lib/authOptions";
 import { db } from "@/lib/db";
 import { checkQuoteApprovalReadiness } from "@/lib/quotes/approvalReadiness";
 
-const resend = new Resend(process.env.RESEND_API_KEY);
+function getResend(): Resend {
+  const apiKey = process.env.RESEND_API_KEY;
+  if (!apiKey) {
+    throw new Error("RESEND_API_KEY is not configured.");
+  }
+  return new Resend(apiKey);
+}
 
 type SessionUserLike = {
   id?: string;
@@ -340,7 +346,7 @@ export async function POST(
     const fromEmail =
       process.env.RESEND_FROM_EMAIL || "quotes@epochjourneys.com";
 
-    const sendResult = await resend.emails.send({
+    const sendResult = await getResend().emails.send({
       from: fromEmail,
       to: quote.recipientEmail.trim(),
       subject,
