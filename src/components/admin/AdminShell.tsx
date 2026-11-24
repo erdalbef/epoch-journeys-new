@@ -65,6 +65,11 @@ const navSections: NavSection[] = [
         href: "/admin/dashboard",
         icon: LayoutDashboard,
       },
+      {
+        label: "Epoch AI",
+        href: "/admin/epoch-ai",
+        icon: Sparkles,
+      },
     ],
   },
   {

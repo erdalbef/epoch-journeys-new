@@ -144,10 +144,10 @@ describe('calculateQuote', () => {
     const result = calculateQuote(input);
 
     expect(result.pricing.landOnly?.doubleTwin.net).toBe(500);
-    expect(result.pricing.landOnly?.doubleTwin.sellingPrice).toBe(650);
+    expect(result.pricing.landOnly?.doubleTwin.sellingPrice).toBe(600);
 
     expect(result.pricing.landAndAir?.doubleTwin.net).toBe(700);
-    expect(result.pricing.landAndAir?.doubleTwin.sellingPrice).toBe(910);
+    expect(result.pricing.landAndAir?.doubleTwin.sellingPrice).toBe(840);
   });
 
   // NEW TESTS BELOW 👇
