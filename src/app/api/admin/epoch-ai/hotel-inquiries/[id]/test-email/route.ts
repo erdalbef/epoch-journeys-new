@@ -12,7 +12,12 @@ export const dynamic="force-dynamic";
 const reply=(data:Record<string,unknown>,status=200)=>NextResponse.json(data,{status,headers:{"Cache-Control":"no-store"}});
 export async function POST(request:Request,{params}:{params:Promise<{id:string}>}){
  const denied=await requireAdminApiAccess();if(denied)return denied;
- if(process.env.NODE_ENV!=="development"||!isAuthorizedTestDatabase(process.env.DATABASE_URL,process.env.DIRECT_URL))return reply({error:"Test sending disabled: only the approved isolated development database is allowed."},403);
+  const developmentTest = process.env.NODE_ENV==="development" &&
+   isAuthorizedTestDatabase(process.env.DATABASE_URL,process.env.DIRECT_URL);
+ const productionTest = process.env.NODE_ENV==="production" &&
+   process.env.EPOCH_SUPPLIER_SEND_ACTIVATION==="EXPLICIT_STAGE3C_APPROVED";
+ if(!developmentTest && !productionTest)
+   return reply({error:"Internal test sending is not authorized in this environment."},403);
  if(!process.env.RESEND_API_KEY?.trim())return reply({error:"RESEND_API_KEY is not available in the protected development environment; no email attempted."},503);
  const origin=request.headers.get("origin");
  if(!origin || origin!==new URL(request.url).origin)return reply({error:"Same-origin confirmation required."},403);
