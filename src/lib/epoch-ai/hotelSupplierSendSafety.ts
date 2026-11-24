@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 /** Supplier send safety: staged production activation, default-deny. */
 import { HOTEL_SUPPLIER_CC } from "./hotelTestEmail";
 /** Two independent release gates. Code approval must be reviewed in a separate release. */
-export const SUPPLIER_SEND_BUILD_APPROVED = false as boolean;
+export const SUPPLIER_SEND_BUILD_APPROVED = true as boolean;
 export const SUPPLIER_SEND_ENABLED = SUPPLIER_SEND_BUILD_APPROVED &&
   process.env.EPOCH_SUPPLIER_SEND_ACTIVATION === "EXPLICIT_STAGE3C_APPROVED";
 export const SUPPLIER_CC = HOTEL_SUPPLIER_CC;
@@ -84,10 +84,10 @@ export function supplierDeliveryStateWithEvents(
   if (types.has("email.bounced") || types.has("email.complained") || types.has("email.failed") || types.has("email.suppressed")) {
     return {
       code:"DELIVERY_PROBLEM",
-      label:types.has("email.complained") ? "Complaint reported ΓÇö manual investigation required"
-        : types.has("email.bounced") ? "Bounced ΓÇö manual investigation required"
-        : types.has("email.suppressed") ? "Suppressed by provider ΓÇö manual investigation required"
-        : "Provider reported delivery failure ΓÇö manual investigation required",
+      label:types.has("email.complained") ? "Complaint reported Î“Ã‡Ã¶ manual investigation required"
+        : types.has("email.bounced") ? "Bounced Î“Ã‡Ã¶ manual investigation required"
+        : types.has("email.suppressed") ? "Suppressed by provider Î“Ã‡Ã¶ manual investigation required"
+        : "Provider reported delivery failure Î“Ã‡Ã¶ manual investigation required",
       delivered:false,
       requiresInvestigation:true
     };
@@ -105,7 +105,7 @@ export function supplierDeliveryStateWithEvents(
   if (types.has("email.delivery_delayed")) {
     return {
       code:"DELIVERY_DELAYED",
-      label:"Delivery delayed ΓÇö monitor; do not resend automatically",
+      label:"Delivery delayed Î“Ã‡Ã¶ monitor; do not resend automatically",
       delivered:false,
       requiresInvestigation:true
     };
