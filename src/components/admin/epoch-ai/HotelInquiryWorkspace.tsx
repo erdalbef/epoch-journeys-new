@@ -92,8 +92,8 @@ export default function HotelInquiryWorkspace({tourId,hotel,stay}:{tourId:string
   if(!review?.sendEnabled || !review.readyForActivation || review.outbox || review.priorStayAttempt || review.cc!=="info@epochjourneys.com"){
    setMessage("Supplier delivery is not activated or this inquiry has already been attempted. Nothing sent.");return;
   }
-  if(window.prompt(`FINAL LIVE SUPPLIER SEND\nHotel: ${hotel.name}\nTo: ${review.to}\nCC: ${review.cc}\nSubject: ${review.subject}\n\nConfirm the complete branded preview above, then type SEND SUPPLIER:`)!=="SEND SUPPLIER")return;
-  if(!window.confirm(`FINAL CONFIRMATION\nSend this exact approved email to ${review.to}?\nThis will contact the hotel and cannot be undone.`))return;
+  if(window.prompt(`WARNING - LIVE EXTERNAL EMAIL\nThis will contact a real hotel. The email cannot be recalled.\nCheck the full branded preview, recipient, CC, dates and rooms.\n\nHotel: ${hotel.name}\nTo: ${review.to}\nCC: ${review.cc}\nSubject: ${review.subject}\n\nConfirm the complete branded preview, including the mandatory CC.\n\nType SEND SUPPLIER to authorize this exact email:`)!=="SEND SUPPLIER")return;
+  if(!window.confirm(`FINAL WARNING - EXTERNAL EMAIL\nThis action cannot be undone.\n\nSend this exact approved email to ${review.to}?\nThis will contact the hotel and cannot be undone.`))return;
   setBusy(true);setMessage("");
   try{
    const res=await fetch(`/api/admin/epoch-ai/hotel-inquiries/${encodeURIComponent(entry.id)}/supplier-send`,{
@@ -107,7 +107,7 @@ export default function HotelInquiryWorkspace({tourId,hotel,stay}:{tourId:string
   finally{setBusy(false);}
  }
  async function sendTest(entry:Entry){
-  if(window.prompt(`TEST ONLY ΓÇö Send approved inquiry?\nTo: erdal@epochjourneys.com\nCC: info@epochjourneys.com\n\nHotel: ${hotel.name}\nSubject: ${entry.subject}\n\nType SEND TEST to authorize this single test:`)!=="SEND TEST")return;
+  if(window.prompt(`INTERNAL TEST ONLY - NO SUPPLIER WILL BE CONTACTED ΓÇö Send approved inquiry?\nTo: erdal@epochjourneys.com\nCC: info@epochjourneys.com\n\nHotel: ${hotel.name}\nSubject: ${entry.subject}\n\nType SEND TEST to authorize this single test:`)!=="SEND TEST")return;
   setBusy(true);setMessage("");
   try{
    const res=await fetch(`/api/admin/epoch-ai/hotel-inquiries/${encodeURIComponent(entry.id)}/test-email`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({confirmation:"SEND TEST"})});
