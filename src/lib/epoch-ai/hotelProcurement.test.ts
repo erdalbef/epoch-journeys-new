@@ -1,4 +1,5 @@
 import {describe,it,expect} from "vitest";
+import {matchHotelCrmRecords} from "./hotelDiscoveryReview";
 import {balkanStays,initialProcurementStays,matchingHotels,searchCrmHotels,contactEmail,inquiry,nights} from "./hotelProcurement";
 describe("read-only hotel procurement preparation",()=>{
  it("uses seven approved reference stays totalling 12 hotel nights",()=>{expect(balkanStays).toHaveLength(7);expect(balkanStays.reduce((x,s)=>x+nights(s),0)).toBe(12)});
@@ -29,6 +30,13 @@ describe("read-only hotel procurement preparation",()=>{
    expect(searchCrmHotels(hotels,"Sarajevo","").map(x=>x.id)).toEqual(["c"]);
    expect(searchCrmHotels(hotels,"Kotor Bay","courtyard").map(x=>x.id)).toEqual(["c"]);
    expect(searchCrmHotels(hotels,"Sarajevo","albania").map(x=>x.id)).toEqual(["t"]);
+ });
+ it("only reuses a hotel CRM record that matches the selected city and property", () => {
+   const hotel = {name: "Hotel Colosseo", country: null, email: null, preferred: false, contacts: []};
+   const hotels = [{...hotel, id: "t", city: "Tirana"}, {...hotel, id: "a", city: "Athens"}];
+
+   expect(matchHotelCrmRecords("Hôtel Colosseo", "Tirana", hotels).map(item => item.id)).toEqual(["t"]);
+   expect(matchHotelCrmRecords("Hotel Colosseo", "Ohrid", hotels)).toEqual([]);
  });
  it("uses primary contact for draft recipient",()=>{expect(contactEmail({id:"1",name:"A",city:"Ohrid",country:null,email:"info@example.com",preferred:false,contacts:[{email:"reservations@example.com",isPrimary:true}]})).toBe("reservations@example.com")});
  it("preserves approved master terms",()=>{const x=inquiry(balkanStays[1],"Hotel");expect(x.body).toContain("Half-board supplement (HB)");expect(x.body).toContain("Triple rooms subject to request");expect(x.body).toContain("Please advise your availability for the requested dates and provide your best group rates for Double/Twin and Single rooms, including the Single Supplement where applicable.");expect(x.body).toContain("2 glasses of wine");expect(x.body).toContain("private meeting room");expect(x.errors).toHaveLength(0)});

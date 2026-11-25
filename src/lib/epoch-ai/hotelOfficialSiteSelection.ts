@@ -46,6 +46,11 @@ const chainDomains: {
   }
 ];
 
+// A reviewed domain can support source identification without granting page retrieval.
+const reviewedPropertyDomains: Readonly<Record<string, string>> = {
+  "rogner hotel tirana": "hotel-europapark.com"
+};
+
 const generic = new Set([
   "hotel", "hotels", "resort", "resorts",
   "spa", "villas", "villa", "and", "the",
@@ -84,6 +89,7 @@ export function selectHotelOfficialSiteCandidates(
 
   if (!words.length) return [];
 
+  const reviewedDomain = reviewedPropertyDomains[normalized(hotelName)];
   const candidates: HotelOfficialSiteCandidate[] = [];
   const seen = new Set<string>();
 
@@ -112,7 +118,9 @@ export function selectHotelOfficialSiteCandidates(
 
     let reason = "";
 
-    if (matchingChain) {
+    if (reviewedDomain && matchesDomain(hostname, reviewedDomain)) {
+      reason = "Reviewed hotel property domain";
+    } else if (matchingChain) {
       // A chain-branded property requires its expected chain domain.
       if (!matchesDomain(hostname, matchingChain.domain)) continue;
 

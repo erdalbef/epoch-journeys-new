@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { inquiry, type Stay } from "@/lib/epoch-ai/hotelProcurement";
 
 type Props = {
@@ -17,14 +17,10 @@ export default function ResearchHotelManualInquiry({
   contactVerified,
 }: Props) {
   const template = inquiry(stay, hotelName);
-  const [recipient, setRecipient] = useState(initialEmail);
+  const recipient = initialEmail;
   const [subject, setSubject] = useState(template.subject);
   const [body, setBody] = useState(template.body);
   const [notice, setNotice] = useState("");
-
-  useEffect(() => {
-    setRecipient(initialEmail);
-  }, [initialEmail]);
 
   const ready =
     contactVerified &&
@@ -64,11 +60,11 @@ export default function ResearchHotelManualInquiry({
       </label>
 
       <label className="block text-sm font-medium">
-        Verified recipient email
+        Recipient from hotel research
         <input
           type="email"
           value={recipient}
-          onChange={(event) => setRecipient(event.target.value)}
+          readOnly
           className="mt-1 w-full rounded border bg-white p-2"
         />
       </label>

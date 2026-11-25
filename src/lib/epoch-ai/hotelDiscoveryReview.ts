@@ -23,6 +23,12 @@ export function assessHotelCoverage(stay:Stay, hotels:HotelContact[]):StayCovera
     status:matching.length===0?"NO_CRM_HOTELS":contactable.length===0?"CRM_CONTACTS_MISSING":"CRM_CONTACTS_PRESENT"
   };
 }
+export function matchHotelCrmRecords(
+  name: string, city: string, hotels: HotelContact[]
+): HotelContact[] {
+  return matchingHotels(city, hotels).filter(hotel => compareLeadToCrm(name, [hotel.name]));
+}
+
 export function reviewHotelCandidates(stay:Stay,hotels:HotelContact[]):CandidateReview[] {
   const byName=new Map<string, {name:string;researchOnly:boolean}>();
   for(const lead of leadsForCity(stay.city)) byName.set(lead.name.toLowerCase(),{name:lead.name,researchOnly:true});
@@ -31,7 +37,7 @@ export function reviewHotelCandidates(stay:Stay,hotels:HotelContact[]):Candidate
     byName.set(key,{name:hotel.name,researchOnly:false});
   }
   return [...byName.values()].map(item=>{
-    const crmMatches=hotels.filter(h=>compareLeadToCrm(item.name,[h.name]));
+    const crmMatches=matchHotelCrmRecords(item.name,stay.city,hotels);
     const published=leadEvidence(item.name);
     const contact=publishedHotelVerification(item.name);
     const cap=screenGroupCapacity(stay.rooms,published?.totalRooms);

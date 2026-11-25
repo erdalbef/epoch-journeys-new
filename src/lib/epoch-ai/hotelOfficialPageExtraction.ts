@@ -31,7 +31,7 @@ function decodeEntities(value: string): string {
     });
 }
 
-function categoryForEmail(email: string): OfficialPageContact["category"] {
+export function categoryForEmail(email: string): OfficialPageContact["category"] {
   const local = email.split("@")[0].toLowerCase();
 
   if (/group|mice|event/.test(local)) return "groups";
