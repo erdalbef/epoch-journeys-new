@@ -111,9 +111,24 @@ const ELITE_STORA_HOTELLET_PUBLIC_VERIFICATION: PublicHotelVerification = {
   reviewedOn: "26 Nov 2026",
 };
 
+const AC_BELLA_SKY_PUBLIC_VERIFICATION: PublicHotelVerification = {
+  email: "hotel@bellasky.dk",
+  contactType: "general",
+  phone: "+45 32 47 30 00",
+  source: "https://bellagroup.dk/en/experiences-and-offers/hotel-offers-at-ac-hotel-bella-sky",
+  facilitiesSource: "https://bellagroup.dk/en/about-bellagroup/business-areas/ac-bella-sky",
+  publishedFacts: ["Nearly 800 rooms advertised by the operator", "Restaurants and conference facilities advertised"],
+  openQuestions: ["Group reservations contact, room allotment and rates for the requested dates", "Walk-in showers and lift access", "Coach drop-off, porterage and group dinners"],
+  reviewedOn: "26 Nov 2026",
+};
+
 export function publishedHotelVerification(name: string, city?: string, country?: string): PublicHotelVerification | undefined {
   const fold = (value?: string) => value?.trim().toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "") ?? "";
   const key = fold(name);
+  if (/^ac (?:hotel )?bella sky(?:,? copenhagen)?$/.test(key) &&
+      fold(city) === "copenhagen" && fold(country) === "denmark") {
+    return AC_BELLA_SKY_PUBLIC_VERIFICATION;
+  }
   if (/^elite stora hotellet(?:,? jonkoping)?$/.test(key) &&
       fold(city) === "jonkoping" && fold(country) === "sweden") {
     return ELITE_STORA_HOTELLET_PUBLIC_VERIFICATION;

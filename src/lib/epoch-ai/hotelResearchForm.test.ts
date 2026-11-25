@@ -19,6 +19,19 @@ const liveResearch: HotelSupplierResearch = {
 };
 
 describe("Hotel research form", () => {
+  it("fills Bella Sky from the hotel operator's published contact details", () => {
+    const name = "AC Hotel Bella Sky Copenhagen";
+    const source = "https://bellagroup.dk/en/experiences-and-offers/hotel-offers-at-ac-hotel-bella-sky";
+    const profile = publishedHotelVerification(name, "Copenhagen", "Denmark");
+    expect(hotelResearchForm(undefined, profile, undefined, undefined)).toMatchObject({
+      email: "hotel@bellasky.dk", source, phone: "+45 32 47 30 00",
+    });
+    expect(selectHotelOfficialSiteCandidates(name, [{
+      title: "Bella Sky Hotel Offers | Stays at AC Hotel Bella Sky", url: source, description: "",
+    }])).toMatchObject([{ sourceUrl: source, retrievalAuthorized: false }]);
+    expect(publishedHotelVerification(name, "Stockholm", "Sweden")).toBeUndefined();
+  });
+
   it("fills the Jönköping reservations phone from an unlabelled official contact line or the published profile", () => {
     const name = "Elite Stora Hotellet";
     const source = "https://www.elite.se/en/hotels/hotels-in-jonkoping/elite-stora-hotellet-jonkoping/";

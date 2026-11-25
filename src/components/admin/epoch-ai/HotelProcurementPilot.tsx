@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import HotelInquiryWorkspace from "./HotelInquiryWorkspace";
 import RecordManualHotelOffer from "./RecordManualHotelOffer";
 import ResearchHotelManualInquiry from "./ResearchHotelManualInquiry";
@@ -24,6 +25,7 @@ import { contactEmail, createProcurementStay, initialProcurementStays, inquiry, 
 import { hotelStayCountry } from "@/lib/epoch-ai/hotelStayCities";
 
 export default function HotelProcurementPilot({tourId,destinations,itinerary,hotels}:{tourId:string;destinations:string[];itinerary:string|null;hotels:HotelContact[]}) {
+  const router = useRouter();
   const [stays,setStays]=useState(()=>initialProcurementStays(tourId,destinations,itinerary));
   const [active,setActive]=useState(stays[0]?.id ?? -1);
   const nextStayId = useRef(stays.length);
@@ -230,6 +232,7 @@ export default function HotelProcurementPilot({tourId,destinations,itinerary,hot
       const registeredSupplierId = result.supplierId;
       setSavedSupplierByHotel(previous => ({...previous, [saveKey]: registeredSupplierId}));
       setStatus(result.alreadyExists ? "Hotel already exists in CRM; no duplicate created." : "Approved research candidate added to Supplier CRM (INACTIVE). No inquiry sent.");
+      router.refresh();
     } catch(err) {setStatus(err instanceof Error ? err.message : "Could not register supplier.");}
     finally {setCrmSaving(false);}
   }
@@ -778,6 +781,7 @@ export default function HotelProcurementPilot({tourId,destinations,itinerary,hot
             </div>
           </section> : crmMatchesForSelected.length ? <section className="space-y-2 rounded-lg border border-blue-200 bg-blue-50 p-4 text-sm" aria-label="Supplier CRM matches">
             <h3 className="font-semibold text-[#001F3F]">Matching hotel in Supplier CRM</h3>
+            {crmSaveState ? <p role="status">{crmSaveState}</p> : null}
             <p>Select the existing supplier record for this stay.</p>
             {crmMatchesForSelected.map(hotel => <button key={hotel.id} type="button"
               className="block rounded border bg-white px-3 py-2 font-semibold" onClick={()=>selectCrmHotel(hotel)}>
@@ -834,7 +838,7 @@ export default function HotelProcurementPilot({tourId,destinations,itinerary,hot
                 className="rounded-lg bg-[#001F3F] px-3 py-2 font-semibold text-white disabled:opacity-50">
                 {crmSaving ? "Registering..." : "Approve & register in Supplier CRM"}
               </button> : <>
-                <button type="button" className="text-blue-700 underline" onClick={()=>window.location.reload()}>Refresh CRM hotel list</button>
+                <button type="button" className="text-blue-700 underline" onClick={()=>router.refresh()}>Refresh CRM hotel list</button>
                 <Link href={`/admin/suppliers/${registeredSupplierId}`} className="text-blue-700 underline">Open registered hotel</Link>
               </>}
             </div>

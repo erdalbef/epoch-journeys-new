@@ -52,7 +52,8 @@ const chainDomains: {
 
 // A reviewed domain can support source identification without granting page retrieval.
 const reviewedPropertyDomains: Readonly<Record<string, string>> = {
-  "rogner hotel tirana": "hotel-europapark.com"
+  "rogner hotel tirana": "hotel-europapark.com",
+  "ac hotel bella sky copenhagen": "bellagroup.dk"
 };
 
 const generic = new Set([
