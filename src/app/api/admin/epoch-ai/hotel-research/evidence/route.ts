@@ -3,6 +3,7 @@ import { requireAdminApiAccess } from "@/lib/security/requireAdminApiAccess";
 import {compileHotelEvidence,mapBraveHotelResults,validHotelEvidenceRequest} from "@/lib/epoch-ai/hotelEvidenceResearch";
 import {extractStructuredHotelResearch} from "@/lib/epoch-ai/hotelStructuredResearch";
 import {buildHotelSupplierResearch} from "@/lib/epoch-ai/hotelSupplierResearch";
+import {hotelPublicResearchName} from "@/lib/epoch-ai/hotelPublicVerification";
 import type {WebHotelResult} from "@/lib/epoch-ai/hotelWebResearch";
 import {officialHotelSearchDomain,selectHotelOfficialSiteCandidates} from "@/lib/epoch-ai/hotelOfficialSiteSelection";
 export const runtime="nodejs";
@@ -15,7 +16,8 @@ export async function POST(request:Request){
   if(Number(request.headers.get("content-length")||0)>4096)return respond({error:"Request too large"},413);
   let value:unknown;try{value=await request.json()}catch{return respond({error:"Invalid request"},400)}
   if(!validHotelEvidenceRequest(value))return respond({error:"Valid hotel, destination and country required"},400);
-  const {hotelName,city,country}=value;
+  const {city,country}=value;
+  const hotelName=hotelPublicResearchName(value.hotelName,city,country);
   const key=process.env.BRAVE_SEARCH_API_KEY?.trim();
   if(!key)return respond({error:"Brave Search API key is not configured on the server"},503);
   const headers={Accept:"application/json","X-Subscription-Token":key};

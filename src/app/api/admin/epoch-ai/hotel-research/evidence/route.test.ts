@@ -137,4 +137,22 @@ describe("Selected hotel contact and facilities", () => {
       status: "requires-admin-verification",
     });
   });
+
+  it("searches the new property name and accepts the operator's Reykjavík property page", async () => {
+    const source = "https://www.islandshotel.is/is/hotelin/hilton-reykjavik/";
+    const fetch = vi.fn(async (searchUrl: URL) => {
+      const query = searchUrl.searchParams.get("q") ?? "";
+      return searchResults(query.includes('"Hilton Reykjavik"') ? [{
+        title: "Hilton Reykjavík - Íslandshótel", url: source,
+        description: "Reykjavík. Hópar: groups@islandshotel.is. Sími +354 510 5130",
+      }] : []);
+    });
+    vi.stubGlobal("fetch", fetch);
+    const response = await POST(request("Hilton Reykjavik Nordica", "Reykjavik", "Iceland"));
+    expect(response.status).toBe(200);
+    expect((await response.json()).supplierResearch.contacts[0]).toMatchObject({
+      email: "groups@islandshotel.is", sourceUrl: source,
+      phone: {number: "+354 510 5130", sourceUrl: source},
+    });
+  });
 });

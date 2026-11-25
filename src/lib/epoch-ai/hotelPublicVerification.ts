@@ -4,7 +4,7 @@
  */
 export type PublicHotelVerification = {
   email: string;
-  contactType: "sales" | "reservations" | "general";
+  contactType: "groups" | "sales" | "reservations" | "general";
   phone: string;
   source: string;
   facilitiesSource: string;
@@ -133,9 +133,30 @@ const THON_OPERA_PUBLIC_VERIFICATION: PublicHotelVerification = {
   reviewedOn: "26 Nov 2026",
 };
 
+const HILTON_REYKJAVIK_PUBLIC_VERIFICATION: PublicHotelVerification = {
+  email: "groups@islandshotel.is",
+  contactType: "groups",
+  phone: "+354 510 5130",
+  source: "https://www.islandshotel.is/is/hotelin/hilton-reykjavik/",
+  facilitiesSource: "https://www.hilton.com/en/hotels/kefhfhi-hilton-reykjavik/hotel-info/",
+  publishedFacts: ["Group reservations contact for five or more rooms", "Hotel restaurant and meeting facilities advertised"],
+  openQuestions: ["Group allotment and rates for the requested dates", "Walk-in showers and lift access", "Coach drop-off, porterage and group dinners"],
+  reviewedOn: "26 Nov 2026",
+};
+
+const fold = (value?: string) => value?.trim().toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "") ?? "";
+
+export function hotelPublicResearchName(name: string, city?: string, country?: string) {
+  return /^hilton reykjavik(?: nordica)?$/.test(fold(name)) &&
+    fold(city) === "reykjavik" && fold(country) === "iceland" ? "Hilton Reykjavik" : name;
+}
+
 export function publishedHotelVerification(name: string, city?: string, country?: string): PublicHotelVerification | undefined {
-  const fold = (value?: string) => value?.trim().toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "") ?? "";
   const key = fold(name);
+  if (hotelPublicResearchName(name, city, country) === "Hilton Reykjavik" &&
+      fold(city) === "reykjavik" && fold(country) === "iceland") {
+    return HILTON_REYKJAVIK_PUBLIC_VERIFICATION;
+  }
   if (/^thon hotel opera(?:,? oslo)?$/.test(key) &&
       fold(city) === "oslo" && fold(country) === "norway") {
     return THON_OPERA_PUBLIC_VERIFICATION;

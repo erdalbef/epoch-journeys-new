@@ -19,6 +19,21 @@ const liveResearch: HotelSupplierResearch = {
 };
 
 describe("Hotel research form", () => {
+  it("fills the current operator's group contact when the former Hilton name is selected", () => {
+    const profile = publishedHotelVerification("Hilton Reykjavik Nordica", "Reykjavík", "Iceland");
+    const source = "https://www.islandshotel.is/is/hotelin/hilton-reykjavik/";
+    const chainSource = "https://www.hilton.com/en/hotels/kefhfhi-hilton-reykjavik/";
+    const generic: HotelSupplierResearch = {
+      contacts: [{ email: "hilton@islandshotel.is", sourceUrl: chainSource, sourceTitle: "Hilton Reykjavik",
+        status: "requires-admin-verification", category: "general" }],
+      facilities: [],
+    };
+    expect(hotelResearchForm(generic, profile, undefined, undefined)).toMatchObject({
+      email: "groups@islandshotel.is", source, phone: "+354 510 5130",
+    });
+    expect(publishedHotelVerification("Hilton Reykjavik Nordica", "Stockholm", "Sweden")).toBeUndefined();
+  });
+
   it("fills Bella Sky from the hotel operator's published contact details", () => {
     const name = "AC Hotel Bella Sky Copenhagen";
     const source = "https://bellagroup.dk/en/experiences-and-offers/hotel-offers-at-ac-hotel-bella-sky";

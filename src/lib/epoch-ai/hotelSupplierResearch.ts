@@ -31,7 +31,7 @@ export type HotelSupplierResearch = {
 const categoryRank = {groups: 0, sales: 1, reservations: 2, general: 3};
 const internationalPhone = "\\+\\d[\\d ().-]{6,24}\\d";
 const labeledPhone = new RegExp(
-  `\\b(?:contact us|kontakta oss|telefon|telephone|phone|tel\\.?|t:)\\s*:?\\s*(${internationalPhone})`, "i",
+  `\\b(?:contact us|kontakta oss|telefon|telephone|phone|call|sími|tel\\.?|t:)\\s*:?\\s*(${internationalPhone})`, "i",
 );
 const phoneBeforeEmail = new RegExp(`(${internationalPhone})[\\s,;|–—.-]*(?:e-?mail\\s*:?\\s*)?$`, "i");
 const phoneAfterEmail = new RegExp(`^[\\s,;|–—.-]*(?:tel\\.?\\s*:?\\s*)?(${internationalPhone})`, "i");

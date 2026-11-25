@@ -58,6 +58,7 @@ const chainDomains: {
 const reviewedPropertyDomains = new Map([
   ["rogner hotel tirana", "hotel-europapark.com"],
   ["ac hotel bella sky copenhagen", "bellagroup.dk"],
+  ["hilton reykjavik", "islandshotel.is"],
 ]);
 
 const generic = new Set([

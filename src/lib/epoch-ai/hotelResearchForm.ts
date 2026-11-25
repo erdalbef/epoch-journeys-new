@@ -20,9 +20,11 @@ export function hotelResearchForm(
     /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(contact.email) && safePublicUrl(contact.sourceUrl)
   );
   const suggestedContact = officialContact ?? searchContact;
-  const email = contactEdits?.email ?? suggestedContact?.email ?? profile?.email ?? "";
-  const source = contactEdits?.source ?? suggestedContact?.sourceUrl ?? profile?.source ?? "";
-  const phone = contactEdits?.phone ?? retrievedContact?.phones[0] ?? searchContact?.phone?.number ??
+  const preferGroupProfile = profile?.contactType === "groups" && suggestedContact?.category !== "groups";
+  const email = contactEdits?.email ?? (preferGroupProfile ? profile?.email : suggestedContact?.email) ?? profile?.email ?? "";
+  const source = contactEdits?.source ?? (preferGroupProfile ? profile?.source : suggestedContact?.sourceUrl) ?? profile?.source ?? "";
+  const phone = contactEdits?.phone ?? (preferGroupProfile ? profile?.phone : undefined) ??
+    retrievedContact?.phones[0] ?? searchContact?.phone?.number ??
     research?.phone?.number ?? profile?.phone ?? "";
   const facilities = facilitiesEdit ?? (safePublicUrl(research?.suggestedFacilitiesSource) || profile?.facilitiesSource || "");
   const contactLink = safePublicUrl(source.trim());
