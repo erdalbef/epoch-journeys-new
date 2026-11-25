@@ -59,6 +59,23 @@ export default function HotelProcurementPilot({tourId,tourTitle,destinations,hot
   const [officialSitesByKey,setOfficialSitesByKey]=useState<Record<string,HotelOfficialSiteCandidate[]>>({});
   const [evidenceErrors,setEvidenceErrors]=useState<Record<string,string>>({});
   const [evidenceLoading,setEvidenceLoading]=useState<string>("");
+  async function readResearchJson<T>(response: Response): Promise<T> {
+    const contentType = response.headers.get("content-type") || "";
+
+    if (!contentType.toLowerCase().includes("application/json")) {
+      throw new Error(
+        `Hotel research server returned HTTP ${response.status} instead of JSON. Check server logs.`
+      );
+    }
+
+    try {
+      return await response.json() as T;
+    } catch {
+      throw new Error(
+        `Hotel research returned an invalid JSON response (HTTP ${response.status}).`
+      );
+    }
+  }
   async function searchLiveHotels(){
     const index=active;const current=stays[index];
     if(!current?.city.trim()){setLiveError(p=>({...p,[index]:"Enter destination first."}));return;}
@@ -69,7 +86,7 @@ export default function HotelProcurementPilot({tourId,tourTitle,destinations,hot
         body:JSON.stringify({city:current.city,country:researchCountry[index]||countryForCity[current.city]||"",
           knownNames:[...new Set([...hotels.map(h=>h.name),...reviewHotelCandidates(current,hotels).map(c=>c.name)])]})
       });
-      const result=await response.json() as {error?:string;leads?:WebHotelResult[];searchLinks?:{label:string;url:string}[];mode?:string;candidates?:DiscoveredHotelLead[]};
+      const result=await readResearchJson<{error?:string;leads?:WebHotelResult[];searchLinks?:{label:string;url:string}[];mode?:string;candidates?:DiscoveredHotelLead[]}>(response);
       if(!response.ok)throw Error(result.error||"Live hotel search unavailable");
       setLiveByStay(p=>({...p,[index]:result.leads||[]}));
       setFoundByStay(p=>({...p,[index]:result.candidates||[]}));
@@ -86,13 +103,13 @@ export default function HotelProcurementPilot({tourId,tourTitle,destinations,hot
     try{
       const knownNames=[...new Set([...hotels.filter(h=>h.name).map(h=>h.name),...reviewHotelCandidates(current,hotels).map(h=>h.name)])].slice(0,12);
       const res=await fetch("/api/admin/epoch-ai/hotel-research/shortlist",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({city:current.city,country,knownNames})});
-      const body=await res.json() as {error?:string;discovered?:DiscoveredHotelLead[];reports?:Record<string,HotelEvidenceReport>;briefs?:Record<string,HotelBrief>;errors?:string[]};
+      const body=await readResearchJson<{error?:string;discovered?:DiscoveredHotelLead[];reports?:Record<string,HotelEvidenceReport>;briefs?:Record<string,HotelBrief>;errors?:string[]}>(res);
       if(!res.ok)throw Error(body.error||"Research unavailable");
       setFoundByStay(p=>({...p,[index]:body.discovered||[]}));
       setBriefsByStay(p=>({...p,[index]:body.briefs||{}}));
       setEvidenceReports(p=>{const next={...p};for(const [name,report] of Object.entries(body.reports||{})){next[`${index}:${name.trim().toLocaleLowerCase()}:${current.city}`]=report;}return next;});
       setDestinationResearchAt(p=>({...p,[index]:new Date().toLocaleString()}));
-      if((body.errors?.length ?? 0)>0)setDestinationResearchError(p=>({...p,[index]:`${body.errors?.length ?? 0} hotel(s) need another research attempt.`}));
+      if((body.errors?.length ?? 0)>0)setDestinationResearchError(p=>({...p,[index]:`${body.errors?.length ?? 0} research step(s) incomplete. ${body.errors?.[0] || ""}`}));
     }catch(error){setDestinationResearchError(p=>({...p,[index]:error instanceof Error?error.message:"Research unavailable"}));}
     finally{setDestinationResearchLoading(false);}
   }
@@ -101,7 +118,7 @@ export default function HotelProcurementPilot({tourId,tourTitle,destinations,hot
     setEvidenceLoading(requestKey);setEvidenceErrors(p=>({...p,[requestKey]:""}));
     try{
       const res=await fetch("/api/admin/epoch-ai/hotel-research/evidence",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({hotelName:name,city,country})});
-      const body=await res.json() as {report?:HotelEvidenceReport;structuredResearch?:StructuredHotelResearch;officialSiteCandidates?:HotelOfficialSiteCandidate[];error?:string};
+      const body=await readResearchJson<{report?:HotelEvidenceReport;structuredResearch?:StructuredHotelResearch;officialSiteCandidates?:HotelOfficialSiteCandidate[];error?:string}>(res);
       if(!res.ok||!body.report)throw Error(body.error||"Research unavailable");
       setEvidenceReports(p=>({...p,[requestKey]:body.report!}));
       setOfficialSitesByKey(p=>({
