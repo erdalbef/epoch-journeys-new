@@ -10,6 +10,7 @@ export type PublicHotelVerification = {
   facilitiesSource: string;
   publishedFacts: string[];
   openQuestions: string[];
+  reviewedOn?: string;
 };
 const common = ["20 rooms available on 7–8 May 2027", "double/twin and single room mix", "walk-in showers and lifts", "coach arrival and parking", "porterage", "group dinner and beverage package", "BB/HB group rates and commercial terms"];
 export const SARAJEVO_PUBLIC_VERIFICATION: Record<string, PublicHotelVerification> = {
@@ -62,7 +63,26 @@ export const HUMA_PUBLIC_VERIFICATION: Record<string, PublicHotelVerification> =
     ]
   }
 };
-export function publishedHotelVerification(name: string): PublicHotelVerification | undefined {
+const ROGNER_TIRANA_PUBLIC_VERIFICATION: PublicHotelVerification = {
+  email: "info.tirana@rogner.com",
+  contactType: "general",
+  phone: "+355 4 2235035",
+  source: "https://www.hotel-europapark.com/en/contact-info.html",
+  facilitiesSource: "https://www.hotel-europapark.com/en/mice.html",
+  publishedFacts: ["central Tirana location", "conference and banquet facilities"],
+  openQuestions: [
+    "group reservations contact and room availability for the requested dates",
+    "walk-in showers and lifts", "coach access and porterage",
+    "group dinner, beverages and commercial terms"
+  ],
+  reviewedOn: "25 Nov 2026"
+};
+
+export function publishedHotelVerification(name: string, city?: string, country?: string): PublicHotelVerification | undefined {
   const key = name.trim().toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+  if (key === "rogner hotel tirana" && city?.trim().toLowerCase() === "tirana" &&
+      country?.trim().toLowerCase() === "albania") {
+    return ROGNER_TIRANA_PUBLIC_VERIFICATION;
+  }
   return SARAJEVO_PUBLIC_VERIFICATION[key] || HUMA_PUBLIC_VERIFICATION[key];
 }

@@ -6,18 +6,17 @@ import { inquiry, type Stay } from "@/lib/epoch-ai/hotelProcurement";
 type Props = {
   hotelName: string;
   stay: Stay;
-  initialEmail: string;
+  recipient: string;
   contactVerified: boolean;
 };
 
 export default function ResearchHotelManualInquiry({
   hotelName,
   stay,
-  initialEmail,
+  recipient,
   contactVerified,
 }: Props) {
   const template = inquiry(stay, hotelName);
-  const recipient = initialEmail;
   const [subject, setSubject] = useState(template.subject);
   const [body, setBody] = useState(template.body);
   const [notice, setNotice] = useState("");
