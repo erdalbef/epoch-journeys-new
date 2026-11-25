@@ -32,6 +32,7 @@ export default function HotelProcurementPilot({tourId,destinations,itinerary,hot
   const [supplierId,setSupplierId]=useState<Record<number,string>>({});
   const [leadByStay,setLeadByStay]=useState<Record<number,string>>({});
   const [manualLead,setManualLead]=useState<Record<number,string>>({});
+  const [addedHotels,setAddedHotels]=useState<Record<string,string[]>>({});
   const [researchCountry,setResearchCountry]=useState<Record<number,string>>({});
   const [contactEdits,setContactEdits]=useState<Record<string,Partial<HotelResearchContactFields>>>({});
   const [facilitiesSource,setFacilitiesSource]=useState<Record<string,string>>({});
@@ -235,7 +236,7 @@ export default function HotelProcurementPilot({tourId,destinations,itinerary,hot
   const matches=useMemo(()=>stay?searchCrmHotels(hotels,stay.city,crmSearch[active]||""):[],[stay,hotels,crmSearch,active])
     .filter(hotel => eligibleByGuestRating(hotel.name));
   const chosen=hotels.find(h=>h.id===supplierId[active]);
-  const selectedLeadName=manualLead[active]?.trim() || leadByStay[active] || "";
+  const selectedLeadName=leadByStay[active] || "";
   const selectedName=chosen?.name||selectedLeadName;
 
   useEffect(()=>{
@@ -261,8 +262,12 @@ export default function HotelProcurementPilot({tourId,destinations,itinerary,hot
   const leadEmail = researchForm.email.trim();
   const coverage=stay?assessHotelCoverage(stay,hotels):null;
   const candidateReviews=stay?reviewHotelCandidates(stay,hotels).filter(item => eligibleByGuestRating(item.name)):[];
-  const recommendationOptions=[...candidateReviews.map(item=>({name:item.name,inCrm:item.inCrm,discovery:false})),
-    ...(foundByStay[active]||[]).filter(item=>eligibleByGuestRating(item.name)&&item.identityStatus!=="identity-review"&&!candidateReviews.some(c=>compareLeadToCrm(item.name,[c.name]))&&!matchHotelCrmRecords(item.name,stay?.city||"",hotels).length).map(item=>({name:item.name,inCrm:false,discovery:true}))];
+  const addedHotelKey = locationKey("");
+  const manualHotels = addedHotels[addedHotelKey] ?? [];
+  const recommendationOptions=[
+    ...manualHotels.map(name => ({name, inCrm:matchHotelCrmRecords(name,stay?.city||"",hotels).length>0, discovery:false, manual:true})),
+    ...candidateReviews.map(item=>({name:item.name,inCrm:item.inCrm,discovery:false,manual:false})),
+    ...(foundByStay[active]||[]).filter(item=>eligibleByGuestRating(item.name)&&item.identityStatus!=="identity-review"&&!candidateReviews.some(c=>compareLeadToCrm(item.name,[c.name]))&&!matchHotelCrmRecords(item.name,stay?.city||"",hotels).length).map(item=>({name:item.name,inCrm:false,discovery:true,manual:false}))];
   const researchShortlist=rankHotelResearchCandidates(recommendationOptions.map(item=>({
     ...item,report:evidenceReports[locationKey(item.name)],
     reviewedContact: item.name===selectedName&&contactChecked,
@@ -301,7 +306,33 @@ export default function HotelProcurementPilot({tourId,destinations,itinerary,hot
 
   function reviewHotelLead(name: string) {
     if (selectedLeadName !== name || chosen) useResearchLead(name);
+    else if (researchDetailsRef.current) {
+      researchDetailsRef.current.open = true;
+      researchDetailsRef.current.scrollIntoView({behavior:"smooth",block:"start"});
+    }
     researchSelectedContact(name);
+  }
+
+  function addHotelToList() {
+    const entered = (manualLead[active] ?? "").trim();
+    if (!stay || !stableHotelIdentity(entered)) return;
+    const [property, suffix] = entered.split(",").map(part => part.trim());
+    const name = suffix && stableHotelIdentity(suffix) === stableHotelIdentity(stay.city)
+      ? property : entered;
+    if (!stableHotelIdentity(name)) return;
+
+    const identity = stableHotelIdentity(name);
+    const existing = matchHotelCrmRecords(name,stay.city,hotels)[0];
+    const alreadyListed = recommendationOptions.find(option => stableHotelIdentity(option.name) === identity);
+    const displayName = existing?.name ?? alreadyListed?.name ?? name;
+    setAddedHotels(previous => {
+      const names = previous[addedHotelKey] ?? [];
+      return names.some(item => stableHotelIdentity(item) === identity)
+        ? previous : {...previous, [addedHotelKey]: [...names, displayName]};
+    });
+    setManualLead(previous => ({...previous, [active]: ""}));
+    if (existing) selectCrmHotel(existing);
+    else reviewHotelLead(displayName);
   }
 
   function selectCrmHotel(hotel: HotelContact) {
@@ -440,16 +471,34 @@ export default function HotelProcurementPilot({tourId,destinations,itinerary,hot
               <p className="text-xs text-slate-600">Browse available hotel options. Open website, rates and reviews to verify details yourself before choosing.</p></div>
             {destinationResearchLoading?<span className="text-xs text-slate-500" role="status">Researching hotels...</span>:null}
           </div>
+          <form className="flex flex-wrap items-end gap-2" onSubmit={event=>{event.preventDefault();addHotelToList();}}>
+            <label className="min-w-48 flex-1 text-xs font-medium">Hotel name
+              <input
+                value={manualLead[active] ?? ""}
+                maxLength={180}
+                onChange={event=>{
+                  const value = event.target.value;
+                  setManualLead(previous=>({...previous,[active]:value}));
+                }}
+                placeholder="Enter a hotel you know"
+                className="mt-1 w-full rounded border p-2"
+              />
+            </label>
+            <button type="submit" disabled={!manualLead[active]?.trim()} className="rounded border border-[#001F3F] px-3 py-2 text-xs font-semibold disabled:opacity-40">
+              Add hotel to list
+            </button>
+          </form>
           {(() => {
             const grouped=new Map<string,typeof recommendationOptions[number]>();
             // A brand variant must never occupy two recommendation positions.
-            for(const option of recommendationOptions){const key=stableHotelIdentity(option.name);const prior=grouped.get(key);if(!prior||(option.name.length>prior.name.length&&option.discovery===prior.discovery)||(!prior.discovery&&option.discovery&&!prior.inCrm))grouped.set(key,option);}
+            for(const option of recommendationOptions){const key=stableHotelIdentity(option.name);const prior=grouped.get(key);if(!prior||(!prior.manual&&((option.name.length>prior.name.length&&option.discovery===prior.discovery)||(!prior.discovery&&option.discovery&&!prior.inCrm))))grouped.set(key,option);}
             const choices=[...grouped.values()].map(option=>{
               const brief = hotelBrief(option.name);
               const report=evidenceReports[locationKey(option.name)];
-              const officialDomains=["marriott.com","hilton.com","all.accor.com","accor.com","ihg.com","hyatt.com","radissonhotels.com","hotel-sirius.com","swissdiamondhotel.com"];
+              const officialDomains=["marriott.com","hilton.com","all.accor.com","accor.com","ihg.com","hyatt.com","radissonhotels.com","scandichotels.com","hotel-sirius.com","swissdiamondhotel.com"];
               const sources=[...(brief?.sourceUrls||[]),...(foundByStay[active]||[]).filter(result=>stableHotelIdentity(result.name)===stableHotelIdentity(option.name)).map(result=>result.sourceUrl)];
-              const officialUrl=sources.find(url=>{try{const host=new URL(url).hostname.toLowerCase();return officialDomains.some(domain=>host===domain||host.endsWith("."+domain));}catch{return false;}});
+              const officialUrl=publishedHotelVerification(option.name,stay.city,country)?.source ??
+                sources.find(url=>{try{const host=new URL(url).hostname.toLowerCase();return officialDomains.some(domain=>host===domain||host.endsWith("."+domain));}catch{return false;}});
               const hotelQuery=`${option.name} ${stay.city} ${country}`;
               const websiteSearch=`https://www.google.com/search?q=${encodeURIComponent(hotelQuery+" official hotel website")}`;
               const reviewSearch=`https://www.google.com/search?q=${encodeURIComponent(hotelQuery+" hotel guest reviews ratings")}`;
@@ -464,14 +513,14 @@ export default function HotelProcurementPilot({tourId,destinations,itinerary,hot
               const band = capacityBand(rooms);
               return band === "preferred" ? 3 : band === "possible" ? 2 : 0;
             };
-            choices.sort((a,b)=>roomSizePriority(b.capacity?.totalRooms)-roomSizePriority(a.capacity?.totalRooms)||
+            choices.sort((a,b)=>Number(b.manual)-Number(a.manual)||roomSizePriority(b.capacity?.totalRooms)-roomSizePriority(a.capacity?.totalRooms)||
               (b.capacity?.totalRooms||0)-(a.capacity?.totalRooms||0)||Number((b.bullets?.length||0)>0)-Number((a.bullets?.length||0)>0)||a.name.localeCompare(b.name));
             const selected=selectedForQuotes[active]||[];
             return <div className="space-y-3">
-              <p className="text-xs text-slate-600">{choices.length} distinct hotels listed · Properties with 70 or more published rooms appear first. Hotels with published guest ratings below 4/5 are excluded.</p>
-              {choices.slice(0,20).map((option,index)=><div key={stableHotelIdentity(option.name)} className="rounded-lg border border-slate-200 bg-white p-3">
+              <p className="text-xs text-slate-600">{choices.length} distinct hotels listed. Manually added hotels appear first. Automatic recommendations apply the published guest rating and room capacity filters.</p>
+              {choices.slice(0,Math.max(20,manualHotels.length)).map((option,index)=><div key={stableHotelIdentity(option.name)} className="rounded-lg border border-slate-200 bg-white p-3">
                 <div className="flex items-start justify-between gap-3">
-                  <div className="min-w-0 flex-1"><p className="font-semibold text-[#001F3F]">{index+1}. {option.name} <span className="ml-1 text-[10px] font-medium text-slate-500">{option.inCrm?"In CRM":option.discovery?"New discovery":"Known lead"}</span></p>
+                  <div className="min-w-0 flex-1"><p className="font-semibold text-[#001F3F]">{index+1}. {option.name} <span className="ml-1 text-[10px] font-medium text-slate-500">{option.inCrm?"In CRM":option.manual?"Manually added":option.discovery?"New discovery":"Known lead"}</span></p>
                     <p className="mt-1 text-xs text-slate-700">{option.capacity ? <><strong>{option.capacity.totalRooms} published guest rooms and suites</strong> · <a href={option.capacity.sourceUrl} target="_blank" rel="noopener noreferrer" className="text-blue-700 underline">Capacity source</a></> : "Published room count unavailable"}</p>
                     {option.brief?.rating?<p className="text-xs text-slate-700">Guest rating: {option.brief.rating} {option.brief.ratingSourceUrl?<a href={option.brief.ratingSourceUrl} target="_blank" rel="noopener noreferrer" className="text-blue-700 underline">Source</a>:null}</p>:null}
                     {option.brief?.bbRate?<p className="text-xs text-slate-700">Indicative BB rate: {option.brief.bbRate}</p>:null}
@@ -483,7 +532,7 @@ export default function HotelProcurementPilot({tourId,destinations,itinerary,hot
                     <ul className="mt-2 list-disc space-y-1 pl-4 text-xs text-slate-700">{option.bullets.slice(0,5).map((reason,i)=><li key={`${i}:${reason}`}>{reason}</li>)}</ul>
                   </div>
                   <div className="flex shrink-0 flex-col items-end gap-2">
-                    {!option.inCrm?<button type="button" onClick={()=>reviewHotelLead(option.name)} className="rounded-lg bg-[#001F3F] px-3 py-2 text-xs font-semibold text-white">{selectedLeadName===option.name?"Contact research open below":"Research hotel contact"}</button>:<button type="button" onClick={()=>{const hotel=matchHotelCrmRecords(option.name,stay.city,hotels)[0];if(hotel)selectCrmHotel(hotel);}} className="rounded-lg bg-[#001F3F] px-3 py-2 text-xs font-semibold text-white">Prepare inquiry</button>}
+                    {!option.inCrm?<button type="button" onClick={()=>reviewHotelLead(option.name)} className="rounded-lg bg-[#001F3F] px-3 py-2 text-xs font-semibold text-white">Verify contact &amp; register</button>:<button type="button" onClick={()=>{const hotel=matchHotelCrmRecords(option.name,stay.city,hotels)[0];if(hotel)selectCrmHotel(hotel);}} className="rounded-lg bg-[#001F3F] px-3 py-2 text-xs font-semibold text-white">Prepare inquiry</button>}
                     <label className="flex items-center gap-1 text-xs font-semibold"><input type="checkbox" checked={selected.some(n=>stableHotelIdentity(n)===stableHotelIdentity(option.name))} onChange={e=>setSelectedForQuotes(p=>({...p,[active]:e.target.checked?[...selected.filter(n=>stableHotelIdentity(n)!==stableHotelIdentity(option.name)),option.name]:selected.filter(n=>stableHotelIdentity(n)!==stableHotelIdentity(option.name))}))}/> Compare drafts</label>
                   </div>
                 </div>
@@ -540,7 +589,6 @@ export default function HotelProcurementPilot({tourId,destinations,itinerary,hot
         </details>
         <p className="text-xs text-slate-600">Review → verify evidence → explicitly approve CRM registration → prepare inquiry draft. Nothing on this screen approves a booking, price or supplier email.</p>
       </section></details>:null}
-        <details className="rounded-lg border border-slate-200 bg-white p-3 text-sm"><summary className="cursor-pointer font-semibold text-[#001F3F]">Enter a hotel found outside the shortlist</summary><label className="mt-3 block text-sm font-medium">Verified hotel name<input value={manualLead[active]||""} onChange={e=>{setManualLead(p=>({...p,[active]:e.target.value}));setSupplierId(p=>({...p,[active]:""}));setCopyStatus("")}} placeholder="Enter the exact verified hotel name" className="mt-1 w-full rounded-lg border bg-white p-2" /></label></details>
         {selectedName ? <details ref={researchDetailsRef} key={`${active}:${selectedName}`} open className="scroll-mt-8 space-y-2 rounded-lg border border-blue-300 bg-white p-3"><summary className="cursor-pointer text-sm font-semibold text-[#001F3F]">{chosen?"View research details":"Verify contact & register"} — {selectedName} {chosen?"(CRM)":"(research lead)"}</summary><div className="mt-3 space-y-3">
           {chosen ? <p className="text-xs"><strong>Existing CRM record.</strong> Review the saved supplier and its current contact. <Link href={`/admin/suppliers/${chosen.id}`} className="text-blue-700 underline">Open supplier</Link></p> :
             crmMatchesForSelected.length ? <div className="rounded border p-2 text-xs space-y-1">

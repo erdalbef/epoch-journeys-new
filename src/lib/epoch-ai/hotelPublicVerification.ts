@@ -78,8 +78,23 @@ const ROGNER_TIRANA_PUBLIC_VERIFICATION: PublicHotelVerification = {
   reviewedOn: "25 Nov 2026"
 };
 
+const SCANDIC_GRAND_MARINA_PUBLIC_VERIFICATION: PublicHotelVerification = {
+  email: "grandmarina@scandichotels.com",
+  contactType: "general",
+  phone: "+358 300 308 404",
+  source: "https://www.scandichotels.com/en/hotels/scandic-grand-marina",
+  facilitiesSource: "https://www.scandichotels.com/en/hotels/scandic-grand-marina/meetings-conferences-events",
+  publishedFacts: ["Hotel restaurant and meeting facilities advertised"],
+  openQuestions: ["Group allotment and rates for the requested dates", "Walk-in showers and lift access", "Coach drop-off, porterage and group dinners"],
+  reviewedOn: "25 Nov 2026",
+};
+
 export function publishedHotelVerification(name: string, city?: string, country?: string): PublicHotelVerification | undefined {
   const key = name.trim().toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+  if ((key === "scandic grand marina" || key === "scandic grand marina, helsinki") &&
+      city?.trim().toLowerCase() === "helsinki" && country?.trim().toLowerCase() === "finland") {
+    return SCANDIC_GRAND_MARINA_PUBLIC_VERIFICATION;
+  }
   if (key === "rogner hotel tirana" && city?.trim().toLowerCase() === "tirana" &&
       country?.trim().toLowerCase() === "albania") {
     return ROGNER_TIRANA_PUBLIC_VERIFICATION;

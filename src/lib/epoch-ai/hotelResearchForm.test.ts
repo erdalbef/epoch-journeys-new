@@ -17,6 +17,15 @@ const liveResearch: HotelSupplierResearch = {
 };
 
 describe("Hotel research form", () => {
+  it("pre-fills the reviewed Scandic property only for Helsinki, Finland", () => {
+    const profile = publishedHotelVerification("Scandic Grand Marina", "Helsinki", "Finland");
+    expect(hotelResearchForm(undefined, profile, undefined, undefined)).toMatchObject({
+      email: "grandmarina@scandichotels.com",
+      phone: "+358 300 308 404",
+      source: "https://www.scandichotels.com/en/hotels/scandic-grand-marina",
+    });
+    expect(publishedHotelVerification("Scandic Grand Marina", "Stockholm", "Sweden")).toBeUndefined();
+  });
   it("populates the recipient and evidence fields from live research without an edit", () => {
     expect(hotelResearchForm(liveResearch, undefined, undefined, undefined)).toMatchObject({
       email: "groups@example-hotel.com",
