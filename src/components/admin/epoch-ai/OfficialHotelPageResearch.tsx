@@ -1,36 +1,23 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-
-type Contact = {
-  email: string;
-  category: string;
-  sourceUrl: string;
-  status: string;
-};
-
-type Extraction = {
-  contacts: Contact[];
-  phones: string[];
-  roomCounts: number[];
-  sourceUrl: string;
-  sourceVerified: false;
-};
+import type { OfficialPageExtraction } from "@/lib/epoch-ai/hotelOfficialPageExtraction";
 
 type Result = {
   hotelName: string;
   purpose: "contact" | "facilities";
   sourceUrl: string;
   status: "requires-admin-verification";
-  extraction: Extraction;
+  extraction: OfficialPageExtraction;
 };
 
 type Purpose = "contact" | "facilities";
 
 export default function OfficialHotelPageResearch({
-  hotelName
+  hotelName, onContactRetrieved
 }: {
   hotelName: string;
+  onContactRetrieved?: (extraction: OfficialPageExtraction) => void;
 }) {
   const [loading, setLoading] = useState<Purpose | null>(null);
   const [results, setResults] = useState<Partial<Record<Purpose, Result>>>({});
@@ -78,7 +65,9 @@ export default function OfficialHotelPageResearch({
         throw new Error("Retrieved evidence identity could not be confirmed");
       }
 
+      if (abort.signal.aborted) return;
       setResults(previous => ({ ...previous, [purpose]: body }));
+      if (purpose === "contact") onContactRetrieved?.(body.extraction);
     } catch (error) {
       if (abort.signal.aborted) return;
 

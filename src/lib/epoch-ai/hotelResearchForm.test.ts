@@ -63,6 +63,25 @@ describe("Hotel research form", () => {
     expect(hotelResearchForm(liveResearch, undefined, {email: ""}, undefined).contactReviewKey).toBe("");
   });
 
+  it("uses a retrieved official contact and source without overwriting reviewed edits", () => {
+    const sourceUrl = "https://example-hotel.com/official";
+    const retrieved = {
+      contacts: [{
+        email: "events@example-hotel.com", category: "groups" as const,
+        sourceUrl, status: "requires-admin-verification" as const,
+      }],
+      phones: ["+355 4 2235015"], roomCounts: [], sourceUrl, sourceVerified: false as const,
+    };
+    expect(hotelResearchForm(liveResearch, undefined, undefined, undefined, retrieved)).toMatchObject({
+      email: "events@example-hotel.com", source: sourceUrl, phone: "+355 4 2235015",
+    });
+    expect(hotelResearchForm(liveResearch, undefined, {
+      email: "groups@example-hotel.com", source: "https://example-hotel.com/groups",
+    }, undefined, retrieved)).toMatchObject({
+      email: "groups@example-hotel.com", source: "https://example-hotel.com/groups",
+    });
+  });
+
   it("leaves evidence empty for a property with no published sources", () => {
     expect(hotelResearchForm(undefined, undefined, undefined, undefined)).toEqual({
       email: "", source: "", phone: "", facilities: "", contactLink: "",

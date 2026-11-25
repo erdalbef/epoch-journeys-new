@@ -19,6 +19,7 @@ import { hotelResearchForm, type HotelResearchContactFields } from "@/lib/epoch-
 import { capacityBand, type HotelCapacityCandidate, type StructuredHotelResearch } from "@/lib/epoch-ai/hotelStructuredResearch";
 import type { HotelSupplierResearch } from "@/lib/epoch-ai/hotelSupplierResearch";
 import type { HotelOfficialSiteCandidate } from "@/lib/epoch-ai/hotelOfficialSiteSelection";
+import type { OfficialPageExtraction } from "@/lib/epoch-ai/hotelOfficialPageExtraction";
 import { contactEmail, createProcurementStay, initialProcurementStays, inquiry, searchCrmHotels, nights, type HotelContact, type Stay } from "@/lib/epoch-ai/hotelProcurement";
 import { hotelStayCountry } from "@/lib/epoch-ai/hotelStayCities";
 
@@ -69,6 +70,7 @@ export default function HotelProcurementPilot({tourId,destinations,itinerary,hot
   const [officialSitesByKey,setOfficialSitesByKey]=useState<Record<string,HotelOfficialSiteCandidate[]>>({});
   const [evidenceErrors,setEvidenceErrors]=useState<Record<string,string>>({});
   const [supplierResearchByKey,setSupplierResearchByKey]=useState<Record<string,HotelSupplierResearch>>({});
+  const [officialContacts,setOfficialContacts]=useState<Record<string,OfficialPageExtraction>>({});
   const [partialResearchByKey,setPartialResearchByKey]=useState<Record<string,boolean>>({});
   const [evidenceLoading,setEvidenceLoading]=useState<Record<string,boolean>>({});
   const requestsForHotelEvidence = useRef(new Set<string>());
@@ -201,14 +203,18 @@ export default function HotelProcurementPilot({tourId,destinations,itinerary,hot
     const setStatus = (message: string) => setCrmSaveStatusByHotel(previous => ({...previous, [saveKey]: message}));
     const recipient = leadEmail;
     const phone = researchForm.phone.trim();
-    const source = researchForm.source.trim();
-    const facilities = researchForm.facilities.trim();
-    if (!stay || !selected || !phone || !country || !contactChecked) {
-      setStatus("Enter the hotel country, email, phone and a public HTTPS contact link. Confirm the contact review above before registration.");
+    const source = contactLink;
+    const facilities = facilitiesChecked ? facilitiesLink : undefined;
+    if (!stay || !selected || !country) {
+      setStatus("Enter the hotel city and country in Stay details.");
       return;
     }
-    if (facilities && (!facilitiesLink || !facilitiesChecked)) {
-      setStatus("Review the facilities and enter a public HTTPS link, or leave the optional facilities field blank for hotel follow-up.");
+    if (!contactChecked || !source) {
+      setStatus("Review the published email and its source, then tick the contact review checkbox.");
+      return;
+    }
+    if (!phone) {
+      setStatus("Enter the hotel's published phone number.");
       return;
     }
     const confirmation = `Register ${selected} in ${stay.city}, ${country} as an INACTIVE research candidate?\n\nContact: ${recipient}, ${phone}\nContact evidence: ${source}\nFacilities evidence: ${facilities || "Pending hotel follow-up"}\n\nThis creates a CRM candidate only. No email will be sent.`;
@@ -255,7 +261,7 @@ export default function HotelProcurementPilot({tourId,destinations,itinerary,hot
   const structuredResearch=structuredResearchByKey[evidenceKey];
   const officialSiteCandidates=officialSitesByKey[evidenceKey]||[];
   const publishedProfile = publishedHotelVerification(selectedName, stay?.city, country);
-  const researchForm = hotelResearchForm(supplierResearch, publishedProfile, contactEdits[evidenceKey], facilitiesSource[evidenceKey]);
+  const researchForm = hotelResearchForm(supplierResearch, publishedProfile, contactEdits[evidenceKey], facilitiesSource[evidenceKey], officialContacts[evidenceKey]);
   const {contactLink, contactReviewKey, facilitiesLink} = researchForm;
   const contactChecked = Boolean(contactReviewKey && reviewedContact[evidenceKey] === contactReviewKey);
   const facilitiesChecked = Boolean(facilitiesLink && reviewedFacilitiesSource[evidenceKey] === facilitiesLink);
@@ -600,7 +606,62 @@ export default function HotelProcurementPilot({tourId,destinations,itinerary,hot
                 Use CRM record — {hotel.name}{contactEmail(hotel) ? ` · ${contactEmail(hotel)}` : ""}
               </button>)}
             </div> : <p className="text-xs">No matching local CRM record found.</p>}
-          <OfficialHotelPageResearch key={evidenceKey} hotelName={selectedName} />
+          {!chosen && !crmMatchesForSelected.length ? <section className="space-y-3 rounded-lg border border-blue-200 bg-blue-50 p-4 text-sm" aria-label="Hotel contact and CRM registration">
+            <h3 className="font-semibold text-[#001F3F]">Hotel contact and CRM registration</h3>
+            <div className="grid gap-3 sm:grid-cols-2">
+              <label className="block font-medium">Hotel recipient email
+                <input type="email" value={researchForm.email} onChange={e=>updateContact({email:e.target.value})} className="mt-1 w-full rounded border bg-white p-2"/>
+              </label>
+              <label className="block font-medium">Published phone
+                <input type="tel" value={researchForm.phone} onChange={e=>updateContact({phone:e.target.value})} className="mt-1 w-full rounded border bg-white p-2"/>
+              </label>
+            </div>
+            <label className="block font-medium">Contact source HTTPS URL
+              <input type="url" value={researchForm.source} onChange={e=>updateContact({source:e.target.value})} className="mt-1 w-full rounded border bg-white p-2"/>
+            </label>
+            {contactLink ? <a href={contactLink} target="_blank" rel="noopener noreferrer" className="inline-block text-blue-700 underline">Open contact source for review</a> : null}
+            <label className="flex items-start gap-2">
+              <input className="mt-1" type="checkbox" checked={contactChecked} disabled={!contactReviewKey}
+                onChange={e=>{
+                  if (e.target.checked) {
+                    setContactEdits(previous => ({...previous, [evidenceKey]: {
+                      ...previous[evidenceKey], email: researchForm.email, source: researchForm.source,
+                    }}));
+                  }
+                  setReviewedContact(previous => ({...previous, [evidenceKey]: e.target.checked ? contactReviewKey : ""}));
+                }}/>
+              I checked that this published source lists the hotel's recipient email.
+            </label>
+            <details className="space-y-2 rounded border bg-white p-2">
+              <summary className="cursor-pointer font-medium">Facilities evidence (optional)</summary>
+              <label className="block">Facilities source HTTPS URL
+                <input type="url" className="mt-1 w-full rounded border p-2" value={researchForm.facilities} onChange={e=>updateFacilitiesSource(e.target.value)}/>
+              </label>
+              {facilitiesLink ? <>
+                <a href={facilitiesLink} target="_blank" rel="noopener noreferrer" className="inline-block text-blue-700 underline">Open facilities source for review</a>
+                <label className="flex items-start gap-2">
+                  <input className="mt-1" type="checkbox" checked={facilitiesChecked}
+                    onChange={e=>setReviewedFacilitiesSource(previous => ({...previous, [evidenceKey]: e.target.checked ? facilitiesLink : ""}))}/>
+                  I reviewed this facilities source and want to include it.
+                </label>
+              </> : null}
+              <p className="text-xs text-slate-600">You can register the contact and leave facilities for hotel follow-up.</p>
+            </details>
+            <div className="flex flex-wrap items-center gap-3">
+              {!registeredSupplierId ? <button type="button" disabled={crmSaving} onClick={()=>void saveApprovedLead()}
+                className="rounded-lg bg-[#001F3F] px-3 py-2 font-semibold text-white disabled:opacity-50">
+                {crmSaving ? "Registering..." : "Approve & register in Supplier CRM"}
+              </button> : <>
+                <button type="button" className="text-blue-700 underline" onClick={()=>window.location.reload()}>Refresh CRM hotel list</button>
+                <Link href={`/admin/suppliers/${registeredSupplierId}`} className="text-blue-700 underline">Open registered hotel</Link>
+              </>}
+              <a href="#epoch-hotel-inquiry" className="text-blue-700 underline">Review inquiry draft</a>
+            </div>
+            {crmSaveState ? <p role="status">{crmSaveState}</p> : null}
+            <p className="text-xs text-slate-600">Approval creates an inactive research candidate. No email is sent.</p>
+          </section> : null}
+          <OfficialHotelPageResearch key={evidenceKey} hotelName={selectedName}
+            onContactRetrieved={!chosen ? extraction => setOfficialContacts(previous => ({...previous, [evidenceKey]: extraction})) : undefined} />
           {(() => { const profile=publishedProfile; return profile ? <div className="rounded-lg border border-sky-200 bg-sky-50 p-3 text-xs text-slate-800 space-y-2">
             <p className="font-bold text-[#001F3F]">Published hotel information ({profile.reviewedOn ?? "18 Nov 2026"})</p>
             <p><strong>Published contact:</strong> {profile.email} ({profile.contactType})</p>
@@ -751,23 +812,6 @@ export default function HotelProcurementPilot({tourId,destinations,itinerary,hot
               <p className="text-amber-900">{evidenceReport.note}</p>
             </details>:null}
           </section>
-          {!chosen ? <div className="space-y-2 rounded border p-3 text-sm">
-            <label className="block font-medium">Hotel recipient email
-              <input type="email" value={researchForm.email} onChange={e=>updateContact({email:e.target.value})} className="mt-1 w-full rounded border p-2"/>
-            </label>
-            <label className="block font-medium">Contact source HTTPS URL
-              <input type="url" value={researchForm.source} onChange={e=>updateContact({source:e.target.value})} className="mt-1 w-full rounded border p-2"/>
-            </label>
-            {contactLink ? <a href={contactLink} target="_blank" rel="noopener noreferrer" className="inline-block text-blue-700 underline">Open contact source for review</a> : null}
-            <label className="flex gap-2"><input type="checkbox" checked={contactChecked} disabled={!contactReviewKey}
-              onChange={e=>{
-                const reviewed = e.target.checked ? contactReviewKey : "";
-                setReviewedContact(previous => ({...previous, [evidenceKey]: reviewed}));
-              }}/>
-              I checked that this published source lists the hotel's recipient email.
-            </label>
-            <a href="#epoch-hotel-inquiry" className="text-blue-700 underline">Review inquiry draft</a>
-          </div> : null}
           {suitability?<section className="rounded-lg border border-slate-200 bg-white p-3 text-xs space-y-2" aria-label="Hotel suitability assessment">
             <div className="flex flex-wrap items-center justify-between gap-2"><p className="font-semibold text-[#001F3F]">Group suitability — evidence gaps</p><span className="font-medium text-amber-900">{suitability.openCount} of {suitability.totalCount} checks still open</span></div>
             <p className="text-slate-600">This is a follow-up checklist, not a hotel score, ranking, approval or verified capacity estimate. Marked checklist items remain self-reported until their supporting sources are reviewed.</p>
@@ -787,26 +831,6 @@ export default function HotelProcurementPilot({tourId,destinations,itinerary,hot
             <p className="text-slate-600">Mark confirmed only after receiving attributable hotel evidence. Ask the hotel to confirm the requested {stay.rooms} rooms for these dates.</p>
             {hotelConfirmationChecklist.filter(item=>!item.includes("Mass room")||stay.massRoom).map(item=><label key={item} className="flex items-start gap-2"><input type="checkbox" checked={Boolean(checkStatus[reviewKey]?.[item])} onChange={e=>setCheckStatus(prev=>({...prev,[reviewKey]:{...(prev[reviewKey]||{}),[item]:e.target.checked}}))}/>{item}</label>)}
           </div>
-          <details className="rounded-lg border border-slate-200 bg-slate-50 p-3 space-y-2">
-            <summary className="cursor-pointer text-xs font-semibold text-[#001F3F]">Register verified research lead in Supplier CRM</summary><div className="mt-3 space-y-2">
-            <p className="text-xs text-slate-600">After your explicit approval, a published-contact hotel lead can be stored as an INACTIVE research candidate, with evidence and source date. This is not a booking or email approval. Existing matches are checked for duplicates.</p>
-            {!chosen ? <div className="space-y-2 rounded border p-2 text-xs">
-              <p>Review the published phone and facilities link before registration.</p>
-              <label className="block">Published phone<input className="mt-1 w-full rounded border p-2" value={researchForm.phone} onChange={e=>updateContact({phone:e.target.value})}/></label>
-              <label className="block">Facilities source HTTPS URL (optional)<input type="url" className="mt-1 w-full rounded border p-2" value={researchForm.facilities} onChange={e=>updateFacilitiesSource(e.target.value)}/></label>
-              {facilitiesLink ? <>
-                <a href={facilitiesLink} target="_blank" rel="noopener noreferrer" className="inline-block text-blue-700 underline">Open facilities source for review</a>
-                <label className="flex gap-2"><input type="checkbox" checked={facilitiesChecked} onChange={e=>{
-                  const reviewed = e.target.checked ? facilitiesLink : "";
-                  setReviewedFacilitiesSource(previous => ({...previous, [evidenceKey]: reviewed}));
-                }}/>I reviewed the facilities source. Unconfirmed group amenities remain open questions.</label>
-              </> : !researchForm.facilities.trim() ? <p>Facilities evidence will be recorded as pending hotel follow-up.</p> : <p>Enter a public HTTPS link to review the source.</p>}
-            </div> : null}
-            {!chosen && !crmMatchesForSelected.length ? <button type="button" disabled={crmSaving || Boolean(registeredSupplierId)} onClick={()=>void saveApprovedLead()} className="rounded-lg bg-[#001F3F] px-3 py-2 text-xs font-semibold text-white disabled:opacity-50">{crmSaving?"Registering...":registeredSupplierId?"Research lead registered":"Approve & register research lead in CRM"}</button>:null}
-            {registeredSupplierId?<button type="button" className="block text-xs text-blue-700 underline" onClick={()=>window.location.reload()}>Refresh CRM hotel list to select the newly registered supplier</button>:null}
-            {registeredSupplierId?<Link href={`/admin/suppliers/${registeredSupplierId}`} className="block text-xs text-blue-700 underline">Open registered CRM record</Link>:null}
-            {crmSaveState?<p role="status" className="text-xs text-slate-700">{crmSaveState}</p>:null}
-          </div></details>
           <p className="text-xs text-slate-600">Unapproved research selections and diligence checks stay in this browser session only. No message is sent. Supplier confirmations require actual offer evidence.</p>
         </div></details>:null}
 

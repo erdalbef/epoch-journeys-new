@@ -26,7 +26,7 @@ export default function HotelSupplierResearchCard({research, massRoom, onUseCont
         {onUseContact ? <button type="button" className="ml-2 rounded border px-2 py-1"
           onClick={() => onUseContact(contact)}>Use contact in draft</button> : null}
       </li>)}
-    </ul> : <p>No property contact email found. Ask the hotel for its group reservations contact.</p>}
+    </ul> : <p>This search did not find a property email. Any contact already shown in the registration form is still available for review.</p>}
     {research.phone && !research.contacts.some(contact => contact.phone?.number === research.phone?.number) ? <p>
       <strong>Hotel telephone</strong> {research.phone.number} · <a href={research.phone.sourceUrl} target="_blank"
         rel="noopener noreferrer" className="text-blue-700 underline">Phone source</a>
