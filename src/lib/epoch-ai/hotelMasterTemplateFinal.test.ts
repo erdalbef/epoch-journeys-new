@@ -10,7 +10,7 @@ describe("Final approved Epoch master hotel inquiry", () => {
 
     expect(result.errors).toHaveLength(0);
     expect(result.body).toContain("Double/Twin and Single rooms");
-    expect(result.body).toContain("Single Supplement");
+    expect(result.body).not.toContain("Single Supplement");
     expect(result.body).toContain("Offer validity");
     expect(result.body).toContain("2 glasses of wine");
   });

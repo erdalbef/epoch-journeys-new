@@ -6,8 +6,8 @@ describe("Hotel BB room rate and separately itemized charges",()=>{
  it("uses the approved concise master rate request and itemized supplements",()=>{
   const draft=inquiry(balkanStays[0],"Courtyard by Marriott Sarajevo");
   expect(draft.errors).toHaveLength(0);
-  expect(draft.body).toContain("Please advise your availability for the requested dates and provide your best group rates for Double/Twin and Single rooms, including the Single Supplement where applicable.");
-  expect(draft.body).toContain("Double/Twin and Single; Triple rooms subject to request");
+  expect(draft.body).toContain("Please confirm availability for the requested dates and quote your best group rates for Double/Twin and Single rooms, plus Triple rooms where available.");
+  expect(draft.body).toContain("Double/Twin, Single, and Triple where available");
   expect(draft.body).toContain("- Hotel: Courtyard by Marriott Sarajevo");
   expect(draft.body).not.toContain("Please quote your best group room rates");
   expect(draft.body).toContain("additional charges separately from the BB room rate");
