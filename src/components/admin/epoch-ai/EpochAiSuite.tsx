@@ -7,6 +7,7 @@ import EpochPilgrimageStoryAssistant from "./EpochPilgrimageStoryAssistant";
 import EpochTourDocumentImport from "./EpochTourDocumentImport";
 import type { TourImportDraft } from "@/lib/epoch-ai/tourImportDraft";
 import type { PilgrimageStoryDraft } from "@/lib/epoch-ai/pilgrimageStoryDraft";
+import { correctTourDraftWeekdays } from "@/lib/epoch-ai/tourDraftWeekdays";
 
 type Tab = "chat" | "import" | "itinerary" | "story";
 
@@ -71,6 +72,8 @@ export default function EpochAiSuite() {
 
   const [draftLoaded, setDraftLoaded] = useState(false);
   const [storageStatus, setStorageStatus] = useState("");
+  const [savingTour, setSavingTour] = useState(false);
+  const [tourSaveResult, setTourSaveResult] = useState<{ message: string; tourId?: string } | null>(null);
 
   useEffect(() => {
     try {
@@ -162,6 +165,7 @@ export default function EpochAiSuite() {
     setImportedTour(null);
     setRevise(false);
     setStory(null);
+    setTourSaveResult(null);
 
     try {
       window.localStorage.removeItem(DRAFT_STORAGE_KEY);
@@ -180,6 +184,7 @@ export default function EpochAiSuite() {
     setOverview(draft.overviewItinerary);
     setImportedTour(draft);
     setStory(null);
+    setTourSaveResult(null);
     setTab("itinerary");
   }
 
@@ -187,6 +192,39 @@ export default function EpochAiSuite() {
     setItinerary(nextItinerary);
     setOverview(nextOverview);
     setStory(null);
+  }
+
+  async function saveTourDraft() {
+    const corrected = correctTourDraftWeekdays(itinerary);
+    const weekdayNote = corrected.corrections
+      ? `\n\nCorrect ${corrected.corrections} weekday labels using the dates in the itinerary.`
+      : "";
+    if (!window.confirm(`Save “${title.trim()}” as an unpublished tour in Admin Tours?${weekdayNote}`)) return;
+
+    setSavingTour(true);
+    setTourSaveResult(null);
+    setItinerary(corrected.text);
+    try {
+      const response = await fetch("/api/admin/epoch-ai/tour-draft", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          confirmation: "SAVE_TOUR_DRAFT",
+          title, duration, destinations, arrivalCity, departureCity,
+          itinerary: corrected.text, overview,
+        }),
+      });
+      const result = await response.json() as { error?: string; message?: string; tourId?: string };
+      setTourSaveResult({
+        message: response.ok ? "Unpublished tour draft saved in Admin Tours." :
+          result.error || result.message || "The tour draft could not be saved.",
+        tourId: result.tourId,
+      });
+    } catch {
+      setTourSaveResult({ message: "The save result could not be confirmed. Check Admin Tours before trying again." });
+    } finally {
+      setSavingTour(false);
+    }
   }
 
   return (
@@ -198,6 +236,7 @@ export default function EpochAiSuite() {
         <button
           type="button"
           onClick={clearWorkingDraft}
+          disabled={savingTour}
           className="rounded-lg border border-red-200 px-3 py-2 text-sm font-semibold text-red-700 hover:bg-red-50"
         >
           Clear Draft
@@ -226,8 +265,8 @@ export default function EpochAiSuite() {
       </nav>
 
       <p className="text-sm text-slate-600">
-        AI working drafts are temporary. Applying a proposal updates only
-        this page. Nothing is saved to the Tours database or published.
+        Applying a proposal updates the browser working draft. Save as Tour Draft
+        creates an unpublished record in Admin Tours after your confirmation.
       </p>
 
       <div className={tab === "chat" ? "" : "hidden"}>
@@ -403,6 +442,22 @@ export default function EpochAiSuite() {
               </p>
             )}
           </details>
+          <div className="mt-4 flex flex-wrap items-center gap-3">
+            <button
+              type="button"
+              disabled={savingTour || !draftLoaded || title.trim().length < 3 || !destinations.trim() || itinerary.trim().length < 40}
+              onClick={() => void saveTourDraft()}
+              className="rounded-lg bg-[#001F3F] px-4 py-2 text-sm font-semibold text-white disabled:opacity-50"
+            >
+              {savingTour ? "Saving…" : "Save as Tour Draft"}
+            </button>
+            {tourSaveResult && <p role="status" className="text-sm">
+              {tourSaveResult.message}
+              {tourSaveResult.tourId && (
+                <>{" "}<a className="text-blue-700 underline" href={`/admin/tours/${encodeURIComponent(tourSaveResult.tourId)}/edit`}>Open tour</a></>
+              )}
+            </p>}
+          </div>
         </section>
       )}
     </div>

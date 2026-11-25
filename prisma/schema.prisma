@@ -166,6 +166,15 @@ model Tour {
   @@index([pricingType])
 }
 
+// The snapshot survives subsequent tour edits and records the Admin approval.
+model EpochTourDraftSave {
+  id        String   @id @default(cuid())
+  tourId    String   @unique
+  actorId   String
+  snapshot  Json
+  createdAt DateTime @default(now())
+}
+
 model TourSeasonalPrice {
   id               String    @id @default(cuid())
   tourId           String
