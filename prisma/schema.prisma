@@ -2846,6 +2846,7 @@ model EpochSupplierDeliveryEvent {
 }
 
 model HotelInquiry {
+  receivedOffers SupplierCommercialEvidence[]
   id           String    @id @default(cuid())
   tourId       String
   supplierId   String
@@ -2908,6 +2909,7 @@ model SupplierCommercialEvidence {
   id String @id @default(cuid())
 
   supplierId String
+  hotelInquiryId String?
   payableId String?
   contractId String?
 
@@ -2920,6 +2922,9 @@ model SupplierCommercialEvidence {
   sourceSender String?
   sourceRecipient String?
   sourceSubject String?
+  sourceBody String? @db.Text
+  sourceFingerprint String?
+  reviewedTerms Json?
 
   acceptanceStatus CommercialEvidenceAcceptanceStatus @default(NOT_ESTABLISHED)
   acceptanceReference String?
@@ -2944,6 +2949,7 @@ model SupplierCommercialEvidence {
   updatedAt DateTime @updatedAt
 
   supplier Supplier @relation(fields: [supplierId], references: [id], onDelete: Restrict)
+  hotelInquiry HotelInquiry? @relation(fields: [hotelInquiryId], references: [id], onDelete: Restrict)
   payable SupplierPayable? @relation(fields: [payableId], references: [id], onDelete: Restrict)
   contract SupplierContract? @relation(fields: [contractId], references: [id], onDelete: Restrict)
 
@@ -2959,6 +2965,8 @@ model SupplierCommercialEvidence {
   events SupplierCommercialEvidenceEvent[]
 
   @@index([supplierId])
+  @@unique([hotelInquiryId, sourceFingerprint], map: "SupplierCommercialEvidence_hotel_offer_key")
+  @@unique([hotelInquiryId, version], map: "SupplierCommercialEvidence_hotel_version_key")
   @@index([payableId])
   @@index([contractId])
   @@index([sourceDocumentId])

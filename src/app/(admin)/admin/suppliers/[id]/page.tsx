@@ -11,6 +11,7 @@ import {
 import { db } from "@/lib/db";
 import SupplierWorkspace from "@/components/admin/suppliers/SupplierWorkspace";
 import DeleteSupplierButton from "@/components/admin/suppliers/DeleteSupplierButton";
+import HotelReceivedOffers from "@/components/admin/epoch-ai/HotelReceivedOffers";
 
 type Props = {
   params: Promise<{
@@ -174,6 +175,13 @@ export default async function SupplierDetailPage({
   if (!supplier) {
     notFound();
   }
+
+  const offerInquiries = supplier.type === "HOTEL" ? await db.hotelInquiry.findMany({
+    where: { supplierId: supplier.id, receivedOffers: { some: {} } },
+    orderBy: { createdAt: "desc" },
+    take: 25,
+    select: { id: true, destination: true, checkIn: true, checkOut: true, rooms: true, tour: { select: { title: true } } },
+  }) : [];
 
   const serialized = {
     id:
@@ -548,6 +556,15 @@ export default async function SupplierDetailPage({
           }
         />
       </section>
+
+      {offerInquiries.length > 0 && <section className="space-y-3 rounded-2xl border bg-white p-5">
+        <h2 className="text-lg font-semibold">Hotel offers by inquiry</h2>
+        {offerInquiries.map(inquiry => <div key={inquiry.id} className="space-y-1 text-sm">
+          <p className="font-medium">{inquiry.tour.title} · {inquiry.destination}</p>
+          <p>{inquiry.checkIn} to {inquiry.checkOut} · {inquiry.rooms} rooms</p>
+          <HotelReceivedOffers inquiryId={inquiry.id} />
+        </div>)}
+      </section>}
 
       {supplier
         .massArrangements

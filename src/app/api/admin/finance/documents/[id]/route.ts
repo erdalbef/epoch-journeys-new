@@ -63,6 +63,7 @@ export async function DELETE(
           title: true,
           originalFileName: true,
           storagePath: true,
+          _count: { select: { commercialEvidenceSources: true, commercialEvidenceAcceptances: true } },
         },
       });
 
@@ -76,6 +77,12 @@ export async function DELETE(
           status: 404,
         },
       );
+    }
+
+    if (document._count.commercialEvidenceSources || document._count.commercialEvidenceAcceptances) {
+      return NextResponse.json({
+        error: "This document is registered as commercial evidence and must be retained.",
+      }, { status: 409 });
     }
 
     /*
