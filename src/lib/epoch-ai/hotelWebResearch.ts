@@ -52,7 +52,7 @@ export function mapBraveHotelResults(payload:unknown):WebHotelResult[] {
 /** Named leads extracted from public search snippets, NEVER independent verification. */
 export type DiscoveredHotelLead = { name:string; sourceUrl:string; snippet:string; sourceHost:string; sourceType:"possible-official-site"|"independent-mention"; identityStatus:"brand-consistent"|"identity-review"; identityNote:string };
 const excludedHosts=new Set(["booking.com","www.booking.com","tripadvisor.com","www.tripadvisor.com","expedia.com","www.expedia.com","hotels.com","www.hotels.com","agoda.com","www.agoda.com","google.com","www.google.com","trivago.com","www.trivago.com","kayak.com","www.kayak.com"]);
-const genericTitle=/^(best|top|cheap|luxury|find|compare|book|hotels? (?:in|by|near) |accommodations? in |where to stay|the \d+ best|\d+ best|\d+ hotels?)/i;
+const genericTitle=/^(best|top|cheap|luxury|find|compare|book|hotels? (?:in|by|near) |accommodations? in |where to stay|the \d+ best|\d+ best|\d+ hotels?|\d\s*[- ]?\s*star\b)/i;
 /** A domain is a brand clue, not proof of property identity or page availability. */
 const brandDomains:[RegExp,RegExp,string][]=[
   [/(^|\.)hilton\.com$/i,/\b(hilton|doubletree|hampton|homewood|home2|curio|tapestry|waldorf|conrad)\b/i,"Hilton"],
@@ -74,7 +74,13 @@ function comparableHotelName(value:string):string {
     .replace(/[^a-z0-9]/g,"");
 }
 export function candidateNameFromSearchTitle(title:string):string {
-  const raw=clean(title,220).split(/\s+[|–—•·]\s+|\s+-\s+/)[0].trim();
+  const parts=clean(title,220).split(/\s+[|–—•·]\s+|\s+-\s+/).map(part=>part.trim());
+  const [first] = parts;
+  // Chains can put a location or rating headline before the property name.
+  const raw = genericTitle.test(first)
+    ? parts.slice(1).find(part => /\b(?:h[oô]tel|inn|suites?|resort)\b/i.test(part) &&
+        part.split(/\s+/).length > 1 && !genericTitle.test(part)) ?? ""
+    : first;
   // Web titles can be "Official site Swiss Diamond Hotel Prishtina in Kosovo".
   // Canonicalize before assessing hotel identity and comparing known leads.
   const name=raw
@@ -86,7 +92,7 @@ export function candidateNameFromSearchTitle(title:string):string {
   if(name.length<5 || name.length>95 || genericTitle.test(name) || !/[a-zA-Z]/.test(name))return "";
   if(/\b(?:reviews?|prices?|deals|photos|compare|best|top \d+|travel guide|restaurants|tripadvisor|booking\.com)\b/i.test(name))return "";
   if(/\b(?:event spaces?|hotel conference rooms?|meeting room rentals?)\b/i.test(name))return "";
-  if(!/\b(hotel|inn|suites?|resort|marriott|hilton|mercure|hyatt|holiday inn|radisson|ibis|movenpick|swissotel|ramada|courtyard|doubletree|novotel|sheraton|four points|intercontinental|grand|plaza|boutique|spa)\b/i.test(name))return "";
+  if(!/\b(h[oô]tel|inn|suites?|resort|marriott|hilton|mercure|hyatt|holiday inn|radisson|ibis|movenpick|swissotel|ramada|courtyard|doubletree|novotel|sheraton|four points|intercontinental|grand|plaza|boutique|spa)\b/i.test(name))return "";
   return name;
 }
 /** Dedupes candidates against CRM and curated leads. No ratings/contact facts are inferred. */
