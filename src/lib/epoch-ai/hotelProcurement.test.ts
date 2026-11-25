@@ -21,13 +21,13 @@ describe("read-only hotel procurement preparation",()=>{
  it("uses the saved Scandinavia itinerary for city tabs and includes overnight ferries in order", () => {
    const itinerary = [
      "Day 1, September 2, 2027 – Thursday Departure",
-     "Day 2 – Arrival in Helsinki\nWelcome dinner and overnight in Helsinki.",
-     "Day 3 – Helsinki – Overnight cruise to Stockholm\nDinner and overnight onboard.",
+     "Day 2, September 3, 2027 – Arrival in Helsinki\nWelcome dinner and overnight in Helsinki.",
+     "Day 3 – 4 September 2027 – Helsinki – Overnight cruise to Stockholm\nDinner and overnight onboard.",
      "Day 4 – Stockholm\nDinner and overnight in Stockholm.",
      "Day 5 – Stockholm – Jönköping\nDinner and overnight in Jönköping.",
      "Day 6 – Jönköping – Lund – Ystad – Copenhagen\nDinner and overnight in Copenhagen.",
      "Day 7 – Copenhagen\nOvernight: 4-star hotel in Copenhagen, Denmark",
-     "Day 8 – Copenhagen – Overnight ferry to Oslo\nDinner and overnight on board.",
+     "Day 8 – 2027-09-09 – Copenhagen – Overnight ferry to Oslo\nDinner and overnight on board.",
      "Day 9 – Oslo\nOvernight in Oslo.",
      "Day 10 – Flight to Reykjavik\nOvernight in Reykjavík.",
      "Day 11 – Golden Circle\nOvernight in Reykjavík.",
@@ -40,6 +40,25 @@ describe("read-only hotel procurement preparation",()=>{
    ]);
    expect(stays.filter(stay => !stay.ferry).map(stay => stay.country))
      .toEqual(["Finland", "Sweden", "Sweden", "Denmark", "Norway", "Iceland"]);
+   expect(stays.map(stay => [stay.checkIn, stay.checkOut])).toEqual([
+     ["2027-09-03", "2027-09-04"], ["2027-09-04", "2027-09-05"],
+     ["2027-09-05", "2027-09-06"], ["2027-09-06", "2027-09-07"],
+     ["2027-09-07", "2027-09-09"], ["2027-09-09", "2027-09-10"],
+     ["2027-09-10", "2027-09-11"], ["2027-09-11", "2027-09-13"],
+   ]);
+ });
+ it("leaves ambiguous dates blank and keeps independently corroborated nights", () => {
+   const itinerary = [
+     "Day 1 – 30 August 2027 – Oslo\nOvernight in Oslo.",
+     "Day 2 – 31 August 2027 – Oslo\nOvernight in Oslo.",
+     "Day 3 – September 2, 2027 – Stockholm\nOvernight in Stockholm.",
+     "Day 4 – Departure",
+   ].join("\n");
+   const stays = initialProcurementStays("dates", [], itinerary);
+   expect(stays.map(stay => [stay.checkIn, stay.checkOut]))
+     .toEqual([["2027-08-30", ""], ["", ""]]);
+   expect(initialProcurementStays("undated", [], "Day 1 – Oslo\nOvernight in Oslo.")[0])
+     .toMatchObject({ checkIn: "", checkOut: "" });
  });
  it("does not use country-only destinations for hotel tabs", () => {
    expect(initialProcurementStays("country-only", ["Finland", "Iceland", "Türkiye"])).toEqual([]);

@@ -25,7 +25,10 @@ export function initialProcurementStays(tourId: string, destinations: string[], 
   }
 
   return itineraryProcurementStays(itinerary, destinations)
-    .map(({ city, country, ferry }, id) => ({ ...createProcurementStay(id, city), country, ferry }));
+    .map(({ city, country, ferry, checkIn, checkOut }, id) => ({
+      ...createProcurementStay(id, city), country, ferry,
+      checkIn: checkIn ?? "", checkOut: checkOut ?? "",
+    }));
 }
 
 const key=(v:string)=>v.normalize("NFD").replace(/[\u0300-\u036f]/g,"").toLowerCase().replace(/[^a-z]/g,"");
