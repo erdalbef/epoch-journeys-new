@@ -91,6 +91,7 @@ model User {
 
 model Tour {
   hotelInquiries HotelInquiry[]
+  manualHotelOffers SupplierCommercialEvidence[]
   id                       String                    @id @default(cuid())
   title                    String
   category                 String
@@ -2910,6 +2911,8 @@ model SupplierCommercialEvidence {
 
   supplierId String
   hotelInquiryId String?
+  manualHotelTourId String?
+  manualHotelStayKey String?
   payableId String?
   contractId String?
 
@@ -2950,6 +2953,7 @@ model SupplierCommercialEvidence {
 
   supplier Supplier @relation(fields: [supplierId], references: [id], onDelete: Restrict)
   hotelInquiry HotelInquiry? @relation(fields: [hotelInquiryId], references: [id], onDelete: Restrict)
+  manualHotelTour Tour? @relation(fields: [manualHotelTourId], references: [id], onDelete: Restrict)
   payable SupplierPayable? @relation(fields: [payableId], references: [id], onDelete: Restrict)
   contract SupplierContract? @relation(fields: [contractId], references: [id], onDelete: Restrict)
 
@@ -2967,6 +2971,8 @@ model SupplierCommercialEvidence {
   @@index([supplierId])
   @@unique([hotelInquiryId, sourceFingerprint], map: "SupplierCommercialEvidence_hotel_offer_key")
   @@unique([hotelInquiryId, version], map: "SupplierCommercialEvidence_hotel_version_key")
+  @@unique([manualHotelTourId, supplierId, manualHotelStayKey, sourceFingerprint], map: "SupplierCommercialEvidence_manual_offer_key")
+  @@unique([manualHotelTourId, supplierId, manualHotelStayKey, version], map: "SupplierCommercialEvidence_manual_version_key")
   @@index([payableId])
   @@index([contractId])
   @@index([sourceDocumentId])

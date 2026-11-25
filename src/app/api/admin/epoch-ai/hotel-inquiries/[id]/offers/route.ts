@@ -3,7 +3,7 @@ import { getServerSession } from "next-auth";
 import { NextResponse } from "next/server";
 import { authOptions } from "@/lib/authOptions";
 import { db } from "@/lib/db";
-import { hotelOfferSource, maxHotelOfferFileSize } from "@/lib/epoch-ai/receivedHotelOffer";
+import { hotelOfferSource, manualHotelOfferScope, maxHotelOfferFileSize } from "@/lib/epoch-ai/receivedHotelOffer";
 import { requireAdminApiAccess } from "@/lib/security/requireAdminApiAccess";
 import { isRequestWithinLimit } from "@/lib/security/requestBodyLimit";
 import { deleteFinanceFile, saveFinanceFile } from "@/lib/storage/finansFileStorage";
@@ -13,12 +13,14 @@ const reply = (body: unknown, status = 200) => NextResponse.json(body, {
   status, headers: { "Cache-Control": "no-store" },
 });
 
-export async function GET(_request: Request, { params }: Params) {
+export async function GET(request: Request, { params }: Params) {
   const denied = await requireAdminApiAccess();
   if (denied) return denied;
   const { id } = await params;
+  const scope = id === "manual" ? manualHotelOfferScope(request.url) : { hotelInquiryId: id };
+  if (!scope) return reply({ error: "Select the hotel and enter valid stay dates." }, 400);
   const offers = await db.supplierCommercialEvidence.findMany({
-    where: { hotelInquiryId: id },
+    where: scope,
     orderBy: { version: "desc" },
     select: {
       id: true, version: true, sourceDate: true, sourceType: true,
@@ -65,16 +67,33 @@ export async function POST(request: Request, { params }: Params) {
     !bytes.subarray(0, 4).equals(Buffer.from([0x50, 0x4b, 0x03, 0x04])))) {
     return reply({ error: "The attachment does not match its file extension." }, 400);
   }
-  const inquiry = await db.hotelInquiry.findUnique({
-    where: { id }, select: { supplierId: true, tourId: true, status: true },
-  });
-  if (!inquiry || inquiry.status !== "APPROVED") return reply({ error: "An approved hotel inquiry is required." }, 409);
+  const manual = id === "manual" ? manualHotelOfferScope(request.url) : null;
+  const scope = id === "manual" ? manual : { hotelInquiryId: id };
+  if (!scope) return reply({ error: "Select the hotel and enter valid stay dates." }, 400);
+  let tourId: string;
+  let supplierId: string;
+  if (manual) {
+    const [tour, supplier] = await Promise.all([
+      db.tour.findUnique({ where: { id: manual.manualHotelTourId }, select: { id: true } }),
+      db.supplier.findFirst({ where: { id: manual.supplierId, type: "HOTEL" }, select: { id: true } }),
+    ]);
+    if (!tour || !supplier) return reply({ error: "Tour or CRM hotel not found." }, 404);
+    tourId = tour.id;
+    supplierId = supplier.id;
+  } else {
+    const inquiry = await db.hotelInquiry.findUnique({
+      where: { id }, select: { supplierId: true, tourId: true, status: true },
+    });
+    if (!inquiry || inquiry.status !== "APPROVED") return reply({ error: "An approved hotel inquiry is required." }, 409);
+    tourId = inquiry.tourId;
+    supplierId = inquiry.supplierId;
+  }
 
   const fingerprint = createHash("sha256")
     .update(JSON.stringify([sender.toLowerCase(), subject, receivedDate, messageId, body, ext]))
     .update(bytes ?? Buffer.alloc(0)).digest("hex");
-  const existing = () => db.supplierCommercialEvidence.findUnique({
-    where: { hotelInquiryId_sourceFingerprint: { hotelInquiryId: id, sourceFingerprint: fingerprint } },
+  const existing = () => db.supplierCommercialEvidence.findFirst({
+    where: { ...scope, sourceFingerprint: fingerprint },
     select: { id: true },
   });
   if (await existing()) return reply({ alreadyRecorded: true });
@@ -97,20 +116,24 @@ export async function POST(request: Request, { params }: Params) {
       });
     }
     await db.$transaction(async tx => {
-      await tx.$queryRaw`SELECT "id" FROM "HotelInquiry" WHERE "id" = ${id} FOR UPDATE`;
+      if (manual) {
+        await tx.$queryRaw`SELECT "id" FROM "Tour" WHERE "id" = ${tourId} FOR UPDATE`;
+      } else {
+        await tx.$queryRaw`SELECT "id" FROM "HotelInquiry" WHERE "id" = ${id} FOR UPDATE`;
+      }
       const previous = await tx.supplierCommercialEvidence.findFirst({
-        where: { hotelInquiryId: id }, orderBy: { version: "desc" }, select: { id: true, version: true },
+        where: scope, orderBy: { version: "desc" }, select: { id: true, version: true },
       });
       if (stored && documentId) {
         const { localAbsolutePath: _localPath, ...document } = stored;
         await tx.financeDocument.create({ data: {
           ...document, id: documentId, type: "OTHER", title: `Hotel offer: ${subject}`,
-          documentDate: sourceDate, supplierId: inquiry.supplierId, tourId: inquiry.tourId, uploadedById: actorId,
+          documentDate: sourceDate, supplierId, tourId, uploadedById: actorId,
         } });
       }
       await tx.supplierCommercialEvidence.create({
         data: {
-          supplierId: inquiry.supplierId, hotelInquiryId: id, sourceFingerprint: fingerprint,
+          ...scope, supplierId, sourceFingerprint: fingerprint,
           sourceType: file ? "QUOTATION_ATTACHMENT" : "EMAIL_BODY",
           sourceDocumentId: documentId, sourceBody: body.trim() ? body : null,
           sourceReference: messageId || subject, sourceDate, sourceSender: sender, sourceSubject: subject,
@@ -130,6 +153,6 @@ export async function POST(request: Request, { params }: Params) {
       if (document === null) await deleteFinanceFile(stored.storagePath).catch(() => undefined);
     }
     if (recorded) return reply({ alreadyRecorded: true });
-    return reply({ error: "The offer could not be recorded. Check the inquiry history before retrying." }, 503);
+    return reply({ error: "The offer could not be recorded. Check received offers before retrying." }, 503);
   }
 }

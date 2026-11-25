@@ -176,12 +176,18 @@ export default async function SupplierDetailPage({
     notFound();
   }
 
-  const offerInquiries = supplier.type === "HOTEL" ? await db.hotelInquiry.findMany({
+  const [offerInquiries, manualHotelOffers] = supplier.type === "HOTEL" ? await Promise.all([db.hotelInquiry.findMany({
     where: { supplierId: supplier.id, receivedOffers: { some: {} } },
     orderBy: { createdAt: "desc" },
     take: 25,
     select: { id: true, destination: true, checkIn: true, checkOut: true, rooms: true, tour: { select: { title: true } } },
-  }) : [];
+  }), db.supplierCommercialEvidence.findMany({
+    where: { supplierId: supplier.id, manualHotelTourId: { not: null } },
+    orderBy: { createdAt: "desc" },
+    distinct: ["manualHotelTourId", "manualHotelStayKey"],
+    take: 25,
+    select: { manualHotelTourId: true, manualHotelStayKey: true, manualHotelTour: { select: { title: true } } },
+  })]) : [[], []];
 
   const serialized = {
     id:
@@ -557,8 +563,17 @@ export default async function SupplierDetailPage({
         />
       </section>
 
-      {offerInquiries.length > 0 && <section className="space-y-3 rounded-2xl border bg-white p-5">
-        <h2 className="text-lg font-semibold">Hotel offers by inquiry</h2>
+      {(offerInquiries.length > 0 || manualHotelOffers.length > 0) && <section className="space-y-3 rounded-2xl border bg-white p-5">
+        <h2 className="text-lg font-semibold">Received hotel offers</h2>
+        {manualHotelOffers.map(({ manualHotelTourId, manualHotelStayKey, manualHotelTour }) => {
+          if (!manualHotelTourId || !manualHotelStayKey) return null;
+          const [city, checkIn, checkOut] = JSON.parse(manualHotelStayKey) as [string, string, string];
+          return <div key={`${manualHotelTourId}:${manualHotelStayKey}`} className="space-y-1 text-sm">
+            <p className="font-medium">{manualHotelTour?.title} · {city}</p>
+            <p>{checkIn} to {checkOut} · Manually sent request</p>
+            <HotelReceivedOffers manual={{ tourId: manualHotelTourId, supplierId: supplier.id, stayKey: manualHotelStayKey }} />
+          </div>;
+        })}
         {offerInquiries.map(inquiry => <div key={inquiry.id} className="space-y-1 text-sm">
           <p className="font-medium">{inquiry.tour.title} · {inquiry.destination}</p>
           <p>{inquiry.checkIn} to {inquiry.checkOut} · {inquiry.rooms} rooms</p>

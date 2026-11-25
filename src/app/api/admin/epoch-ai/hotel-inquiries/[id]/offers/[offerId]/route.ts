@@ -3,7 +3,7 @@ import { NextResponse } from "next/server";
 import { authOptions } from "@/lib/authOptions";
 import { db } from "@/lib/db";
 import { readAiAttachment } from "@/lib/epoch-ai/documentText";
-import { hotelOfferFields, hotelOfferTerms, maxHotelOfferFileSize } from "@/lib/epoch-ai/receivedHotelOffer";
+import { hotelOfferFields, hotelOfferTerms, manualHotelOfferScope, maxHotelOfferFileSize } from "@/lib/epoch-ai/receivedHotelOffer";
 import { checkRateLimit } from "@/lib/rate-limit";
 import { requireAdminApiAccess } from "@/lib/security/requireAdminApiAccess";
 import { isRequestWithinLimit } from "@/lib/security/requestBodyLimit";
@@ -28,14 +28,16 @@ export async function POST(request: Request, { params }: Params) {
   }
   const input = await request.json().catch(() => null);
   const { id, offerId } = await params;
+  const scope = id === "manual" ? manualHotelOfferScope(request.url) : { hotelInquiryId: id };
+  if (!scope) return reply({ error: "Select the hotel and enter valid stay dates." }, 400);
   const offer = await db.supplierCommercialEvidence.findFirst({
-    where: { id: offerId, hotelInquiryId: id },
+    where: { id: offerId, ...scope },
     select: {
       id: true, reviewStatus: true, sourceBody: true,
       sourceDocument: { select: { storagePath: true, originalFileName: true, fileSize: true } },
     },
   });
-  if (!offer) return reply({ error: "Offer not found for this inquiry." }, 404);
+  if (!offer) return reply({ error: "Offer not found for this hotel stay." }, 404);
 
   if (input?.action === "review") {
     const parsed = hotelOfferTerms.safeParse(input.terms);
@@ -45,7 +47,7 @@ export async function POST(request: Request, { params }: Params) {
     }
     const saved = await db.$transaction(async tx => {
       const updated = await tx.supplierCommercialEvidence.updateMany({
-        where: { id: offer.id, hotelInquiryId: id, reviewStatus: "REVIEW_PENDING" },
+        where: { id: offer.id, ...scope, reviewStatus: "REVIEW_PENDING" },
         data: { reviewedTerms: parsed.data, reviewStatus: "TERMS_VERIFIED", reviewedAt: new Date(), reviewedById: actorId },
       });
       if (!updated.count) return false;

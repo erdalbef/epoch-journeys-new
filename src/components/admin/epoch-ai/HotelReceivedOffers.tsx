@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { hotelOfferFields, type HotelOfferTerms } from "@/lib/epoch-ai/receivedHotelOffer";
+import { hotelOfferFields, type HotelOfferTerms, type ManualHotelOffer } from "@/lib/epoch-ai/receivedHotelOffer";
 
 type Offer = {
   id: string;
@@ -18,8 +18,11 @@ type Offer = {
 const fields = Object.entries(hotelOfferFields) as [keyof HotelOfferTerms, string][];
 const emptyTerms = () => Object.fromEntries(fields.map(([key]) => [key, ""])) as HotelOfferTerms;
 
-export default function HotelReceivedOffers({ inquiryId }: { inquiryId: string }) {
+export default function HotelReceivedOffers(props: { inquiryId: string } | { manual: ManualHotelOffer; expanded?: boolean }) {
+  const manual = "manual" in props ? props.manual : null;
+  const inquiryId = "inquiryId" in props ? props.inquiryId : "manual";
   const url = `/api/admin/epoch-ai/hotel-inquiries/${encodeURIComponent(inquiryId)}/offers`;
+  const query = manual ? `?${new URLSearchParams(manual)}` : "";
   const [offers, setOffers] = useState<Offer[] | null>(null);
   const [editing, setEditing] = useState<string | null>(null);
   const [terms, setTerms] = useState(emptyTerms);
@@ -27,7 +30,7 @@ export default function HotelReceivedOffers({ inquiryId }: { inquiryId: string }
   const [status, setStatus] = useState("");
 
   async function load() {
-    const response = await fetch(url, { cache: "no-store" });
+    const response = await fetch(url + query, { cache: "no-store" });
     if (!response.ok) throw new Error("Could not load received offers.");
     const result = await response.json() as { offers: Offer[] };
     setOffers(result.offers);
@@ -44,7 +47,7 @@ export default function HotelReceivedOffers({ inquiryId }: { inquiryId: string }
   async function record(form: HTMLFormElement) {
     const data = new FormData(form);
     data.set("confirmation", "RECORD_RECEIVED_OFFER");
-    const response = await fetch(url, { method: "POST", body: data });
+    const response = await fetch(url + query, { method: "POST", body: data });
     const result = await response.json() as { error?: string; alreadyRecorded?: boolean };
     if (!response.ok) throw new Error(result.error || "Could not record the offer.");
     form.reset();
@@ -53,7 +56,7 @@ export default function HotelReceivedOffers({ inquiryId }: { inquiryId: string }
   }
 
   async function offerAction(id: string, action: "analyze" | "review") {
-    const response = await fetch(`${url}/${encodeURIComponent(id)}`, {
+    const response = await fetch(`${url}/${encodeURIComponent(id)}${query}`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(action === "review" ? { action, confirmation: "VERIFY_OFFER_TERMS", terms } : { action }),
@@ -75,7 +78,7 @@ export default function HotelReceivedOffers({ inquiryId }: { inquiryId: string }
   const inputClass = "mt-1 block w-full rounded border bg-white p-2";
   const buttonClass = "rounded border border-blue-500 bg-white px-3 py-2 font-semibold disabled:opacity-50";
 
-  return <details className="space-y-3 rounded border border-blue-200 bg-blue-50 p-3"
+  return <details open={"expanded" in props ? props.expanded : undefined} className="space-y-3 rounded border border-blue-200 bg-blue-50 p-3"
     onToggle={event => {
       if (event.currentTarget.open && offers === null && !busy) void run(load);
     }}>

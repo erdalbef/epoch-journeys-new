@@ -2,6 +2,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import HotelInquiryWorkspace from "./HotelInquiryWorkspace";
+import RecordManualHotelOffer from "./RecordManualHotelOffer";
 import ResearchHotelManualInquiry from "./ResearchHotelManualInquiry";
 import OfficialHotelPageResearch from "./OfficialHotelPageResearch";
 import HotelSupplierResearchCard from "./HotelSupplierResearchCard";
@@ -400,6 +401,7 @@ export default function HotelProcurementPilot({tourId,destinations,itinerary,hot
         </button>;
       })}
     </div>
+    {stay && <RecordManualHotelOffer key={active} tourId={tourId} stay={stay} hotels={hotels} />}
     {ferry && activeStay ? <section className="space-y-2 rounded-xl border bg-white p-4" aria-label="Overnight ferry">
       <h2 className="text-lg font-bold text-[#001F3F]">{ferry.label}</h2>
       <p className="text-sm text-slate-600">Day {ferry.day} · Overnight cabins</p>
