@@ -52,7 +52,7 @@ export function buildHotelSupplierResearch(
   const phones = new Map<string, PhoneEvidence>();
 
   for (const page of sources) {
-    const phone = page.description.match(/\b(?:telephone|phone|tel\.?|t:)\s*:?\s*(\+\d[\d ().-]{6,24}\d)/i)?.[1];
+    const phone = page.description.match(/\b(?:contact us|kontakta oss|telefon|telephone|phone|tel\.?|t:)\s*:?\s*(\+\d[\d ().-]{6,24}\d)/i)?.[1];
     if (phone && phone.replace(/\D/g, "").length <= 15) {
       phones.set(page.url, {number: phone, sourceUrl: page.url});
     }

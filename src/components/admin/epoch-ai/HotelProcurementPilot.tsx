@@ -605,61 +605,7 @@ export default function HotelProcurementPilot({tourId,destinations,itinerary,hot
                 className="block rounded border px-2 py-1" onClick={()=>selectCrmHotel(hotel)}>
                 Use CRM record — {hotel.name}{contactEmail(hotel) ? ` · ${contactEmail(hotel)}` : ""}
               </button>)}
-            </div> : <p className="text-xs">No matching local CRM record found.</p>}
-          {!chosen && !crmMatchesForSelected.length ? <section className="space-y-3 rounded-lg border border-blue-200 bg-blue-50 p-4 text-sm" aria-label="Hotel contact and CRM registration">
-            <h3 className="font-semibold text-[#001F3F]">Hotel contact and CRM registration</h3>
-            <div className="grid gap-3 sm:grid-cols-2">
-              <label className="block font-medium">Hotel recipient email
-                <input type="email" value={researchForm.email} onChange={e=>updateContact({email:e.target.value})} className="mt-1 w-full rounded border bg-white p-2"/>
-              </label>
-              <label className="block font-medium">Published phone
-                <input type="tel" value={researchForm.phone} onChange={e=>updateContact({phone:e.target.value})} className="mt-1 w-full rounded border bg-white p-2"/>
-              </label>
-            </div>
-            <label className="block font-medium">Contact source HTTPS URL
-              <input type="url" value={researchForm.source} onChange={e=>updateContact({source:e.target.value})} className="mt-1 w-full rounded border bg-white p-2"/>
-            </label>
-            {contactLink ? <a href={contactLink} target="_blank" rel="noopener noreferrer" className="inline-block text-blue-700 underline">Open contact source for review</a> : null}
-            <label className="flex items-start gap-2">
-              <input className="mt-1" type="checkbox" checked={contactChecked} disabled={!contactReviewKey}
-                onChange={e=>{
-                  if (e.target.checked) {
-                    setContactEdits(previous => ({...previous, [evidenceKey]: {
-                      ...previous[evidenceKey], email: researchForm.email, source: researchForm.source,
-                    }}));
-                  }
-                  setReviewedContact(previous => ({...previous, [evidenceKey]: e.target.checked ? contactReviewKey : ""}));
-                }}/>
-              I checked that this published source lists the hotel's recipient email.
-            </label>
-            <details className="space-y-2 rounded border bg-white p-2">
-              <summary className="cursor-pointer font-medium">Facilities evidence (optional)</summary>
-              <label className="block">Facilities source HTTPS URL
-                <input type="url" className="mt-1 w-full rounded border p-2" value={researchForm.facilities} onChange={e=>updateFacilitiesSource(e.target.value)}/>
-              </label>
-              {facilitiesLink ? <>
-                <a href={facilitiesLink} target="_blank" rel="noopener noreferrer" className="inline-block text-blue-700 underline">Open facilities source for review</a>
-                <label className="flex items-start gap-2">
-                  <input className="mt-1" type="checkbox" checked={facilitiesChecked}
-                    onChange={e=>setReviewedFacilitiesSource(previous => ({...previous, [evidenceKey]: e.target.checked ? facilitiesLink : ""}))}/>
-                  I reviewed this facilities source and want to include it.
-                </label>
-              </> : null}
-              <p className="text-xs text-slate-600">You can register the contact and leave facilities for hotel follow-up.</p>
-            </details>
-            <div className="flex flex-wrap items-center gap-3">
-              {!registeredSupplierId ? <button type="button" disabled={crmSaving} onClick={()=>void saveApprovedLead()}
-                className="rounded-lg bg-[#001F3F] px-3 py-2 font-semibold text-white disabled:opacity-50">
-                {crmSaving ? "Registering..." : "Approve & register in Supplier CRM"}
-              </button> : <>
-                <button type="button" className="text-blue-700 underline" onClick={()=>window.location.reload()}>Refresh CRM hotel list</button>
-                <Link href={`/admin/suppliers/${registeredSupplierId}`} className="text-blue-700 underline">Open registered hotel</Link>
-              </>}
-              <a href="#epoch-hotel-inquiry" className="text-blue-700 underline">Review inquiry draft</a>
-            </div>
-            {crmSaveState ? <p role="status">{crmSaveState}</p> : null}
-            <p className="text-xs text-slate-600">Approval creates an inactive research candidate. No email is sent.</p>
-          </section> : null}
+            </div> : <p className="text-xs">No matching Supplier CRM record. Review the research before approving registration below.</p>}
           <OfficialHotelPageResearch key={evidenceKey} hotelName={selectedName}
             onContactRetrieved={!chosen ? extraction => setOfficialContacts(previous => ({...previous, [evidenceKey]: extraction})) : undefined} />
           {(() => { const profile=publishedProfile; return profile ? <div className="rounded-lg border border-sky-200 bg-sky-50 p-3 text-xs text-slate-800 space-y-2">
@@ -671,7 +617,7 @@ export default function HotelProcurementPilot({tourId,destinations,itinerary,hot
             <div className="flex flex-wrap items-center gap-2"><a href={profile.source} target="_blank" rel="noopener noreferrer" className="text-blue-700 underline">Contact evidence</a><a href={profile.facilitiesSource} target="_blank" rel="noopener noreferrer" className="text-blue-700 underline">Facilities evidence</a>
               {!chosen ? <button type="button" onClick={()=>updateContact({email:profile.email,source:profile.source,phone:profile.phone})} className="rounded border border-blue-300 bg-white px-2 py-1 font-semibold">Use published contact in draft</button> : null}</div>
             <p className="text-slate-600">This research snapshot is not live monitoring, and the published address may be a general inbox. Check recipient and terms before approval. No message is sent or CRM record created.</p>
-          </div>:<p className="text-xs text-amber-800">No reviewed public contact profile yet for this hotel. Research its official site before entering a contact.</p>; })()}
+          </div>:null; })()}
           <section className="rounded-lg border border-blue-200 bg-blue-50/50 p-3 text-xs space-y-2" aria-label="Automated hotel evidence research">
             <div className="flex flex-wrap items-center justify-between gap-2"><p className="font-semibold text-[#001F3F]">Automated public research</p>
               <button type="button" disabled={Boolean(evidenceLoading[evidenceKey])||!locationReady} onClick={()=>void researchSelectedHotel(selectedName,stay.city.trim(),country,evidenceKey)} className="rounded-lg bg-[#001F3F] px-3 py-2 text-xs font-semibold text-white disabled:opacity-50">{evidenceLoading[evidenceKey]?"Researching...":"Research hotel contact and facilities"}</button></div>
@@ -831,6 +777,60 @@ export default function HotelProcurementPilot({tourId,destinations,itinerary,hot
             <p className="text-slate-600">Mark confirmed only after receiving attributable hotel evidence. Ask the hotel to confirm the requested {stay.rooms} rooms for these dates.</p>
             {hotelConfirmationChecklist.filter(item=>!item.includes("Mass room")||stay.massRoom).map(item=><label key={item} className="flex items-start gap-2"><input type="checkbox" checked={Boolean(checkStatus[reviewKey]?.[item])} onChange={e=>setCheckStatus(prev=>({...prev,[reviewKey]:{...(prev[reviewKey]||{}),[item]:e.target.checked}}))}/>{item}</label>)}
           </div>
+          {!chosen && !crmMatchesForSelected.length ? <section className="space-y-3 rounded-lg border border-blue-200 bg-blue-50 p-4 text-sm" aria-label="Review and approve hotel for Supplier CRM">
+            <h3 className="font-semibold text-[#001F3F]">Review and approve hotel for Supplier CRM</h3>
+            <div className="grid gap-3 sm:grid-cols-2">
+              <label className="block font-medium">Hotel recipient email
+                <input type="email" value={researchForm.email} onChange={e=>updateContact({email:e.target.value})} className="mt-1 w-full rounded border bg-white p-2"/>
+              </label>
+              <label className="block font-medium">Published phone
+                <input type="tel" value={researchForm.phone} onChange={e=>updateContact({phone:e.target.value})} className="mt-1 w-full rounded border bg-white p-2"/>
+              </label>
+            </div>
+            <label className="block font-medium">Contact source HTTPS URL
+              <input type="url" value={researchForm.source} onChange={e=>updateContact({source:e.target.value})} className="mt-1 w-full rounded border bg-white p-2"/>
+            </label>
+            {contactLink ? <a href={contactLink} target="_blank" rel="noopener noreferrer" className="inline-block text-blue-700 underline">Open contact source for review</a> : null}
+            <label className="flex items-start gap-2">
+              <input className="mt-1" type="checkbox" checked={contactChecked} disabled={!contactReviewKey}
+                onChange={e=>{
+                  if (e.target.checked) {
+                    setContactEdits(previous => ({...previous, [evidenceKey]: {
+                      ...previous[evidenceKey], email: researchForm.email, source: researchForm.source,
+                    }}));
+                  }
+                  setReviewedContact(previous => ({...previous, [evidenceKey]: e.target.checked ? contactReviewKey : ""}));
+                }}/>
+              I checked that this published source lists the hotel's recipient email.
+            </label>
+            <details className="space-y-2 rounded border bg-white p-2">
+              <summary className="cursor-pointer font-medium">Facilities evidence (optional)</summary>
+              <label className="block">Facilities source HTTPS URL
+                <input type="url" className="mt-1 w-full rounded border p-2" value={researchForm.facilities} onChange={e=>updateFacilitiesSource(e.target.value)}/>
+              </label>
+              {facilitiesLink ? <>
+                <a href={facilitiesLink} target="_blank" rel="noopener noreferrer" className="inline-block text-blue-700 underline">Open facilities source for review</a>
+                <label className="flex items-start gap-2">
+                  <input className="mt-1" type="checkbox" checked={facilitiesChecked}
+                    onChange={e=>setReviewedFacilitiesSource(previous => ({...previous, [evidenceKey]: e.target.checked ? facilitiesLink : ""}))}/>
+                  I reviewed this facilities source and want to include it.
+                </label>
+              </> : null}
+              <p className="text-xs text-slate-600">You can register the contact and leave facilities for hotel follow-up.</p>
+            </details>
+            <div className="flex flex-wrap items-center gap-3">
+              {!registeredSupplierId ? <button type="button" disabled={crmSaving} onClick={()=>void saveApprovedLead()}
+                className="rounded-lg bg-[#001F3F] px-3 py-2 font-semibold text-white disabled:opacity-50">
+                {crmSaving ? "Registering..." : "Approve & register in Supplier CRM"}
+              </button> : <>
+                <button type="button" className="text-blue-700 underline" onClick={()=>window.location.reload()}>Refresh CRM hotel list</button>
+                <Link href={`/admin/suppliers/${registeredSupplierId}`} className="text-blue-700 underline">Open registered hotel</Link>
+              </>}
+              <a href="#epoch-hotel-inquiry" className="text-blue-700 underline">Review inquiry draft</a>
+            </div>
+            {crmSaveState ? <p role="status">{crmSaveState}</p> : null}
+            <p className="text-xs text-slate-600">Approval creates an inactive research candidate. No email is sent.</p>
+          </section> : null}
           <p className="text-xs text-slate-600">Unapproved research selections and diligence checks stay in this browser session only. No message is sent. Supplier confirmations require actual offer evidence.</p>
         </div></details>:null}
 

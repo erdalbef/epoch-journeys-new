@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
 import { publishedHotelVerification } from "./hotelPublicVerification";
 import { hotelResearchForm } from "./hotelResearchForm";
-import type { HotelSupplierResearch } from "./hotelSupplierResearch";
+import { buildHotelSupplierResearch, type HotelSupplierResearch } from "./hotelSupplierResearch";
+import { selectHotelOfficialSiteCandidates } from "./hotelOfficialSiteSelection";
+import { extractStructuredHotelResearch } from "./hotelStructuredResearch";
 
 const liveResearch: HotelSupplierResearch = {
   contacts: [{
@@ -17,6 +19,23 @@ const liveResearch: HotelSupplierResearch = {
 };
 
 describe("Hotel research form", () => {
+  it("pre-fills Scandic Södra Kajen from official search evidence or its reviewed profile", () => {
+    const name = "Scandic Södra Kajen";
+    const source = "https://www.scandichotels.com/en/hotels/scandic-sodra-kajen";
+    const pages = [{
+      title: "Stay at Scandic Södra Kajen | Hotel in Stockholm",
+      url: source,
+      description: "Stockholm. Contact us +46 8 517 386 00. Email sodrakajen@scandichotels.com.",
+    }];
+    const research = buildHotelSupplierResearch(name, "Stockholm", pages, selectHotelOfficialSiteCandidates(name, pages),
+      extractStructuredHotelResearch(name, pages).contacts, []);
+    const profile = publishedHotelVerification(name, "Stockholm", "Sweden");
+    const contact = { email: "sodrakajen@scandichotels.com", source, phone: "+46 8 517 386 00" };
+    expect(hotelResearchForm(research, undefined, undefined, undefined)).toMatchObject(contact);
+    expect(hotelResearchForm(undefined, profile, undefined, undefined)).toMatchObject(contact);
+    expect(publishedHotelVerification(name, "Helsinki", "Finland")).toBeUndefined();
+  });
+
   it("pre-fills the reviewed Scandic property only for Helsinki, Finland", () => {
     const profile = publishedHotelVerification("Scandic Grand Marina", "Helsinki", "Finland");
     expect(hotelResearchForm(undefined, profile, undefined, undefined)).toMatchObject({

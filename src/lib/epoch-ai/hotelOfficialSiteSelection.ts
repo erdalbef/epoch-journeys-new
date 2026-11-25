@@ -43,6 +43,10 @@ const chainDomains: {
   {
     domain: "accor.com",
     brands: /\b(accor|ibis|novotel|mercure|movenpick|swissotel|sofitel|pullman)\b/i
+  },
+  {
+    domain: "scandichotels.com",
+    brands: /\bscandic\b/i
   }
 ];
 
@@ -123,6 +127,8 @@ export function selectHotelOfficialSiteCandidates(
     } else if (matchingChain) {
       // A chain-branded property requires its expected chain domain.
       if (!matchesDomain(hostname, matchingChain.domain)) continue;
+      if (matchingChain.domain === "scandichotels.com" &&
+          !words.slice(1).some(word => titleWords.has(word))) continue;
 
       reason = "Property name and hotel-chain domain are consistent";
     } else {

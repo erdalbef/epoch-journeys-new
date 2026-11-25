@@ -32,6 +32,15 @@ describe("Hotel official-site selection", () => {
     )).toHaveLength(1);
   });
 
+  it("matches the Scandic property and excludes generic chain pages", () => {
+    const hotel = "Scandic Södra Kajen";
+    expect(find(hotel, "Stay at Scandic Södra Kajen | Hotel in Stockholm",
+      "https://www.scandichotels.com/en/hotels/scandic-sodra-kajen"))
+      .toMatchObject([{ retrievalAuthorized: false }]);
+    expect(find(hotel, "Scandic hotels in Stockholm", "https://www.scandichotels.com/en")).toEqual([]);
+    expect(find(hotel, "Scandic Södra Kajen", "https://www.example.com/hotel")).toEqual([]);
+  });
+
   it("rejects booking platforms", () => {
     expect(find(
       "HUMA Kotor Bay Hotel and Villas",

@@ -89,8 +89,23 @@ const SCANDIC_GRAND_MARINA_PUBLIC_VERIFICATION: PublicHotelVerification = {
   reviewedOn: "25 Nov 2026",
 };
 
+const SCANDIC_SODRA_KAJEN_PUBLIC_VERIFICATION: PublicHotelVerification = {
+  email: "sodrakajen@scandichotels.com",
+  contactType: "general",
+  phone: "+46 8 517 386 00",
+  source: "https://www.scandichotels.com/en/hotels/scandic-sodra-kajen",
+  facilitiesSource: "https://www.scandichotels.com/en/hotels/scandic-sodra-kajen",
+  publishedFacts: ["323 rooms", "Hotel restaurant and rooms with showers advertised"],
+  openQuestions: ["Group allotment and rates for the requested dates", "Walk-in showers and lift access", "Coach drop-off, porterage and group dinners"],
+  reviewedOn: "25 Nov 2026",
+};
+
 export function publishedHotelVerification(name: string, city?: string, country?: string): PublicHotelVerification | undefined {
   const key = name.trim().toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+  if ((key === "scandic sodra kajen" || key === "scandic sodra kajen, stockholm") &&
+      city?.trim().toLowerCase() === "stockholm" && country?.trim().toLowerCase() === "sweden") {
+    return SCANDIC_SODRA_KAJEN_PUBLIC_VERIFICATION;
+  }
   if ((key === "scandic grand marina" || key === "scandic grand marina, helsinki") &&
       city?.trim().toLowerCase() === "helsinki" && country?.trim().toLowerCase() === "finland") {
     return SCANDIC_GRAND_MARINA_PUBLIC_VERIFICATION;
