@@ -11,16 +11,17 @@ import { meetsHotelGuestRatingMinimum, summarizeHotelEvidence, stableHotelIdenti
 import { buildSuitabilityReview } from "@/lib/epoch-ai/hotelSuitabilityReview";
 import { leadEvidence, screenGroupCapacity } from "@/lib/epoch-ai/hotelLeadScreening";
 import { assessHotelCoverage, reviewHotelCandidates } from "@/lib/epoch-ai/hotelDiscoveryReview";
-import type { WebHotelResult, DiscoveredHotelLead } from "@/lib/epoch-ai/hotelWebResearch";
+import { validHotelResearchLocation, type WebHotelResult, type DiscoveredHotelLead } from "@/lib/epoch-ai/hotelWebResearch";
 import { publishedHotelVerification } from "@/lib/epoch-ai/hotelPublicVerification";
 import { capacityBand, type HotelCapacityCandidate, type StructuredHotelResearch } from "@/lib/epoch-ai/hotelStructuredResearch";
 import type { HotelOfficialSiteCandidate } from "@/lib/epoch-ai/hotelOfficialSiteSelection";
-import { balkanStays, contactEmail, inquiry, searchCrmHotels, nights, type HotelContact, type Stay } from "@/lib/epoch-ai/hotelProcurement";
+import { contactEmail, createProcurementStay, initialProcurementStays, inquiry, searchCrmHotels, nights, type HotelContact, type Stay } from "@/lib/epoch-ai/hotelProcurement";
 
-export default function HotelProcurementPilot({tourId,tourTitle,destinations,hotels}:{tourId:string;tourTitle:string;destinations:string[];hotels:HotelContact[]}) {
-  const isBalkan=/balkan|mother teresa/i.test(tourTitle);
-  const [stays,setStays]=useState<Stay[]>(()=>isBalkan?balkanStays.map(s=>({...s})):destinations.slice(0,20).map(city=>({city,checkIn:"",checkOut:"",rooms:20,massRoom:false})));
-  const [active,setActive]=useState(0);
+export default function HotelProcurementPilot({tourId,destinations,hotels}:{tourId:string;destinations:string[];hotels:HotelContact[]}) {
+  const [stays,setStays]=useState(()=>initialProcurementStays(tourId,destinations));
+  const [active,setActive]=useState(stays[0]?.id ?? -1);
+  const nextStayId = useRef(stays.length);
+  const stay = stays.find(item => item.id === active);
   const [crmSearch,setCrmSearch]=useState<Record<number,string>>({});
   const [supplierId,setSupplierId]=useState<Record<number,string>>({});
   const [leadByStay,setLeadByStay]=useState<Record<number,string>>({});
@@ -38,9 +39,9 @@ export default function HotelProcurementPilot({tourId,tourTitle,destinations,hot
   const hotelConfirmationChecklist = ["20 rooms / allotment confirmed", "Group dinners and beverages confirmed", "Private Mass room confirmed where required"];
 
   const [,setCopyStatus]=useState("");
-  const [crmSaveState,setCrmSaveState]=useState("");
+  const [crmSaveStatusByHotel,setCrmSaveStatusByHotel]=useState<Record<string,string>>({});
   const [crmSaving,setCrmSaving]=useState(false);
-  const [savedSupplierByStay,setSavedSupplierByStay]=useState<Record<number,string>>({});
+  const [savedSupplierByHotel,setSavedSupplierByHotel]=useState<Record<string,string>>({});
   const [liveByStay,setLiveByStay]=useState<Record<number,WebHotelResult[]>>({});
   const [capacityByStay,setCapacityByStay]=useState<Record<number,Record<string,HotelCapacityCandidate>>>({});
   const [foundByStay,setFoundByStay]=useState<Record<number,DiscoveredHotelLead[]>>({});
@@ -48,7 +49,9 @@ export default function HotelProcurementPilot({tourId,tourTitle,destinations,hot
   const [researchMode,setResearchMode]=useState<Record<number,string>>({});
   const [liveError,setLiveError]=useState<Record<number,string>>({});
   const [liveLoading,setLiveLoading]=useState(false);
-  const [destinationResearchLoading,setDestinationResearchLoading]=useState(false);
+  const [destinationResearchByStay,setDestinationResearchByStay]=useState<Record<number,boolean>>({});
+  const destinationResearchLoading = Boolean(destinationResearchByStay[active]);
+  const destinationRequests = useRef(new Map<number, AbortController>());
   const [destinationResearchError,setDestinationResearchError]=useState<Record<number,string>>({});
   const [destinationResearchAt,setDestinationResearchAt]=useState<Record<number,string>>({});
   const [selectedForQuotes,setSelectedForQuotes]=useState<Record<number,string[]>>({});
@@ -60,6 +63,11 @@ export default function HotelProcurementPilot({tourId,tourTitle,destinations,hot
   const [officialSitesByKey,setOfficialSitesByKey]=useState<Record<string,HotelOfficialSiteCandidate[]>>({});
   const [evidenceErrors,setEvidenceErrors]=useState<Record<string,string>>({});
   const [evidenceLoading,setEvidenceLoading]=useState<string>("");
+  const country = (researchCountry[active] ?? countryForCity[stay?.city ?? ""] ?? "").trim();
+  const locationReady = validHotelResearchLocation(stay?.city, country);
+  const locationKey = (name: string) =>
+    JSON.stringify([active, stay?.city, country, name.trim().toLocaleLowerCase()]);
+
   async function readResearchJson<T>(response: Response): Promise<T> {
     const contentType = response.headers.get("content-type") || "";
 
@@ -78,13 +86,13 @@ export default function HotelProcurementPilot({tourId,tourTitle,destinations,hot
     }
   }
   async function searchLiveHotels(){
-    const index=active;const current=stays[index];
+    const index=active;const current=stay;
     if(!current?.city.trim()){setLiveError(p=>({...p,[index]:"Enter destination first."}));return;}
     setLiveLoading(true);setLiveError(p=>({...p,[index]:""}));
     try {
       const response=await fetch("/api/admin/epoch-ai/hotel-research/live",{
         method:"POST",headers:{"Content-Type":"application/json"},
-        body:JSON.stringify({city:current.city,country:researchCountry[index]||countryForCity[current.city]||"",
+        body:JSON.stringify({city:current.city,country,
           knownNames:[...new Set([...hotels.map(h=>h.name),...reviewHotelCandidates(current,hotels).map(c=>c.name)])]})
       });
       const result=await readResearchJson<{error?:string;leads?:WebHotelResult[];searchLinks?:{label:string;url:string}[];mode?:string;candidates?:DiscoveredHotelLead[]}>(response);
@@ -98,22 +106,54 @@ export default function HotelProcurementPilot({tourId,tourTitle,destinations,hot
   }
 
   async function researchDestinationHotels(){
-    const index=active,current=stays[index],country=researchCountry[index]||countryForCity[current?.city]||"";
-    if(!current?.city||!country){setDestinationResearchError(p=>({...p,[index]:"Enter destination and country first."}));return;}
-    setDestinationResearchLoading(true);setDestinationResearchError(p=>({...p,[index]:""}));
-    try{
-      const knownNames=[...new Set(reviewHotelCandidates(current,hotels).map(h=>h.name))].slice(0,12);
-      const res=await fetch("/api/admin/epoch-ai/hotel-research/shortlist",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({city:current.city,country,knownNames})});
-      const body=await readResearchJson<{error?:string;discovered?:DiscoveredHotelLead[];reports?:Record<string,HotelEvidenceReport>;briefs?:Record<string,HotelBrief>;capacities?:Record<string,HotelCapacityCandidate>;errors?:string[]}>(res);
-      if(!res.ok)throw Error(body.error||"Research unavailable");
-      setFoundByStay(p=>({...p,[index]:body.discovered||[]}));
-      setBriefsByStay(p=>({...p,[index]:body.briefs||{}}));
-      setCapacityByStay(p=>({...p,[index]:body.capacities||{}}));
-      setEvidenceReports(p=>{const next={...p};for(const [name,report] of Object.entries(body.reports||{})){next[`${index}:${name.trim().toLocaleLowerCase()}:${current.city}`]=report;}return next;});
-      setDestinationResearchAt(p=>({...p,[index]:new Date().toLocaleString()}));
-      if((body.errors?.length ?? 0)>0)setDestinationResearchError(p=>({...p,[index]:`${body.errors?.length ?? 0} research step(s) incomplete. ${body.errors?.[0] || ""}`}));
-    }catch(error){setDestinationResearchError(p=>({...p,[index]:error instanceof Error?error.message:"Research unavailable"}));}
-    finally{setDestinationResearchLoading(false);}
+    if (!stay || !locationReady || destinationRequests.current.has(active)) return;
+
+    const request = new AbortController();
+    destinationRequests.current.set(active, request);
+    setDestinationResearchByStay(previous => ({...previous, [active]: true}));
+    setDestinationResearchError(previous => ({...previous, [active]: ""}));
+    try {
+      const knownNames = [...new Set(reviewHotelCandidates(stay, hotels).map(hotel => hotel.name))].slice(0, 12);
+      const res = await fetch("/api/admin/epoch-ai/hotel-research/shortlist", {
+        method: "POST",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({city: stay.city.trim(), country, knownNames}),
+        signal: request.signal
+      });
+      const body = await readResearchJson<{error?:string;discovered?:DiscoveredHotelLead[];reports?:Record<string,HotelEvidenceReport>;briefs?:Record<string,HotelBrief>;capacities?:Record<string,HotelCapacityCandidate>;errors?:string[]}>(res);
+      if (request.signal.aborted) return;
+      if (!res.ok) throw Error(body.error || "Research unavailable");
+
+      setFoundByStay(previous => ({...previous, [active]: body.discovered || []}));
+      setBriefsByStay(previous => ({...previous, [active]: body.briefs || {}}));
+      setCapacityByStay(previous => ({...previous, [active]: body.capacities || {}}));
+      setEvidenceReports(previous => {
+        const next = {...previous};
+        for (const [name, report] of Object.entries(body.reports || {})) {
+          next[locationKey(name)] = report;
+        }
+        return next;
+      });
+      setDestinationResearchAt(previous => ({...previous, [active]: new Date().toLocaleString()}));
+      const errors = body.errors;
+      if (errors?.length) {
+        setDestinationResearchError(previous => ({
+          ...previous,
+          [active]: `${errors.length} research step(s) incomplete. ${errors[0]}`
+        }));
+      }
+    } catch (error) {
+      if (!request.signal.aborted) {
+        setDestinationResearchError(previous => ({
+          ...previous, [active]: error instanceof Error ? error.message : "Research unavailable"
+        }));
+      }
+    } finally {
+      if (destinationRequests.current.get(active) === request) {
+        destinationRequests.current.delete(active);
+        setDestinationResearchByStay(previous => ({...previous, [active]: false}));
+      }
+    }
   }
   async function researchSelectedHotel(name:string,city:string,country:string,requestKey:string){
     if(!name||!city||!country)return;
@@ -140,19 +180,20 @@ export default function HotelProcurementPilot({tourId,tourTitle,destinations,hot
   }
   async function saveApprovedLead() {
     const selected = selectedLeadName;
+    const saveKey = locationKey(selected);
+    const setStatus = (message: string) => setCrmSaveStatusByHotel(previous => ({...previous, [saveKey]: message}));
     const profile = publishedHotelVerification(selected);
     const recipient = verifiedEmail[active]?.trim() || profile?.email || "";
     const phone = researchPhone[active]?.trim() || profile?.phone || "";
     const source = contactSource[active]?.trim() || profile?.source || "";
     const facilities = facilitiesSource[active]?.trim() || profile?.facilitiesSource || "";
-    const country = researchCountry[active]?.trim() || (stay ? countryForCity[stay.city] : "") || "";
     if (!stay || !selected || !recipient || !phone || !country || !source || !facilities ||
        !contactChecked[active] || !facilitiesChecked[active]) {
-      setCrmSaveState("Verify hotel country, email, phone and both public evidence URLs; tick both review confirmations before registration."); return;
+      setStatus("Verify hotel country, email, phone and both public evidence URLs; tick both review confirmations before registration."); return;
     }
     const confirmation = `Register ${selected} in ${stay.city}, ${country} as an INACTIVE research candidate?\n\nContact: ${recipient}\nContact evidence: ${source}\nFacilities evidence: ${facilities}\n\nThis creates a CRM candidate only. No email will be sent.`;
     if (!window.confirm(confirmation)) return;
-    setCrmSaving(true); setCrmSaveState("");
+    setCrmSaving(true); setStatus("");
     try {
       const response = await fetch("/api/admin/epoch-ai/hotel-research/register", {
         method:"POST", headers:{"Content-Type":"application/json"},
@@ -160,13 +201,13 @@ export default function HotelProcurementPilot({tourId,tourTitle,destinations,hot
       });
       const result = await response.json() as {error?:string;supplierId?:string;alreadyExists?:boolean};
       if (!response.ok || !result.supplierId) throw new Error(result.error || "CRM registration did not complete.");
-      setSavedSupplierByStay(current=>({...current,[active]:result.supplierId!}));
-      setCrmSaveState(result.alreadyExists ? "Hotel already exists in CRM; no duplicate created." : "Approved research candidate added to Supplier CRM (INACTIVE). No inquiry sent.");
-    } catch(err) {setCrmSaveState(err instanceof Error ? err.message : "Could not register supplier.");}
+      const registeredSupplierId = result.supplierId;
+      setSavedSupplierByHotel(previous => ({...previous, [saveKey]: registeredSupplierId}));
+      setStatus(result.alreadyExists ? "Hotel already exists in CRM; no duplicate created." : "Approved research candidate added to Supplier CRM (INACTIVE). No inquiry sent.");
+    } catch(err) {setStatus(err instanceof Error ? err.message : "Could not register supplier.");}
     finally {setCrmSaving(false);}
   }
-  const stay=stays[active];
-  const referenceStay=isBalkan?balkanStays[active]:undefined;
+  const referenceStay = stay?.reference;
   const referenceMismatch=Boolean(referenceStay&&stay&&(stay.city!==referenceStay.city||stay.checkIn!==referenceStay.checkIn||stay.checkOut!==referenceStay.checkOut||stay.rooms!==referenceStay.rooms));
   const hotelBriefs = new Map(
     Object.entries(briefsByStay[active] || {}).map(([name, brief]) => [stableHotelIdentity(name), brief])
@@ -181,14 +222,14 @@ export default function HotelProcurementPilot({tourId,tourTitle,destinations,hot
 
   // Contact evidence and review approvals belong to the selected property.
   // Never carry verification state from another hotel or destination.
-  const verificationIdentityRef=useRef<string | null>(null);
+  const verificationIdentityRef=useRef<Record<number, string>>({});
 
   useEffect(()=>{
-    const identity=`${active}:${selectedName.trim().toLocaleLowerCase()}`;
+    const identity=JSON.stringify([stay?.city, country, selectedName.trim().toLocaleLowerCase()]);
 
-    if(verificationIdentityRef.current===identity) return;
+    if(verificationIdentityRef.current[active]===identity) return;
 
-    verificationIdentityRef.current=identity;
+    verificationIdentityRef.current[active]=identity;
 
     setVerifiedEmail(previous=>{
       const next={...previous};
@@ -216,14 +257,16 @@ export default function HotelProcurementPilot({tourId,tourTitle,destinations,hot
 
     setContactChecked(previous=>({...previous,[active]:false}));
     setFacilitiesChecked(previous=>({...previous,[active]:false}));
-  },[active,selectedName]);
+  },[active,selectedName,stay?.city,country]);
   useEffect(()=>{
     if(selectedLeadName&&!chosen){
       researchDetailsRef.current?.scrollIntoView({behavior:"smooth",block:"start"});
     }
   },[selectedLeadName,chosen,active]);
-  const reviewKey=`${active}:${selectedName.trim().toLocaleLowerCase()}`;
-  const evidenceKey=`${reviewKey}:${stay?.city||""}`;
+  const evidenceKey = locationKey(selectedName);
+  const registeredSupplierId = savedSupplierByHotel[evidenceKey];
+  const crmSaveState = crmSaveStatusByHotel[evidenceKey];
+  const reviewKey = JSON.stringify([evidenceKey, stay?.checkIn, stay?.checkOut, stay?.rooms]);
   const evidenceReport=evidenceReports[evidenceKey];
   const structuredResearch=structuredResearchByKey[evidenceKey];
   const officialSiteCandidates=officialSitesByKey[evidenceKey]||[];
@@ -234,7 +277,7 @@ export default function HotelProcurementPilot({tourId,tourTitle,destinations,hot
   const recommendationOptions=[...candidateReviews.map(item=>({name:item.name,inCrm:item.inCrm,discovery:false})),
     ...(foundByStay[active]||[]).filter(item=>eligibleByGuestRating(item.name)&&item.identityStatus!=="identity-review"&&!candidateReviews.some(c=>compareLeadToCrm(item.name,[c.name]))&&!hotels.some(h=>compareLeadToCrm(item.name,[h.name]))).map(item=>({name:item.name,inCrm:false,discovery:true}))];
   const researchShortlist=rankHotelResearchCandidates(recommendationOptions.map(item=>({
-    ...item,report:evidenceReports[`${active}:${item.name.trim().toLocaleLowerCase()}:${stay?.city||""}`],
+    ...item,report:evidenceReports[locationKey(item.name)],
     reviewedContact: item.name===selectedName&&Boolean(contactChecked[active]&&contactSource[active]?.trim()&&verifiedEmail[active]?.trim()),
     reviewedFacilities: item.name===selectedName&&Boolean(facilitiesChecked[active]&&facilitiesSource[active]?.trim())
   })),5);
@@ -251,24 +294,83 @@ export default function HotelProcurementPilot({tourId,tourTitle,destinations,hot
     setVerifiedEmail(p=>({...p,[active]:""}));
     setContactChecked(p=>({...p,[active]:false}));
     setFacilitiesChecked(p=>({...p,[active]:false}));
-    setSavedSupplierByStay(p=>{const next={...p};delete next[active];return next;});
-    setCrmSaveState("");setCopyStatus("");
+    setCopyStatus("");
   }
-  function update<K extends keyof Stay>(field:K,value:Stay[K]) {setStays(current=>current.map((s,i)=>i===active?{...s,[field]:value}:s));if(field==="city"){setBriefsByStay(p=>({...p,[active]:{}}));setCapacityByStay(p=>({...p,[active]:{}}));setFoundByStay(p=>({...p,[active]:[]}));setLiveByStay(p=>({...p,[active]:[]}));setResearchMode(p=>({...p,[active]:""}));}setCopyStatus("")}
+  function clearLocationResearch() {
+    destinationRequests.current.get(active)?.abort();
+    destinationRequests.current.delete(active);
+    setDestinationResearchByStay(previous => ({...previous, [active]: false}));
+    setDestinationResearchAt(previous => ({...previous, [active]: ""}));
+    setDestinationResearchError(previous => ({...previous, [active]: ""}));
+    setBriefsByStay(previous => ({...previous, [active]: {}}));
+    setCapacityByStay(previous => ({...previous, [active]: {}}));
+    setFoundByStay(previous => ({...previous, [active]: []}));
+    setLiveByStay(previous => ({...previous, [active]: []}));
+    setLinksByStay(previous => ({...previous, [active]: []}));
+    setLiveError(previous => ({...previous, [active]: ""}));
+    setResearchMode(previous => ({...previous, [active]: ""}));
+    setSelectedForQuotes(previous => ({...previous, [active]: []}));
+    useResearchLead("");
+  }
+
+  function update<K extends keyof Stay>(field: K, value: Stay[K]) {
+    if (field === "city") {
+      setResearchCountry(previous => ({...previous, [active]: countryForCity[String(value)] || ""}));
+      clearLocationResearch();
+    }
+    setStays(current => current.map(item => item.id === active ? {...item, [field]: value} : item));
+    setCopyStatus("");
+  }
+
+  function addStay() {
+    const item = createProcurementStay(nextStayId.current++);
+    setStays(current => [...current, item]);
+    setActive(item.id);
+    setCopyStatus("");
+  }
+
+  function removeStay() {
+    const position = stays.findIndex(item => item.id === active);
+    const remaining = stays.filter(item => item.id !== active);
+    clearLocationResearch();
+    setStays(remaining);
+    setActive(remaining[Math.min(position, remaining.length - 1)]?.id ?? -1);
+  }
   return <div className="space-y-5">
-    <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-950"><strong>Preparation only.</strong> This page does not send email, book hotels or change supplier rates. Saving a draft records it in Hotel Inquiry History only. {isBalkan?"The seven Balkan stays below are editable reference dates, not confirmed hotel bookings.":"Add and verify the hotel dates before preparing inquiries."} Include the official Epoch Journeys signature in any approved message.</div>
-    <div className="flex flex-wrap gap-2">{stays.map((s,i)=><button key={i} type="button" onClick={()=>{setActive(i);setCopyStatus("")}} className={`rounded-lg px-3 py-2 text-sm font-medium ${active===i?"bg-[#001F3F] text-white":"border border-slate-200 bg-white text-slate-700"}`}>{s.city||`Stay ${i+1}`}</button>)}</div>
+    <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-950"><strong>Preparation only.</strong> This page does not send email, book hotels or change supplier rates. Saving a draft records it in Hotel Inquiry History only. {stays.some(item=>item.reference)?"Balkan reference dates are editable. Verify hotel stays before preparing inquiries.":"Review which destinations need hotel stays and verify their dates before preparing inquiries."} Include the official Epoch Journeys signature in any approved message.</div>
+    <div className="flex flex-wrap gap-2">
+      {stays.map((item, position) => {
+        const city = item.city.trim();
+        const repeatedCity = city && stays.some(other =>
+          other.id !== item.id && other.city.trim().toLowerCase() === city.toLowerCase()
+        );
+        const label = city ? (repeatedCity ? `${city} (stay ${position + 1})` : city) : `Stay ${position + 1}`;
+        return <button key={item.id} type="button" aria-pressed={item.id === active}
+          onClick={() => { setActive(item.id); setCopyStatus(""); }}
+          className={`rounded-lg px-3 py-2 text-sm font-medium ${item.id === active ? "bg-[#001F3F] text-white" : "border border-slate-200 bg-white text-slate-700"}`}>
+          {label}
+        </button>;
+      })}
+    </div>
     {stay?<section className="rounded-xl border bg-white p-4 space-y-3" aria-label="Hotel stay details">
       <h2 className="text-lg font-bold text-[#001F3F]">Stay details — review before use</h2>
-      <label className="block text-sm font-medium">Destination<input className="mt-1 w-full rounded-lg border p-2" value={stay.city} onChange={e=>update("city",e.target.value)}/></label>
+      <div className="grid gap-3 sm:grid-cols-2">
+        <label className="block text-sm font-medium">Destination<input className="mt-1 w-full rounded-lg border p-2" value={stay.city} onChange={e=>update("city",e.target.value)}/></label>
+        <label className="block text-sm font-medium">Country<input className="mt-1 w-full rounded-lg border p-2" value={researchCountry[active] ?? country} onChange={e=>{
+          const value = e.target.value;
+          setResearchCountry(previous=>({...previous,[active]:value}));
+          clearLocationResearch();
+        }}/></label>
+      </div>
       <div className="grid grid-cols-2 gap-3"><label className="text-sm font-medium">Check-in<input className="mt-1 w-full rounded-lg border p-2" type="date" value={stay.checkIn} onChange={e=>update("checkIn",e.target.value)}/></label><label className="text-sm font-medium">Check-out<input className="mt-1 w-full rounded-lg border p-2" type="date" value={stay.checkOut} onChange={e=>update("checkOut",e.target.value)}/></label></div>
       {referenceStay?<section className={`rounded-lg border p-3 text-xs ${referenceMismatch?"border-amber-400 bg-amber-50 text-amber-950":"border-sky-200 bg-sky-50 text-sky-950"}`}>
         <strong>2027 Balkan reference schedule (not a confirmed hotel booking):</strong> {referenceStay.city} · check-in {referenceStay.checkIn} · check-out {referenceStay.checkOut} · {referenceStay.rooms} rooms.
-        {referenceMismatch?<><p className="mt-1 font-semibold">The editable stay fields differ from the 2027 reference. Verify the intended tour schedule before saving any inquiry.</p><button type="button" className="mt-2 rounded border border-amber-600 bg-white px-2 py-1 font-semibold" onClick={()=>{setStays(current=>current.map((s,i)=>i===active?{...referenceStay}:s));setCopyStatus("")}}>Restore 2027 reference stay (no database write)</button></>:<p className="mt-1">Current editable stay fields match the reference. Check the year and dates before approving.</p>}
+        {referenceMismatch?<><p className="mt-1 font-semibold">The editable stay fields differ from the 2027 reference. Verify the intended tour schedule before saving any inquiry.</p><button type="button" className="mt-2 rounded border border-amber-600 bg-white px-2 py-1 font-semibold" onClick={()=>{clearLocationResearch();setResearchCountry(previous=>({...previous,[active]:countryForCity[referenceStay.city]||""}));setStays(current=>current.map(item=>item.id===active?{...item,...referenceStay}:item))}}>Restore 2027 reference stay (no database write)</button></>:<p className="mt-1">Current editable stay fields match the reference. Check the year and dates before approving.</p>}
       </section>:null}
       <p className="text-sm text-slate-600">Calculated nights: {nights(stay)||"Review dates"}</p>
       <label className="block text-sm font-medium">Number of rooms<input type="number" min={1} max={250} className="mt-1 w-full rounded-lg border p-2" value={stay.rooms} onChange={e=>update("rooms",Number(e.target.value))}/></label>
       <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={stay.massRoom} onChange={e=>update("massRoom",e.target.checked)}/> Ask about private Mass meeting room (only where needed)</label>
+      <button type="button" onClick={removeStay} className="rounded border px-2 py-1 text-sm">Remove stay</button>
     </section>:null}
     {stay?<section className="rounded-xl border border-blue-200 bg-white p-4 space-y-3" aria-label="Quick hotel quotation preparation">
       <div className="flex flex-wrap items-start justify-between gap-2"><div><h2 className="text-lg font-bold text-[#001F3F]">1. Recommended hotels from Supplier CRM</h2><p className="text-sm text-slate-600">{stay.city} · {stay.checkIn||"Check-in needed"} to {stay.checkOut||"Check-out needed"} · {stay.rooms} rooms</p></div><span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold">Drafts only — no emails sent</span></div>
@@ -300,7 +402,8 @@ export default function HotelProcurementPilot({tourId,tourTitle,destinations,hot
       {chosen?<HotelInquiryWorkspace key={`${active}:${chosen.id}:${stay.city}:${stay.checkIn}:${stay.checkOut}:${stay.rooms}:${stay.massRoom}`} tourId={tourId} hotel={chosen} stay={stay}/>:null}
     </div><div className="space-y-4 rounded-xl border bg-white p-5" aria-label="Optional hotel research">
       {coverage?<details className="rounded-xl border border-slate-200 bg-slate-50/50 p-3"><summary className="cursor-pointer font-semibold text-[#001F3F]">3. Discover additional hotels (optional)</summary><section className="mt-3 space-y-4 text-sm" aria-label="Hotel research and supplier selection">
-        <button type="button" disabled={destinationResearchLoading} onClick={()=>void researchDestinationHotels()} className="rounded border border-[#001F3F] px-3 py-2 text-xs font-semibold disabled:opacity-40">{destinationResearchLoading?"Researching...":"Find more hotel options"}</button>
+        <button type="button" disabled={destinationResearchLoading||!locationReady} onClick={()=>void researchDestinationHotels()} className="rounded border border-[#001F3F] px-3 py-2 text-xs font-semibold disabled:opacity-40">{destinationResearchLoading?"Researching...":"Find more hotel options"}</button>
+        {!locationReady?<p className="text-xs text-slate-600">Enter a destination and country to search for hotels.</p>:null}
         <div className="space-y-1">
           <h3 className="text-base font-bold text-[#001F3F]">Hotel Research &amp; Supplier Selection</h3>
           <p className="text-xs text-slate-600">{stay.city} · {stay.checkIn||"Check-in not set"} to {stay.checkOut||"Check-out not set"} · {stay.rooms} rooms requested</p>
@@ -318,11 +421,11 @@ export default function HotelProcurementPilot({tourId,tourTitle,destinations,hot
             for(const option of recommendationOptions){const key=stableHotelIdentity(option.name);const prior=grouped.get(key);if(!prior||(option.name.length>prior.name.length&&option.discovery===prior.discovery)||(!prior.discovery&&option.discovery&&!prior.inCrm))grouped.set(key,option);}
             const choices=[...grouped.values()].map(option=>{
               const brief = hotelBrief(option.name);
-              const report=evidenceReports[`${active}:${option.name.trim().toLocaleLowerCase()}:${stay.city}`];
+              const report=evidenceReports[locationKey(option.name)];
               const officialDomains=["marriott.com","hilton.com","all.accor.com","accor.com","ihg.com","hyatt.com","radissonhotels.com","hotel-sirius.com","swissdiamondhotel.com"];
               const sources=[...(brief?.sourceUrls||[]),...(foundByStay[active]||[]).filter(result=>stableHotelIdentity(result.name)===stableHotelIdentity(option.name)).map(result=>result.sourceUrl)];
               const officialUrl=sources.find(url=>{try{const host=new URL(url).hostname.toLowerCase();return officialDomains.some(domain=>host===domain||host.endsWith("."+domain));}catch{return false;}});
-              const hotelQuery=`${option.name} ${stay.city} ${countryForCity[stay.city]||""}`;
+              const hotelQuery=`${option.name} ${stay.city} ${country}`;
               const websiteSearch=`https://www.google.com/search?q=${encodeURIComponent(hotelQuery+" official hotel website")}`;
               const reviewSearch=`https://www.google.com/search?q=${encodeURIComponent(hotelQuery+" hotel guest reviews ratings")}`;
               const rateSearch=`https://www.google.com/travel/hotels?q=${encodeURIComponent(hotelQuery+" "+stay.checkIn+" "+stay.checkOut)}`;
@@ -412,7 +515,7 @@ export default function HotelProcurementPilot({tourId,tourTitle,destinations,hot
         </details>
         <p className="text-xs text-slate-600">Review → verify evidence → explicitly approve CRM registration → prepare inquiry draft. Nothing on this screen approves a booking, price or supplier email.</p>
       </section></details>:null}
-        <details className="rounded-lg border border-slate-200 bg-white p-3 text-sm"><summary className="cursor-pointer font-semibold text-[#001F3F]">Enter a hotel found outside the shortlist</summary><label className="mt-3 block text-sm font-medium">Verified hotel name<input value={manualLead[active]||""} onChange={e=>{setManualLead(p=>({...p,[active]:e.target.value}));setSupplierId(p=>({...p,[active]:""}));setSavedSupplierByStay(p=>{const next={...p};delete next[active];return next;});setContactChecked(p=>({...p,[active]:false}));setFacilitiesChecked(p=>({...p,[active]:false}));setCopyStatus("")}} placeholder="Enter the exact verified hotel name" className="mt-1 w-full rounded-lg border bg-white p-2" /></label></details>
+        <details className="rounded-lg border border-slate-200 bg-white p-3 text-sm"><summary className="cursor-pointer font-semibold text-[#001F3F]">Enter a hotel found outside the shortlist</summary><label className="mt-3 block text-sm font-medium">Verified hotel name<input value={manualLead[active]||""} onChange={e=>{setManualLead(p=>({...p,[active]:e.target.value}));setSupplierId(p=>({...p,[active]:""}));setContactChecked(p=>({...p,[active]:false}));setFacilitiesChecked(p=>({...p,[active]:false}));setCopyStatus("")}} placeholder="Enter the exact verified hotel name" className="mt-1 w-full rounded-lg border bg-white p-2" /></label></details>
         {selectedName ? <details ref={researchDetailsRef} key={`${active}:${selectedName}`} open={!chosen} className="scroll-mt-8 space-y-2 rounded-lg border border-blue-300 bg-white p-3"><summary className="cursor-pointer text-sm font-semibold text-[#001F3F]">{chosen?"View research details":"Verify contact & register"} — {selectedName} {chosen?"(CRM)":"(research lead)"}</summary><div className="mt-3 space-y-3">
           <OfficialHotelPageResearch key={`${active}:${selectedName}`} hotelName={selectedName} />
           {(() => { const profile=publishedHotelVerification(selectedName); return profile ? <div className="rounded-lg border border-sky-200 bg-sky-50 p-3 text-xs text-slate-800 space-y-2">
@@ -427,7 +530,7 @@ export default function HotelProcurementPilot({tourId,tourTitle,destinations,hot
           </div>:<p className="text-xs text-amber-800">No reviewed public contact profile yet for this hotel. Research its official site before entering a contact.</p>; })()}
           <section className="rounded-lg border border-blue-200 bg-blue-50/50 p-3 text-xs space-y-2" aria-label="Automated hotel evidence research">
             <div className="flex flex-wrap items-center justify-between gap-2"><p className="font-semibold text-[#001F3F]">Automated public research</p>
-              <button type="button" disabled={Boolean(evidenceLoading)||!stay.city} onClick={()=>void researchSelectedHotel(selectedName,stay.city,researchCountry[active]||countryForCity[stay.city]||"",evidenceKey)} className="rounded-lg bg-[#001F3F] px-3 py-2 text-xs font-semibold text-white disabled:opacity-50">{evidenceLoading===evidenceKey?"Researching...":"Research & Verify Hotel"}</button></div>
+              <button type="button" disabled={Boolean(evidenceLoading)||!locationReady} onClick={()=>void researchSelectedHotel(selectedName,stay.city.trim(),country,evidenceKey)} className="rounded-lg bg-[#001F3F] px-3 py-2 text-xs font-semibold text-white disabled:opacity-50">{evidenceLoading===evidenceKey?"Researching...":"Research & Verify Hotel"}</button></div>
             <p className="text-slate-600">Searches public pages and groups source-linked indications. This does not automatically verify claims, update CRM, or confirm supplier terms.</p>
             {evidenceErrors[evidenceKey]?<p role="alert" className="text-amber-900">{evidenceErrors[evidenceKey]}</p>:null}
             {evidenceReport?<div className="space-y-2" role="status">
@@ -567,7 +670,7 @@ export default function HotelProcurementPilot({tourId,tourTitle,destinations,hot
             <ol className="list-decimal pl-5 space-y-1">{suitability.questions.map(q=><li key={q}>{q}</li>)}</ol>
             <p className="text-amber-900">No allotment, rates, accessible-room inventory or private Mass space is confirmed by an online listing alone.</p>
           </section>:null}
-          <div className="rounded-lg bg-slate-50 p-3 text-xs text-slate-700"><strong>Preliminary capacity screen:</strong> {screenGroupCapacity(stay.rooms,leadEvidence(selectedName)?.totalRooms).message} {leadEvidence(selectedName)?.totalRooms ? `(${stay.rooms} rooms requested / ${leadEvidence(selectedName)?.totalRooms} published rooms)` : ""} <span className="block mt-1">Do not mark the 20-room allotment confirmed until the hotel replies.</span></div>
+          <div className="rounded-lg bg-slate-50 p-3 text-xs text-slate-700"><strong>Preliminary capacity screen:</strong> {screenGroupCapacity(stay.rooms,leadEvidence(selectedName)?.totalRooms).message} {leadEvidence(selectedName)?.totalRooms ? `(${stay.rooms} rooms requested / ${leadEvidence(selectedName)?.totalRooms} published rooms)` : ""} <span className="block mt-1">Confirm the {stay.rooms}-room allotment with the hotel.</span></div>
           <div className="rounded-lg border p-3 text-xs space-y-2">
             <p className="font-semibold text-[#001F3F]">Public evidence review</p>
             <p className="text-slate-600">Only check items supported by a reviewed public source. These checks do not establish hotel availability.</p>
@@ -575,7 +678,7 @@ export default function HotelProcurementPilot({tourId,tourTitle,destinations,hot
           </div>
           <div className="rounded-lg border p-3 text-xs space-y-2">
             <p className="font-semibold text-[#001F3F]">Requires direct hotel confirmation</p>
-            <p className="text-slate-600">Mark confirmed only after receiving attributable hotel evidence. A total room count is not a 20-room allotment.</p>
+            <p className="text-slate-600">Mark confirmed only after receiving attributable hotel evidence. Ask the hotel to confirm the requested {stay.rooms} rooms for these dates.</p>
             {hotelConfirmationChecklist.filter(item=>!item.includes("Mass room")||stay.massRoom).map(item=><label key={item} className="flex items-start gap-2"><input type="checkbox" checked={Boolean(checkStatus[reviewKey]?.[item])} onChange={e=>setCheckStatus(prev=>({...prev,[reviewKey]:{...(prev[reviewKey]||{}),[item]:e.target.checked}}))}/>{item}</label>)}
           </div>
           <details className="rounded-lg border border-slate-200 bg-slate-50 p-3 space-y-2">
@@ -583,22 +686,21 @@ export default function HotelProcurementPilot({tourId,tourTitle,destinations,hot
             <p className="text-xs text-slate-600">After your explicit approval, a published-contact hotel lead can be stored as an INACTIVE research candidate, with evidence and source date. This is not a booking or email approval. Existing matches are checked for duplicates.</p>
             {!chosen ? <div className="space-y-2 rounded border p-2 text-xs">
               <p>Enter independently checked information from the hotel's official website or other attributable public evidence. This form does not perform live research.</p>
-              <label className="block">Country<input className="mt-1 w-full rounded border p-2" value={researchCountry[active] ?? countryForCity[stay.city] ?? ""} onChange={e=>setResearchCountry(p=>({...p,[active]:e.target.value}))}/></label>
               <label className="block">Published phone<input className="mt-1 w-full rounded border p-2" value={researchPhone[active] ?? publishedHotelVerification(selectedLeadName)?.phone ?? ""} onChange={e=>setResearchPhone(p=>({...p,[active]:e.target.value}))}/></label>
               <label className="block">Contact source HTTPS URL<input type="url" className="mt-1 w-full rounded border p-2" value={contactSource[active] ?? publishedHotelVerification(selectedLeadName)?.source ?? ""} onChange={e=>setContactSource(p=>({...p,[active]:e.target.value}))}/></label>
               <label className="block">Facilities source HTTPS URL<input type="url" className="mt-1 w-full rounded border p-2" value={facilitiesSource[active] ?? publishedHotelVerification(selectedLeadName)?.facilitiesSource ?? ""} onChange={e=>setFacilitiesSource(p=>({...p,[active]:e.target.value}))}/></label>
               <label className="flex gap-2"><input type="checkbox" checked={Boolean(contactChecked[active])} onChange={e=>setContactChecked(p=>({...p,[active]:e.target.checked}))}/>I independently checked the published contact and email</label>
               <label className="flex gap-2"><input type="checkbox" checked={Boolean(facilitiesChecked[active])} onChange={e=>setFacilitiesChecked(p=>({...p,[active]:e.target.checked}))}/>I reviewed the hotel/facilities evidence; unconfirmed group amenities remain open questions</label>
             </div> : null}
-            {!chosen ? <button type="button" disabled={crmSaving || Boolean(savedSupplierByStay[active])} onClick={()=>void saveApprovedLead()} className="rounded-lg bg-[#001F3F] px-3 py-2 text-xs font-semibold text-white disabled:opacity-50">{crmSaving?"Registering...":savedSupplierByStay[active]?"Research lead registered":"Approve & register research lead in CRM"}</button>:null}
-            {savedSupplierByStay[active]?<button type="button" className="block text-xs text-blue-700 underline" onClick={()=>window.location.reload()}>Refresh CRM hotel list to select the newly registered supplier</button>:null}
-            {savedSupplierByStay[active]?<Link href={`/admin/suppliers/${savedSupplierByStay[active]}`} className="block text-xs text-blue-700 underline">Open registered CRM record</Link>:null}
+            {!chosen ? <button type="button" disabled={crmSaving || Boolean(registeredSupplierId)} onClick={()=>void saveApprovedLead()} className="rounded-lg bg-[#001F3F] px-3 py-2 text-xs font-semibold text-white disabled:opacity-50">{crmSaving?"Registering...":registeredSupplierId?"Research lead registered":"Approve & register research lead in CRM"}</button>:null}
+            {registeredSupplierId?<button type="button" className="block text-xs text-blue-700 underline" onClick={()=>window.location.reload()}>Refresh CRM hotel list to select the newly registered supplier</button>:null}
+            {registeredSupplierId?<Link href={`/admin/suppliers/${registeredSupplierId}`} className="block text-xs text-blue-700 underline">Open registered CRM record</Link>:null}
             {crmSaveState?<p role="status" className="text-xs text-slate-700">{crmSaveState}</p>:null}
           </div></details>
           <p className="text-xs text-slate-600">Unapproved research selections and diligence checks stay in this browser session only. No message is sent. Supplier confirmations require actual offer evidence.</p>
         </div></details>:null}
 
     </div></div>:<p className="text-sm text-slate-600">No hotel stays found. Add a stay to begin.</p>}
-    <button type="button" onClick={()=>{setStays(v=>[...v,{city:"",checkIn:"",checkOut:"",rooms:20,massRoom:false}]);setActive(stays.length)}} className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-medium">+ Add hotel stay</button>
+    <button type="button" onClick={addStay} className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-medium">+ Add hotel stay</button>
   </div>;
 }

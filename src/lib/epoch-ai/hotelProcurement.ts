@@ -9,8 +9,26 @@ export const balkanStays: Stay[] = [
   {city:"Skopje",checkIn:"2027-05-15",checkOut:"2027-05-17",rooms:20,massRoom:false,originCountry:"USA"},
   {city:"Belgrade",checkIn:"2027-05-17",checkOut:"2027-05-19",rooms:20,massRoom:false,originCountry:"USA"},
 ];
+export type ProcurementStay = Stay & { id: number; reference?: Stay };
+
+const balkanPilotTourId = "cmwjahwcc0000c1fglvy5yrdm";
+
+export function createProcurementStay(id: number, city = ""): ProcurementStay {
+  return { id, city, checkIn: "", checkOut: "", rooms: 20, massRoom: false };
+}
+
+export function initialProcurementStays(tourId: string, destinations: string[]): ProcurementStay[] {
+  if (tourId === balkanPilotTourId) {
+    return balkanStays.map((reference, id) => ({ ...reference, id, reference }));
+  }
+
+  return destinations.map(city => city.trim()).filter(Boolean)
+    .map((city, id) => createProcurementStay(id, city));
+}
+
 const key=(v:string)=>v.normalize("NFD").replace(/[\u0300-\u036f]/g,"").toLowerCase().replace(/[^a-z]/g,"");
 export function matchingHotels(city:string, hotels:HotelContact[]):HotelContact[]{
+ if (!key(city)) return [];
  const terms = key(city).includes("kotor")?["kotor","dobrota","prcanj","perast","tivat"]:[key(city),...(key(city)==="pristina"?["prishtina"]:[])];
  return hotels.filter(h=>h.city && terms.some(t=>key(h.city||"").includes(t))).sort((a,b)=>Number(b.preferred)-Number(a.preferred));
 }

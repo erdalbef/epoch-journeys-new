@@ -87,8 +87,8 @@ export default async function EpochTourHotelProcurementPage({
       </div>
 
       <HotelProcurementPilot
+        key={tour.id}
         tourId={tour.id}
-        tourTitle={tour.title}
         destinations={tour.destinations}
         hotels={hotels}
       />
