@@ -158,6 +158,40 @@ describe("Hotel shortlist research reliability", () => {
     });
   });
 
+  it("merges property titles while retaining room evidence and excluding generic event pages", async () => {
+    const capacityUrl = "https://internationalconferencecenter.tiranehotel.com/en/";
+    vi.stubGlobal("fetch", vi.fn(async () => json({
+      web: { results: [
+        {
+          title: "TIRANA INTERNATIONAL HOTEL & CONFERENCE CENTER • BANQUET HALL",
+          url: capacityUrl,
+          description: "Tirana International Hotel & Conference Center features 212 rooms."
+        },
+        {
+          title: "Tirana International Hotel & Conference Centre",
+          url: "https://tiranainternational.com/",
+          description: "Rooms and suites in the centre of Tirana."
+        },
+        {
+          title: "Tirana, Albania Event Space & Hotel Conference Rooms",
+          url: "https://directory.example/tirana/events",
+          description: "Compare conference venues."
+        }
+      ] }
+    })));
+
+    const response = await POST(request());
+    const body = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(body.discovered.map((hotel: { name: string }) => hotel.name))
+      .toEqual(["Tirana International Hotel & Conference Centre"]);
+    expect(body.capacities["Tirana International Hotel & Conference Centre"]).toMatchObject({
+      totalRooms: 212,
+      sourceUrl: capacityUrl
+    });
+  });
+
   it("preserves discovery if individual hotel research fails", async () => {
     const fetchMock = vi.fn()
       .mockImplementationOnce(async () => successfulSearch())

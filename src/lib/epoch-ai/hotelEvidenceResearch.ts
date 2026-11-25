@@ -11,7 +11,7 @@ const categories:{topic:EvidenceTopic;re:RegExp;statement:string}[]=[
   {topic:"contact",re:/\b(?:contact us|reservations|sales team|telephone|phone|email)\b/i,statement:"Search excerpt suggests published contact information; independently verify the actual recipient on the official website."},
   {topic:"group",re:/\b(?:group bookings?|group accommodation|event spaces?|conference rooms?)\b/i,statement:"Search excerpt suggests group services; no availability or contractual terms are confirmed."},
 ];
-const fold=(s:string)=>s.toLocaleLowerCase("en").normalize("NFKD").replace(/[\u0300-\u036f]/g,"").replace(/[^a-z0-9 ]/g," ").replace(/\s+/g," ").trim();
+const fold=(s:string)=>s.toLocaleLowerCase("en").normalize("NFKD").replace(/[\u0300-\u036f]/g,"").replace(/[^a-z0-9 ]/g," ").replace(/\bcentre\b/g,"center").replace(/\s+/g," ").trim();
 const generic=new Set(["hotel","hotels","the","resort","inn","city","centre","center","prishtina","pristina","skopje","sarajevo","tirana","ohrid","belgrade"]);
 export function hotelSourceMatch(name:string,page:WebHotelResult):boolean {
   const keys=fold(name).split(" ").filter(s=>s.length>=3&&!generic.has(s));

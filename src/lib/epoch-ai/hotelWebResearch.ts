@@ -70,10 +70,11 @@ function comparableHotelName(value:string):string {
   return clean(value,180).toLocaleLowerCase("en").normalize("NFKD").replace(/[\u0300-\u036f]/g,"")
     .replace(/\b(prishtina|pristina|kosovo|skopje|sarajevo|tirana|ohrid|belgrade|kotor|north macedonia)\b/g,"")
     .replace(/\b(hotel|hotels|resort|resorts|and|the|official|website|site|in)\b/g,"")
+    .replace(/\bcentres?\b/g, word => word === "centres" ? "centers" : "center")
     .replace(/[^a-z0-9]/g,"");
 }
 export function candidateNameFromSearchTitle(title:string):string {
-  const raw=clean(title,220).split(/\s+[|–—]\s+|\s+-\s+/)[0].trim();
+  const raw=clean(title,220).split(/\s+[|–—•·]\s+|\s+-\s+/)[0].trim();
   // Web titles can be "Official site Swiss Diamond Hotel Prishtina in Kosovo".
   // Canonicalize before assessing hotel identity and comparing known leads.
   const name=raw
@@ -84,13 +85,14 @@ export function candidateNameFromSearchTitle(title:string):string {
     .trim();
   if(name.length<5 || name.length>95 || genericTitle.test(name) || !/[a-zA-Z]/.test(name))return "";
   if(/\b(?:reviews?|prices?|deals|photos|compare|best|top \d+|travel guide|restaurants|tripadvisor|booking\.com)\b/i.test(name))return "";
+  if(/\b(?:event spaces?|hotel conference rooms?|meeting room rentals?)\b/i.test(name))return "";
   if(!/\b(hotel|inn|suites?|resort|marriott|hilton|mercure|hyatt|holiday inn|radisson|ibis|movenpick|swissotel|ramada|courtyard|doubletree|novotel|sheraton|four points|intercontinental|grand|plaza|boutique|spa)\b/i.test(name))return "";
   return name;
 }
 /** Dedupes candidates against CRM and curated leads. No ratings/contact facts are inferred. */
 export function extractDistinctHotelCandidates(results:WebHotelResult[], knownNames:string[]):DiscoveredHotelLead[] {
   const known=knownNames.map(comparableHotelName).filter(Boolean);
-  const seen=new Set<string>();const found:DiscoveredHotelLead[]=[];
+  const found = new Map<string, DiscoveredHotelLead>();
   for(const page of results){
     const url=safePublicUrl(page.url);if(!url)continue;
     const host=new URL(url).hostname.toLowerCase();
@@ -98,11 +100,19 @@ export function extractDistinctHotelCandidates(results:WebHotelResult[], knownNa
     const name=candidateNameFromSearchTitle(page.title);
     if(!name)continue;
     const normalized=comparableHotelName(name);
-    if(!normalized || seen.has(normalized) || known.some(n=>n===normalized))continue;
-    seen.add(normalized);
-    const identity=assessIdentity(name,host);
-    found.push({name,sourceUrl:url,snippet:page.description,sourceHost:host,...identity,
-      sourceType:/(?:hotel|resort|suites|inn|marriott|hilton|hyatt|accor)/i.test(host)?"possible-official-site":"independent-mention"});
+    if (!normalized || known.includes(normalized)) continue;
+    const identity = assessIdentity(name, host);
+    const prior = found.get(normalized);
+    if (prior && prior.identityStatus === "brand-consistent" &&
+        (identity.identityStatus === "identity-review" || /[a-z]/.test(prior.name) || !/[a-z]/.test(name))) {
+      continue;
+    }
+
+    found.set(normalized, {
+      name, sourceUrl: url, snippet: page.description, sourceHost: host, ...identity,
+      sourceType: /(?:hotel|resort|suites|inn|marriott|hilton|hyatt|accor)/i.test(host)
+        ? "possible-official-site" : "independent-mention"
+    });
   }
-  return found.slice(0,20);
+  return [...found.values()].slice(0, 20);
 }
