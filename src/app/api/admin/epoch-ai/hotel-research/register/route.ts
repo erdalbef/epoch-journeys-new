@@ -26,9 +26,10 @@ export async function POST(request:Request) {
       input.email.toLowerCase()===approved.email.toLowerCase() &&
       input.source===approved.source && input.facilitiesSource===approved.facilitiesSource && input.phone===approved.phone);
     const manualVerified=input.adminVerification?.confirmation==="REGISTER VERIFIED RESEARCH LEAD" &&
-      input.adminVerification.contactChecked===true && input.adminVerification.facilitiesChecked===true;
+      input.adminVerification.contactChecked===true &&
+      (!input.facilitiesSource || input.adminVerification.facilitiesChecked===true);
     if (!sarajevoVerified && !manualVerified) {
-      return NextResponse.json({error:"Admin must confirm independently checked contact and facilities URLs before research-only CRM registration."},{status:400});
+      return NextResponse.json({error:"Confirm the contact source and review any facilities source provided before CRM registration."},{status:400});
     }
     const matchKey=`hotel-research:${canonicalHotelName(input.country)}:${canonicalHotelName(input.city)}:${canonicalHotelName(input.name)}`;
     const result=await db.$transaction(async tx=>{
@@ -42,7 +43,8 @@ export async function POST(request:Request) {
       const when=new Date().toISOString();
       const researchNote=["EPOCH RESEARCH CANDIDATE - NOT CONTACTED / NOT CONTRACTED",
         `Recorded at: ${when}`,`Evidence method: ${sarajevoVerified?"Reviewed Sarajevo static profile":"Admin-attested website review (not independently verified by Epoch AI)"}`,
-        `Public contact evidence: ${input.source}`,`Facilities evidence: ${input.facilitiesSource}`,
+        `Public contact evidence: ${input.source}`,
+        input.facilitiesSource ? `Facilities evidence: ${input.facilitiesSource}` : "Facilities evidence: pending hotel follow-up",
         `Hotel stay context: ${input.hotelStay.checkIn} to ${input.hotelStay.checkOut}; ${input.hotelStay.rooms} rooms REQUESTED, NOT CONFIRMED`,
         "Still to confirm directly: group room availability and rates, shower access, lifts, coach access, porterage, dinner, cancellation and payment terms",
         `Registered by Admin: ${session.user.email || session.user.id || "unknown"}`].join("\n");

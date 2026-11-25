@@ -1,4 +1,4 @@
-import { hotelSourceMatch } from "./hotelEvidenceResearch";
+import { hotelSourceMatch, type EvidenceFinding } from "./hotelEvidenceResearch";
 import { categoryForEmail } from "./hotelOfficialPageExtraction";
 import type { HotelOfficialSiteCandidate } from "./hotelOfficialSiteSelection";
 import type { HotelContactCandidate } from "./hotelStructuredResearch";
@@ -20,6 +20,7 @@ export type HotelSupplierResearch = {
     phone?: PhoneEvidence;
   })[];
   phone?: PhoneEvidence;
+  suggestedFacilitiesSource?: string;
   facilities: {
     id: typeof facilities[number]["id"];
     label: string;
@@ -40,7 +41,8 @@ export function buildHotelSupplierResearch(
   city: string,
   pages: WebHotelResult[],
   officialCandidates: HotelOfficialSiteCandidate[],
-  contacts: HotelContactCandidate[]
+  contacts: HotelContactCandidate[],
+  findings: EvidenceFinding[]
 ): HotelSupplierResearch {
   const officialUrls = new Set(officialCandidates.map(candidate => candidate.sourceUrl));
   const cityKey = locationWords(city);
@@ -86,6 +88,9 @@ export function buildHotelSupplierResearch(
   return {
     contacts: [...uniqueContacts.values()].slice(0, 3),
     phone: phones.values().next().value,
+    suggestedFacilitiesSource: publishedFacilities.find(item => item.evidence)?.evidence?.sourceUrl ??
+      findings.find(item => (item.topic === "facilities" || item.topic === "accessibility") &&
+        sourceUrls.has(item.sourceUrl))?.sourceUrl,
     facilities: publishedFacilities
   };
 }

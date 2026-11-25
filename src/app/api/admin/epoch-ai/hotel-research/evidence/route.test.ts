@@ -66,6 +66,33 @@ describe("Selected hotel contact and facilities", () => {
       {id: "showers", label: "Walk-in showers"},
       expect.objectContaining({id: "mass", evidence: expect.objectContaining({sourceUrl: url})})
     ]));
+    expect(body.supplierResearch.suggestedFacilitiesSource).toBe(url);
+  });
+
+  it("suggests a property facilities page even when it has no specific group amenity", async () => {
+    const facilitiesUrl = "https://www.hotel-europapark.com/en/restaurant.html";
+    vi.stubGlobal("fetch", vi.fn()
+      .mockResolvedValueOnce(searchResults([
+        {title: "Contact us at the Rogner Hotel Tirana", url, description: "E: info.tirana@rogner.com"}
+      ]))
+      .mockResolvedValueOnce(searchResults([
+        {
+          title: "Rogner Hotel Tirana travel directory",
+          url: "https://www.booking.com/hotel/al/rogner.html",
+          description: "Coach parking and walk-in shower at the hotel."
+        },
+        {
+          title: "Rogner Hotel Tirana restaurant",
+          url: facilitiesUrl,
+          description: "The restaurant offers breakfast and a garden terrace."
+        }
+      ])));
+
+    const response = await POST(request());
+    expect(response.status).toBe(200);
+    const body = await response.json();
+    expect(body.supplierResearch.suggestedFacilitiesSource).toBe(facilitiesUrl);
+    expect(body.supplierResearch.facilities.every((item: {evidence?: unknown}) => !item.evidence)).toBe(true);
   });
 
   it("keeps contact information when the facilities search fails", async () => {
@@ -80,5 +107,6 @@ describe("Selected hotel contact and facilities", () => {
     const body = await response.json();
     expect(body.partial).toBe(true);
     expect(body.supplierResearch.contacts[0].email).toBe("info.tirana@rogner.com");
+    expect(body.supplierResearch.suggestedFacilitiesSource).toBeUndefined();
   });
 });

@@ -47,11 +47,12 @@ export async function POST(request:Request){
       Number(candidateUrls.has(b.url)) - Number(candidateUrls.has(a.url))
     );
     const structuredResearch = extractStructuredHotelResearch(hotelName, prioritizedPages);
+    const report = compileHotelEvidence(hotelName, city, country, pages, new Date().toISOString());
     return respond({
-      report: compileHotelEvidence(hotelName, city, country, pages, new Date().toISOString()),
+      report,
       structuredResearch,
       officialSiteCandidates,
-      supplierResearch: buildHotelSupplierResearch(hotelName, city, pages, officialSiteCandidates, structuredResearch.contacts),
+      supplierResearch: buildHotelSupplierResearch(hotelName, city, pages, officialSiteCandidates, structuredResearch.contacts, report.findings),
       partial: lists.length !== queries.length,
       pagesReviewed: pages.length
     });

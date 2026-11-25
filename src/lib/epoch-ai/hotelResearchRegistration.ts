@@ -1,6 +1,6 @@
 /** CRM research registration payload validation. No rates or confirmations inferred. */
 export type ResearchRegistration = {
-  name:string;city:string;country:string;email:string;phone:string;source:string;facilitiesSource:string;
+  name:string;city:string;country:string;email:string;phone:string;source:string;facilitiesSource?:string;
   adminVerification?:{confirmation:string;contactChecked:boolean;facilitiesChecked:boolean};
   hotelStay:{checkIn:string;checkOut:string;rooms:number};
 };
@@ -14,9 +14,13 @@ export function parseResearchRegistration(data:unknown):ResearchRegistration {
     if (typeof v[k]!=="string") throw new Error(`${k} required.`);
     const text=v[k].trim(); if (!text || text.length>max) throw new Error(`Invalid ${k}.`); return text;
   };
-  const name=field("name",180),city=field("city",100),country=field("country",100),email=field("email",254),phone=field("phone",60),source=field("source",1500),facilitiesSource=field("facilitiesSource",1500);
+  const name=field("name",180),city=field("city",100),country=field("country",100),email=field("email",254),phone=field("phone",60),source=field("source",1500);
+  const facilitiesSource = v.facilitiesSource === undefined ||
+    (typeof v.facilitiesSource === "string" && !v.facilitiesSource.trim())
+    ? undefined
+    : field("facilitiesSource",1500);
   if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) throw new Error("Invalid email.");
-  for (const link of [source,facilitiesSource]) {
+  for (const link of facilitiesSource ? [source, facilitiesSource] : [source]) {
     let url:URL;
     try {url=new URL(link);} catch {throw new Error("Evidence must use valid HTTPS links.");}
     if (url.protocol!=="https:" || url.username || url.password || !url.hostname.includes(".") ||
