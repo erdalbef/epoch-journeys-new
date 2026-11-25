@@ -13,7 +13,7 @@ import { leadEvidence, screenGroupCapacity } from "@/lib/epoch-ai/hotelLeadScree
 import { assessHotelCoverage, reviewHotelCandidates } from "@/lib/epoch-ai/hotelDiscoveryReview";
 import type { WebHotelResult, DiscoveredHotelLead } from "@/lib/epoch-ai/hotelWebResearch";
 import { publishedHotelVerification } from "@/lib/epoch-ai/hotelPublicVerification";
-import type { StructuredHotelResearch } from "@/lib/epoch-ai/hotelStructuredResearch";
+import { capacityBand, type HotelCapacityCandidate, type StructuredHotelResearch } from "@/lib/epoch-ai/hotelStructuredResearch";
 import type { HotelOfficialSiteCandidate } from "@/lib/epoch-ai/hotelOfficialSiteSelection";
 import { balkanStays, contactEmail, inquiry, searchCrmHotels, nights, type HotelContact, type Stay } from "@/lib/epoch-ai/hotelProcurement";
 
@@ -42,6 +42,7 @@ export default function HotelProcurementPilot({tourId,tourTitle,destinations,hot
   const [crmSaving,setCrmSaving]=useState(false);
   const [savedSupplierByStay,setSavedSupplierByStay]=useState<Record<number,string>>({});
   const [liveByStay,setLiveByStay]=useState<Record<number,WebHotelResult[]>>({});
+  const [capacityByStay,setCapacityByStay]=useState<Record<number,Record<string,HotelCapacityCandidate>>>({});
   const [foundByStay,setFoundByStay]=useState<Record<number,DiscoveredHotelLead[]>>({});
   const [linksByStay,setLinksByStay]=useState<Record<number,{label:string;url:string}[]>>({});
   const [researchMode,setResearchMode]=useState<Record<number,string>>({});
@@ -101,12 +102,13 @@ export default function HotelProcurementPilot({tourId,tourTitle,destinations,hot
     if(!current?.city||!country){setDestinationResearchError(p=>({...p,[index]:"Enter destination and country first."}));return;}
     setDestinationResearchLoading(true);setDestinationResearchError(p=>({...p,[index]:""}));
     try{
-      const knownNames=[...new Set([...hotels.filter(h=>h.name).map(h=>h.name),...reviewHotelCandidates(current,hotels).map(h=>h.name)])].slice(0,12);
+      const knownNames=[...new Set(reviewHotelCandidates(current,hotels).map(h=>h.name))].slice(0,12);
       const res=await fetch("/api/admin/epoch-ai/hotel-research/shortlist",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({city:current.city,country,knownNames})});
-      const body=await readResearchJson<{error?:string;discovered?:DiscoveredHotelLead[];reports?:Record<string,HotelEvidenceReport>;briefs?:Record<string,HotelBrief>;errors?:string[]}>(res);
+      const body=await readResearchJson<{error?:string;discovered?:DiscoveredHotelLead[];reports?:Record<string,HotelEvidenceReport>;briefs?:Record<string,HotelBrief>;capacities?:Record<string,HotelCapacityCandidate>;errors?:string[]}>(res);
       if(!res.ok)throw Error(body.error||"Research unavailable");
       setFoundByStay(p=>({...p,[index]:body.discovered||[]}));
       setBriefsByStay(p=>({...p,[index]:body.briefs||{}}));
+      setCapacityByStay(p=>({...p,[index]:body.capacities||{}}));
       setEvidenceReports(p=>{const next={...p};for(const [name,report] of Object.entries(body.reports||{})){next[`${index}:${name.trim().toLocaleLowerCase()}:${current.city}`]=report;}return next;});
       setDestinationResearchAt(p=>({...p,[index]:new Date().toLocaleString()}));
       if((body.errors?.length ?? 0)>0)setDestinationResearchError(p=>({...p,[index]:`${body.errors?.length ?? 0} research step(s) incomplete. ${body.errors?.[0] || ""}`}));
@@ -245,7 +247,7 @@ export default function HotelProcurementPilot({tourId,tourTitle,destinations,hot
     setSavedSupplierByStay(p=>{const next={...p};delete next[active];return next;});
     setCrmSaveState("");setCopyStatus("");
   }
-  function update<K extends keyof Stay>(field:K,value:Stay[K]) {setStays(current=>current.map((s,i)=>i===active?{...s,[field]:value}:s));if(field==="city"){setFoundByStay(p=>({...p,[active]:[]}));setLiveByStay(p=>({...p,[active]:[]}));setResearchMode(p=>({...p,[active]:""}));}setCopyStatus("")}
+  function update<K extends keyof Stay>(field:K,value:Stay[K]) {setStays(current=>current.map((s,i)=>i===active?{...s,[field]:value}:s));if(field==="city"){setCapacityByStay(p=>({...p,[active]:{}}));setFoundByStay(p=>({...p,[active]:[]}));setLiveByStay(p=>({...p,[active]:[]}));setResearchMode(p=>({...p,[active]:""}));}setCopyStatus("")}
   return <div className="space-y-5">
     <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-950"><strong>Preparation only.</strong> This page does not send email, book hotels or change supplier rates. Saving a draft records it in Hotel Inquiry History only. {isBalkan?"The seven Balkan stays below are editable reference dates, not confirmed hotel bookings.":"Add and verify the hotel dates before preparing inquiries."} Include the official Epoch Journeys signature in any approved message.</div>
     <div className="flex flex-wrap gap-2">{stays.map((s,i)=><button key={i} type="button" onClick={()=>{setActive(i);setCopyStatus("")}} className={`rounded-lg px-3 py-2 text-sm font-medium ${active===i?"bg-[#001F3F] text-white":"border border-slate-200 bg-white text-slate-700"}`}>{s.city||`Stay ${i+1}`}</button>)}</div>
@@ -317,15 +319,25 @@ export default function HotelProcurementPilot({tourId,tourTitle,destinations,hot
               const websiteSearch=`https://www.google.com/search?q=${encodeURIComponent(hotelQuery+" official hotel website")}`;
               const reviewSearch=`https://www.google.com/search?q=${encodeURIComponent(hotelQuery+" hotel guest reviews ratings")}`;
               const rateSearch=`https://www.google.com/travel/hotels?q=${encodeURIComponent(hotelQuery+" "+stay.checkIn+" "+stay.checkOut)}`;
-              return {...option,brief,officialUrl,websiteSearch,reviewSearch,rateSearch,bullets:brief?.reasons?.length?brief.reasons:summarizeHotelEvidence(option.name,report)};
+              const published = Object.entries(capacityByStay[active] || {}).find(([name])=>stableHotelIdentity(name)===stableHotelIdentity(option.name))?.[1];
+              const curated = leadEvidence(option.name);
+              const capacity = published || (curated && {totalRooms:curated.totalRooms,sourceUrl:curated.source});
+              return {...option,capacity,brief,officialUrl,websiteSearch,reviewSearch,rateSearch,bullets:brief?.reasons?.length?brief.reasons:summarizeHotelEvidence(option.name,report)};
             });
-            choices.sort((a,b)=>Number((b.bullets?.length||0)>0)-Number((a.bullets?.length||0)>0)||a.name.localeCompare(b.name));
+            const roomSizePriority = (rooms?: number) => {
+              if (!rooms) return 1;
+              const band = capacityBand(rooms);
+              return band === "preferred" ? 3 : band === "possible" ? 2 : 0;
+            };
+            choices.sort((a,b)=>roomSizePriority(b.capacity?.totalRooms)-roomSizePriority(a.capacity?.totalRooms)||
+              (b.capacity?.totalRooms||0)-(a.capacity?.totalRooms||0)||Number((b.bullets?.length||0)>0)-Number((a.bullets?.length||0)>0)||a.name.localeCompare(b.name));
             const selected=selectedForQuotes[active]||[];
             return <div className="space-y-3">
-              <p className="text-xs text-slate-600">{choices.length} distinct hotels listed · Prices and review scores are live external checks, not confirmed group quotations.</p>
+              <p className="text-xs text-slate-600">{choices.length} distinct hotels listed · Properties with 70 or more published rooms appear first.</p>
               {choices.slice(0,20).map((option,index)=><div key={stableHotelIdentity(option.name)} className="rounded-lg border border-slate-200 bg-white p-3">
                 <div className="flex items-start justify-between gap-3">
                   <div className="min-w-0 flex-1"><p className="font-semibold text-[#001F3F]">{index+1}. {option.name} <span className="ml-1 text-[10px] font-medium text-slate-500">{option.inCrm?"In CRM":option.discovery?"New discovery":"Known lead"}</span></p>
+                    <p className="mt-1 text-xs text-slate-700">{option.capacity ? <><strong>{option.capacity.totalRooms} published guest rooms and suites</strong> · <a href={option.capacity.sourceUrl} target="_blank" rel="noopener noreferrer" className="text-blue-700 underline">Capacity source</a></> : "Published room count unavailable"}</p>
                     {option.brief?.rating?<p className="text-xs text-slate-700">Guest rating: {option.brief.rating} {option.brief.ratingSourceUrl?<a href={option.brief.ratingSourceUrl} target="_blank" rel="noopener noreferrer" className="text-blue-700 underline">Source</a>:null}</p>:null}
                     {option.brief?.bbRate?<p className="text-xs text-slate-700">Indicative BB rate: {option.brief.bbRate}</p>:null}
                     <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs">

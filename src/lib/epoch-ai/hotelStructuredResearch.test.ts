@@ -8,6 +8,7 @@ describe("Structured hotel research", () => {
   it("applies the intended group-capacity bands", () => {
     expect(capacityBand(140)).toBe("preferred");
     expect(capacityBand(100)).toBe("possible");
+    expect(capacityBand(70)).toBe("possible");
     expect(capacityBand(65)).toBe("caution");
     expect(capacityBand(25)).toBe("too-small");
   });
@@ -33,6 +34,24 @@ describe("Structured hotel research", () => {
     expect(result.capacities[0]?.suitability)
       .toBe("preferred");
     expect(result.capacityStatus).toBe("unverified");
+  });
+
+  it("reads published inventory without counting group offers or meeting rooms", () => {
+    const result = extractStructuredHotelResearch("Hilton Garden Inn Tirana", [{
+      title: "Hilton Garden Inn Tirana Meetings and Events",
+      url: "https://www.hilton.com/en/hotels/tiagigi-hilton-garden-inn-tirana/events/",
+      description: "8 meeting rooms. 143 Guest rooms. Reserve 10–25 hotel rooms for your group.",
+    }]);
+    expect(result.capacities.map(item => item.totalRooms)).toEqual([143]);
+  });
+
+  it("does not assign a directory's inventory to a hotel mentioned in its excerpt", () => {
+    const result = extractStructuredHotelResearch("Hilton Garden Inn Tirana", [{
+      title: "Hotels in Tirana",
+      url: "https://example.com/tirana-hotels",
+      description: "Hilton Garden Inn Tirana. Nearby, another hotel has 130 rooms.",
+    }]);
+    expect(result.capacities).toHaveLength(0);
   });
 
   it("does not use evidence from an unrelated hotel", () => {

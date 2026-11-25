@@ -8,6 +8,8 @@ import {
 import type { WebHotelResult } from "@/lib/epoch-ai/hotelWebResearch";
 import { buildHotelBrief } from "@/lib/epoch-ai/hotelExecutiveBrief";
 import { compileHotelEvidence } from "@/lib/epoch-ai/hotelEvidenceResearch";
+import { extractStructuredHotelResearch, type HotelCapacityCandidate } from "@/lib/epoch-ai/hotelStructuredResearch";
+import { selectHotelOfficialSiteCandidates } from "@/lib/epoch-ai/hotelOfficialSiteSelection";
 import type { HotelEvidenceReport } from "@/lib/epoch-ai/hotelEvidenceResearch";
 
 export const runtime = "nodejs";
@@ -158,6 +160,7 @@ export async function POST(request: Request) {
 
     url.searchParams.set("q", q);
     url.searchParams.set("count", "10");
+    url.searchParams.set("extra_snippets", "true");
 
     try {
       const r = await fetch(url, {
@@ -203,11 +206,11 @@ export async function POST(request: Request) {
   try {
     const discoveryPages = [
       ...(await search(
-        `4 star hotels ${city} ${country} official hotel websites`,
+        `large 4 star 5 star hotels ${city} ${country} group accommodation guest rooms and suites`,
         "discovery-primary"
       )),
       ...(await search(
-        `hotels ${city} ${country} Marriott Hilton Accor IHG official 4 star`,
+        `conference hotels ${city} ${country} hotel accommodation total guest rooms Marriott Hilton Accor IHG`,
         "discovery-secondary"
       ))
     ];
@@ -233,6 +236,8 @@ export async function POST(request: Request) {
     const reports: Record<string, HotelEvidenceReport> = {};
     const briefs: Record<string, ReturnType<typeof buildHotelBrief>> = {};
 
+    const capacities: Record<string, HotelCapacityCandidate> = Object.create(null);
+
     // Sequential searches avoid bursts of simultaneous provider requests.
     for (let i = 0; i < names.length; i++) {
       if (stopProviderRequests || ctrl.signal.aborted) {
@@ -244,7 +249,7 @@ export async function POST(request: Request) {
       const before = successfulSearches;
 
       const pages = await search(
-        `"${name}" ${city} ${country} official hotel amenities accessibility meeting parking`,
+        `"${name}" ${city} ${country} official hotel accommodation guest room count rooms suites meetings events accessibility parking`,
         `hotel-evidence-${i + 1}`
       );
 
@@ -260,6 +265,16 @@ export async function POST(request: Request) {
         );
 
         briefs[name] = buildHotelBrief(name, pages);
+        const capacityPages = [...pages, ...discoveryPages];
+        const officialUrls = new Set(
+          selectHotelOfficialSiteCandidates(name, capacityPages).map(page => page.sourceUrl)
+        );
+        const candidates = extractStructuredHotelResearch(name, capacityPages).capacities;
+        const officialCounts = candidates.filter(item => officialUrls.has(item.sourceUrl));
+        const evidence = officialCounts.length ? officialCounts : candidates;
+        if (evidence.length && evidence.every(item => item.totalRooms === evidence[0].totalRooms)) {
+          capacities[name] = evidence[0];
+        }
       } catch {
         errors.push(`Hotel evidence step ${i + 1} could not be compiled`);
       }
@@ -271,6 +286,7 @@ export async function POST(request: Request) {
       discovered: discovery,
       reports,
       briefs,
+      capacities,
       researchedCount: Object.keys(reports).length,
       errors,
       partial: errors.length > 0,

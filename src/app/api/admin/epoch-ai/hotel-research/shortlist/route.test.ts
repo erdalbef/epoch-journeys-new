@@ -121,6 +121,43 @@ describe("Hotel shortlist research reliability", () => {
     expect(JSON.stringify(body)).not.toContain("PRIVATE_UPSTREAM_BODY");
   });
 
+  it("uses property-specific search excerpts to provide a sourced inventory count", async () => {
+    const url = "https://www.hilton.com/en/hotels/tiagigi-hilton-garden-inn-tirana/events/";
+    const fetchMock = vi.fn(async () => json({
+      web: { results: [
+        {
+          title: "Hilton Garden Inn Tirana | Meetings and Events",
+          url,
+          description: "Reserve 10–25 hotel rooms for your group.",
+          extra_snippets: ["143 Guest rooms"],
+        },
+        {
+          title: "Hilton Garden Inn Tirana Hotel, Albania",
+          url: "https://www.hilton.com/en/hotels/tiagigi-hilton-garden-inn-tirana/",
+          description: "Explore the hotel.",
+        },
+        {
+          title: "Hotels by Marriott in Tirana",
+          url: "https://www.marriott.com/en-us/destinations/albania/tirana.mi",
+          description: "Explore all hotels.",
+        }
+      ] }
+    }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const response = await POST(request());
+    const body = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(body.discovered.map((hotel: { name: string }) => hotel.name))
+      .toEqual(["Hilton Garden Inn Tirana"]);
+    expect(body.capacities["Hilton Garden Inn Tirana"]).toMatchObject({
+      totalRooms: 143,
+      sourceUrl: url,
+      status: "published-indication"
+    });
+  });
+
   it("preserves discovery if individual hotel research fails", async () => {
     const fetchMock = vi.fn()
       .mockImplementationOnce(async () => successfulSearch())

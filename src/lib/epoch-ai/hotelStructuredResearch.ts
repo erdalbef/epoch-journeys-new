@@ -30,7 +30,7 @@ export type StructuredHotelResearch = {
 export function capacityBand(rooms: number):
   HotelCapacityCandidate["suitability"] {
   if (rooms >= 120) return "preferred";
-  if (rooms >= 80) return "possible";
+  if (rooms >= 70) return "possible";
   if (rooms >= 50) return "caution";
   return "too-small";
 }
@@ -72,19 +72,25 @@ export function extractStructuredHotelResearch(
       });
     }
 
-    const roomMatches = excerpt.matchAll(
-      /\b(\d{1,4})\s+(?:guest\s+)?(?:rooms|guestrooms|bedrooms)\b/gi,
-    );
+    if (!hotelSourceMatch(hotelName, { ...page, description: "" })) continue;
 
-    for (const match of roomMatches) {
-      const totalRooms = Number(match[1]);
+    const publishedTotals = new Set<number>();
+    const explicitTotals = /\b(\d{1,4})\s+(?:(?:fully renovated|modern|spacious|well-appointed|newly renovated|beautifully appointed|thoughtfully designed)\s+)*(?:guest\s*rooms?|hotel rooms?|bedrooms?|rooms?\s+and\s+suites?)\b/gi;
+    const statedInventory = /\b(?:has|offers|features|boasts|comprises|with|our|total of)\s+(\d{1,4})\s+(?:(?:fully renovated|modern|spacious|well-appointed|newly renovated)\s+)*rooms?\b/gi;
 
-      if (!Number.isInteger(totalRooms) ||
-          totalRooms < 1 ||
-          totalRooms > 3000) {
-        continue;
+    for (const pattern of [explicitTotals, statedInventory]) {
+      for (const match of excerpt.matchAll(pattern)) {
+        const prefix = excerpt.slice(Math.max(0, match.index - 45), match.index);
+        const suffix = excerpt.slice(match.index + match[0].length);
+        if (/(?:[-–]\s*|\bto\s+|\b(?:book|reserve|block|up to)\s+)$/i.test(prefix) ||
+            /^\s+(?:available|for (?:groups?|your group)|per floor)\b/i.test(suffix)) continue;
+
+        const count = Number(match[1]);
+        if (count >= 1 && count <= 3000) publishedTotals.add(count);
       }
+    }
 
+    for (const totalRooms of publishedTotals) {
       const key = `${totalRooms}|${sourceUrl}`;
 
       if (seenCapacities.has(key)) continue;

@@ -44,7 +44,7 @@ export function mapBraveHotelResults(payload:unknown):WebHotelResult[] {
     const result=item as Record<string,unknown>;
     const url=safePublicUrl(result.url),title=clean(result.title,180);
     if(!url || !title || seen.has(url))continue;
-    seen.add(url);output.push({title,url,description:clean(result.description,500)});
+    seen.add(url);output.push({title,url,description:[clean(result.description,500),...(Array.isArray(result.extra_snippets)?result.extra_snippets.slice(0,3).map(snippet=>clean(snippet,500)):[])].filter(Boolean).join(" … ")});
   }
   return output;
 }
@@ -52,7 +52,7 @@ export function mapBraveHotelResults(payload:unknown):WebHotelResult[] {
 /** Named leads extracted from public search snippets, NEVER independent verification. */
 export type DiscoveredHotelLead = { name:string; sourceUrl:string; snippet:string; sourceHost:string; sourceType:"possible-official-site"|"independent-mention"; identityStatus:"brand-consistent"|"identity-review"; identityNote:string };
 const excludedHosts=new Set(["booking.com","www.booking.com","tripadvisor.com","www.tripadvisor.com","expedia.com","www.expedia.com","hotels.com","www.hotels.com","agoda.com","www.agoda.com","google.com","www.google.com","trivago.com","www.trivago.com","kayak.com","www.kayak.com"]);
-const genericTitle=/^(best|top|cheap|luxury|find|compare|book|hotels? in |accommodations? in |where to stay|the \d+ best|\d+ best|\d+ hotels?)/i;
+const genericTitle=/^(best|top|cheap|luxury|find|compare|book|hotels? (?:in|by|near) |accommodations? in |where to stay|the \d+ best|\d+ best|\d+ hotels?)/i;
 /** A domain is a brand clue, not proof of property identity or page availability. */
 const brandDomains:[RegExp,RegExp,string][]=[
   [/(^|\.)hilton\.com$/i,/\b(hilton|doubletree|hampton|homewood|home2|curio|tapestry|waldorf|conrad)\b/i,"Hilton"],
@@ -80,6 +80,7 @@ export function candidateNameFromSearchTitle(title:string):string {
     .replace(/^(?:(?:the )?official (?:web)?site(?: of)?|(?:the )?official website(?: of)?|welcome to(?: the)?)\s+/i,"")
     .replace(/\s+(?:official website|official site|book direct|booking|reservations)\s*$/i,"")
     .replace(/\s+in\s+(?:kosovo|north macedonia|serbia|albania|montenegro|bosnia(?: and herzegovina)?)\s*$/i,"")
+    .replace(/,\s*(?:albania|kosovo|north macedonia|serbia|montenegro|bosnia(?: and herzegovina)?)\s*$/i,"")
     .trim();
   if(name.length<5 || name.length>95 || genericTitle.test(name) || !/[a-zA-Z]/.test(name))return "";
   if(/\b(?:reviews?|prices?|deals|photos|compare|best|top \d+|travel guide|restaurants|tripadvisor|booking\.com)\b/i.test(name))return "";
