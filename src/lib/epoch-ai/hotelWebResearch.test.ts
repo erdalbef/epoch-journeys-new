@@ -19,4 +19,11 @@ describe("Hotel discovery names", () => {
       property("Grand Hôtel | Stockholm"),
     ], [])).toMatchObject([{ name: "Grand Hôtel" }]);
   });
+
+  it("does not list a generic hotel and conference heading as a property", () => {
+    expect(extractDistinctHotelCandidates([property("Hotel and conference")], [])).toEqual([]);
+    expect(extractDistinctHotelCandidates([
+      property("Hotel and conference | Example Hotel"),
+    ], [])).toMatchObject([{ name: "Example Hotel" }]);
+  });
 });

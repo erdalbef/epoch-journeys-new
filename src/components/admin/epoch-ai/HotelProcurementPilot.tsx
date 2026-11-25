@@ -779,6 +779,7 @@ export default function HotelProcurementPilot({tourId,destinations,itinerary,hot
           </div>
           {!chosen && !crmMatchesForSelected.length ? <section className="space-y-3 rounded-lg border border-blue-200 bg-blue-50 p-4 text-sm" aria-label="Review and approve hotel for Supplier CRM">
             <h3 className="font-semibold text-[#001F3F]">Review and approve hotel for Supplier CRM</h3>
+            <p className="text-xs text-slate-600">Approval creates an inactive research candidate. No email is sent.</p>
             <div className="grid gap-3 sm:grid-cols-2">
               <label className="block font-medium">Hotel recipient email
                 <input type="email" value={researchForm.email} onChange={e=>updateContact({email:e.target.value})} className="mt-1 w-full rounded border bg-white p-2"/>
@@ -803,6 +804,9 @@ export default function HotelProcurementPilot({tourId,destinations,itinerary,hot
                 }}/>
               I checked that this published source lists the hotel's recipient email.
             </label>
+            {!contactReviewKey ? <p className="text-xs text-amber-900">
+              {evidenceLoading[evidenceKey] ? "Searching for the hotel email and its source…" : "The checkbox becomes available when the hotel email and its public HTTPS source are filled."}
+            </p> : null}
             <details className="space-y-2 rounded border bg-white p-2">
               <summary className="cursor-pointer font-medium">Facilities evidence (optional)</summary>
               <label className="block">Facilities source HTTPS URL
@@ -819,6 +823,7 @@ export default function HotelProcurementPilot({tourId,destinations,itinerary,hot
               <p className="text-xs text-slate-600">You can register the contact and leave facilities for hotel follow-up.</p>
             </details>
             <div className="flex flex-wrap items-center gap-3">
+              <a href="#epoch-hotel-inquiry" className="text-blue-700 underline">Review inquiry draft</a>
               {!registeredSupplierId ? <button type="button" disabled={crmSaving} onClick={()=>void saveApprovedLead()}
                 className="rounded-lg bg-[#001F3F] px-3 py-2 font-semibold text-white disabled:opacity-50">
                 {crmSaving ? "Registering..." : "Approve & register in Supplier CRM"}
@@ -826,10 +831,8 @@ export default function HotelProcurementPilot({tourId,destinations,itinerary,hot
                 <button type="button" className="text-blue-700 underline" onClick={()=>window.location.reload()}>Refresh CRM hotel list</button>
                 <Link href={`/admin/suppliers/${registeredSupplierId}`} className="text-blue-700 underline">Open registered hotel</Link>
               </>}
-              <a href="#epoch-hotel-inquiry" className="text-blue-700 underline">Review inquiry draft</a>
             </div>
             {crmSaveState ? <p role="status">{crmSaveState}</p> : null}
-            <p className="text-xs text-slate-600">Approval creates an inactive research candidate. No email is sent.</p>
           </section> : null}
           <p className="text-xs text-slate-600">Unapproved research selections and diligence checks stay in this browser session only. No message is sent. Supplier confirmations require actual offer evidence.</p>
         </div></details>:null}

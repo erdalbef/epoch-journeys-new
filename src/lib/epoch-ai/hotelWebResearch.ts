@@ -52,7 +52,7 @@ export function mapBraveHotelResults(payload:unknown):WebHotelResult[] {
 /** Named leads extracted from public search snippets, NEVER independent verification. */
 export type DiscoveredHotelLead = { name:string; sourceUrl:string; snippet:string; sourceHost:string; sourceType:"possible-official-site"|"independent-mention"; identityStatus:"brand-consistent"|"identity-review"; identityNote:string };
 const excludedHosts=new Set(["booking.com","www.booking.com","tripadvisor.com","www.tripadvisor.com","expedia.com","www.expedia.com","hotels.com","www.hotels.com","agoda.com","www.agoda.com","google.com","www.google.com","trivago.com","www.trivago.com","kayak.com","www.kayak.com"]);
-const genericTitle=/^(best|top|cheap|luxury|find|compare|book|hotels? (?:in|by|near) |accommodations? in |where to stay|the \d+ best|\d+ best|\d+ hotels?|\d\s*[- ]?\s*star\b)/i;
+const genericTitle=/^(best|top|cheap|luxury|find|compare|book|hotels? (?:in|by|near) |accommodations? in |where to stay|the \d+ best|\d+ best|\d+ hotels?|\d\s*[- ]?\s*star\b|hotel (?:and|&) conference(?: cent(?:er|re))?$)/i;
 /** A domain is a brand clue, not proof of property identity or page availability. */
 const brandDomains:[RegExp,RegExp,string][]=[
   [/(^|\.)hilton\.com$/i,/\b(hilton|doubletree|hampton|homewood|home2|curio|tapestry|waldorf|conrad)\b/i,"Hilton"],
