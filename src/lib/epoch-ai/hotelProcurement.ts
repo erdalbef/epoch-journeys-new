@@ -1,3 +1,5 @@
+import { itineraryProcurementStays } from "./hotelStayCities";
+
 export type Stay = { city: string; checkIn: string; checkOut: string; rooms: number; massRoom: boolean; originCountry?: string };
 export type HotelContact = { id: string; name: string; city: string | null; country: string | null; email: string | null; preferred: boolean; contacts: { email: string | null; isPrimary: boolean }[] };
 export const balkanStays: Stay[] = [
@@ -9,7 +11,7 @@ export const balkanStays: Stay[] = [
   {city:"Skopje",checkIn:"2027-05-15",checkOut:"2027-05-17",rooms:20,massRoom:false,originCountry:"USA"},
   {city:"Belgrade",checkIn:"2027-05-17",checkOut:"2027-05-19",rooms:20,massRoom:false,originCountry:"USA"},
 ];
-export type ProcurementStay = Stay & { id: number; reference?: Stay };
+export type ProcurementStay = Stay & { id: number; country?: string; reference?: Stay; ferry?: { day: number; label: string } };
 
 const balkanPilotTourId = "cmwjahwcc0000c1fglvy5yrdm";
 
@@ -17,13 +19,13 @@ export function createProcurementStay(id: number, city = ""): ProcurementStay {
   return { id, city, checkIn: "", checkOut: "", rooms: 20, massRoom: false };
 }
 
-export function initialProcurementStays(tourId: string, destinations: string[]): ProcurementStay[] {
+export function initialProcurementStays(tourId: string, destinations: string[], itinerary?: string | null): ProcurementStay[] {
   if (tourId === balkanPilotTourId) {
     return balkanStays.map((reference, id) => ({ ...reference, id, reference }));
   }
 
-  return destinations.map(city => city.trim()).filter(Boolean)
-    .map((city, id) => createProcurementStay(id, city));
+  return itineraryProcurementStays(itinerary, destinations)
+    .map(({ city, country, ferry }, id) => ({ ...createProcurementStay(id, city), country, ferry }));
 }
 
 const key=(v:string)=>v.normalize("NFD").replace(/[\u0300-\u036f]/g,"").toLowerCase().replace(/[^a-z]/g,"");

@@ -18,6 +18,32 @@ describe("read-only hotel procurement preparation",()=>{
      {id: 0, city: "Rome"}, {id: 1, city: "Assisi"}, {id: 2, city: "Rome"}
    ]);
  });
+ it("uses the saved Scandinavia itinerary for city tabs and includes overnight ferries in order", () => {
+   const itinerary = [
+     "Day 1, September 2, 2027 – Thursday Departure",
+     "Day 2 – Arrival in Helsinki\nWelcome dinner and overnight in Helsinki.",
+     "Day 3 – Helsinki – Overnight cruise to Stockholm\nDinner and overnight onboard.",
+     "Day 4 – Stockholm\nDinner and overnight in Stockholm.",
+     "Day 5 – Stockholm – Jönköping\nDinner and overnight in Jönköping.",
+     "Day 6 – Jönköping – Lund – Ystad – Copenhagen\nDinner and overnight in Copenhagen.",
+     "Day 7 – Copenhagen\nOvernight: 4-star hotel in Copenhagen, Denmark",
+     "Day 8 – Copenhagen – Overnight ferry to Oslo\nDinner and overnight on board.",
+     "Day 9 – Oslo\nOvernight in Oslo.",
+     "Day 10 – Flight to Reykjavik\nOvernight in Reykjavík.",
+     "Day 11 – Golden Circle\nOvernight in Reykjavík.",
+     "Day 12 – Departure",
+   ].join("\n\n");
+   const stays = initialProcurementStays("scandinavia", ["Finland", "Sweden", "Denmark", "Norway", "Iceland"], itinerary);
+   expect(stays.map(stay => stay.ferry?.label ?? stay.city)).toEqual([
+     "Helsinki", "Ferry: Helsinki → Stockholm", "Stockholm", "Jönköping",
+     "Copenhagen", "Ferry: Copenhagen → Oslo", "Oslo", "Reykjavík",
+   ]);
+   expect(stays.filter(stay => !stay.ferry).map(stay => stay.country))
+     .toEqual(["Finland", "Sweden", "Sweden", "Denmark", "Norway", "Iceland"]);
+ });
+ it("does not use country-only destinations for hotel tabs", () => {
+   expect(initialProcurementStays("country-only", ["Finland", "Iceland", "Türkiye"])).toEqual([]);
+ });
  it("keeps the dated Balkan template on its pilot tour", () => {
    const stays = initialProcurementStays("cmwjahwcc0000c1fglvy5yrdm", ["Different destination"]);
 

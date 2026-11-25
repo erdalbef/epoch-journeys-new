@@ -27,6 +27,7 @@ export default async function EpochTourHotelProcurementPage({
       id: true,
       title: true,
       destinations: true,
+      itinerary: true,
     },
   });
 
@@ -90,6 +91,7 @@ export default async function EpochTourHotelProcurementPage({
         key={tour.id}
         tourId={tour.id}
         destinations={tour.destinations}
+        itinerary={tour.itinerary}
         hotels={hotels}
       />
     </main>

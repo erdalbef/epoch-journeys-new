@@ -19,12 +19,15 @@ import { capacityBand, type HotelCapacityCandidate, type StructuredHotelResearch
 import type { HotelSupplierResearch } from "@/lib/epoch-ai/hotelSupplierResearch";
 import type { HotelOfficialSiteCandidate } from "@/lib/epoch-ai/hotelOfficialSiteSelection";
 import { contactEmail, createProcurementStay, initialProcurementStays, inquiry, searchCrmHotels, nights, type HotelContact, type Stay } from "@/lib/epoch-ai/hotelProcurement";
+import { hotelStayCountry } from "@/lib/epoch-ai/hotelStayCities";
 
-export default function HotelProcurementPilot({tourId,destinations,hotels}:{tourId:string;destinations:string[];hotels:HotelContact[]}) {
-  const [stays,setStays]=useState(()=>initialProcurementStays(tourId,destinations));
+export default function HotelProcurementPilot({tourId,destinations,itinerary,hotels}:{tourId:string;destinations:string[];itinerary:string|null;hotels:HotelContact[]}) {
+  const [stays,setStays]=useState(()=>initialProcurementStays(tourId,destinations,itinerary));
   const [active,setActive]=useState(stays[0]?.id ?? -1);
   const nextStayId = useRef(stays.length);
-  const stay = stays.find(item => item.id === active);
+  const activeStay = stays.find(item => item.id === active);
+  const ferry = activeStay?.ferry;
+  const stay = ferry ? undefined : activeStay;
   const [crmSearch,setCrmSearch]=useState<Record<number,string>>({});
   const [supplierId,setSupplierId]=useState<Record<number,string>>({});
   const [leadByStay,setLeadByStay]=useState<Record<number,string>>({});
@@ -67,7 +70,7 @@ export default function HotelProcurementPilot({tourId,destinations,hotels}:{tour
   const [partialResearchByKey,setPartialResearchByKey]=useState<Record<string,boolean>>({});
   const [evidenceLoading,setEvidenceLoading]=useState<Record<string,boolean>>({});
   const requestsForHotelEvidence = useRef(new Set<string>());
-  const country = (researchCountry[active] ?? countryForCity[stay?.city ?? ""] ?? "").trim();
+  const country = (researchCountry[active] ?? stay?.country ?? countryForCity[stay?.city ?? ""] ?? "").trim();
   const locationReady = validHotelResearchLocation(stay?.city, country);
   const locationKey = (name: string) =>
     JSON.stringify([active, stay?.city, country, name.trim().toLocaleLowerCase()]);
@@ -329,7 +332,7 @@ export default function HotelProcurementPilot({tourId,destinations,hotels}:{tour
 
   function update<K extends keyof Stay>(field: K, value: Stay[K]) {
     if (field === "city") {
-      setResearchCountry(previous => ({...previous, [active]: countryForCity[String(value)] || ""}));
+      setResearchCountry(previous => ({...previous, [active]: countryForCity[String(value)] || hotelStayCountry(String(value)) || ""}));
       clearLocationResearch();
     }
     setStays(current => current.map(item => item.id === active ? {...item, [field]: value} : item));
@@ -358,7 +361,7 @@ export default function HotelProcurementPilot({tourId,destinations,hotels}:{tour
         const repeatedCity = city && stays.some(other =>
           other.id !== item.id && other.city.trim().toLowerCase() === city.toLowerCase()
         );
-        const label = city ? (repeatedCity ? `${city} (stay ${position + 1})` : city) : `Stay ${position + 1}`;
+        const label = item.ferry?.label ?? (city ? (repeatedCity ? `${city} (stay ${position + 1})` : city) : `Stay ${position + 1}`);
         return <button key={item.id} type="button" aria-pressed={item.id === active}
           onClick={() => { setActive(item.id); setCopyStatus(""); }}
           className={`rounded-lg px-3 py-2 text-sm font-medium ${item.id === active ? "bg-[#001F3F] text-white" : "border border-slate-200 bg-white text-slate-700"}`}>
@@ -366,10 +369,14 @@ export default function HotelProcurementPilot({tourId,destinations,hotels}:{tour
         </button>;
       })}
     </div>
+    {ferry ? <section className="space-y-2 rounded-xl border bg-white p-4" aria-label="Overnight ferry">
+      <h2 className="text-lg font-bold text-[#001F3F]">{ferry.label}</h2>
+      <p className="text-sm text-slate-600">Day {ferry.day} · Overnight cabins</p>
+    </section> : null}
     {stay?<section className="rounded-xl border bg-white p-4 space-y-3" aria-label="Hotel stay details">
       <h2 className="text-lg font-bold text-[#001F3F]">Stay details — review before use</h2>
       <div className="grid gap-3 sm:grid-cols-2">
-        <label className="block text-sm font-medium">Destination<input className="mt-1 w-full rounded-lg border p-2" value={stay.city} onChange={e=>update("city",e.target.value)}/></label>
+        <label className="block text-sm font-medium">Hotel city<input className="mt-1 w-full rounded-lg border p-2" value={stay.city} onChange={e=>update("city",e.target.value)}/></label>
         <label className="block text-sm font-medium">Country<input className="mt-1 w-full rounded-lg border p-2" value={researchCountry[active] ?? country} onChange={e=>{
           const value = e.target.value;
           setResearchCountry(previous=>({...previous,[active]:value}));
@@ -749,7 +756,7 @@ export default function HotelProcurementPilot({tourId,destinations,hotels}:{tour
           <p className="text-xs text-slate-600">Unapproved research selections and diligence checks stay in this browser session only. No message is sent. Supplier confirmations require actual offer evidence.</p>
         </div></details>:null}
 
-    </div></div>:<p className="text-sm text-slate-600">No hotel stays found. Add a stay to begin.</p>}
+    </div></div>:!ferry ? <p className="text-sm text-slate-600">No hotel stays found. Add a stay to begin.</p> : null}
     <button type="button" onClick={addStay} className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-medium">+ Add hotel stay</button>
   </div>;
 }
