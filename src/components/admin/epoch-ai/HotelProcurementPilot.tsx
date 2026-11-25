@@ -598,14 +598,6 @@ export default function HotelProcurementPilot({tourId,destinations,itinerary,hot
         <p className="text-xs text-slate-600">Review → verify evidence → explicitly approve CRM registration → prepare inquiry draft. Nothing on this screen approves a booking, price or supplier email.</p>
       </section></details>:null}
         {selectedName ? <details ref={researchDetailsRef} key={`${active}:${selectedName}`} open className="scroll-mt-8 space-y-2 rounded-lg border border-blue-300 bg-white p-3"><summary className="cursor-pointer text-sm font-semibold text-[#001F3F]">{chosen?"View research details":"Verify contact & register"} — {selectedName} {chosen?"(CRM)":"(research lead)"}</summary><div className="mt-3 space-y-3">
-          {chosen ? <p className="text-xs"><strong>Existing CRM record.</strong> Review the saved supplier and its current contact. <Link href={`/admin/suppliers/${chosen.id}`} className="text-blue-700 underline">Open supplier</Link></p> :
-            crmMatchesForSelected.length ? <div className="rounded border p-2 text-xs space-y-1">
-              <p className="font-semibold">Existing CRM records for this property</p>
-              {crmMatchesForSelected.map(hotel => <button key={hotel.id} type="button"
-                className="block rounded border px-2 py-1" onClick={()=>selectCrmHotel(hotel)}>
-                Use CRM record — {hotel.name}{contactEmail(hotel) ? ` · ${contactEmail(hotel)}` : ""}
-              </button>)}
-            </div> : <p className="text-xs">No matching Supplier CRM record. Review the research before approving registration below.</p>}
           <OfficialHotelPageResearch key={evidenceKey} hotelName={selectedName}
             onContactRetrieved={!chosen ? extraction => setOfficialContacts(previous => ({...previous, [evidenceKey]: extraction})) : undefined} />
           {(() => { const profile=publishedProfile; return profile ? <div className="rounded-lg border border-sky-200 bg-sky-50 p-3 text-xs text-slate-800 space-y-2">
@@ -777,7 +769,21 @@ export default function HotelProcurementPilot({tourId,destinations,itinerary,hot
             <p className="text-slate-600">Mark confirmed only after receiving attributable hotel evidence. Ask the hotel to confirm the requested {stay.rooms} rooms for these dates.</p>
             {hotelConfirmationChecklist.filter(item=>!item.includes("Mass room")||stay.massRoom).map(item=><label key={item} className="flex items-start gap-2"><input type="checkbox" checked={Boolean(checkStatus[reviewKey]?.[item])} onChange={e=>setCheckStatus(prev=>({...prev,[reviewKey]:{...(prev[reviewKey]||{}),[item]:e.target.checked}}))}/>{item}</label>)}
           </div>
-          {!chosen && !crmMatchesForSelected.length ? <section className="space-y-3 rounded-lg border border-blue-200 bg-blue-50 p-4 text-sm" aria-label="Review and approve hotel for Supplier CRM">
+          {chosen ? <section className="space-y-2 rounded-lg border border-blue-200 bg-blue-50 p-4 text-sm" aria-label="Supplier CRM status">
+            <h3 className="font-semibold text-[#001F3F]">Already in Supplier CRM</h3>
+            <p>{chosen.name} is registered. Use its saved record for this stay.</p>
+            <div className="flex flex-wrap gap-3">
+              <Link href={`/admin/suppliers/${chosen.id}`} className="text-blue-700 underline">Open supplier record</Link>
+              <a href="#epoch-hotel-inquiry" className="text-blue-700 underline">Review inquiry draft</a>
+            </div>
+          </section> : crmMatchesForSelected.length ? <section className="space-y-2 rounded-lg border border-blue-200 bg-blue-50 p-4 text-sm" aria-label="Supplier CRM matches">
+            <h3 className="font-semibold text-[#001F3F]">Matching hotel in Supplier CRM</h3>
+            <p>Select the existing supplier record for this stay.</p>
+            {crmMatchesForSelected.map(hotel => <button key={hotel.id} type="button"
+              className="block rounded border bg-white px-3 py-2 font-semibold" onClick={()=>selectCrmHotel(hotel)}>
+              Use CRM record — {hotel.name}{contactEmail(hotel) ? ` · ${contactEmail(hotel)}` : ""}
+            </button>)}
+          </section> : <section className="space-y-3 rounded-lg border border-blue-200 bg-blue-50 p-4 text-sm" aria-label="Review and approve hotel for Supplier CRM">
             <h3 className="font-semibold text-[#001F3F]">Review and approve hotel for Supplier CRM</h3>
             <p className="text-xs text-slate-600">Approval creates an inactive research candidate. No email is sent.</p>
             <div className="grid gap-3 sm:grid-cols-2">
@@ -833,7 +839,7 @@ export default function HotelProcurementPilot({tourId,destinations,itinerary,hot
               </>}
             </div>
             {crmSaveState ? <p role="status">{crmSaveState}</p> : null}
-          </section> : null}
+          </section>}
           <p className="text-xs text-slate-600">Unapproved research selections and diligence checks stay in this browser session only. No message is sent. Supplier confirmations require actual offer evidence.</p>
         </div></details>:null}
 
