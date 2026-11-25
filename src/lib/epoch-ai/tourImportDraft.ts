@@ -17,13 +17,20 @@ export const tourImportDraftSchema = z.object({
 
 export type TourImportDraft = z.infer<typeof tourImportDraftSchema>;
 
+export class TourImportValidationError extends Error {}
+
 export function validateTourImportDraft(input: unknown): TourImportDraft {
-  const draft = tourImportDraftSchema.parse(input);
+  const result = tourImportDraftSchema.safeParse(input);
+  if (!result.success) {
+    const fields = [...new Set(result.error.issues.map(issue => String(issue.path[0] ?? "document")))];
+    throw new TourImportValidationError(`The extracted data could not be validated in these fields: ${fields.join(", ")}. Review those details in the original document.`);
+  }
+  const draft = result.data;
   if (draft.sourceDayCount > 0 && draft.sourceDayCount !== draft.duration) {
-    throw new Error("The extracted day count does not match the stated duration. Review the original document before importing.");
+    throw new TourImportValidationError(`The extracted day count (${draft.sourceDayCount}) does not match the stated duration (${draft.duration} days). Review the original document before importing.`);
   }
   if (draft.hotelNights !== null && draft.hotelNights > draft.duration - 1) {
-    throw new Error("Hotel-night count exceeds the number of nights possible within the itinerary.");
+    throw new TourImportValidationError(`Hotel-night count (${draft.hotelNights}) exceeds the number of nights possible within the ${draft.duration}-day itinerary. Check whether overnight flights or ferries were counted as hotel nights.`);
   }
   return draft;
 }

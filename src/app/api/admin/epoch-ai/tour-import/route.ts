@@ -6,7 +6,7 @@ import { isTrustedEpochAiOrigin } from "@/lib/security/epochAiTrustedOrigin";
 import { checkRateLimit } from "@/lib/rate-limit";
 import { readAiAttachment } from "@/lib/epoch-ai/documentText";
 import { isRequestWithinLimit } from "@/lib/security/requestBodyLimit";
-import { validateTourImportDraft } from "@/lib/epoch-ai/tourImportDraft";
+import { TourImportValidationError, validateTourImportDraft } from "@/lib/epoch-ai/tourImportDraft";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
@@ -129,8 +129,9 @@ export async function POST(request: Request) {
     try {
       const draft = validateTourImportDraft(raw);
       return NextResponse.json({ draft, fileName: attachment.fileName }, { headers: { "Cache-Control": "no-store" } });
-    } catch {
-      return NextResponse.json({ error: "AI extraction could not be validated; check document day count and structure." }, { status: 422 });
+    } catch (error) {
+      if (!(error instanceof TourImportValidationError)) throw error;
+      return NextResponse.json({ error: error.message }, { status: 422 });
     }
   } catch (error) {
     if (error instanceof Error && error.name === "AbortError") return NextResponse.json({ error: "Document extraction timed out." }, { status: 504 });

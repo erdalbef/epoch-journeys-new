@@ -27,10 +27,10 @@ describe("AI tour import validation", () => {
     expect(() => validateTourImportDraft({ ...sample, hotelNights: 13 })).toThrow("Hotel-night");
   });
   it("rejects mismatched source day counts", () => {
-    expect(() => validateTourImportDraft({ ...sample, sourceDayCount: 12 })).toThrow("day count");
+    expect(() => validateTourImportDraft({ ...sample, sourceDayCount: 12 })).toThrow("day count (12) does not match the stated duration (13 days)");
   });
   it("rejects missing itinerary text", () => {
-    expect(() => validateTourImportDraft({ ...sample, itinerary: "" })).toThrow();
+    expect(() => validateTourImportDraft({ ...sample, itinerary: "" })).toThrow("these fields: itinerary");
   });
   it("rejects zero or unreasonable duration", () => {
     expect(() => validateTourImportDraft({ ...sample, duration: 0 })).toThrow();
