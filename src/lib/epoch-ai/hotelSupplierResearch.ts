@@ -29,6 +29,31 @@ export type HotelSupplierResearch = {
 };
 
 const categoryRank = {groups: 0, sales: 1, reservations: 2, general: 3};
+const internationalPhone = "\\+\\d[\\d ().-]{6,24}\\d";
+const labeledPhone = new RegExp(
+  `\\b(?:contact us|kontakta oss|telefon|telephone|phone|tel\\.?|t:)\\s*:?\\s*(${internationalPhone})`, "i",
+);
+const phoneBeforeEmail = new RegExp(`(${internationalPhone})[\\s,;|–—.-]*(?:e-?mail\\s*:?\\s*)?$`, "i");
+const phoneAfterEmail = new RegExp(`^[\\s,;|–—.-]*(?:tel\\.?\\s*:?\\s*)?(${internationalPhone})`, "i");
+
+function normalizePhone(value?: string) {
+  const number = value?.replace(/^(\+\d{1,3})\s*\(0\)\s*/, "$1 ");
+  return number && number.replace(/\D/g, "").length <= 15 ? number : undefined;
+}
+
+function publishedContactPhone(description: string, email: string) {
+  for (const excerpt of description.split(" … ")) {
+    const start = excerpt.toLowerCase().indexOf(email.toLowerCase());
+    if (start === -1) continue;
+    const end = start + email.length;
+    if (/[a-z0-9._%+-]/i.test(excerpt[start - 1] ?? "") ||
+        /^(?:[a-z0-9_%+-]|\.[a-z0-9])/i.test(excerpt.slice(end))) continue;
+    const before = excerpt.slice(Math.max(0, start - 72), start).match(phoneBeforeEmail)?.[1];
+    const after = excerpt.slice(end, end + 72).match(phoneAfterEmail)?.[1];
+    const phone = normalizePhone(before ?? after);
+    if (phone) return phone;
+  }
+}
 
 const locationWords = (value: string) => value.normalize("NFD")
   .replace(/[\u0300-\u036f]/g, "")
@@ -50,18 +75,23 @@ export function buildHotelSupplierResearch(
     hotelSourceMatch(hotelName, {...page, description: ""}) &&
     ` ${locationWords(`${page.title} ${page.url} ${page.description}`)} `.includes(` ${cityKey} `));
   const phones = new Map<string, PhoneEvidence>();
+  const sourceByUrl = new Map(sources.map(page => [page.url, page]));
 
   for (const page of sources) {
-    const phone = page.description.match(/\b(?:contact us|kontakta oss|telefon|telephone|phone|tel\.?|t:)\s*:?\s*(\+\d[\d ().-]{6,24}\d)/i)?.[1];
-    if (phone && phone.replace(/\D/g, "").length <= 15) {
+    const phone = normalizePhone(page.description.match(labeledPhone)?.[1]);
+    if (phone) {
       phones.set(page.url, {number: phone, sourceUrl: page.url});
     }
   }
 
-  const sourceUrls = new Set(sources.map(page => page.url));
   const ranked = contacts
-    .filter(contact => sourceUrls.has(contact.sourceUrl))
-    .map(contact => ({...contact, category: categoryForEmail(contact.email), phone: phones.get(contact.sourceUrl)}))
+    .flatMap(contact => {
+      const source = sourceByUrl.get(contact.sourceUrl);
+      if (!source) return [];
+      const number = publishedContactPhone(source.description, contact.email);
+      const phone = number ? {number, sourceUrl: contact.sourceUrl} : phones.get(contact.sourceUrl);
+      return [{...contact, category: categoryForEmail(contact.email), phone}];
+    })
     .sort((a, b) => categoryRank[a.category] - categoryRank[b.category] ||
       Number(Boolean(b.phone)) - Number(Boolean(a.phone)));
 
@@ -90,7 +120,7 @@ export function buildHotelSupplierResearch(
     phone: phones.values().next().value,
     suggestedFacilitiesSource: publishedFacilities.find(item => item.evidence)?.evidence?.sourceUrl ??
       findings.find(item => (item.topic === "facilities" || item.topic === "accessibility") &&
-        sourceUrls.has(item.sourceUrl))?.sourceUrl,
+        sourceByUrl.has(item.sourceUrl))?.sourceUrl,
     facilities: publishedFacilities
   };
 }

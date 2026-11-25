@@ -19,6 +19,24 @@ const liveResearch: HotelSupplierResearch = {
 };
 
 describe("Hotel research form", () => {
+  it("fills the Jönköping reservations phone from an unlabelled official contact line or the published profile", () => {
+    const name = "Elite Stora Hotellet";
+    const source = "https://www.elite.se/en/hotels/hotels-in-jonkoping/elite-stora-hotellet-jonkoping/";
+    const email = "reservations.jonkoping@elite.se";
+    const pages = [{
+      title: "Elite Stora Hotellet, Jönköping",
+      url: source,
+      description: `Tel: +46 77 178 87 89 … Group Reservation +46 (0)36 100 000 ${email}`,
+    }];
+    const research = buildHotelSupplierResearch(name, "Jönköping", pages, selectHotelOfficialSiteCandidates(name, pages),
+      extractStructuredHotelResearch(name, pages).contacts, []);
+    const profile = publishedHotelVerification("Elite Stora Hotellet, Jönköping", "Jönköping", "Sweden");
+    const contact = { email, source, phone: "+46 36 100 000" };
+    expect(hotelResearchForm(research, undefined, undefined, undefined)).toMatchObject(contact);
+    expect(hotelResearchForm(undefined, profile, undefined, undefined)).toMatchObject(contact);
+    expect(publishedHotelVerification(name, "Stockholm", "Sweden")).toBeUndefined();
+  });
+
   it("pre-fills Scandic Södra Kajen from official search evidence or its reviewed profile", () => {
     const name = "Scandic Södra Kajen";
     const source = "https://www.scandichotels.com/en/hotels/scandic-sodra-kajen";

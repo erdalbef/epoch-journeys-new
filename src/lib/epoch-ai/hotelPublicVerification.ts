@@ -100,8 +100,24 @@ const SCANDIC_SODRA_KAJEN_PUBLIC_VERIFICATION: PublicHotelVerification = {
   reviewedOn: "25 Nov 2026",
 };
 
+const ELITE_STORA_HOTELLET_PUBLIC_VERIFICATION: PublicHotelVerification = {
+  email: "reservations.jonkoping@elite.se",
+  contactType: "reservations",
+  phone: "+46 36 100 000",
+  source: "https://www.elite.se/en/hotels/hotels-in-jonkoping/elite-stora-hotellet-jonkoping/",
+  facilitiesSource: "https://www.elite.se/en/conference/jonkoping/stora-hotellet/",
+  publishedFacts: ["Hotel restaurant and conference facilities advertised", "A group reservations contact is published"],
+  openQuestions: ["Group allotment and rates for the requested dates", "Walk-in showers and lift access", "Coach drop-off, porterage and group dinners"],
+  reviewedOn: "26 Nov 2026",
+};
+
 export function publishedHotelVerification(name: string, city?: string, country?: string): PublicHotelVerification | undefined {
-  const key = name.trim().toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+  const fold = (value?: string) => value?.trim().toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "") ?? "";
+  const key = fold(name);
+  if (/^elite stora hotellet(?:,? jonkoping)?$/.test(key) &&
+      fold(city) === "jonkoping" && fold(country) === "sweden") {
+    return ELITE_STORA_HOTELLET_PUBLIC_VERIFICATION;
+  }
   if ((key === "scandic sodra kajen" || key === "scandic sodra kajen, stockholm") &&
       city?.trim().toLowerCase() === "stockholm" && country?.trim().toLowerCase() === "sweden") {
     return SCANDIC_SODRA_KAJEN_PUBLIC_VERIFICATION;
