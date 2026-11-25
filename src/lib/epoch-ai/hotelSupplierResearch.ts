@@ -1,8 +1,8 @@
 import { hotelSourceMatch, type EvidenceFinding } from "./hotelEvidenceResearch";
 import { categoryForEmail } from "./hotelOfficialPageExtraction";
-import type { HotelOfficialSiteCandidate } from "./hotelOfficialSiteSelection";
+import { officialHotelSearchDomain, type HotelOfficialSiteCandidate } from "./hotelOfficialSiteSelection";
 import type { HotelContactCandidate } from "./hotelStructuredResearch";
-import type { WebHotelResult } from "./hotelWebResearch";
+import { safePublicUrl, type WebHotelResult } from "./hotelWebResearch";
 
 const facilities = [
   { id: "showers", label: "Walk-in showers", pattern: /\b(?:walk.in|roll.in) showers?\b/i },
@@ -61,6 +61,31 @@ const locationWords = (value: string) => value.normalize("NFD")
   .replace(/[^\p{L}\p{N}]+/gu, " ")
   .trim();
 
+function hotelDirectoryContacts(hotelName: string, cityKey: string, pages: WebHotelResult[], propertyMatched: boolean) {
+  const domain = officialHotelSearchDomain(hotelName);
+  if (!domain) return [];
+  const name = hotelName.trim().replace(/[.*+?^${}()|[\]\\]/g, "\\$&").replace(/\s+/g, "\\s+");
+  const row = new RegExp(
+    `(?:^|[^\\p{L}\\p{N}])${name}\\s*[:|–—-]?\\s*(?:tel(?:ephone)?\\.?|tlf\\.?|phone)?\\s*:?\\s*` +
+    `(${internationalPhone})\\s*[/|,;–—-]?\\s*(?:e-?mail\\s*:?\\s*)?([a-z0-9._%+-]+@[a-z0-9.-]+\\.[a-z]{2,})`, "iu",
+  );
+  return pages.flatMap(source => {
+    const sourceUrl = safePublicUrl(source.url);
+    if (!sourceUrl) return [];
+    const host = new URL(sourceUrl).hostname;
+    if (host !== domain && !host.endsWith("." + domain)) return [];
+    if (!propertyMatched && !` ${locationWords(source.title + " " + source.description)} `.includes(` ${cityKey} `)) return [];
+    const match = source.description.split(" … ").map(excerpt => row.exec(excerpt)).find(Boolean);
+    const number = normalizePhone(match?.[1]);
+    if (!match || !number) return [];
+    const email = match[2].toLowerCase();
+    return [{
+      email, category: categoryForEmail(email), sourceUrl, sourceTitle: source.title,
+      phone: {number, sourceUrl}, status: "requires-admin-verification" as const,
+    }];
+  });
+}
+
 export function buildHotelSupplierResearch(
   hotelName: string,
   city: string,
@@ -91,7 +116,7 @@ export function buildHotelSupplierResearch(
       const number = publishedContactPhone(source.description, contact.email);
       const phone = number ? {number, sourceUrl: contact.sourceUrl} : phones.get(contact.sourceUrl);
       return [{...contact, category: categoryForEmail(contact.email), phone}];
-    })
+    }).concat(hotelDirectoryContacts(hotelName, cityKey, pages, sources.length > 0))
     .sort((a, b) => categoryRank[a.category] - categoryRank[b.category] ||
       Number(Boolean(b.phone)) - Number(Boolean(a.phone)));
 

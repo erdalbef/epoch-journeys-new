@@ -47,14 +47,18 @@ const chainDomains: {
   {
     domain: "scandichotels.com",
     brands: /\bscandic\b/i
+  },
+  {
+    domain: "thonhotels.com",
+    brands: /^thon(?:\s+partner)?\s+hotell?\b/i
   }
 ];
 
 // A reviewed domain can support source identification without granting page retrieval.
-const reviewedPropertyDomains: Readonly<Record<string, string>> = {
-  "rogner hotel tirana": "hotel-europapark.com",
-  "ac hotel bella sky copenhagen": "bellagroup.dk"
-};
+const reviewedPropertyDomains = new Map([
+  ["rogner hotel tirana", "hotel-europapark.com"],
+  ["ac hotel bella sky copenhagen", "bellagroup.dk"],
+]);
 
 const generic = new Set([
   "hotel", "hotels", "resort", "resorts",
@@ -77,6 +81,11 @@ function matchesDomain(host: string, domain: string): boolean {
   return host === domain || host.endsWith("." + domain);
 }
 
+export function officialHotelSearchDomain(name: string): string | undefined {
+  return reviewedPropertyDomains.get(normalized(name)) ??
+    chainDomains.find(chain => chain.brands.test(name))?.domain;
+}
+
 function distinguishingWords(name: string): string[] {
   return normalized(name).split(/\s+/)
     .filter(word => word.length >= 4 && !generic.has(word));
@@ -94,7 +103,7 @@ export function selectHotelOfficialSiteCandidates(
 
   if (!words.length) return [];
 
-  const reviewedDomain = reviewedPropertyDomains[normalized(hotelName)];
+  const reviewedDomain = reviewedPropertyDomains.get(normalized(hotelName));
   const candidates: HotelOfficialSiteCandidate[] = [];
   const seen = new Set<string>();
 

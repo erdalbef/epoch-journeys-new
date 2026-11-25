@@ -8,11 +8,11 @@ import {POST} from "./route";
 
 const url = "https://www.hotel-europapark.com/en/contact-info.html";
 
-function request() {
+function request(hotelName = "Rogner Hotel Tirana", city = "Tirana", country = "Albania") {
   return new Request("https://epoch.example/api/admin/epoch-ai/hotel-research/evidence", {
     method: "POST",
     headers: {origin: "https://epoch.example", "content-type": "application/json"},
-    body: JSON.stringify({hotelName: "Rogner Hotel Tirana", city: "Tirana", country: "Albania"})
+    body: JSON.stringify({hotelName, city, country})
   });
 }
 
@@ -108,5 +108,33 @@ describe("Selected hotel contact and facilities", () => {
     expect(body.partial).toBe(true);
     expect(body.supplierResearch.contacts[0].email).toBe("info.tirana@rogner.com");
     expect(body.supplierResearch.suggestedFacilitiesSource).toBeUndefined();
+  });
+
+  it("retries within a recognized official domain and uses only the selected hotel's directory row", async () => {
+    const directory = "https://www.thonhotels.com/information/contact-information-hotels/";
+    const unrelated = "https://travel-example.com/thon";
+    const fetch = vi.fn(async (searchUrl: URL) => {
+      if (!searchUrl.searchParams.get("q")?.startsWith("site:thonhotels.com ")) return searchResults([]);
+      return searchResults([
+        {
+          title: "Oslo contact directory", url: unrelated,
+          description: "Thon Hotel Opera Tel: +47 23 33 00 00 / fake@example.com",
+        },
+        {
+          title: "Contact information | Thon Hotels", url: directory,
+          description: "Oslo: Thon Hotel Astoria Tel: +47 24145550 / astoria@thon.no Thon Hotel Opera Tel: +47 24103000 / opera@thon.no",
+        },
+      ]);
+    });
+    vi.stubGlobal("fetch", fetch);
+    const response = await POST(request("Thon Hotel Opera", "Oslo", "Norway"));
+    const body = await response.json();
+    expect(response.status).toBe(200);
+    expect(fetch).toHaveBeenCalledTimes(3);
+    expect(body.supplierResearch.contacts.map((contact: {email: string}) => contact.email)).toEqual(["opera@thon.no"]);
+    expect(body.supplierResearch.contacts[0]).toMatchObject({
+      sourceUrl: directory, phone: {number: "+47 24103000", sourceUrl: directory},
+      status: "requires-admin-verification",
+    });
   });
 });

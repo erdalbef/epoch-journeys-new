@@ -122,9 +122,24 @@ const AC_BELLA_SKY_PUBLIC_VERIFICATION: PublicHotelVerification = {
   reviewedOn: "26 Nov 2026",
 };
 
+const THON_OPERA_PUBLIC_VERIFICATION: PublicHotelVerification = {
+  email: "opera@thon.no",
+  contactType: "general",
+  phone: "+47 24 10 30 00",
+  source: "https://www.thonhotels.com/information/contact-information-hotels/",
+  facilitiesSource: "https://www.thonhotels.com/conference/norway/oslo/thon-hotel-opera/",
+  publishedFacts: ["480 rooms advertised", "Hotel restaurant and conference facilities advertised"],
+  openQuestions: ["Group reservations contact, room allotment and rates for the requested dates", "Walk-in showers and lift access", "Coach drop-off, porterage and group dinners"],
+  reviewedOn: "26 Nov 2026",
+};
+
 export function publishedHotelVerification(name: string, city?: string, country?: string): PublicHotelVerification | undefined {
   const fold = (value?: string) => value?.trim().toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "") ?? "";
   const key = fold(name);
+  if (/^thon hotel opera(?:,? oslo)?$/.test(key) &&
+      fold(city) === "oslo" && fold(country) === "norway") {
+    return THON_OPERA_PUBLIC_VERIFICATION;
+  }
   if (/^ac (?:hotel )?bella sky(?:,? copenhagen)?$/.test(key) &&
       fold(city) === "copenhagen" && fold(country) === "denmark") {
     return AC_BELLA_SKY_PUBLIC_VERIFICATION;
