@@ -6,7 +6,7 @@ import {
   validHotelResearchLocation
 } from "@/lib/epoch-ai/hotelWebResearch";
 import type { WebHotelResult } from "@/lib/epoch-ai/hotelWebResearch";
-import { buildHotelBrief } from "@/lib/epoch-ai/hotelExecutiveBrief";
+import { buildHotelBrief, meetsHotelGuestRatingMinimum } from "@/lib/epoch-ai/hotelExecutiveBrief";
 import { compileHotelEvidence } from "@/lib/epoch-ai/hotelEvidenceResearch";
 import { extractStructuredHotelResearch, type HotelCapacityCandidate } from "@/lib/epoch-ai/hotelStructuredResearch";
 import { selectHotelOfficialSiteCandidates } from "@/lib/epoch-ai/hotelOfficialSiteSelection";
@@ -255,6 +255,8 @@ export async function POST(request: Request) {
 
       if (successfulSearches === before) continue;
 
+      briefs[name] = buildHotelBrief(name, pages);
+
       try {
         reports[name] = compileHotelEvidence(
           name,
@@ -264,7 +266,6 @@ export async function POST(request: Request) {
           new Date().toISOString()
         );
 
-        briefs[name] = buildHotelBrief(name, pages);
         const capacityPages = [...pages, ...discoveryPages];
         const officialUrls = new Set(
           selectHotelOfficialSiteCandidates(name, capacityPages).map(page => page.sourceUrl)
@@ -280,10 +281,33 @@ export async function POST(request: Request) {
       }
     }
 
+    const unratedNames = names.filter(name => !briefs[name]?.rating);
+    const reviewPages: WebHotelResult[] = [];
+    for (let offset = 0; offset < unratedNames.length && !stopProviderRequests && !ctrl.signal.aborted; offset += 4) {
+      const propertyNames = unratedNames.slice(offset, offset + 4)
+        .map(name => `"${name.replace(/"/g, "").slice(0, 65)}"`).join(" OR ");
+      reviewPages.push(...await search(
+        `(${propertyNames}) ${city} ${country} guest rating reviews (site:booking.com OR site:tripadvisor.com OR site:expedia.com)`,
+        `hotel-reviews-${offset / 4 + 1}`
+      ));
+    }
+
+    for (const name of unratedNames) {
+      const review = buildHotelBrief(name, reviewPages);
+      if (review.rating) {
+        briefs[name] = {
+          ...(briefs[name] ?? review),
+          rating: review.rating,
+          ratingOutOfFive: review.ratingOutOfFive,
+          ratingSourceUrl: review.ratingSourceUrl
+        };
+      }
+    }
+
     return respond({
       city,
       country,
-      discovered: discovery,
+      discovered: discovery.filter(item => meetsHotelGuestRatingMinimum(briefs[item.name])),
       reports,
       briefs,
       capacities,

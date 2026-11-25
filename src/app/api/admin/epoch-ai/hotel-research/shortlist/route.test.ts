@@ -192,6 +192,50 @@ describe("Hotel shortlist research reliability", () => {
     });
   });
 
+  it("excludes published guest scores below four out of five and includes unknowns", async () => {
+    const hotels = [
+      { name: "Hotel Alpha Tirana", score: "3.9/5", slug: "alpha" },
+      { name: "Hotel Bravo Tirana", score: "7.9/10", slug: "bravo" },
+      { name: "Hotel Charlie Tirana", score: "8/10", slug: "charlie" },
+      { name: "Hotel Delta Tirana", score: "4/5", slug: "delta" },
+      { name: "Hotel Echo Tirana", score: "", slug: "echo" },
+    ];
+    vi.stubGlobal("fetch", vi.fn(async (url: URL) => {
+      const isReviewSearch = url.searchParams.get("q")?.includes("guest rating reviews");
+      const results = isReviewSearch
+        ? [
+          ...hotels.filter(hotel => hotel.score).map(hotel => ({
+            title: hotel.name,
+            url: `https://www.booking.com/hotel/al/${hotel.slug}.html`,
+            description: `Guest rating ${hotel.score} from 123 reviews.`
+          })),
+          {
+            title: "Hotel Echo Tirana",
+            url: "https://www.booking.com/city/al/tirana.html",
+            description: "Guest rating 2/5 from 123 reviews."
+          }
+        ]
+        : hotels.map(hotel => ({
+          title: hotel.name,
+          url: `https://${hotel.slug}.example/`,
+          description: "Explore the hotel and its meeting rooms."
+        }));
+      return json({ web: { results } });
+    }));
+
+    const response = await POST(request());
+    const body = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(body.discovered.map((hotel: { name: string }) => hotel.name))
+      .toEqual(["Hotel Charlie Tirana", "Hotel Delta Tirana", "Hotel Echo Tirana"]);
+    expect(body.briefs["Hotel Bravo Tirana"]).toMatchObject({
+      ratingOutOfFive: 3.95,
+      ratingSourceUrl: "https://www.booking.com/hotel/al/bravo.html"
+    });
+    expect(body.briefs["Hotel Echo Tirana"].ratingOutOfFive).toBeUndefined();
+  });
+
   it("preserves discovery if individual hotel research fails", async () => {
     const fetchMock = vi.fn()
       .mockImplementationOnce(async () => successfulSearch())

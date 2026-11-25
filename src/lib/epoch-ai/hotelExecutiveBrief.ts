@@ -1,6 +1,10 @@
-import type {HotelEvidenceReport} from "./hotelEvidenceResearch";
-import type {WebHotelResult} from "./hotelWebResearch";
-export type HotelBrief={reasons:string[];rating?:string;ratingSourceUrl?:string;bbRate?:string;sourceUrls:string[]};
+import {hotelSourceMatch, type HotelEvidenceReport} from "./hotelEvidenceResearch";
+import {safePublicUrl, type WebHotelResult} from "./hotelWebResearch";
+export type HotelBrief={reasons:string[];rating?:string;ratingOutOfFive?:number;ratingSourceUrl?:string;bbRate?:string;sourceUrls:string[]};
+export function meetsHotelGuestRatingMinimum(brief?: HotelBrief): boolean {
+  return brief?.ratingOutOfFive === undefined || brief.ratingOutOfFive >= 4;
+}
+
 /** Canonicalize common hotel naming variants for deduplication. */
 export function stableHotelIdentity(value:string):string{
   return value.toLowerCase().normalize("NFKD").replace(/[\u0300-\u036f]/g,"")
@@ -35,37 +39,47 @@ export function publishedLobbyCapacity(text:string):string|undefined{
 }
 /** No rating, review count or price is invented from generic search snippets. */
 export function buildHotelBrief(name:string,pages:WebHotelResult[]):HotelBrief{
- const found:string[]=[];const sourceUrls:string[]=[];let rating:string|undefined;let ratingSourceUrl:string|undefined;
+ const found:string[]=[];const sourceUrls:string[]=[];let rating:string|undefined;let ratingOutOfFive:number|undefined;let ratingSourceUrl:string|undefined;
  const tokens=stableHotelIdentity(name);
  for(const page of pages){
-   if(!page.url.startsWith("https://"))continue;
+   const sourceUrl = safePublicUrl(page.url);
+   if (!sourceUrl) continue;
    const hay=stableHotelIdentity(page.title+" "+page.description);
-   if(!hay.includes(tokens)&&!tokens.includes(stableHotelIdentity(page.title).slice(0,14)))continue;
-   sourceUrls.push(page.url);
+   const matchesBrief = hay.includes(tokens) || tokens.includes(stableHotelIdentity(page.title).slice(0,14));
    const description=page.description;
    // Scores are accepted only from recognizable review platforms, with an explicit scale.
    // Never guess a score from general text or assume /5 when the scale is absent.
-   if(!rating){
-     let host="";try{host=new URL(page.url).hostname.toLowerCase();}catch{/* ignore */}
-     const platform=host==="booking.com"||host.endsWith(".booking.com")?"Booking.com":
-       host==="tripadvisor.com"||host.endsWith(".tripadvisor.com")?"Tripadvisor":
-       host==="expedia.com"||host.endsWith(".expedia.com")?"Expedia":undefined;
-     if(platform){
-       const explicit=description.match(/(?:rated?\s*[:\-]?\s*)?(\d(?:[.,]\d)?)\s*(?:\/|out of)\s*(5|10)\b/i);
-       if(explicit){
-         const score=Number(explicit[1].replace(",",".")),scale=Number(explicit[2]);
-         if(score>=1&&score<=scale){
-           const count=description.match(/(?:\b([\d,]+)\s+(?:verified\s+)?(?:guest\s+)?reviews?\b|\b([\d,]+)\s+ratings?\b)/i);
-           rating=`${platform}: ${score}/${scale}${count?` (${(count[1]||count[2]).replace(/,/g,",")} reviews)`:""}`;
-           ratingSourceUrl=page.url;
+   if (!rating) {
+     const url = new URL(sourceUrl);
+     const host = url.hostname.toLowerCase();
+     const onPlatform = (domain: string) => host === domain || host.endsWith("." + domain);
+     const platform = onPlatform("booking.com") && /^\/hotel\//i.test(url.pathname) ? "Booking.com"
+       : onPlatform("tripadvisor.com") && /^\/Hotel_Review-/i.test(url.pathname) ? "Tripadvisor"
+       : onPlatform("expedia.com") && /Hotel-Information/i.test(url.pathname) ? "Expedia"
+       : undefined;
+     if (platform && hotelSourceMatch(name, { ...page, description: "" })) {
+       const reviewText = description.split(" … ").filter(excerpt =>
+         /\b(?:reviews?|ratings?|rated|scored|guest score)\b/i.test(excerpt)
+       ).join(" … ");
+       const explicit = reviewText.match(/(?:^|[^\d.,/])((?:10|\d)(?:[.,]\d{1,2})?)\s*(?:\/|out of)\s*(5|10)\b(?![.,/]\d)/i);
+       if (explicit) {
+         const score = Number(explicit[1].replace(",", "."));
+         const scale = Number(explicit[2]);
+         if (score >= 1 && score <= scale) {
+           const count = description.match(/\b([\d,]+)\s+(?:verified\s+)?(?:guest\s+)?(?:reviews?|ratings?)\b/i);
+           rating = `${platform}: ${score}/${scale}${count ? ` (${count[1]} reviews)` : ""}`;
+           ratingOutOfFive = score / (scale / 5);
+           ratingSourceUrl = page.url;
          }
        }
      }
    }
+   if (!matchesBrief) continue;
+   sourceUrls.push(page.url);
    for(const special of [guestRoomSize(description),publishedLobbyCapacity(description)])if(special&&!found.includes(special))found.push(special);
    for(const [regex,reason] of facts)if(regex.test(description)&&!found.includes(reason))found.push(reason);
  }
- return {reasons:found.slice(0,5),rating,ratingSourceUrl,sourceUrls:[...new Set(sourceUrls)].slice(0,8)};
+ return {reasons:found.slice(0,5),rating,ratingOutOfFive,ratingSourceUrl,sourceUrls:[...new Set(sourceUrls)].slice(0,8)};
 }
 export function summarizeHotelEvidence(name:string,report?:HotelEvidenceReport):string[]{
  if(!report)return ["Published suitability details not yet established"];

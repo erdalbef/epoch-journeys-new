@@ -7,7 +7,7 @@ import OfficialHotelPageResearch from "./OfficialHotelPageResearch";
 import { hotelResearchSearchUrl, compareLeadToCrm } from "@/lib/epoch-ai/hotelDiscoveryLeads";
 import type { HotelEvidenceReport } from "@/lib/epoch-ai/hotelEvidenceResearch";
 import { hotelEvidenceSummary, rankHotelResearchCandidates } from "@/lib/epoch-ai/hotelProcurementRecommendations";
-import { summarizeHotelEvidence, stableHotelIdentity, type HotelBrief } from "@/lib/epoch-ai/hotelExecutiveBrief";
+import { meetsHotelGuestRatingMinimum, summarizeHotelEvidence, stableHotelIdentity, type HotelBrief } from "@/lib/epoch-ai/hotelExecutiveBrief";
 import { buildSuitabilityReview } from "@/lib/epoch-ai/hotelSuitabilityReview";
 import { leadEvidence, screenGroupCapacity } from "@/lib/epoch-ai/hotelLeadScreening";
 import { assessHotelCoverage, reviewHotelCandidates } from "@/lib/epoch-ai/hotelDiscoveryReview";
@@ -168,7 +168,13 @@ export default function HotelProcurementPilot({tourId,tourTitle,destinations,hot
   const stay=stays[active];
   const referenceStay=isBalkan?balkanStays[active]:undefined;
   const referenceMismatch=Boolean(referenceStay&&stay&&(stay.city!==referenceStay.city||stay.checkIn!==referenceStay.checkIn||stay.checkOut!==referenceStay.checkOut||stay.rooms!==referenceStay.rooms));
-  const matches=useMemo(()=>stay?searchCrmHotels(hotels,stay.city,crmSearch[active]||""):[],[stay,hotels,crmSearch,active]);
+  const hotelBriefs = new Map(
+    Object.entries(briefsByStay[active] || {}).map(([name, brief]) => [stableHotelIdentity(name), brief])
+  );
+  const hotelBrief = (name: string) => hotelBriefs.get(stableHotelIdentity(name));
+  const eligibleByGuestRating = (name: string) => meetsHotelGuestRatingMinimum(hotelBrief(name));
+  const matches=useMemo(()=>stay?searchCrmHotels(hotels,stay.city,crmSearch[active]||""):[],[stay,hotels,crmSearch,active])
+    .filter(hotel => eligibleByGuestRating(hotel.name));
   const chosen=hotels.find(h=>h.id===supplierId[active]);
   const selectedLeadName=manualLead[active]?.trim() || leadByStay[active] || "";
   const selectedName=chosen?.name||selectedLeadName;
@@ -224,9 +230,9 @@ export default function HotelProcurementPilot({tourId,tourTitle,destinations,hot
   const suitability=selectedName?buildSuitabilityReview({roomsRequested:stay?.rooms||0,massRoomRequired:Boolean(stay?.massRoom),totalRooms:leadEvidence(selectedName)?.totalRooms,marked:checkStatus[reviewKey]||{},hasPublicFacilitiesSource:Boolean(facilitiesSource[active]?.trim()||publishedHotelVerification(selectedName)?.facilitiesSource)}):null;
   const leadEmail=verifiedEmail[active]?.trim()||"";
   const coverage=stay?assessHotelCoverage(stay,hotels):null;
-  const candidateReviews=stay?reviewHotelCandidates(stay,hotels):[];
+  const candidateReviews=stay?reviewHotelCandidates(stay,hotels).filter(item => eligibleByGuestRating(item.name)):[];
   const recommendationOptions=[...candidateReviews.map(item=>({name:item.name,inCrm:item.inCrm,discovery:false})),
-    ...(foundByStay[active]||[]).filter(item=>item.identityStatus!=="identity-review"&&!candidateReviews.some(c=>compareLeadToCrm(item.name,[c.name]))&&!hotels.some(h=>compareLeadToCrm(item.name,[h.name]))).map(item=>({name:item.name,inCrm:false,discovery:true}))];
+    ...(foundByStay[active]||[]).filter(item=>eligibleByGuestRating(item.name)&&item.identityStatus!=="identity-review"&&!candidateReviews.some(c=>compareLeadToCrm(item.name,[c.name]))&&!hotels.some(h=>compareLeadToCrm(item.name,[h.name]))).map(item=>({name:item.name,inCrm:false,discovery:true}))];
   const researchShortlist=rankHotelResearchCandidates(recommendationOptions.map(item=>({
     ...item,report:evidenceReports[`${active}:${item.name.trim().toLocaleLowerCase()}:${stay?.city||""}`],
     reviewedContact: item.name===selectedName&&Boolean(contactChecked[active]&&contactSource[active]?.trim()&&verifiedEmail[active]?.trim()),
@@ -234,6 +240,7 @@ export default function HotelProcurementPilot({tourId,tourTitle,destinations,hot
   })),5);
   const newWebResults=(liveByStay[active]||[]);
   const discovered=(foundByStay[active]||[]).filter((item,index,all)=>
+    eligibleByGuestRating(item.name) &&
     !candidateReviews.some(candidate=>compareLeadToCrm(item.name,[candidate.name])) &&
     !hotels.some(hotel=>compareLeadToCrm(item.name,[hotel.name])) &&
     all.findIndex(other=>stableHotelIdentity(other.name)===stableHotelIdentity(item.name))===index);
@@ -247,7 +254,7 @@ export default function HotelProcurementPilot({tourId,tourTitle,destinations,hot
     setSavedSupplierByStay(p=>{const next={...p};delete next[active];return next;});
     setCrmSaveState("");setCopyStatus("");
   }
-  function update<K extends keyof Stay>(field:K,value:Stay[K]) {setStays(current=>current.map((s,i)=>i===active?{...s,[field]:value}:s));if(field==="city"){setCapacityByStay(p=>({...p,[active]:{}}));setFoundByStay(p=>({...p,[active]:[]}));setLiveByStay(p=>({...p,[active]:[]}));setResearchMode(p=>({...p,[active]:""}));}setCopyStatus("")}
+  function update<K extends keyof Stay>(field:K,value:Stay[K]) {setStays(current=>current.map((s,i)=>i===active?{...s,[field]:value}:s));if(field==="city"){setBriefsByStay(p=>({...p,[active]:{}}));setCapacityByStay(p=>({...p,[active]:{}}));setFoundByStay(p=>({...p,[active]:[]}));setLiveByStay(p=>({...p,[active]:[]}));setResearchMode(p=>({...p,[active]:""}));}setCopyStatus("")}
   return <div className="space-y-5">
     <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-950"><strong>Preparation only.</strong> This page does not send email, book hotels or change supplier rates. Saving a draft records it in Hotel Inquiry History only. {isBalkan?"The seven Balkan stays below are editable reference dates, not confirmed hotel bookings.":"Add and verify the hotel dates before preparing inquiries."} Include the official Epoch Journeys signature in any approved message.</div>
     <div className="flex flex-wrap gap-2">{stays.map((s,i)=><button key={i} type="button" onClick={()=>{setActive(i);setCopyStatus("")}} className={`rounded-lg px-3 py-2 text-sm font-medium ${active===i?"bg-[#001F3F] text-white":"border border-slate-200 bg-white text-slate-700"}`}>{s.city||`Stay ${i+1}`}</button>)}</div>
@@ -310,7 +317,7 @@ export default function HotelProcurementPilot({tourId,tourTitle,destinations,hot
             // A brand variant must never occupy two recommendation positions.
             for(const option of recommendationOptions){const key=stableHotelIdentity(option.name);const prior=grouped.get(key);if(!prior||(option.name.length>prior.name.length&&option.discovery===prior.discovery)||(!prior.discovery&&option.discovery&&!prior.inCrm))grouped.set(key,option);}
             const choices=[...grouped.values()].map(option=>{
-              const brief=Object.entries(briefsByStay[active]||{}).find(([name])=>stableHotelIdentity(name)===stableHotelIdentity(option.name))?.[1];
+              const brief = hotelBrief(option.name);
               const report=evidenceReports[`${active}:${option.name.trim().toLocaleLowerCase()}:${stay.city}`];
               const officialDomains=["marriott.com","hilton.com","all.accor.com","accor.com","ihg.com","hyatt.com","radissonhotels.com","hotel-sirius.com","swissdiamondhotel.com"];
               const sources=[...(brief?.sourceUrls||[]),...(foundByStay[active]||[]).filter(result=>stableHotelIdentity(result.name)===stableHotelIdentity(option.name)).map(result=>result.sourceUrl)];
@@ -333,7 +340,7 @@ export default function HotelProcurementPilot({tourId,tourTitle,destinations,hot
               (b.capacity?.totalRooms||0)-(a.capacity?.totalRooms||0)||Number((b.bullets?.length||0)>0)-Number((a.bullets?.length||0)>0)||a.name.localeCompare(b.name));
             const selected=selectedForQuotes[active]||[];
             return <div className="space-y-3">
-              <p className="text-xs text-slate-600">{choices.length} distinct hotels listed · Properties with 70 or more published rooms appear first.</p>
+              <p className="text-xs text-slate-600">{choices.length} distinct hotels listed · Properties with 70 or more published rooms appear first. Hotels with published guest ratings below 4/5 are excluded.</p>
               {choices.slice(0,20).map((option,index)=><div key={stableHotelIdentity(option.name)} className="rounded-lg border border-slate-200 bg-white p-3">
                 <div className="flex items-start justify-between gap-3">
                   <div className="min-w-0 flex-1"><p className="font-semibold text-[#001F3F]">{index+1}. {option.name} <span className="ml-1 text-[10px] font-medium text-slate-500">{option.inCrm?"In CRM":option.discovery?"New discovery":"Known lead"}</span></p>
