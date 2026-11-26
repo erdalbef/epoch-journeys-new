@@ -19,7 +19,7 @@ vi.mock("next-auth", () => ({getServerSession: async () => ({user: {id: "admin",
 vi.mock("@/lib/db", () => ({db: {supplier: db.supplier, $transaction: (run: (tx: typeof db.tx) => unknown) => run(db.tx)}}));
 
 import { GET } from "@/app/api/admin/quotes/supplier-hotels/route";
-import { OFFER_RATE_SOURCE, prepareHotelOfferRateDraft } from "@/lib/epoch-ai/hotelOfferRateDraft";
+import { hotelOfferPriceQualifier, OFFER_RATE_SOURCE, prepareHotelOfferRateDraft } from "@/lib/epoch-ai/hotelOfferRateDraft";
 import { POST } from "./route";
 
 const terms = {
@@ -28,7 +28,7 @@ const terms = {
   single: "Single room EUR 199 net to agency.",
   triple: "Additional bed supplement EUR 50 per night.",
   halfBoard: "Half-board supplement from EUR 30.",
-  beverages: "Beverage package EUR 8.",
+  beverages: "Beverage package (2 glasses of wine, beer, or soft drinks) EUR 8.",
   cityTax: "Approximately EUR 2 per person, per night.",
   porterage: "EUR 6 for in/out.",
   payment: "", cancellation: "", validity: "10 days", other: "Rates include breakfast and VAT.",
@@ -37,6 +37,7 @@ const terms = {
 const approval = {
   ...prepareHotelOfferRateDraft(terms),
   unit: "PER_ROOM_PER_NIGHT", taxIncluded: true, supplierConfirmation: "Confirmed by Hotel Sales in email May 1",
+  confirmIndicativeCharges: true,
   beverages: {amount: "8", unit: "PER_MEAL"}, cityTax: {amount: "2", unit: "PER_PERSON_PER_NIGHT"},
   porterage: {amount: "", unit: ""}, activateSupplier: false, confirmation: "APPROVE_HOTEL_OFFER_RATES",
 };
@@ -64,11 +65,33 @@ describe("Supplier rates from reviewed hotel offers", () => {
     db.tx.supplierService.findMany.mockResolvedValue([{id: "accommodation"}]);
   });
 
-  it("prefills exact prices and leaves starting prices, approximate taxes, and unspecified units pending", () => {
+  it("prefills supplier amounts and applies the standard unit even when the drinks list includes alternatives", () => {
     expect(prepareHotelOfferRateDraft(terms)).toMatchObject({
       currency: "EUR", doubleTwin: "239", single: "199", triple: "", extraBed: "50", unit: "",
-      halfBoard: {amount: ""}, cityTax: {amount: ""}, beverages: {amount: "8", unit: ""},
+      halfBoard: {amount: "30", unit: "PER_PERSON_PER_NIGHT"},
+      cityTax: {amount: "2", unit: "PER_PERSON_PER_NIGHT"},
+      beverages: {amount: "8", unit: "PER_PERSON_PER_NIGHT"},
+      porterage: {amount: "6", unit: "PER_PERSON_PER_NIGHT"},
     });
+    expect(hotelOfferPriceQualifier(terms.halfBoard)).toBe("Starting price");
+    expect(hotelOfferPriceQualifier(terms.cityTax)).toBe("Approximate");
+  });
+
+  it("keeps explicit units, leaves unsupported units for review, and skips ambiguous alternative amounts", () => {
+    expect(prepareHotelOfferRateDraft({...terms,
+      halfBoard: "EUR 30 per person, per dinner",
+      beverages: "EUR 8 or 10 per dinner",
+      porterage: "EUR 6 per bag per night",
+    })).toMatchObject({
+      halfBoard: {amount: "30", unit: "PER_MEAL"},
+      beverages: {amount: "", unit: ""},
+      porterage: {amount: "6", unit: ""},
+    });
+  });
+
+  it("requires confirmation before saving a starting price or approximate tax", async () => {
+    expect((await save({...approval, confirmIndicativeCharges: false})).status).toBe(400);
+    expect(db.tx.supplierRate.createMany).not.toHaveBeenCalled();
   });
 
   it("requires explicit approval and a confirmation reference, and rejects incomplete charges", async () => {

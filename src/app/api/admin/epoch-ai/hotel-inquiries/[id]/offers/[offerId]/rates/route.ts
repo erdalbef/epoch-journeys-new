@@ -3,7 +3,7 @@ import { NextResponse } from "next/server";
 import type { Prisma, RoomType } from "@prisma/client";
 import { authOptions } from "@/lib/authOptions";
 import { db } from "@/lib/db";
-import { HOTEL_OFFER_RATE_IMPORT_EVENT, hotelOfferRateApproval, hotelOfferStay, OFFER_RATE_SOURCE } from "@/lib/epoch-ai/hotelOfferRateDraft";
+import { HOTEL_OFFER_RATE_IMPORT_EVENT, hotelOfferRateApproval, hotelOfferPriceQualifier, hotelOfferStay, OFFER_RATE_SOURCE, offerChargeFields } from "@/lib/epoch-ai/hotelOfferRateDraft";
 import { hotelOfferTerms, manualHotelOfferScope, manualHotelOfferStay } from "@/lib/epoch-ai/receivedHotelOffer";
 import { requireAdminApiAccess } from "@/lib/security/requireAdminApiAccess";
 import { isRequestWithinLimit } from "@/lib/security/requestBodyLimit";
@@ -55,6 +55,11 @@ export async function POST(request: Request, {params}: {params: Promise<{id: str
       }
       if (terms.data.cityTax && !rates.cityTaxIncluded && !rates.cityTax.amount) {
         return reply({error: "Confirm the city tax amount and billing unit, or confirm it is included or there is no charge."}, 400);
+      }
+      const indicatedCharges = (Object.keys(offerChargeFields) as (keyof typeof offerChargeFields)[])
+        .filter(key => rates[key].amount && hotelOfferPriceQualifier(terms.data[key]));
+      if (indicatedCharges.length && !rates.confirmIndicativeCharges) {
+        return reply({error: "Confirm the indicative charges with the hotel before saving them to Quote Form."}, 400);
       }
       const newer = await tx.supplierCommercialEvidence.findFirst({
         where: {...scope, version: {gt: offer.version}}, select: {id: true},
