@@ -98,7 +98,8 @@ function distinguishingWords(name: string): string[] {
  */
 export function selectHotelOfficialSiteCandidates(
   hotelName: string,
-  pages: WebHotelResult[]
+  pages: WebHotelResult[],
+  limit = 5
 ): HotelOfficialSiteCandidate[] {
   const words = distinguishingWords(hotelName);
 
@@ -108,7 +109,7 @@ export function selectHotelOfficialSiteCandidates(
   const candidates: HotelOfficialSiteCandidate[] = [];
   const seen = new Set<string>();
 
-  for (const page of pages.slice(0, 24)) {
+  for (const page of pages) {
     const sourceUrl = safePublicUrl(page.url);
     if (!sourceUrl) continue;
 
@@ -165,7 +166,8 @@ export function selectHotelOfficialSiteCandidates(
       status: "identity-review-required",
       retrievalAuthorized: false
     });
+    if (candidates.length >= limit) break;
   }
 
-  return candidates.slice(0, 5);
+  return candidates;
 }

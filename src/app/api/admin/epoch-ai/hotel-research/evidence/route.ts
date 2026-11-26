@@ -51,14 +51,16 @@ export async function POST(request:Request){
     const searchedAt = new Date().toISOString();
     function compile() {
       const pages = [...pagesByUrl.values()];
-      const officialSiteCandidates = selectHotelOfficialSiteCandidates(hotelName, pages);
-      const candidateUrls = new Set(officialSiteCandidates.map(candidate => candidate.sourceUrl));
-      const prioritizedPages = [...pages].sort((a, b) => Number(candidateUrls.has(b.url)) - Number(candidateUrls.has(a.url)));
+      const officialPages = selectHotelOfficialSiteCandidates(hotelName, pages, pages.length);
+      const candidateUrls = new Set(officialPages.map(candidate => candidate.sourceUrl));
+      const priority = (page: WebHotelResult) => candidateUrls.has(page.url)
+        ? (/\b[^\s@]+@[\w.-]+\.[a-z]{2,}\b/i.test(page.description) ? 2 : 1) : 0;
+      const prioritizedPages = [...pages].sort((a, b) => priority(b) - priority(a));
       const structuredResearch = extractStructuredHotelResearch(hotelName, prioritizedPages);
       const report = compileHotelEvidence(hotelName, city, country, pages, searchedAt);
-      const supplierResearch = buildHotelSupplierResearch(hotelName, city, pages, officialSiteCandidates, structuredResearch.contacts, report.findings);
-      const crmEntries = buildHotelCrmEntries(city, pages, officialSiteCandidates, supplierResearch, structuredResearch.capacities);
-      return {report, structuredResearch, officialSiteCandidates, supplierResearch, crmEntries};
+      const supplierResearch = buildHotelSupplierResearch(hotelName, city, pages, officialPages, structuredResearch.contacts, report.findings);
+      const crmEntries = buildHotelCrmEntries(city, pages, officialPages, supplierResearch, structuredResearch.capacities);
+      return {report, structuredResearch, officialSiteCandidates: officialPages.slice(0, 5), supplierResearch, crmEntries};
     }
     mergePages(lists.flat());
     let research = compile();
@@ -78,6 +80,10 @@ export async function POST(request:Request){
       // The domain already narrows the search. Keep city and country out of
       // this query so localized contact pages can surface.
       await tryFollowup(`site:${domain} "${hotelName.replace(/"/g, "")}" contact reservations`);
+    }
+    const officialContact = research.supplierResearch.contacts[0];
+    if (domain && (!officialContact || officialContact.corroboratingSourceUrl)) {
+      await tryFollowup(`site:${domain} "${hotelName.replace(/"/g, "")}" meetings events sales email`);
     }
     const best = research.supplierResearch.contacts[0];
     if (!best || (best.corroboratingSourceUrl && !best.phone)) {

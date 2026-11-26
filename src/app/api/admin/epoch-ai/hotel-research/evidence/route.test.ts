@@ -177,6 +177,33 @@ describe("Selected hotel contact and facilities", () => {
     }]);
   });
 
+  it("finds a property sales mailbox on a meetings page beyond the five displayed website links", async () => {
+    const name = "Hyatt Regency Kotor Bay Resort";
+    const website = "https://www.hyatt.com/hyatt-regency/en-US/tivrk-hyatt-regency-kotor-bay-resort";
+    const source = `${website}/meetings/unique-venues`;
+    const phone = "+382 32 311 200";
+    const email = "sales.kotorregency@hyatt.com";
+    const fetch = vi.fn(async (searchUrl: URL) => {
+      const query = searchUrl.searchParams.get("q") ?? "";
+      if (query.startsWith("site:hyatt.com ") && query.endsWith("meetings events sales email")) {
+        return searchResults([{title: `Unique meeting venues | ${name}`, url: source,
+          description: `Contact us: ${email} | ${phone}`}]);
+      }
+      return searchResults(["", "/rooms", "/dining", "/offers", "/gallery", "/spa"].map(path =>
+        ({title: name, url: website + path, description: `Kotor Bay, Montenegro. Tel: ${phone}`})));
+    });
+    vi.stubGlobal("fetch", fetch);
+
+    const response = await POST(request(name, "Kotor Bay", "Montenegro"));
+    expect(response.status).toBe(200);
+    const result = await response.json();
+    expect(result.officialSiteCandidates).toHaveLength(5);
+    expect(result.supplierResearch.contacts).toMatchObject([{
+      email, sourceUrl: source, phone: {number: phone, sourceUrl: source},
+    }]);
+    expect(result.crmEntries).toEqual(expect.arrayContaining([{kind: "email", value: email, sourceUrl: source}]));
+  });
+
   it("proposes sourced CRM fields, contact and research notes from a property page", async () => {
     const source = "https://www.hotel-sirius.example/contact";
     vi.stubGlobal("fetch", vi.fn(async () => searchResults([{

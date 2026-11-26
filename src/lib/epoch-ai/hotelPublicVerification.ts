@@ -144,6 +144,17 @@ const HILTON_REYKJAVIK_PUBLIC_VERIFICATION: PublicHotelVerification = {
   reviewedOn: "26 Nov 2026",
 };
 
+const HYATT_KOTOR_BAY_PUBLIC_VERIFICATION: PublicHotelVerification = {
+  email: "sales.kotorregency@hyatt.com",
+  contactType: "sales",
+  phone: "+382 32 311 200",
+  source: "https://www.hyatt.com/hyatt-regency/en-US/tivrk-hyatt-regency-kotor-bay-resort/meetings/unique-venues",
+  facilitiesSource: "https://www.hyatt.com/hyatt-regency/en-US/tivrk-hyatt-regency-kotor-bay-resort",
+  publishedFacts: ["Hyatt lists a property sales email, telephone and event venues"],
+  openQuestions: ["Group allotment and rates for the requested dates", "Walk-in showers and lift access", "Coach drop-off, porterage and group dinners"],
+  reviewedOn: "26 Nov 2026",
+};
+
 const fold = (value?: string) => value?.trim().toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "") ?? "";
 
 export function hotelPublicResearchName(name: string, city?: string, country?: string) {
@@ -153,6 +164,10 @@ export function hotelPublicResearchName(name: string, city?: string, country?: s
 
 export function publishedHotelVerification(name: string, city?: string, country?: string): PublicHotelVerification | undefined {
   const key = fold(name);
+  if (/^hyatt regency kotor bay(?: resort)?$/.test(key) &&
+      /^(?:kotor(?: bay)?|donji stoliv)$/.test(fold(city)) && fold(country) === "montenegro") {
+    return HYATT_KOTOR_BAY_PUBLIC_VERIFICATION;
+  }
   if (hotelPublicResearchName(name, city, country) === "Hilton Reykjavik" &&
       fold(city) === "reykjavik" && fold(country) === "iceland") {
     return HILTON_REYKJAVIK_PUBLIC_VERIFICATION;

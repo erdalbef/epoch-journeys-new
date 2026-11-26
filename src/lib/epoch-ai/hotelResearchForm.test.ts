@@ -127,6 +127,17 @@ describe("Hotel research form", () => {
       listing, secondListing]).contacts[0].email).toBe("sales@hotelsirius.com");
   });
 
+  it("prefills Hyatt's official meetings contact if live search only returns the hotel website", () => {
+    const name = "Hyatt Regency Kotor Bay Resort";
+    const profile = publishedHotelVerification(name, "Kotor Bay", "Montenegro");
+    expect(hotelResearchForm(undefined, profile, undefined, undefined)).toMatchObject({
+      email: "sales.kotorregency@hyatt.com",
+      phone: "+382 32 311 200",
+      source: "https://www.hyatt.com/hyatt-regency/en-US/tivrk-hyatt-regency-kotor-bay-resort/meetings/unique-venues",
+    });
+    expect(publishedHotelVerification(name, "Kotor Bay", "Croatia")).toBeUndefined();
+  });
+
   it("uses the published Rogner contact and facilities when search returns no evidence", () => {
     const profile = publishedHotelVerification("Rogner Hotel Tirana", "Tirana", "Albania");
     expect(hotelResearchForm({contacts: [], facilities: []}, profile, undefined, undefined)).toMatchObject({
