@@ -24,6 +24,7 @@ vi.mock("@/lib/db", () => ({
 }));
 
 import { POST } from "./route";
+import { maxHotelOfferFileSize } from "@/lib/epoch-ai/receivedHotelOffer";
 
 function record(offer: { body?: string; file?: File; confirmation?: string; manualStayKey?: string } = {}) {
   const form = new FormData();
@@ -69,11 +70,20 @@ describe("Record hotel offers", () => {
       originalFileName: "offer.pdf", storedFileName: "offer.pdf", mimeType: "application/pdf",
       fileSize: 10, localAbsolutePath: null,
     });
-    expect((await record({ file: new File(["%PDF-1.7"], "offer.pdf") })).status).toBe(201);
+    const file = new File(["%PDF-1.7", new Uint8Array(maxHotelOfferFileSize - 8)], "offer.pdf");
+    expect(file.size).toBe(4 * 1024 * 1024);
+    expect((await record({file, body: "Please see the attached offer."})).status).toBe(201);
     const documentId = mocks.createDocument.mock.calls[0][0].data.id;
     expect(mocks.createOffer).toHaveBeenCalledWith({ data: expect.objectContaining({
       sourceType: "QUOTATION_ATTACHMENT", sourceDocumentId: documentId, reviewStatus: "REVIEW_PENDING",
     }) });
+  });
+
+  it("returns a readable size error for an attachment over the limit", async () => {
+    const response = await record({file: new File([new Uint8Array(maxHotelOfferFileSize + 1)], "offer.pdf")});
+    expect(response.status).toBe(413);
+    expect((await response.json()).error).toContain("up to 4 MB");
+    expect(mocks.saveFile).not.toHaveBeenCalled();
   });
 
   it("requires confirmation and skips duplicate sources", async () => {

@@ -37,8 +37,11 @@ export const hotelOfferSource = z.object({
   body: z.string().max(32000),
 });
 
-export const maxHotelOfferFileSize = 3 * 1024 * 1024;
-export const hotelOfferUploadTooLarge = "The upload is too large. Attach a PDF or DOCX up to 3 MB, or paste the offer text.";
+export const maxHotelOfferFileSizeMB = 4;
+export const maxHotelOfferFileSize = maxHotelOfferFileSizeMB * 1024 * 1024;
+// Reserve room for multipart headers and the optional offer text under the platform request limit.
+export const maxHotelOfferRequestSize = maxHotelOfferFileSize + 256 * 1024;
+export const hotelOfferUploadTooLarge = `The upload is too large. Attach a PDF or DOCX up to ${maxHotelOfferFileSizeMB} MB, or paste the offer text.`;
 
 export function validateHotelOfferAttachment(file: File | null) {
   if (!file) return;

@@ -3,7 +3,7 @@ import { getServerSession } from "next-auth";
 import { NextResponse } from "next/server";
 import { authOptions } from "@/lib/authOptions";
 import { db } from "@/lib/db";
-import { hotelOfferSource, manualHotelOfferScope, maxHotelOfferFileSize } from "@/lib/epoch-ai/receivedHotelOffer";
+import { hotelOfferSource, hotelOfferUploadTooLarge, manualHotelOfferScope, maxHotelOfferFileSize, maxHotelOfferRequestSize } from "@/lib/epoch-ai/receivedHotelOffer";
 import { HOTEL_OFFER_RATE_IMPORT_EVENT } from "@/lib/epoch-ai/hotelOfferRateDraft";
 import { requireAdminApiAccess } from "@/lib/security/requireAdminApiAccess";
 import { isRequestWithinLimit } from "@/lib/security/requestBodyLimit";
@@ -46,8 +46,8 @@ export async function POST(request: Request, { params }: Params) {
   if (request.headers.get("origin") !== new URL(request.url).origin) {
     return reply({ error: "Same-origin request required." }, 403);
   }
-  if (!(await isRequestWithinLimit(request, maxHotelOfferFileSize + 256 * 1024))) {
-    return reply({ error: "Attachments must be 3 MB or smaller." }, 413);
+  if (!(await isRequestWithinLimit(request, maxHotelOfferRequestSize))) {
+    return reply({ error: hotelOfferUploadTooLarge }, 413);
   }
   const actorId = (await getServerSession(authOptions))?.user?.id;
   if (!actorId) return reply({ error: "Admin identity required." }, 403);
@@ -67,8 +67,9 @@ export async function POST(request: Request, { params }: Params) {
   if (!file && !body.trim()) return reply({ error: "Paste the email offer or upload its PDF or Word attachment." }, 400);
 
   const ext = file?.name.split(".").at(-1)?.toLowerCase();
-  if (file && ((ext !== "pdf" && ext !== "docx") || file.size > maxHotelOfferFileSize)) {
-    return reply({ error: "Upload a PDF or DOCX attachment up to 3 MB." }, 400);
+  if (file && file.size > maxHotelOfferFileSize) return reply({error: hotelOfferUploadTooLarge}, 413);
+  if (file && ext !== "pdf" && ext !== "docx") {
+    return reply({ error: "Choose a PDF or DOCX file." }, 400);
   }
   const bytes = file ? Buffer.from(await file.arrayBuffer()) : null;
   if (bytes && (ext === "pdf" ? bytes.subarray(0, 5).toString() !== "%PDF-" :

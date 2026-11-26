@@ -5,7 +5,7 @@ import HotelOfferRateDraft, { SupplierRatesLink } from "./HotelOfferRateDraft";
 import OfferDeadlines from "./OfferDeadlines";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { hotelOfferFields, hotelOfferPolicyFields, readHotelOfferResponse, validateHotelOfferAttachment,
+import { hotelOfferFields, hotelOfferPolicyFields, maxHotelOfferFileSizeMB, readHotelOfferResponse, validateHotelOfferAttachment,
   type HotelOfferTerms, type ManualHotelOffer } from "@/lib/epoch-ai/receivedHotelOffer";
 
 type Offer = {
@@ -115,7 +115,7 @@ export default function HotelReceivedOffers(props: ({ inquiryId: string } | { ma
           <label>Email message ID (optional)<input className={inputClass} name="messageId" maxLength={500} /></label>
         </div>
         <label className="block">Paste offer from email<textarea className={inputClass} name="body" rows={5} maxLength={32000} /></label>
-        <label className="block">Or attach the original PDF or Word file (up to 3 MB)
+        <label className="block">Or attach the original PDF or Word file (up to {maxHotelOfferFileSizeMB} MB)
           <input className={inputClass} type="file" name="attachment" accept=".pdf,.docx" />
         </label>
         <button type="submit" className={buttonClass}>Record received offer</button>
