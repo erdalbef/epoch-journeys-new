@@ -1,8 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { useId, useState } from "react";
 import {
-  hotelOfferRateApproval, nightlyUnits, offerRoomFields, offerChargeFields, hotelOfferChargeUnit, hotelOfferPriceQualifier,
+  hotelOfferRateApproval, hotelOfferRateApprovalIssues, nightlyUnits, offerRoomFields, offerChargeFields, hotelOfferChargeUnit, hotelOfferPriceQualifier,
   prepareHotelOfferRateDraft, supplementaryUnits,
 } from "@/lib/epoch-ai/hotelOfferRateDraft";
 import type { HotelOfferTerms } from "@/lib/epoch-ai/receivedHotelOffer";
@@ -16,6 +16,7 @@ const input = "mt-1 block w-full rounded border bg-white p-2";
 export default function HotelOfferRateDraft({terms, url, checkIn, checkOut}: {
   terms: HotelOfferTerms; url: string; checkIn: string; checkOut: string;
 }) {
+  const approvalRequirementsId = useId();
   const [draft, setDraft] = useState(() => prepareHotelOfferRateDraft(terms));
   const [supplierConfirmation, setSupplierConfirmation] = useState("");
   const [confirmed, setConfirmed] = useState(false);
@@ -32,6 +33,12 @@ export default function HotelOfferRateDraft({terms, url, checkIn, checkOut}: {
     ...draft, taxIncluded: draft.taxIncluded === "yes", supplierConfirmation, activateSupplier, confirmIndicativeCharges,
     confirmation: "APPROVE_HOTEL_OFFER_RATES",
   });
+  const approvalIssues = [
+    ...(approval.success ? [] : hotelOfferRateApprovalIssues(approval.error.issues)),
+    ...(cityTaxNeedsReview ? ["Confirm the city tax or indicate it is included or not charged."] : []),
+    ...(chargesNeedConfirmation ? ["Confirm the indicative charges with the hotel."] : []),
+    ...(!confirmed ? ["Check the box confirming that you reviewed the supplier’s written confirmation."] : []),
+  ];
 
   async function approve() {
     if (!approval.success || !confirmed || cityTaxNeedsReview || chargesNeedConfirmation) return;
@@ -59,7 +66,7 @@ export default function HotelOfferRateDraft({terms, url, checkIn, checkOut}: {
       <div className="grid gap-2 sm:grid-cols-4">
         <label>Currency<input className={input} value={draft.currency} maxLength={3}
           onChange={event => setDraft({...draft, currency: event.target.value.toUpperCase()})}/></label>
-        <label>Room rate unit<select className={input} value={draft.unit}
+        <label>Room rate unit (required)<select className={input} value={draft.unit} required
           onChange={event => setDraft({...draft, unit: event.target.value})}>
           <option value="">Select a unit</option>{nightlyUnits.map(unit => <option key={unit} value={unit}>{units[unit]}</option>)}
         </select></label>
@@ -130,7 +137,15 @@ export default function HotelOfferRateDraft({terms, url, checkIn, checkOut}: {
       <label className="flex items-start gap-2"><input type="checkbox" className="mt-1" checked={activateSupplier}
         onChange={event => setActivateSupplier(event.target.checked)}/>Activate this hotel if it is inactive</label>
       {error ? <p role="alert">{error}</p> : null}
-      <button type="submit" disabled={!confirmed || !approval.success || cityTaxNeedsReview || chargesNeedConfirmation}
+      <div aria-live="polite" id={approvalRequirementsId}>
+        {approvalIssues.length ? <div className="rounded border border-amber-200 bg-amber-50 p-2 text-sm text-amber-950">
+          <p className="font-semibold">Complete before approving</p>
+          <ul className="list-disc pl-5">
+            {approvalIssues.map(issue => <li key={issue}>{issue}</li>)}
+          </ul>
+        </div> : null}
+      </div>
+      <button type="submit" disabled={Boolean(approvalIssues.length)} aria-describedby={approvalRequirementsId}
         className="rounded border border-blue-500 bg-white px-3 py-2 font-semibold disabled:opacity-50">
         {busy ? "Saving…" : "Approve and save to Supplier CRM"}
       </button>

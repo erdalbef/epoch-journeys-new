@@ -19,7 +19,7 @@ vi.mock("next-auth", () => ({getServerSession: async () => ({user: {id: "admin",
 vi.mock("@/lib/db", () => ({db: {supplier: db.supplier, $transaction: (run: (tx: typeof db.tx) => unknown) => run(db.tx)}}));
 
 import { GET } from "@/app/api/admin/quotes/supplier-hotels/route";
-import { hotelOfferPriceQualifier, OFFER_RATE_SOURCE, prepareHotelOfferRateDraft } from "@/lib/epoch-ai/hotelOfferRateDraft";
+import { hotelOfferPriceQualifier, hotelOfferRateApproval, hotelOfferRateApprovalIssues, OFFER_RATE_SOURCE, prepareHotelOfferRateDraft } from "@/lib/epoch-ai/hotelOfferRateDraft";
 import { POST } from "./route";
 
 const terms = {
@@ -98,6 +98,15 @@ describe("Supplier rates from reviewed hotel offers", () => {
     expect((await save({...approval, supplierConfirmation: ""})).status).toBe(400);
     expect((await save({...approval, beverages: {amount: "8", unit: ""}})).status).toBe(400);
     expect(db.tx.supplierRate.createMany).not.toHaveBeenCalled();
+  });
+
+  it("identifies the room rate unit as the remaining approval blocker", () => {
+    const result = hotelOfferRateApproval.safeParse({...approval, unit: "", supplierConfirmation: "EMAIL"});
+    expect(result.success).toBe(false);
+    expect(hotelOfferRateApprovalIssues(result.error?.issues ?? [])).toEqual([
+      "Select the room rate unit for the Double/Twin and Single prices.",
+    ]);
+    expect(hotelOfferRateApproval.safeParse({...approval, supplierConfirmation: "EMAIL"}).success).toBe(true);
   });
 
   it("imports once and makes the source-linked room rates available only for the confirmed check-in and checkout", async () => {

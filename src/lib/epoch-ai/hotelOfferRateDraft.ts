@@ -34,7 +34,26 @@ export const hotelOfferRateApproval = z.object({
   cityTaxIncluded: z.boolean(),
   cityTax: charge.refine(({unit}) => !unit || unit === "PER_ROOM_PER_NIGHT" || unit === "PER_PERSON_PER_NIGHT"),
   porterage: charge,
-}).strict().refine(data => !data.cityTaxIncluded || !data.cityTax.amount);
+}).strict().refine(data => !data.cityTaxIncluded || !data.cityTax.amount, {path: ["cityTax"]});
+
+export function hotelOfferRateApprovalIssues(issues: ReadonlyArray<{ path: readonly PropertyKey[] }>) {
+  const messages: Record<string, string> = {
+    unit: "Select the room rate unit for the Double/Twin and Single prices.",
+    currency: "Enter a three-letter currency code, such as EUR.",
+    mealBasis: "Select bed and breakfast or half board.",
+    taxIncluded: "Confirm the room prices include VAT.",
+    doubleTwin: "Enter a valid Double/Twin price.",
+    single: "Enter a valid Single price.",
+    triple: "Enter a valid Triple price or leave it blank.",
+    extraBed: "Enter a valid extra-bed price or leave it blank.",
+    supplierConfirmation: "Enter a supplier confirmation reference of 5 to 500 characters.",
+    cityTax: "Enter the city tax amount and nightly unit, or mark the tax as included or not charged.",
+    halfBoard: "Enter both the half-board amount and billing unit, or clear both.",
+    beverages: "Enter both the drinks amount and billing unit, or clear both.",
+    porterage: "Enter both the porterage amount and billing unit, or clear both.",
+  };
+  return [...new Set(issues.map(({path}) => messages[String(path[0])] ?? "Check the rate approval details."))];
+}
 
 export function hotelOfferStay(city: string, checkIn: string, checkOut: string) {
   const stay = manualHotelOfferStay.safeParse([city, checkIn, checkOut]);
