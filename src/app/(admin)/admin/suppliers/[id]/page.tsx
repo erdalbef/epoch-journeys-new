@@ -1,4 +1,5 @@
 import Link from "next/link";
+import type { Prisma } from "@prisma/client";
 import { notFound } from "next/navigation";
 import {
   Church,
@@ -14,11 +15,16 @@ import DeleteSupplierButton from "@/components/admin/suppliers/DeleteSupplierBut
 import HotelReceivedOffers from "@/components/admin/epoch-ai/HotelReceivedOffers";
 import HotelCrmResearch from "@/components/admin/suppliers/HotelCrmResearch";
 import OfferDeadlines from "@/components/admin/epoch-ai/OfferDeadlines";
+import OfferReminderButton from "@/components/admin/epoch-ai/OfferReminderButton";
+import { deadlineReminderToday, HOTEL_REMINDER_EVENT } from "@/lib/epoch-ai/hotelDeadlineReminders";
+import { hotelOfferDeadlines } from "@/lib/epoch-ai/hotelOfferDeadlines";
 import { hotelOfferFields, hotelOfferPolicyFields, hotelOfferTerms, manualHotelOfferStay } from "@/lib/epoch-ai/receivedHotelOffer";
 
 const offerPolicySelect = {
   id: true, version: true, sourceDate: true, reviewedTerms: true, reviewStatus: true, acceptanceStatus: true,
-} as const;
+  events: {where: {eventType: HOTEL_REMINDER_EVENT}, orderBy: [{createdAt: "desc"}, {id: "desc"}],
+    take: 1, select: {newStatus: true}},
+} satisfies Prisma.SupplierCommercialEvidenceSelect;
 
 type Props = {
   params: Promise<{
@@ -225,6 +231,7 @@ export default async function SupplierDetailPage({
     return terms.success && hotelOfferPolicyFields.some(field => terms.data[field]) ? [{...stay, offer, terms: terms.data}] : [];
   }).sort((a, b) => a.checkIn.localeCompare(b.checkIn));
   const policiesHref = `/admin/suppliers/${encodeURIComponent(supplier.id)}?tab=policies#supplier-workspace`;
+  const today = deadlineReminderToday();
   const policies = <div className="space-y-4 text-sm">
     {(supplier.paymentTerms || supplier.cancellationTerms) && <section className="space-y-2">
       <h3 className="font-semibold">Supplier policies</h3>
@@ -239,6 +246,10 @@ export default async function SupplierDetailPage({
         <TextBlock key={field} title={hotelOfferFields[field]} value={terms[field]}/>)}
       <OfferDeadlines offer={{reviewedTerms: terms, sourceDate: offer.sourceDate?.toISOString() ?? "",
         stay: {checkIn, checkOut}, acceptanceStatus: offer.acceptanceStatus}}/>
+      {(offer.events[0]?.newStatus === "ENABLED" ||
+        hotelOfferDeadlines(terms, offer.sourceDate?.toISOString().slice(0, 10) ?? "", checkIn)
+          .some(deadline => deadline.date >= today && (deadline.kind !== "expiry" || offer.acceptanceStatus !== "RECORDED_ACCEPTED")))
+        && <OfferReminderButton offerId={offer.id} enabled={offer.events[0]?.newStatus === "ENABLED"}/>}
       <a href={`#${sourceAnchor}`} className="font-semibold text-blue-800 underline">Go to received offer</a>
     </section>)}
     {!supplier.paymentTerms && !supplier.cancellationTerms && !policyOffers.length ?

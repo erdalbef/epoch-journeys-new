@@ -3,6 +3,7 @@ import { timingSafeEqual } from "node:crypto";
 import { db } from "@/lib/db";
 import { deliverNotificationEmail } from "@/lib/email/notificationDelivery";
 import { markExpiredNotificationLeases } from "@/lib/email/notificationMaintenance";
+import { publishHotelDeadlineReminders } from "@/lib/epoch-ai/hotelDeadlineReminders";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -57,6 +58,10 @@ export async function GET(request: Request) {
   }
 
   try {
+    const hotelDeadlineAlerts = await publishHotelDeadlineReminders().catch(error => {
+      console.error("Hotel deadline reminders could not be processed", error);
+      return null;
+    });
     const expired = await markExpiredNotificationLeases();
 
     const origin = approvedDeliveryOrigin();
@@ -73,6 +78,7 @@ export async function GET(request: Request) {
         success: true,
         sendingEnabled: false,
         expiredMarkedUncertain: expired,
+        hotelDeadlineAlerts,
         processed: 0,
         message: "Email delivery is disabled.",
       }, {
@@ -120,6 +126,7 @@ export async function GET(request: Request) {
       success: true,
       sendingEnabled: true,
       expiredMarkedUncertain: expired,
+      hotelDeadlineAlerts,
       processed: pending.length,
       ...results,
     }, {
