@@ -5,7 +5,8 @@ import HotelOfferRateDraft, { SupplierRatesLink } from "./HotelOfferRateDraft";
 import OfferDeadlines from "./OfferDeadlines";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { hotelOfferFields, hotelOfferPolicyFields, type HotelOfferTerms, type ManualHotelOffer } from "@/lib/epoch-ai/receivedHotelOffer";
+import { hotelOfferFields, hotelOfferPolicyFields, readHotelOfferResponse, validateHotelOfferAttachment,
+  type HotelOfferTerms, type ManualHotelOffer } from "@/lib/epoch-ai/receivedHotelOffer";
 
 type Offer = {
   id: string;
@@ -40,8 +41,8 @@ export default function HotelReceivedOffers(props: ({ inquiryId: string } | { ma
 
   async function load() {
     const response = await fetch(url + query, { cache: "no-store" });
-    if (!response.ok) throw new Error("Could not load received offers.");
-    const result = await response.json() as { offers: Offer[] };
+    const result = await readHotelOfferResponse<{offers?: Offer[]}>(response, "Could not load received offers.");
+    if (!Array.isArray(result.offers)) throw new Error("Could not load received offers.");
     setOffers(result.offers);
   }
 
@@ -54,11 +55,15 @@ export default function HotelReceivedOffers(props: ({ inquiryId: string } | { ma
   }
 
   async function record(form: HTMLFormElement) {
+    const attachment = form.querySelector<HTMLInputElement>('input[name="attachment"]')?.files?.[0] ?? null;
+    validateHotelOfferAttachment(attachment);
     const data = new FormData(form);
     data.set("confirmation", "RECORD_RECEIVED_OFFER");
     const response = await fetch(url + query, { method: "POST", body: data });
-    const result = await response.json() as { error?: string; alreadyRecorded?: boolean };
-    if (!response.ok) throw new Error(result.error || "Could not record the offer.");
+    const result = await readHotelOfferResponse<{recorded?: boolean; alreadyRecorded?: boolean}>(
+      response, "Could not record the offer. Check received offers before retrying.",
+    );
+    if (!result.recorded && !result.alreadyRecorded) throw new Error("Could not confirm the save. Check received offers before retrying.");
     form.reset();
     setStatus(result.alreadyRecorded ? "This offer is already in the history." : "Offer recorded for review.");
     await load();
@@ -71,8 +76,10 @@ export default function HotelReceivedOffers(props: ({ inquiryId: string } | { ma
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(action === "review" ? { action, confirmation: "VERIFY_OFFER_TERMS", terms } : { action }),
     });
-    const result = await response.json() as { error?: string; terms?: HotelOfferTerms };
-    if (!response.ok) throw new Error(result.error || "Could not complete the offer action.");
+    const result = await readHotelOfferResponse<{terms?: HotelOfferTerms; reviewed?: boolean}>(
+      response, "Could not complete the offer action.",
+    );
+    if (action === "review" && !result.reviewed) throw new Error("Could not confirm the review was saved.");
     if (action === "analyze" && result.terms) {
       setEditing(id);
       setTerms(result.terms);

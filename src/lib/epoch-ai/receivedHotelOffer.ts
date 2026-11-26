@@ -38,6 +38,23 @@ export const hotelOfferSource = z.object({
 });
 
 export const maxHotelOfferFileSize = 3 * 1024 * 1024;
+export const hotelOfferUploadTooLarge = "The upload is too large. Attach a PDF or DOCX up to 3 MB, or paste the offer text.";
+
+export function validateHotelOfferAttachment(file: File | null) {
+  if (!file) return;
+  if (file.size > maxHotelOfferFileSize) throw new Error(hotelOfferUploadTooLarge);
+  if (!/\.(pdf|docx)$/i.test(file.name)) throw new Error("Choose a PDF or DOCX file.");
+  if (!file.size) throw new Error("The selected attachment is empty. Choose the original PDF or DOCX.");
+}
+
+export async function readHotelOfferResponse<T>(response: Response, fallback: string): Promise<T> {
+  if (response.status === 413) throw new Error(hotelOfferUploadTooLarge);
+  const body = await response.json().catch(() => null);
+  if (!response.ok || !body || typeof body !== "object" || Array.isArray(body)) {
+    throw new Error(!response.ok && typeof body?.error === "string" ? body.error : fallback);
+  }
+  return body as T;
+}
 
 export const manualHotelOfferStay = z.tuple([z.string().trim().min(1).max(100), dateOnly, dateOnly])
   .refine(([, checkIn, checkOut]) => checkIn < checkOut);
