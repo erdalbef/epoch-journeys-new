@@ -127,7 +127,7 @@ export default function HotelInquiryWorkspace({tourId,hotel,stay}:{tourId:string
   {!actionable?<p className="font-semibold text-slate-600">Historical / superseded in this view ΓÇö preserved read-only. No records deleted.</p>:null}
   <details className="rounded border bg-white p-2"><summary className="cursor-pointer font-semibold">Inspect exact saved message (read-only)</summary><pre className="mt-2 whitespace-pre-wrap break-words font-mono text-xs">{entry.body}</pre></details>
   {actionable&&entry.status==="APPROVED"?<HotelBounceReplacementPanel key={entry.id} inquiryId={entry.id} hotelName={hotel.name} disabled={busy}/>:null}
-  {entry.status==="APPROVED" ? <HotelReceivedOffers inquiryId={entry.id} /> : null}
+  {entry.status==="APPROVED" ? <HotelReceivedOffers inquiryId={entry.id} suggestedSender={entry.recipient} suggestedSubject={entry.subject} /> : null}
   {actionable&&entry.status==="DRAFT"?<button type="button" disabled={busy} onClick={()=>void approveDraft(entry)} className="rounded border border-slate-400 bg-white px-3 py-1 font-semibold disabled:opacity-40">APPROVE</button>:null}
   {actionable && entry.status === "APPROVED" ? (
    <div className="space-y-1 rounded border border-blue-300 bg-blue-50 p-2">

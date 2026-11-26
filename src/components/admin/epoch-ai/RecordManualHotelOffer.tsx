@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { manualHotelOfferStay } from "@/lib/epoch-ai/receivedHotelOffer";
-import { searchCrmHotels, type HotelContact, type Stay } from "@/lib/epoch-ai/hotelProcurement";
+import { contactEmail, hotelInquirySubject, searchCrmHotels, type HotelContact, type Stay } from "@/lib/epoch-ai/hotelProcurement";
 import HotelReceivedOffers from "./HotelReceivedOffers";
 
 export default function RecordManualHotelOffer({ tourId, stay, hotels }: {
@@ -16,6 +16,7 @@ export default function RecordManualHotelOffer({ tourId, stay, hotels }: {
   const other = hotels.filter(hotel => !localIds.has(hotel.id));
   const dates = manualHotelOfferStay.safeParse([stay.city, stay.checkIn, stay.checkOut]);
   const stayKey = dates.success ? JSON.stringify(dates.data) : "";
+  const selectedHotel = hotels.find(hotel => hotel.id === supplierId);
 
   return <section className="space-y-3 rounded-xl border border-blue-300 bg-white p-5">
     <h2 className="text-lg font-bold text-[#001F3F]">Record hotel offer</h2>
@@ -35,7 +36,8 @@ export default function RecordManualHotelOffer({ tourId, stay, hotels }: {
           </optgroup>}
         </select>
       </label>
-      {supplierId ? <HotelReceivedOffers key={`${supplierId}:${stayKey}`} manual={{ tourId, supplierId, stayKey }} expanded />
+      {selectedHotel ? <HotelReceivedOffers key={`${supplierId}:${stayKey}`} manual={{ tourId, supplierId, stayKey }} expanded
+        suggestedSender={contactEmail(selectedHotel)} suggestedSubject={hotelInquirySubject(stay)} />
         : <p className="text-sm text-slate-600">If the hotel is missing, register it under Discover additional hotels below.</p>}
     </> : <p className="text-sm text-slate-700">Enter the hotel city and check-in and check-out dates in Stay details below.</p>}
   </section>;

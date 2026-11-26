@@ -27,7 +27,11 @@ type Offer = {
 const fields = Object.entries(hotelOfferFields) as [keyof HotelOfferTerms, string][];
 const emptyTerms = () => Object.fromEntries(fields.map(([key]) => [key, ""])) as HotelOfferTerms;
 
-export default function HotelReceivedOffers(props: ({ inquiryId: string } | { manual: ManualHotelOffer; expanded?: boolean }) & { policiesHref?: string }) {
+export default function HotelReceivedOffers(props: ({ inquiryId: string } | { manual: ManualHotelOffer; expanded?: boolean }) & {
+  policiesHref?: string;
+  suggestedSender?: string | null;
+  suggestedSubject?: string;
+}) {
   const router = useRouter();
   const manual = "manual" in props ? props.manual : null;
   const inquiryId = "inquiryId" in props ? props.inquiryId : "manual";
@@ -38,6 +42,7 @@ export default function HotelReceivedOffers(props: ({ inquiryId: string } | { ma
   const [terms, setTerms] = useState(emptyTerms);
   const [busy, setBusy] = useState(false);
   const [status, setStatus] = useState("");
+  const [attachmentSize, setAttachmentSize] = useState<number | null>(null);
 
   async function load() {
     const response = await fetch(url + query, { cache: "no-store" });
@@ -65,6 +70,7 @@ export default function HotelReceivedOffers(props: ({ inquiryId: string } | { ma
     );
     if (!result.recorded && !result.alreadyRecorded) throw new Error("Could not confirm the save. Check received offers before retrying.");
     form.reset();
+    setAttachmentSize(null);
     setStatus(result.alreadyRecorded ? "This offer is already in the history." : "Offer recorded for review.");
     await load();
     if (props.policiesHref) router.refresh();
@@ -108,16 +114,23 @@ export default function HotelReceivedOffers(props: ({ inquiryId: string } | { ma
     }}>
       <fieldset disabled={busy} className="space-y-2">
         <legend className="mb-2 font-semibold">Add received offer</legend>
+        {(props.suggestedSender || props.suggestedSubject) && <p className="text-xs text-slate-600">
+          Check the suggested supplier email and subject against the reply. Enter the date you received it.
+        </p>}
         <div className="grid gap-2 sm:grid-cols-2">
-          <label>Supplier email<input className={inputClass} type="email" name="sender" required maxLength={254} /></label>
+          <label>Supplier email<input className={inputClass} type="email" name="sender" required maxLength={254} defaultValue={props.suggestedSender ?? ""} /></label>
           <label>Received date<input className={inputClass} type="date" name="receivedDate" required /></label>
-          <label>Email subject<input className={inputClass} name="subject" required maxLength={300} /></label>
+          <label>Email subject<input className={inputClass} name="subject" required maxLength={300} defaultValue={props.suggestedSubject ?? ""} /></label>
           <label>Email message ID (optional)<input className={inputClass} name="messageId" maxLength={500} /></label>
         </div>
         <label className="block">Paste offer from email<textarea className={inputClass} name="body" rows={5} maxLength={32000} /></label>
         <label className="block">Or attach the original PDF or Word file (up to {maxHotelOfferFileSizeMB} MB)
-          <input className={inputClass} type="file" name="attachment" accept=".pdf,.docx" />
+          <input className={inputClass} type="file" name="attachment" accept=".pdf,.docx"
+            onChange={event => setAttachmentSize(event.currentTarget.files?.[0]?.size ?? null)} />
         </label>
+        {attachmentSize !== null && <p className="text-xs text-slate-600">
+          Selected file: {(attachmentSize / (1024 * 1024)).toFixed(2)} MB
+        </p>}
         <button type="submit" className={buttonClass}>Record received offer</button>
       </fieldset>
     </form>

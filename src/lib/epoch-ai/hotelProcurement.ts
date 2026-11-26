@@ -53,18 +53,21 @@ export function nights(s:Stay): number {
  const from=Date.parse(s.checkIn+"T00:00:00Z"),to=Date.parse(s.checkOut+"T00:00:00Z");
  return Number.isFinite(from)&&Number.isFinite(to)?Math.round((to-from)/86400000):0;
 }
+const formatInquiryDate=(d:string)=>/^\d{4}-\d{2}-\d{2}$/.test(d)?new Date(`${d}T00:00:00Z`).toLocaleDateString("en-GB",{day:"numeric",month:"long",year:"numeric",timeZone:"UTC"}):d;
+export function hotelInquirySubject(stay: Pick<Stay, "checkIn" | "checkOut">): string {
+  const dates = `${formatInquiryDate(stay.checkIn)}–${formatInquiryDate(stay.checkOut)}`;
+  return `Group Accommodation Request | ${dates} | Epoch Journeys`;
+}
 export function inquiry(stay:Stay,hotelName:string): { subject:string; body:string; errors:string[] } {
  const errors:string[]=[];
  if(!stay.city.trim())errors.push("Destination required");
  if(!hotelName.trim())errors.push("Hotel name required");
  if(nights(stay)<1 || nights(stay)>30)errors.push("Valid check-in and check-out dates required");
  if(!Number.isInteger(stay.rooms)||stay.rooms<1||stay.rooms>250)errors.push("Valid room count required");
- const fmt=(d:string)=>/^\d{4}-\d{2}-\d{2}$/.test(d)?new Date(`${d}T00:00:00Z`).toLocaleDateString("en-GB",{day:"numeric",month:"long",year:"numeric",timeZone:"UTC"}):d;
- const dates=`${fmt(stay.checkIn)}–${fmt(stay.checkOut)}`;
- const subject=`Group Accommodation Request | ${dates} | Epoch Journeys`;
+ const subject=hotelInquirySubject(stay);
  const origin=stay.originCountry?.trim();
  const originPhrase=origin ? ` from ${origin.toUpperCase()==="USA"?"the USA":origin}` : "";
- const body=`Dear Reservations Team,\n\nGreetings from Epoch Journeys.\n\nWe are organizing a Catholic pilgrimage group${originPhrase} and would appreciate your best group accommodation offer for the following:\n\nAccommodation Details\n- Destination: ${stay.city}\n- Hotel: ${hotelName.trim()}\n- Check-in: ${fmt(stay.checkIn)}\n- Check-out: ${fmt(stay.checkOut)}\n- Duration: ${nights(stay)} night${nights(stay)===1?"":"s"}\n- Rooms requested: ${stay.rooms} rooms (Double/Twin, Single, and Triple where available)\n- Meal plan: Bed & Breakfast (BB)\n\nPlease advise on availability for the requested dates and quote your best group rates for Double/Twin and Single rooms, plus Triple rooms where available.\n\nPlease itemize these additional charges separately from the BB room rate:\n- Half-board supplement (HB)\n- Dinner beverage package supplement: 2 glasses of wine, beer, or soft drinks\n- City tax, if applicable\n- Porterage charges, if available\n\nAdditional Information\nPlease also advise on:\n- Standard guest room sizes (m²), walk-in showers and accessible rooms\n- Lobby facilities and suitability for group check-in\n- Full-size coach access and parking arrangements\n- Complimentary room policy\n- Payment and cancellation conditions.\n- Offer validity${stay.massRoom?"\n- Availability of a suitable private meeting room for the group's Mass on "+fmt(stay.checkIn)+" (please advise whether complimentary or subject to a charge)":""}\n\nThank you for your assistance. We look forward to receiving your offer.\n\nKind regards,`;
+ const body=`Dear Reservations Team,\n\nGreetings from Epoch Journeys.\n\nWe are organizing a Catholic pilgrimage group${originPhrase} and would appreciate your best group accommodation offer for the following:\n\nAccommodation Details\n- Destination: ${stay.city}\n- Hotel: ${hotelName.trim()}\n- Check-in: ${formatInquiryDate(stay.checkIn)}\n- Check-out: ${formatInquiryDate(stay.checkOut)}\n- Duration: ${nights(stay)} night${nights(stay)===1?"":"s"}\n- Rooms requested: ${stay.rooms} rooms (Double/Twin, Single, and Triple where available)\n- Meal plan: Bed & Breakfast (BB)\n\nPlease advise on availability for the requested dates and quote your best group rates for Double/Twin and Single rooms, plus Triple rooms where available.\n\nPlease itemize these additional charges separately from the BB room rate:\n- Half-board supplement (HB)\n- Dinner beverage package supplement: 2 glasses of wine, beer, or soft drinks\n- City tax, if applicable\n- Porterage charges, if available\n\nAdditional Information\nPlease also advise on:\n- Standard guest room sizes (m²), walk-in showers and accessible rooms\n- Lobby facilities and suitability for group check-in\n- Full-size coach access and parking arrangements\n- Complimentary room policy\n- Payment and cancellation conditions.\n- Offer validity${stay.massRoom?"\n- Availability of a suitable private meeting room for the group's Mass on "+formatInquiryDate(stay.checkIn)+" (please advise whether complimentary or subject to a charge)":""}\n\nThank you for your assistance. We look forward to receiving your offer.\n\nKind regards,`;
 
  return {subject,body:body.replaceAll("\\n","\n"),errors};
 }

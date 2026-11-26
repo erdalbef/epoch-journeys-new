@@ -18,6 +18,7 @@ import OfferDeadlines from "@/components/admin/epoch-ai/OfferDeadlines";
 import OfferReminderButton from "@/components/admin/epoch-ai/OfferReminderButton";
 import { deadlineReminderToday, HOTEL_REMINDER_EVENT } from "@/lib/epoch-ai/hotelDeadlineReminders";
 import { hotelOfferDeadlines } from "@/lib/epoch-ai/hotelOfferDeadlines";
+import { contactEmail, hotelInquirySubject } from "@/lib/epoch-ai/hotelProcurement";
 import { hotelOfferFields, hotelOfferPolicyFields, hotelOfferTerms, manualHotelOfferStay } from "@/lib/epoch-ai/receivedHotelOffer";
 
 const offerPolicySelect = {
@@ -197,7 +198,7 @@ export default async function SupplierDetailPage({
     where: { supplierId: supplier.id, receivedOffers: { some: {} } },
     orderBy: { createdAt: "desc" },
     take: 25,
-    select: { id: true, destination: true, checkIn: true, checkOut: true, rooms: true,
+    select: { id: true, destination: true, checkIn: true, checkOut: true, rooms: true, recipient: true, subject: true,
       tour: { select: { title: true } },
       receivedOffers: {orderBy: {version: "desc"}, take: 1, select: offerPolicySelect} },
   }), db.supplierCommercialEvidence.findMany({
@@ -619,13 +620,16 @@ export default async function SupplierDetailPage({
           return <div key={`${manualHotelTourId}:${manualHotelStayKey}`} id={`received-offer-${offerId}`} className="scroll-mt-28 space-y-1 text-sm">
             <p className="font-medium">{manualHotelTour?.title} · {city}</p>
             <p>{checkIn} to {checkOut} · Manually sent request</p>
-            <HotelReceivedOffers policiesHref={policiesHref} manual={{ tourId: manualHotelTourId, supplierId: supplier.id, stayKey: manualHotelStayKey }} />
+            <HotelReceivedOffers policiesHref={policiesHref} manual={{ tourId: manualHotelTourId, supplierId: supplier.id, stayKey: manualHotelStayKey }}
+              suggestedSender={contactEmail(supplier)}
+              suggestedSubject={hotelInquirySubject({ checkIn, checkOut })} />
           </div>;
         })}
         {offerInquiries.map(inquiry => <div key={inquiry.id} id={`received-offer-${inquiry.id}`} className="scroll-mt-28 space-y-1 text-sm">
           <p className="font-medium">{inquiry.tour.title} · {inquiry.destination}</p>
           <p>{inquiry.checkIn} to {inquiry.checkOut} · {inquiry.rooms} rooms</p>
-          <HotelReceivedOffers inquiryId={inquiry.id} policiesHref={policiesHref} />
+          <HotelReceivedOffers inquiryId={inquiry.id} policiesHref={policiesHref}
+            suggestedSender={inquiry.recipient} suggestedSubject={inquiry.subject} />
         </div>)}
       </section>}
 
