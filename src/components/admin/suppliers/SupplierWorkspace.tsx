@@ -34,6 +34,7 @@ type Service = {
 };
 
 type Rate = {
+  cancellationTerms?: string | null;
   id: string;
   name: string;
   description: string | null;
@@ -837,6 +838,8 @@ export default function SupplierWorkspace({
                         <RateDetail label="Beverage package" value={chargeLabel(item.beveragePackageIncluded, item.beveragePackageAmount, item.currency, item.beveragePackageUnit, "Not specified")} />
                         {item.dinnerNotes && <RateDetail label="Dinner notes" value={item.dinnerNotes} />}
                         {item.beveragePackageDescription && <RateDetail label="Beverage details" value={item.beveragePackageDescription} />}
+                        {item.cancellationTerms && <RateDetail label="Cancellation and release" value={item.cancellationTerms} />}
+                        {item.notes && <RateDetail label="Rate notes" value={item.notes} />}
                       </div>
                     </div>
                   )}

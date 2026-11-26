@@ -108,8 +108,10 @@ export async function POST(request: Request, {params}: {params: Promise<{id: str
         porterageAmount: rates.porterage.amount || null, porterageUnit: rates.porterage.unit || null,
         porterageAvailable: rates.porterage.amount ? true : null,
         extraBedRate: rates.extraBed || null,
+        cancellationTerms: terms.data.cancellation || null,
         rateSource: OFFER_RATE_SOURCE, supplierReference: offer.id, lastVerifiedAt: confirmedOn,
-        notes: ["Rates apply to the approved stay only.", terms.data.other, terms.data.cityTax, terms.data.porterage,
+        notes: ["Rates apply to the approved stay only.", terms.data.validity ? `Offer validity: ${terms.data.validity}` : "",
+          terms.data.other, terms.data.cityTax, terms.data.porterage,
           rates.extraBed ? `Extra-bed supplement: ${rates.currency} ${rates.extraBed} per night (separate from the Triple room rate).` : ""].filter(Boolean).join("\n"),
       };
       const rooms: [RoomType, string, string][] = [
