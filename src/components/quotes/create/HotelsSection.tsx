@@ -127,6 +127,7 @@ type SupplierHotelResult = {
     paymentTerms: string | null;
     supplierReference: string | null;
     lastVerifiedAt: string | null;
+    staySpecific?: boolean;
     notes: string | null;
   };
 
@@ -296,6 +297,12 @@ export default function HotelsSection({
       SearchState
     >
   >({});
+  const [staySearchDates, setStaySearchDates] = useState<Record<number, {checkIn: string; checkOut: string}>>({});
+
+  function searchDates(index: number) {
+    const {checkIn = "", checkOut = ""} = staySearchDates[index] ?? {};
+    return {checkIn, checkOut};
+  }
 
   const safePax =
     useMemo(
@@ -325,6 +332,11 @@ export default function HotelsSection({
       toast.error(
         "Enter a destination/city first.",
       );
+      return;
+    }
+    const {checkIn, checkOut} = searchDates(index);
+    if ((checkIn || checkOut) && (!checkIn || !checkOut || checkIn >= checkOut)) {
+      toast.error("Enter hotel check-in and a later check-out, or clear both to search by tour dates.");
       return;
     }
 
@@ -357,20 +369,20 @@ export default function HotelsSection({
         );
 
       if (
-        startDate
+        (checkIn || startDate)
       ) {
         params.set(
           "startDate",
-          startDate,
+          checkIn || startDate,
         );
       }
 
       if (
-        endDate
+        (checkOut || endDate)
       ) {
         params.set(
           "endDate",
-          endDate,
+          checkOut || endDate,
         );
       }
 
@@ -463,6 +475,15 @@ export default function HotelsSection({
     index: number,
     result: SupplierHotelResult,
   ) {
+    const {checkIn, checkOut} = searchDates(index);
+    const effectiveCheckIn = checkIn || startDate;
+    const effectiveCheckOut = checkOut || endDate;
+    if (result.rate.staySpecific && (
+      result.rate.validFrom.slice(0, 10) !== effectiveCheckIn || result.rate.validTo.slice(0, 10) !== effectiveCheckOut
+    )) {
+      toast.error("Search again with the approved hotel stay dates before selecting this rate.");
+      return;
+    }
     if (
       result.rate.currency.toUpperCase() !==
       currency.toUpperCase()
@@ -489,6 +510,7 @@ export default function HotelsSection({
     onUpdateHotel(
       index,
       {
+        ...(result.rate.staySpecific ? {nights: (Date.parse(effectiveCheckOut) - Date.parse(effectiveCheckIn)) / 86_400_000} : {}),
         hotelName:
           result.supplier
             .name,
@@ -832,13 +854,19 @@ export default function HotelsSection({
                       </button>
                     </div>
 
-                    <p className="mt-2 text-xs text-slate-500">
-                      Search uses the quote dates
-                      {startDate
-                        ? ` (${startDate}${endDate ? ` to ${endDate}` : ""})`
-                        : ""}
-                      {" "}and {safePax} paying pilgrims when available.
-                    </p>
+                    <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                      {([["checkIn", "Hotel check-in"], ["checkOut", "Hotel check-out"]] as const).map(([key, label]) =>
+                        <label key={key} className="block text-sm font-medium">{label}
+                          <input type="date" className="mt-1 w-full rounded-md border bg-white p-2" value={searchDates(index)[key]}
+                            onChange={event => {
+                              const value = event.target.value;
+                              setStaySearchDates(previous => ({
+                                ...previous, [index]: {...(previous[index] ?? {checkIn: "", checkOut: ""}), [key]: value},
+                              }));
+                            }}/>
+                        </label>)}
+                    </div>
+                    <p className="mt-2 text-xs text-slate-500">Enter the exact stay dates to find rates approved from a hotel offer. Blank fields use the tour dates.</p>
 
                     {searchState?.error && (
                       <p className="mt-3 rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">

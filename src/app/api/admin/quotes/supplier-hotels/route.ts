@@ -9,6 +9,7 @@ import { NextResponse } from "next/server";
 
 import { authOptions } from "@/lib/authOptions";
 import { db } from "@/lib/db";
+import { OFFER_RATE_SOURCE } from "@/lib/epoch-ai/hotelOfferRateDraft";
 
 type EffectiveCostStatus =
   | "COMPLETE"
@@ -659,6 +660,8 @@ export async function GET(
 
                     supplierReference:
                       true,
+                    rateSource:
+                      true,
                     lastVerifiedAt:
                       true,
                     notes: true,
@@ -712,7 +715,14 @@ export async function GET(
       a.validFrom <= b.validTo && b.validFrom <= a.validTo;
 
     const matchingHotelOffer = (a: HotelRate, b: HotelRate) =>
-      sameCommercialTerms(a, b) && sameRatePeriodForQuote(a, b);
+      sameCommercialTerms(a, b) && sameRatePeriodForQuote(a, b) &&
+      ((a.rateSource !== OFFER_RATE_SOURCE && b.rateSource !== OFFER_RATE_SOURCE) ||
+        (a.rateSource === OFFER_RATE_SOURCE && b.rateSource === OFFER_RATE_SOURCE &&
+          a.supplierReference !== null && a.supplierReference === b.supplierReference));
+
+    const availableForQuote = (rate: HotelRate) => rate.rateSource !== OFFER_RATE_SOURCE ||
+      Boolean(startDate && endDate && rate.validFrom.getTime() === startDate.getTime() &&
+        rate.validTo.getTime() === endDate.getTime() && withinTravelAndPax(rate));
 
     const hotels =
       suppliers
@@ -721,6 +731,7 @@ export async function GET(
             supplier.services.flatMap(
               (service) =>
                 service.rates
+                  .filter(availableForQuote)
                   // Room-specific supplier rates are separate records. Return one
                   // comparison card per compatible rate set, not one per room.
                   .filter((rate, _index, candidates) => {
@@ -786,7 +797,7 @@ export async function GET(
                     const matchingRoomRate = (roomType: "SINGLE" | "DOUBLE_TWIN" | "TRIPLE") => {
                       if (rate.roomType === null || rate.roomType === roomType) return rate;
                       const candidates = service.rates.filter((other) =>
-                        other.roomType === roomType && matchingHotelOffer(rate, other)
+                        other.roomType === roomType && availableForQuote(other) && matchingHotelOffer(rate, other)
                       );
                       // Prefer covering contracts; otherwise prefer the most
                       // recent historical rate without inventing a price.
@@ -999,6 +1010,7 @@ export async function GET(
 
                         supplierReference:
                           rate.supplierReference,
+                        staySpecific: rate.rateSource === OFFER_RATE_SOURCE,
 
                         lastVerifiedAt:
                           rate.lastVerifiedAt

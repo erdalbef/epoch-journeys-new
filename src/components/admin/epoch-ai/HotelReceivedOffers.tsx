@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import HotelOfferRateDraft from "./HotelOfferRateDraft";
 import { hotelOfferFields, type HotelOfferTerms, type ManualHotelOffer } from "@/lib/epoch-ai/receivedHotelOffer";
 
 type Offer = {
@@ -12,6 +13,9 @@ type Offer = {
   sourceMessageId: string | null;
   sourceBody: string | null;
   reviewStatus: string;
+  acceptanceStatus: string;
+  stay: {checkIn: string; checkOut: string} | null;
+  ratesSaved: boolean;
   reviewedTerms: HotelOfferTerms | null;
   sourceDocument: { id: string; originalFileName: string } | null;
 };
@@ -129,6 +133,12 @@ export default function HotelReceivedOffers(props: { inquiryId: string } | { man
             <dt className="font-semibold">{label}</dt><dd className="whitespace-pre-wrap">{offer.reviewedTerms?.[key]}</dd>
           </div>)}
         </dl>}
+        {offer.ratesSaved ? <p className="font-semibold">Rates saved to Supplier CRM</p> :
+          offer === offers[0] && offer.reviewStatus === "TERMS_VERIFIED" && offer.reviewedTerms && offer.stay &&
+            !["REJECTED", "SUPERSEDED"].includes(offer.acceptanceStatus) ? <details className="rounded border border-blue-200 p-2">
+              <summary className="cursor-pointer font-semibold text-[#001F3F]">Prepare rate draft with Epoch AI</summary>
+              <HotelOfferRateDraft terms={offer.reviewedTerms} {...offer.stay} url={`${url}/${encodeURIComponent(offer.id)}/rates${query}`}/>
+            </details> : null}
         {editing === offer.id && <div className="space-y-2">
           <div className="grid gap-2 sm:grid-cols-2">{fields.map(([key,label])=><label key={key}>{label}
             <textarea className={inputClass} value={terms[key]} rows={2} maxLength={2000} disabled={busy}

@@ -4,6 +4,7 @@ import { NextResponse } from "next/server";
 import { authOptions } from "@/lib/authOptions";
 import { db } from "@/lib/db";
 import { hotelOfferSource, manualHotelOfferScope, maxHotelOfferFileSize } from "@/lib/epoch-ai/receivedHotelOffer";
+import { HOTEL_OFFER_RATE_IMPORT_EVENT } from "@/lib/epoch-ai/hotelOfferRateDraft";
 import { requireAdminApiAccess } from "@/lib/security/requireAdminApiAccess";
 import { isRequestWithinLimit } from "@/lib/security/requestBodyLimit";
 import { deleteFinanceFile, saveFinanceFile } from "@/lib/storage/finansFileStorage";
@@ -26,10 +27,17 @@ export async function GET(request: Request, { params }: Params) {
       id: true, version: true, sourceDate: true, sourceType: true,
       sourceSender: true, sourceSubject: true, sourceMessageId: true,
       sourceBody: true, reviewStatus: true, reviewedTerms: true,
+      acceptanceStatus: true, manualHotelStayKey: true,
+      hotelInquiry: {select: {checkIn: true, checkOut: true}},
+      events: {where: {eventType: HOTEL_OFFER_RATE_IMPORT_EVENT}, take: 1, select: {id: true}},
       sourceDocument: { select: { id: true, originalFileName: true } },
     },
   });
-  return reply({ offers });
+  return reply({offers: offers.map(({events, hotelInquiry, manualHotelStayKey, ...offer}) => {
+    const manual = manualHotelStayKey ? manualHotelOfferScope(request.url) : null;
+    const [, checkIn, checkOut] = manual ? JSON.parse(manual.manualHotelStayKey) as [string, string, string] : [];
+    return {...offer, stay: hotelInquiry ?? (checkIn && checkOut ? {checkIn, checkOut} : null), ratesSaved: events.length > 0};
+  })});
 }
 
 export async function POST(request: Request, { params }: Params) {
