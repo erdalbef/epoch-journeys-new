@@ -100,6 +100,33 @@ describe("Hotel research form", () => {
     });
   });
 
+  it("uses independent listings when official search results do not show contact details", () => {
+    const name = "Hotel Sirius";
+    const email = "info@hotelsirius.net";
+    const source = "https://directory.example.com/kosovo/hotel-sirius";
+    const secondSource = "https://partners.independent.org/kosovo/hotels";
+    const officialPage = {
+      title: "Hotel Sirius, Prishtinë", url: "https://hotelsirius.com/",
+      description: "Welcome to Hotel Sirius in Prishtinë",
+    };
+    const listing = {title: "Hotel Sirius, Prishtina", url: source,
+      description: `Phone: +383 38 222 280 | Email: ${email}`};
+    const secondListing = {title: "Kosovo partner hotels", url: secondSource,
+      description: `Hotel Sirius | Prishtinë | ${email}`};
+    const compile = (pages: typeof listing[]) => buildHotelSupplierResearch(name, "Pristina", pages,
+      selectHotelOfficialSiteCandidates(name, pages), extractStructuredHotelResearch(name, pages).contacts, []);
+    const research = compile([officialPage, listing, secondListing]);
+    expect(research.contacts[0]).toMatchObject({corroboratingSourceUrl: secondSource});
+    expect(hotelResearchForm(research, undefined, undefined, undefined)).toMatchObject({
+      email, source, phone: "+383 38 222 280", contactReviewKey: JSON.stringify([email, source]),
+    });
+    expect(compile([officialPage, listing]).contacts).toEqual([]);
+    expect(compile([officialPage, listing, {...secondListing, url: "https://other.example.com/hotels"}]).contacts).toEqual([]);
+    expect(compile([officialPage, listing, {...secondListing, description: secondListing.description.replace("Prishtinë", "Tirana")}]).contacts).toEqual([]);
+    expect(compile([{...officialPage, description: "Pristina. Tel: +383 38 000 000 | Email: sales@hotelsirius.com"},
+      listing, secondListing]).contacts[0].email).toBe("sales@hotelsirius.com");
+  });
+
   it("uses the published Rogner contact and facilities when search returns no evidence", () => {
     const profile = publishedHotelVerification("Rogner Hotel Tirana", "Tirana", "Albania");
     expect(hotelResearchForm({contacts: [], facilities: []}, profile, undefined, undefined)).toMatchObject({

@@ -25,7 +25,7 @@ export async function POST(request:Request){
   try {
     const property = `"${hotelName.replace(/"/g, "")}" ${city} ${country}`;
     const queries = [
-      `${property} official hotel contact email phone sales group reservations`,
+      `${property} contact email phone group reservations`,
       `${property} hotel facilities walk-in shower elevator coach access porterage meeting room`
     ];
     async function search(q:string) {
@@ -59,18 +59,30 @@ export async function POST(request:Request){
     }
     mergePages(lists.flat());
     let research = compile();
-    const domain = officialHotelSearchDomain(hotelName) ?? research.officialSiteCandidates[0]?.hostname;
-    const {contacts, phone} = research.supplierResearch;
-    if (domain && !ctrl.signal.aborted && (!contacts.length || (!contacts[0].phone && !phone))) {
-      const fallback = await search(`site:${domain} ${property} contact information email telephone`).catch(() => []);
-      if (fallback.length) {
-        mergePages(fallback);
+    let followupFailed = false;
+    async function tryFollowup(query: string) {
+      if (ctrl.signal.aborted) return;
+      try {
+        mergePages(await search(query));
         research = compile();
+      } catch {
+        followupFailed = true;
       }
+    }
+    const domain = officialHotelSearchDomain(hotelName) ?? research.officialSiteCandidates[0]?.hostname;
+    const contact = research.supplierResearch.contacts[0];
+    if (domain && (!contact || contact.corroboratingSourceUrl || (!contact.phone && !research.supplierResearch.phone))) {
+      // The domain already narrows the search. Keep city and country out of
+      // this query so localized contact pages can surface.
+      await tryFollowup(`site:${domain} "${hotelName.replace(/"/g, "")}" contact reservations`);
+    }
+    const best = research.supplierResearch.contacts[0];
+    if (!best || (best.corroboratingSourceUrl && !best.phone)) {
+      await tryFollowup(`${hotelName} ${city} ${country} hotel reservations email telephone`);
     }
     return respond({
       ...research,
-      partial: lists.length !== queries.length,
+      partial: lists.length !== queries.length || followupFailed,
       pagesReviewed: pagesByUrl.size
     });
   }catch(error){console.error("HOTEL_EVIDENCE_SEARCH_FAILED",error instanceof Error?error.message:"unknown");return respond({error:"Hotel research could not complete; no data changed"},502)}

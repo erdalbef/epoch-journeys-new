@@ -16,14 +16,17 @@ export function hotelResearchForm(
     contact.sourceUrl === retrievedContact.sourceUrl &&
     /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(contact.email) && safePublicUrl(contact.sourceUrl)
   );
-  const searchContact = research?.contacts.find(contact =>
+  const searchContacts = research?.contacts.filter(contact =>
     /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(contact.email) && safePublicUrl(contact.sourceUrl)
-  );
+  ) ?? [];
+  const [firstContact] = searchContacts;
+  const searchContact = searchContacts.length > 1 && firstContact.corroboratingSourceUrl ? undefined : firstContact;
   const suggestedContact = officialContact ?? searchContact;
-  const preferGroupProfile = profile?.contactType === "groups" && suggestedContact?.category !== "groups";
-  const email = contactEdits?.email ?? (preferGroupProfile ? profile?.email : suggestedContact?.email) ?? profile?.email ?? "";
-  const source = contactEdits?.source ?? (preferGroupProfile ? profile?.source : suggestedContact?.sourceUrl) ?? profile?.source ?? "";
-  const phone = contactEdits?.phone ?? (preferGroupProfile ? profile?.phone : undefined) ??
+  const preferProfile = (!officialContact && Boolean(searchContact?.corroboratingSourceUrl) && Boolean(profile)) ||
+    (profile?.contactType === "groups" && suggestedContact?.category !== "groups");
+  const email = contactEdits?.email ?? (preferProfile ? profile?.email : suggestedContact?.email) ?? profile?.email ?? "";
+  const source = contactEdits?.source ?? (preferProfile ? profile?.source : suggestedContact?.sourceUrl) ?? profile?.source ?? "";
+  const phone = contactEdits?.phone ?? (preferProfile ? profile?.phone : undefined) ??
     retrievedContact?.phones[0] ?? searchContact?.phone?.number ??
     research?.phone?.number ?? profile?.phone ?? "";
   const facilities = facilitiesEdit ?? (safePublicUrl(research?.suggestedFacilitiesSource) || profile?.facilitiesSource || "");

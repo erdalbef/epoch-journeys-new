@@ -817,6 +817,11 @@ export default function HotelProcurementPilot({tourId,destinations,itinerary,hot
             {!contactReviewKey ? <p className="text-xs text-amber-900">
               {evidenceLoading[evidenceKey] ? "Searching for the hotel email and its source…" : "The checkbox becomes available when the hotel email and its public HTTPS source are filled."}
             </p> : null}
+            {!contactReviewKey && !evidenceLoading[evidenceKey] ? <button type="button" disabled={!locationReady}
+              onClick={()=>void researchSelectedHotel(selectedName, stay.city.trim(), country, evidenceKey)}
+              className="rounded border border-blue-300 bg-white px-2 py-1 font-medium text-blue-800 disabled:opacity-50">
+              Search again for contact details
+            </button> : null}
             <details className="space-y-2 rounded border bg-white p-2">
               <summary className="cursor-pointer font-medium">Facilities evidence (optional)</summary>
               <label className="block">Facilities source HTTPS URL

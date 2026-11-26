@@ -18,6 +18,7 @@ export type HotelSupplierResearch = {
   contacts: (HotelContactCandidate & {
     category: ReturnType<typeof categoryForEmail>;
     phone?: PhoneEvidence;
+    corroboratingSourceUrl?: string;
   })[];
   phone?: PhoneEvidence;
   suggestedFacilitiesSource?: string;
@@ -59,7 +60,58 @@ const locationWords = (value: string) => value.normalize("NFD")
   .replace(/[\u0300-\u036f]/g, "")
   .toLowerCase()
   .replace(/[^\p{L}\p{N}]+/gu, " ")
+  .replace(/\bprishtin[ae]\b/g, "pristina")
   .trim();
+
+function publisherLabel(host: string) {
+  const labels = host.split(".");
+  const last = labels.at(-1);
+  const second = labels.at(-2);
+  return last?.length === 2 && second && /^(?:ac|co|com|edu|gov|net|org)$/.test(second)
+    ? labels.at(-3) : second;
+}
+
+function corroboratedDirectoryContacts(hotelName: string, cityKey: string, pages: WebHotelResult[]) {
+  const matched = new Map<string, {contact: HotelSupplierResearch["contacts"][number]; host: string; dedicated: boolean}[]>();
+  const emailPattern = /\b[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}\b/gi;
+  for (const page of pages) {
+    const sourceUrl = safePublicUrl(page.url);
+    if (!sourceUrl) continue;
+    const host = new URL(sourceUrl).hostname.replace(/^www\./, "");
+    const dedicated = hotelSourceMatch(hotelName, {...page, description: ""});
+    const titleHasCity = ` ${locationWords(page.title + " " + page.url)} `.includes(` ${cityKey} `);
+    for (const excerpt of page.description.split(" … ")) {
+      if (!titleHasCity && !` ${locationWords(excerpt)} `.includes(` ${cityKey} `)) continue;
+      if (!dedicated && !hotelSourceMatch(hotelName, {...page, description: excerpt})) continue;
+      const emails = [...new Set((excerpt.match(emailPattern) ?? []).map(email => email.toLowerCase()))];
+      if (emails.length !== 1) continue;
+      const [email] = emails;
+      const emailHost = email.split("@")[1];
+      if (emailHost === host || host.endsWith("." + emailHost) || emailHost.endsWith("." + host)) continue;
+      const number = dedicated ? publishedContactPhone(excerpt, email) ?? normalizePhone(excerpt.match(labeledPhone)?.[1]) : undefined;
+      const contact = {
+        email, sourceUrl, sourceTitle: page.title, category: categoryForEmail(email),
+        status: "requires-admin-verification" as const,
+        phone: number ? {number, sourceUrl} : undefined,
+      };
+      const sources = matched.get(email) ?? [];
+      sources.push({contact, host, dedicated});
+      matched.set(email, sources);
+    }
+  }
+
+  // Require a property page and a second publisher. Two pages on the same
+  // host (including its subdomains) are not independent evidence.
+  return [...matched.values()].flatMap(sources => {
+    const primary = sources.filter(source => source.dedicated)
+      .sort((a, b) => Number(Boolean(b.contact.phone)) - Number(Boolean(a.contact.phone)))[0];
+    if (!primary) return [];
+    const other = sources.find(source =>
+      publisherLabel(source.host) !== publisherLabel(primary.host) &&
+      !source.host.endsWith("." + primary.host) && !primary.host.endsWith("." + source.host));
+    return other ? [{...primary.contact, corroboratingSourceUrl: other.contact.sourceUrl}] : [];
+  }).sort((a, b) => categoryRank[a.category] - categoryRank[b.category]);
+}
 
 function hotelDirectoryContacts(hotelName: string, cityKey: string, pages: WebHotelResult[], propertyMatched: boolean) {
   const domain = officialHotelSearchDomain(hotelName);
@@ -135,8 +187,9 @@ export function buildHotelSupplierResearch(
     return {id, label};
   });
 
-  const uniqueContacts = new Map<string, typeof ranked[number]>();
-  for (const contact of ranked) {
+  const uniqueContacts = new Map<string, HotelSupplierResearch["contacts"][number]>();
+  const suggestedContacts = ranked.length || !cityKey ? ranked : corroboratedDirectoryContacts(hotelName, cityKey, pages);
+  for (const contact of suggestedContacts) {
     if (!uniqueContacts.has(contact.email)) uniqueContacts.set(contact.email, contact);
   }
 

@@ -155,4 +155,25 @@ describe("Selected hotel contact and facilities", () => {
       phone: {number: "+354 510 5130", sourceUrl: source},
     });
   });
+
+  it("retries public contact research when the official site has no indexed contact", async () => {
+    const source = "https://venue-directory.example/hotels/sirius-pristina";
+    const secondSource = "https://conference.example/hotel-guide";
+    vi.stubGlobal("fetch", vi.fn(async (searchUrl: URL) => {
+      const query = searchUrl.searchParams.get("q") ?? "";
+      if (query.endsWith("hotel reservations email telephone")) {
+        return searchResults([
+          {title: "Hotel Sirius Pristina", url: source, description: "Tel: +383 38 222 280 | info@hotelsirius.net"},
+          {title: "Conference hotel guide", url: secondSource, description: "Hotel Sirius, Prishtinë | info@hotelsirius.net"},
+        ]);
+      }
+      return searchResults([{title: "Hotel Sirius", url: "https://hotelsirius.com/", description: "In the heart of Prishtinë."}]);
+    }));
+    const response = await POST(request("Hotel Sirius", "Pristina", "Kosovo"));
+    expect(response.status).toBe(200);
+    expect((await response.json()).supplierResearch.contacts).toMatchObject([{
+      email: "info@hotelsirius.net", sourceUrl: source, corroboratingSourceUrl: secondSource,
+      phone: {number: "+383 38 222 280", sourceUrl: source},
+    }]);
+  });
 });
