@@ -18,6 +18,7 @@ type Props = {
   params: Promise<{
     id: string;
   }>;
+  searchParams: Promise<{tab?: string | string[]}>;
 };
 
 function date(
@@ -51,10 +52,12 @@ function decimalToNumber(
 
 export default async function SupplierDetailPage({
   params,
+  searchParams,
 }: Props) {
   const {
     id,
   } = await params;
+  const initialPanel = (await searchParams).tab === "rates" ? "rates" : "contacts";
 
   const supplier =
     await db.supplier.findUnique({
@@ -565,6 +568,8 @@ export default async function SupplierDetailPage({
         </div>
 
         <SupplierWorkspace
+          key={initialPanel}
+          initialPanel={initialPanel}
           supplier={
             serialized
           }

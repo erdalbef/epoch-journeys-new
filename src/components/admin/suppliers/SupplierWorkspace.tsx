@@ -260,8 +260,10 @@ function date(
 
 export default function SupplierWorkspace({
   supplier,
+  initialPanel = "contacts",
 }: {
   supplier: SupplierData;
+  initialPanel?: Panel;
 }) {
   const router =
     useRouter();
@@ -301,7 +303,7 @@ export default function SupplierWorkspace({
 
   const [panel, setPanel] =
     useState<Panel>(
-      "contacts",
+      initialPanel,
     );
 
   const [adding, setAdding] =
@@ -388,7 +390,7 @@ export default function SupplierWorkspace({
   }
 
   return (
-    <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+    <div id="supplier-workspace" className="scroll-mt-28 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
       <div className="flex flex-wrap gap-2 border-b border-slate-100 p-3">
         {(
           [

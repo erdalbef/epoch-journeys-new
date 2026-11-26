@@ -133,7 +133,16 @@ describe("Supplier rates from reviewed hotel offers", () => {
 
   it("returns the existing result when the same approval is retried", async () => {
     db.tx.supplierCommercialEvidenceEvent.findFirst.mockResolvedValue({id: "saved"});
-    expect(await (await save(approval)).json()).toEqual({alreadySaved: true});
+    expect(await (await save(approval)).json()).toEqual({alreadySaved: true, supplierId: "hotel"});
     expect(db.tx.supplierRate.createMany).not.toHaveBeenCalled();
+  });
+
+  it("saves rates for an inactive CRM candidate and preserves its supplier status", async () => {
+    db.tx.supplier.findUnique.mockResolvedValue({id: "hotel", status: "INACTIVE", type: "HOTEL", country: "Serbia"});
+    const response = await save(approval);
+    expect(response.status).toBe(201);
+    expect(await response.json()).toMatchObject({saved: true, supplierId: "hotel", supplierActive: false});
+    expect(db.tx.supplierRate.createMany).toHaveBeenCalledOnce();
+    expect(db.tx.supplier.update).not.toHaveBeenCalled();
   });
 });

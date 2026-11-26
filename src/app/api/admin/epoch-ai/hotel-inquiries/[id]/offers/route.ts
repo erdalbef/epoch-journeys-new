@@ -24,7 +24,7 @@ export async function GET(request: Request, { params }: Params) {
     where: scope,
     orderBy: { version: "desc" },
     select: {
-      id: true, version: true, sourceDate: true, sourceType: true,
+      id: true, supplierId: true, version: true, sourceDate: true, sourceType: true,
       sourceSender: true, sourceSubject: true, sourceMessageId: true,
       sourceBody: true, reviewStatus: true, reviewedTerms: true,
       acceptanceStatus: true, manualHotelStayKey: true,

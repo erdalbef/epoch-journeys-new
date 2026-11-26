@@ -1,6 +1,8 @@
 "use client";
 
 import { useId, useState } from "react";
+import Link from "next/link";
+import { useRouter } from "next/navigation";
 import {
   hotelOfferRateApproval, hotelOfferRateApprovalIssues, nightlyUnits, offerRoomFields, offerChargeFields, hotelOfferChargeUnit, hotelOfferPriceQualifier,
   prepareHotelOfferRateDraft, supplementaryUnits,
@@ -13,24 +15,29 @@ const units = {
 };
 const input = "mt-1 block w-full rounded border bg-white p-2";
 
+export function SupplierRatesLink({supplierId}: {supplierId: string}) {
+  return <Link href={`/admin/suppliers/${encodeURIComponent(supplierId)}?tab=rates#supplier-workspace`}
+    className="font-semibold text-blue-800 underline">Open Supplier CRM Rates</Link>;
+}
+
 export default function HotelOfferRateDraft({terms, url, checkIn, checkOut}: {
   terms: HotelOfferTerms; url: string; checkIn: string; checkOut: string;
 }) {
   const approvalRequirementsId = useId();
+  const router = useRouter();
   const [draft, setDraft] = useState(() => prepareHotelOfferRateDraft(terms));
   const [supplierConfirmation, setSupplierConfirmation] = useState("");
   const [confirmed, setConfirmed] = useState(false);
   const [confirmIndicativeCharges, setConfirmIndicativeCharges] = useState(false);
-  const [activateSupplier, setActivateSupplier] = useState(false);
   const [busy, setBusy] = useState(false);
-  const [saved, setSaved] = useState(false);
+  const [saved, setSaved] = useState<{supplierId: string; supplierActive?: boolean}>();
   const [error, setError] = useState("");
   const cityTaxNeedsReview = Boolean(terms.cityTax.trim() && !draft.cityTaxIncluded && !draft.cityTax.amount);
   const indicativeCharges = (Object.keys(offerChargeFields) as (keyof typeof offerChargeFields)[])
     .filter(key => draft[key].amount && hotelOfferPriceQualifier(terms[key]));
   const chargesNeedConfirmation = Boolean(indicativeCharges.length && !confirmIndicativeCharges);
   const approval = hotelOfferRateApproval.safeParse({
-    ...draft, taxIncluded: draft.taxIncluded === "yes", supplierConfirmation, activateSupplier, confirmIndicativeCharges,
+    ...draft, taxIncluded: draft.taxIncluded === "yes", supplierConfirmation, activateSupplier: false, confirmIndicativeCharges,
     confirmation: "APPROVE_HOTEL_OFFER_RATES",
   });
   const approvalIssues = [
@@ -46,9 +53,10 @@ export default function HotelOfferRateDraft({terms, url, checkIn, checkOut}: {
     setError("");
     try {
       const response = await fetch(url, {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify(approval.data)});
-      const result = await response.json() as {error?: string};
-      if (!response.ok) throw new Error(result.error || "Could not save the approved rates.");
-      setSaved(true);
+      const result = await response.json() as {error?: string; supplierId?: string; supplierActive?: boolean};
+      if (!response.ok || !result.supplierId) throw new Error(result.error || "Could not save the approved rates.");
+      setSaved({supplierId: result.supplierId, supplierActive: result.supplierActive});
+      router.refresh();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not save the approved rates.");
     } finally {
@@ -56,11 +64,15 @@ export default function HotelOfferRateDraft({terms, url, checkIn, checkOut}: {
     }
   }
 
-  if (saved) return <p role="status">Approved rates are saved in Supplier CRM. Look up the hotel in Quote Form using these stay dates.</p>;
+  if (saved) return <div role="status" className="space-y-1">
+    <p>Rates saved in Supplier CRM. Select a hotel later from CRM in Quote Form.</p>
+    {saved.supplierActive === false ? <p>This supplier is inactive. Activate it in Supplier CRM when you’re ready to include it in quote searches.</p> : null}
+    <SupplierRatesLink supplierId={saved.supplierId}/>
+  </div>;
 
   return <form className="space-y-3 rounded-lg border bg-slate-50 p-3" onSubmit={event => { event.preventDefault(); void approve(); }}>
     <h5 className="font-semibold">Rate draft for {checkIn} to {checkOut}</h5>
-    <p>Use the hotel’s written confirmation to check dates, allotment, nightly units, taxes and terms before approving. Quote Form uses VAT-inclusive BB or HB prices for this stay.</p>
+    <p>Check dates, allotment, nightly units, taxes and terms against the hotel’s written confirmation. Save rates for each candidate here, then choose a hotel from CRM when building the quote.</p>
     <p className="text-xs text-slate-600">Half board, drinks and porterage default to per person, per night when the offer does not specify a billing unit.</p>
     <fieldset disabled={busy} className="space-y-3">
       <div className="grid gap-2 sm:grid-cols-4">
@@ -134,8 +146,6 @@ export default function HotelOfferRateDraft({terms, url, checkIn, checkOut}: {
         onChange={event => setSupplierConfirmation(event.target.value)} maxLength={500} placeholder="Confirmation email subject and date or document reference"/></label>
       <label className="flex items-start gap-2"><input type="checkbox" className="mt-1" checked={confirmed}
         onChange={event => setConfirmed(event.target.checked)}/>I checked the supplier’s written confirmation for this stay, including the room allotment, rate units and charges.</label>
-      <label className="flex items-start gap-2"><input type="checkbox" className="mt-1" checked={activateSupplier}
-        onChange={event => setActivateSupplier(event.target.checked)}/>Activate this hotel if it is inactive</label>
       {error ? <p role="alert">{error}</p> : null}
       <div aria-live="polite" id={approvalRequirementsId}>
         {approvalIssues.length ? <div className="rounded border border-amber-200 bg-amber-50 p-2 text-sm text-amber-950">

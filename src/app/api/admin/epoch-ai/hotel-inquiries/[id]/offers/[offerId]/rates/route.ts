@@ -46,7 +46,7 @@ export async function POST(request: Request, {params}: {params: Promise<{id: str
       const existing = await tx.supplierCommercialEvidenceEvent.findFirst({
         where: {evidenceId: offer.id, eventType: HOTEL_OFFER_RATE_IMPORT_EVENT}, select: {id: true},
       });
-      if (existing) return reply({alreadySaved: true});
+      if (existing) return reply({alreadySaved: true, supplierId: offer.supplierId});
 
       const terms = hotelOfferTerms.safeParse(offer.reviewedTerms);
       if (offer.reviewStatus !== "TERMS_VERIFIED" || !terms.success ||
@@ -59,7 +59,7 @@ export async function POST(request: Request, {params}: {params: Promise<{id: str
       const indicatedCharges = (Object.keys(offerChargeFields) as (keyof typeof offerChargeFields)[])
         .filter(key => rates[key].amount && hotelOfferPriceQualifier(terms.data[key]));
       if (indicatedCharges.length && !rates.confirmIndicativeCharges) {
-        return reply({error: "Confirm the indicative charges with the hotel before saving them to Quote Form."}, 400);
+        return reply({error: "Confirm the indicative charges with the hotel before saving them to Supplier CRM Rates."}, 400);
       }
       const newer = await tx.supplierCommercialEvidence.findFirst({
         where: {...scope, version: {gt: offer.version}}, select: {id: true},
@@ -78,10 +78,8 @@ export async function POST(request: Request, {params}: {params: Promise<{id: str
       });
       if (!supplier || supplier.type !== "HOTEL") return reply({error: "Hotel supplier not found."}, 404);
       const activate = supplier.status === "INACTIVE" && rates.activateSupplier;
-      if (!activate && supplier.status !== "ACTIVE") {
-        return reply({error: supplier.status === "INACTIVE"
-          ? "This hotel is inactive. Select supplier activation to make the approved rates available in Quote Form."
-          : "This supplier cannot be activated through an offer."}, 409);
+      if (supplier.status !== "ACTIVE" && supplier.status !== "INACTIVE") {
+        return reply({error: "Rates cannot be imported for this supplier status."}, 409);
       }
 
       const confirmedOn = new Date();
@@ -133,7 +131,7 @@ export async function POST(request: Request, {params}: {params: Promise<{id: str
         evidenceId: offer.id, actorId, eventType: HOTEL_OFFER_RATE_IMPORT_EVENT,
         detail: JSON.stringify({stay, serviceId: service.id, ...rates}),
       }});
-      return reply({saved: true, supplierId: supplier.id}, 201);
+      return reply({saved: true, supplierId: supplier.id, supplierActive: activate || supplier.status === "ACTIVE"}, 201);
     });
   } catch (error) {
     console.error("HOTEL_OFFER_RATES_SAVE_FAILED", error instanceof Error ? error.name : "Unknown");
