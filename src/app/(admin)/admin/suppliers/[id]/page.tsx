@@ -12,6 +12,7 @@ import { db } from "@/lib/db";
 import SupplierWorkspace from "@/components/admin/suppliers/SupplierWorkspace";
 import DeleteSupplierButton from "@/components/admin/suppliers/DeleteSupplierButton";
 import HotelReceivedOffers from "@/components/admin/epoch-ai/HotelReceivedOffers";
+import HotelCrmResearch from "@/components/admin/suppliers/HotelCrmResearch";
 
 type Props = {
   params: Promise<{
@@ -430,6 +431,13 @@ export default async function SupplierDetailPage({
           }
         />
       </div>
+
+      {supplier.type === "HOTEL" ? <HotelCrmResearch hotel={{
+        id: supplier.id, name: supplier.name, city: supplier.city, country: supplier.country,
+        email: supplier.email, phone: supplier.phone, website: supplier.website,
+        address: supplier.address, postalCode: supplier.postalCode, notes: supplier.notes,
+        contactEmails: supplier.contacts.map(contact => contact.email),
+      }} /> : null}
 
       <section className="grid gap-6 lg:grid-cols-[1fr_1.4fr]">
         <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">

@@ -1,7 +1,7 @@
 "use client";
 import { useEffect,useMemo,useState } from "react";
-import { balkanStays, inquiry, type Stay } from "@/lib/epoch-ai/hotelProcurement";
-type H={id:string;name:string;city:string|null;email:string|null;contacts:{email:string|null;isPrimary:boolean}[]};
+import { balkanStays, contactEmail, inquiry, type HotelContact, type Stay } from "@/lib/epoch-ai/hotelProcurement";
+type H=Pick<HotelContact, "id" | "name" | "city" | "email" | "contacts">;
 type Entry={id:string;recipient:string;subject:string;status:string;createdAt:string;approvedAt:string|null;supplier:{name:string}};
 export default function HotelInquiryHistoryPanel({tourId,hotels}:{tourId:string;hotels:H[]}){
  const [stayIndex,setStayIndex]=useState(0);const [supplierId,setSupplierId]=useState("");const [recipient,setRecipient]=useState("");const [subject,setSubject]=useState("");const [body,setBody]=useState("");const [rows,setRows]=useState<Entry[]>([]);const [message,setMessage]=useState("");const [busy,setBusy]=useState(false);
@@ -9,7 +9,7 @@ export default function HotelInquiryHistoryPanel({tourId,hotels}:{tourId:string;
  const matches=useMemo(()=>hotels.filter(h=>h.city?.toLowerCase().includes(stay.city.toLowerCase())||h.name.toLowerCase().includes(stay.city.toLowerCase())),[hotels,stay.city]);
  async function reload(){try{const r=await fetch(`/api/admin/epoch-ai/hotel-inquiries?tourId=${encodeURIComponent(tourId)}`,{cache:"no-store"});const d=await r.json();if(r.ok)setRows(d.entries||[]);else setMessage(d.error||"Could not load inquiry history.");}catch{setMessage("Could not load inquiry history; check development database migration.");}}
  useEffect(()=>{void reload();},[tourId]);
- function selectHotel(id:string){setSupplierId(id);const h=hotels.find(v=>v.id===id);setRecipient(h?.contacts.find(x=>x.isPrimary&&x.email)?.email||h?.contacts.find(x=>x.email)?.email||h?.email||"");const x=inquiry(stay,h?.name||"");setSubject(x.subject);setBody(x.body);setMessage("");}
+ function selectHotel(id:string){setSupplierId(id);const h=hotels.find(v=>v.id===id);setRecipient(h?contactEmail(h):"");const x=inquiry(stay,h?.name||"");setSubject(x.subject);setBody(x.body);setMessage("");}
  function selectStay(n:number){setStayIndex(n);setSupplierId("");setRecipient("");const x=inquiry(balkanStays[n],"");setSubject(x.subject);setBody(x.body);}
  async function save(){if(!hotel){setMessage("Select a hotel already registered in CRM.");return;}if(!window.confirm(`Save inquiry DRAFT for ${hotel.name}? This does not approve or send it.`))return;setBusy(true);try{const r=await fetch("/api/admin/epoch-ai/hotel-inquiries",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({tourId,supplierId,stay,recipient,subject,body})});const d=await r.json();if(!r.ok)throw Error(d.error||"Save failed");setMessage("Draft saved. Not approved or sent.");await reload();}catch(e){setMessage(e instanceof Error?e.message:"Save failed");}finally{setBusy(false);}}
  async function approve(row:Entry){if(!window.confirm(`Approve frozen inquiry to ${row.recipient}?\n\n${row.subject}\n\nApproval does NOT send email.`))return;setBusy(true);try{const r=await fetch(`/api/admin/epoch-ai/hotel-inquiries/${row.id}/approve`,{method:"POST"});const d=await r.json();if(!r.ok)throw Error(d.error||"Approval failed");setMessage("Inquiry approved and frozen; NOT sent.");await reload();}catch(e){setMessage(e instanceof Error?e.message:"Approval failed");}finally{setBusy(false);}}

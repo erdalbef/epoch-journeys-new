@@ -43,7 +43,7 @@ export default async function EpochTourHotelProcurementPage({
       email: true,
       preferred: true,
       contacts: {
-        select: { email: true, isPrimary: true },
+        select: { email: true, isPrimary: true, notes: true },
         orderBy: { isPrimary: "desc" },
       },
     },

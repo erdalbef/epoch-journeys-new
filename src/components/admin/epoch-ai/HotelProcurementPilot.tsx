@@ -7,6 +7,8 @@ import RecordManualHotelOffer from "./RecordManualHotelOffer";
 import ResearchHotelManualInquiry from "./ResearchHotelManualInquiry";
 import OfficialHotelPageResearch from "./OfficialHotelPageResearch";
 import HotelSupplierResearchCard from "./HotelSupplierResearchCard";
+import HotelCrmDraftEntries from "./HotelCrmDraftEntries";
+import { hotelCrmEntryKey, type HotelCrmEntry } from "@/lib/epoch-ai/hotelCrmProfile";
 import { hotelResearchSearchUrl, compareLeadToCrm } from "@/lib/epoch-ai/hotelDiscoveryLeads";
 import type { HotelEvidenceReport } from "@/lib/epoch-ai/hotelEvidenceResearch";
 import { hotelEvidenceSummary, rankHotelResearchCandidates } from "@/lib/epoch-ai/hotelProcurementRecommendations";
@@ -39,6 +41,8 @@ export default function HotelProcurementPilot({tourId,destinations,itinerary,hot
   const [addedHotels,setAddedHotels]=useState<Record<string,string[]>>({});
   const [researchCountry,setResearchCountry]=useState<Record<number,string>>({});
   const [contactEdits,setContactEdits]=useState<Record<string,Partial<HotelResearchContactFields>>>({});
+  const [crmEntriesByHotel, setCrmEntriesByHotel] = useState<Record<string, HotelCrmEntry[]>>({});
+  const [excludedCrmEntries, setExcludedCrmEntries] = useState<Record<string, string[]>>({});
   const [facilitiesSource,setFacilitiesSource]=useState<Record<string,string>>({});
   const [reviewedContact,setReviewedContact]=useState<Record<string,string>>({});
   const [reviewedFacilitiesSource,setReviewedFacilitiesSource]=useState<Record<string,string>>({});
@@ -174,10 +178,11 @@ export default function HotelProcurementPilot({tourId,destinations,itinerary,hot
     setEvidenceLoading(p=>({...p,[requestKey]:true}));
     setEvidenceErrors(p=>({...p,[requestKey]:""}));
     try{
-      const res=await fetch("/api/admin/epoch-ai/hotel-research/evidence",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({hotelName:name,city,country})});
-      const body=await readResearchJson<{report?:HotelEvidenceReport;structuredResearch?:StructuredHotelResearch;officialSiteCandidates?:HotelOfficialSiteCandidate[];supplierResearch?:HotelSupplierResearch;partial?:boolean;error?:string}>(res);
+      const res=await fetch("/api/admin/epoch-ai/hotel-research/evidence",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({hotelName:name,city,country,crmProfile:true})});
+      const body=await readResearchJson<{report?:HotelEvidenceReport;structuredResearch?:StructuredHotelResearch;officialSiteCandidates?:HotelOfficialSiteCandidate[];supplierResearch?:HotelSupplierResearch;crmEntries?:HotelCrmEntry[];partial?:boolean;error?:string}>(res);
       if(!res.ok||!body.report)throw Error(body.error||"Research unavailable");
       setEvidenceReports(p=>({...p,[requestKey]:body.report!}));
+      setCrmEntriesByHotel(previous => ({...previous, [requestKey]: body.crmEntries ?? []}));
       const supplierResearch = body.supplierResearch;
       if (supplierResearch) setSupplierResearchByKey(p=>({...p,[requestKey]:supplierResearch}));
       setPartialResearchByKey(p=>({...p,[requestKey]:Boolean(body.partial)}));
@@ -219,13 +224,14 @@ export default function HotelProcurementPilot({tourId,destinations,itinerary,hot
       setStatus("Enter the hotel's published phone number.");
       return;
     }
-    const confirmation = `Register ${selected} in ${stay.city}, ${country} as an INACTIVE research candidate?\n\nContact: ${recipient}, ${phone}\nContact evidence: ${source}\nFacilities evidence: ${facilities || "Pending hotel follow-up"}\n\nThis creates a CRM candidate only. No email will be sent.`;
+    const crmEntries = crmDraftEntries.filter(entry => !excludedEntries.includes(hotelCrmEntryKey(entry)));
+    const confirmation = `Register ${selected} in ${stay.city}, ${country} as an INACTIVE research candidate?\n\nContact: ${recipient}, ${phone}\nContact evidence: ${source}\nFacilities evidence: ${facilities || "Pending hotel follow-up"}\nAdditional details selected: ${crmEntries.length}\n\nThis creates a CRM candidate only. No email will be sent.`;
     if (!window.confirm(confirmation)) return;
     setCrmSaving(true); setStatus("");
     try {
       const response = await fetch("/api/admin/epoch-ai/hotel-research/register", {
         method:"POST", headers:{"Content-Type":"application/json"},
-        body: JSON.stringify({name:selected,city:stay.city,country,email:recipient,phone,source,facilitiesSource:facilities || undefined,adminVerification:{confirmation:"REGISTER VERIFIED RESEARCH LEAD",contactChecked:true,facilitiesChecked},hotelStay:{checkIn:stay.checkIn,checkOut:stay.checkOut,rooms:stay.rooms}}),
+        body: JSON.stringify({name:selected,city:stay.city,country,email:recipient,phone,source,facilitiesSource:facilities || undefined,crmEntries,adminVerification:{confirmation:"REGISTER VERIFIED RESEARCH LEAD",contactChecked:true,facilitiesChecked},hotelStay:{checkIn:stay.checkIn,checkOut:stay.checkOut,rooms:stay.rooms}}),
       });
       const result = await response.json() as {error?:string;supplierId?:string;alreadyExists?:boolean};
       if (!response.ok || !result.supplierId) throw new Error(result.error || "CRM registration did not complete.");
@@ -270,6 +276,10 @@ export default function HotelProcurementPilot({tourId,destinations,itinerary,hot
   const facilitiesChecked = Boolean(facilitiesLink && reviewedFacilitiesSource[evidenceKey] === facilitiesLink);
   const suitability=selectedName?buildSuitabilityReview({roomsRequested:stay?.rooms||0,massRoomRequired:Boolean(stay?.massRoom),totalRooms:leadEvidence(selectedName)?.totalRooms,marked:checkStatus[reviewKey]||{},hasPublicFacilitiesSource:Boolean(facilitiesLink)}):null;
   const leadEmail = researchForm.email.trim();
+  const crmDraftEntries = (crmEntriesByHotel[evidenceKey] ?? []).filter(entry =>
+    entry.kind !== "email" && entry.kind !== "phone" &&
+    (entry.kind !== "contact" || entry.value.toLowerCase() !== leadEmail.toLowerCase()));
+  const excludedEntries = excludedCrmEntries[evidenceKey] ?? [];
   const coverage=stay?assessHotelCoverage(stay,hotels):null;
   const candidateReviews=stay?reviewHotelCandidates(stay,hotels).filter(item => eligibleByGuestRating(item.name)):[];
   const addedHotelKey = locationKey("");
@@ -837,6 +847,15 @@ export default function HotelProcurementPilot({tourId,destinations,itinerary,hot
               </> : null}
               <p className="text-xs text-slate-600">You can register the contact and leave facilities for hotel follow-up.</p>
             </details>
+            {crmDraftEntries.length ? <div className="space-y-2">
+              <p className="font-medium">Additional CRM details found by Epoch AI</p>
+              <p className="text-xs">Review the sources and select the details to include.</p>
+              <HotelCrmDraftEntries entries={crmDraftEntries} excluded={excludedEntries} onToggle={key =>
+                setExcludedCrmEntries(previous => {
+                  const saved = previous[evidenceKey] ?? [];
+                  return {...previous, [evidenceKey]: saved.includes(key) ? saved.filter(item => item !== key) : [...saved, key]};
+                })} />
+            </div> : null}
             <div className="flex flex-wrap items-center gap-3">
               <a href="#epoch-hotel-inquiry" className="text-blue-700 underline">Review inquiry draft</a>
               {!registeredSupplierId ? <button type="button" disabled={crmSaving} onClick={()=>void saveApprovedLead()}

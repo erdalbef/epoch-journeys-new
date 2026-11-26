@@ -6,6 +6,7 @@ import { authOptions } from "@/lib/authOptions";
 import { db } from "@/lib/db";
 import { canonicalHotelName,parseResearchRegistration } from "@/lib/epoch-ai/hotelResearchRegistration";
 import { publishedHotelVerification } from "@/lib/epoch-ai/hotelPublicVerification";
+import { hotelCrmContactName, hotelCrmNotes, parseHotelCrmEntries } from "@/lib/epoch-ai/hotelCrmProfile";
 
 export async function POST(request:Request) {
   const requestOrigin = request.headers.get("origin");
@@ -17,7 +18,12 @@ export async function POST(request:Request) {
   const session=await getServerSession(authOptions);
   if (!session?.user || session.user.role!==Role.ADMIN) return NextResponse.json({error:"Admin access required."},{status:401});
   try {
-    const input=parseResearchRegistration(await request.json());
+    const body = await request.json();
+    const input = parseResearchRegistration(body);
+    const crmEntries = parseHotelCrmEntries(body.crmEntries ?? []);
+    if (crmEntries.some(entry => entry.kind === "email" || entry.kind === "phone")) {
+      return NextResponse.json({error: "Review the email and phone in the main contact fields."}, {status: 400});
+    }
     // A static Sarajevo research profile or a documented, explicitly verified Admin entry.
     // User-provided links are provenance, NOT evidence that we independently checked the website.
     const approved=publishedHotelVerification(input.name);
@@ -28,7 +34,7 @@ export async function POST(request:Request) {
     const manualVerified=input.adminVerification?.confirmation==="REGISTER VERIFIED RESEARCH LEAD" &&
       input.adminVerification.contactChecked===true &&
       (!input.facilitiesSource || input.adminVerification.facilitiesChecked===true);
-    if (!sarajevoVerified && !manualVerified) {
+    if ((!sarajevoVerified || crmEntries.length > 0) && !manualVerified) {
       return NextResponse.json({error:"Confirm the contact source and review any facilities source provided before CRM registration."},{status:400});
     }
     const matchKey=`hotel-research:${canonicalHotelName(input.country)}:${canonicalHotelName(input.city)}:${canonicalHotelName(input.name)}`;
@@ -48,8 +54,20 @@ export async function POST(request:Request) {
         `Hotel stay context: ${input.hotelStay.checkIn} to ${input.hotelStay.checkOut}; ${input.hotelStay.rooms} rooms REQUESTED, NOT CONFIRMED`,
         "Still to confirm directly: group room availability and rates, shower access, lifts, coach access, porterage, dinner, cancellation and payment terms",
         `Registered by Admin: ${session.user.email || session.user.id || "unknown"}`].join("\n");
+      const fields: {website?: string; address?: string; postalCode?: string} = {};
+      const contacts = new Map([[input.email.toLowerCase(), {
+        firstName: hotelCrmContactName(input.email), email: input.email, phone: input.phone, notes: `Public source: ${input.source}`,
+      }]]);
+      for (const {kind, value, sourceUrl} of crmEntries) {
+        if (kind === "website" || kind === "address" || kind === "postalCode") fields[kind] = value;
+        if (kind === "contact" && !contacts.has(value.toLowerCase())) {
+          contacts.set(value.toLowerCase(), {firstName: hotelCrmContactName(value), email: value, phone: "", notes: `Public source: ${sourceUrl}`});
+        }
+      }
+      const notes = [researchNote, hotelCrmNotes(crmEntries, session.user.email || session.user.id || "Admin")].filter(Boolean).join("\n\n");
       const supplier=await tx.supplier.create({data:{name:input.name,type:SupplierType.HOTEL,status:SupplierStatus.INACTIVE,
-        country:input.country,city:input.city,email:input.email,phone:input.phone,notes:researchNote,preferred:false}});
+        country:input.country,city:input.city,email:input.email,phone:input.phone,notes,preferred:false,
+        ...fields, contacts: {create: [...contacts.values()]}}});
       return {supplierId:supplier.id,alreadyExists:false};
     });
     return NextResponse.json(result,{status:result.alreadyExists?200:201});

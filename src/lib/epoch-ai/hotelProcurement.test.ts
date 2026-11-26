@@ -83,7 +83,13 @@ describe("read-only hotel procurement preparation",()=>{
    expect(matchHotelCrmRecords("Hôtel Colosseo", "Tirana", hotels).map(item => item.id)).toEqual(["t"]);
    expect(matchHotelCrmRecords("Hotel Colosseo", "Ohrid", hotels)).toEqual([]);
  });
- it("uses primary contact for draft recipient",()=>{expect(contactEmail({id:"1",name:"A",city:"Ohrid",country:null,email:"info@example.com",preferred:false,contacts:[{email:"reservations@example.com",isPrimary:true}]})).toBe("reservations@example.com")});
+ it("uses primary contact for draft recipient",()=>{expect(contactEmail({email:"info@example.com",contacts:[{email:"reservations@example.com",isPrimary:true}]})).toBe("reservations@example.com")});
+ it("uses a public research mailbox for inquiries only after it is set as primary", () => {
+   const mailbox = {email: "groups@example.com", isPrimary: false, notes: "Public source: https://example.com/contact"};
+   const hotel = {email: "info@example.com", contacts: [mailbox]};
+   expect(contactEmail(hotel)).toBe("info@example.com");
+   expect(contactEmail({...hotel, contacts: [{...mailbox, isPrimary: true}]})).toBe(mailbox.email);
+ });
  it("preserves approved master terms",()=>{const x=inquiry(balkanStays[1],"Hotel");expect(x.body).toContain("Half-board supplement (HB)");expect(x.body).toContain("Triple where available");expect(x.body).toContain("Please advise on availability for the requested dates and quote your best group rates for Double/Twin and Single rooms, plus Triple rooms where available.");expect(x.body).toContain("2 glasses of wine");expect(x.body).toContain("private meeting room");expect(x.errors).toHaveLength(0)});
  it("uses unambiguous English month dates for all new inquiries",()=>{const x=inquiry(balkanStays[0],"Hotel");expect(x.subject).toMatch(/^Group Accommodation Request \| /);expect(x.subject).toContain("7 May 2027");expect(x.body).toContain("8 May 2027");expect(x.subject).not.toContain("07/05/2027")});
  it("uses the branded-signature boundary without duplicating identity fields",()=>{const x=inquiry(balkanStays[0],"Courtyard");expect(x.body).toMatch(/Kind regards,$/);expect(x.body).not.toContain("Erdal Vardarli");expect(x.body).not.toContain("erdal@epochjourneys.com")});

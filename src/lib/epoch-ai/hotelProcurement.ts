@@ -1,7 +1,7 @@
 import { itineraryProcurementStays } from "./hotelStayCities";
 
 export type Stay = { city: string; checkIn: string; checkOut: string; rooms: number; massRoom: boolean; originCountry?: string };
-export type HotelContact = { id: string; name: string; city: string | null; country: string | null; email: string | null; preferred: boolean; contacts: { email: string | null; isPrimary: boolean }[] };
+export type HotelContact = { id: string; name: string; city: string | null; country: string | null; email: string | null; preferred: boolean; contacts: { email: string | null; isPrimary: boolean; notes?: string | null }[] };
 export const balkanStays: Stay[] = [
   {city:"Sarajevo",checkIn:"2027-05-07",checkOut:"2027-05-08",rooms:20,massRoom:false,originCountry:"USA"},
   {city:"Kotor Bay",checkIn:"2027-05-08",checkOut:"2027-05-10",rooms:20,massRoom:true,originCountry:"USA"},
@@ -44,7 +44,11 @@ export function searchCrmHotels(hotels:HotelContact[], city:string, search:strin
  return hotels.filter(h=>[h.name,h.city||"",h.country||""].some(v=>key(v).includes(query)))
    .sort((a,b)=>Number(cityMatches.some(v=>v.id===b.id))-Number(cityMatches.some(v=>v.id===a.id)) || Number(b.preferred)-Number(a.preferred) || a.name.localeCompare(b.name));
 }
-export function contactEmail(h:HotelContact):string { return h.contacts.find(c=>c.isPrimary && c.email)?.email || h.contacts.find(c=>c.email)?.email || h.email || ""; }
+export function contactEmail(h: Pick<HotelContact, "contacts" | "email">): string {
+  return h.contacts.find(contact => contact.isPrimary && contact.email)?.email ||
+    h.contacts.find(contact => contact.email && !contact.notes?.startsWith("Public source: https://"))?.email ||
+    h.email || "";
+}
 export function nights(s:Stay): number {
  const from=Date.parse(s.checkIn+"T00:00:00Z"),to=Date.parse(s.checkOut+"T00:00:00Z");
  return Number.isFinite(from)&&Number.isFinite(to)?Math.round((to-from)/86400000):0;

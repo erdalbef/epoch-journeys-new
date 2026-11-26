@@ -176,4 +176,24 @@ describe("Selected hotel contact and facilities", () => {
       phone: {number: "+383 38 222 280", sourceUrl: source},
     }]);
   });
+
+  it("proposes sourced CRM fields, contact and research notes from a property page", async () => {
+    const source = "https://www.hotel-sirius.example/contact";
+    vi.stubGlobal("fetch", vi.fn(async () => searchResults([{
+      title: "Hotel Sirius, Prishtina",
+      url: source,
+      description: "Address: Agim Ramadani 22 | Postal code: 10000 | Phone: +383 38 222 280 | Email: groups@sirius.example.com | Total number of rooms: 52. The 4-star hotel provides meeting rooms.",
+    }])));
+    const response = await POST(request("Hotel Sirius", "Pristina", "Kosovo"));
+    expect(response.status).toBe(200);
+    expect((await response.json()).crmEntries).toEqual(expect.arrayContaining([
+      {kind: "website", value: source, sourceUrl: source},
+      {kind: "address", value: "Agim Ramadani 22", sourceUrl: source},
+      {kind: "postalCode", value: "10000", sourceUrl: source},
+      {kind: "phone", value: "+383 38 222 280", sourceUrl: source},
+      {kind: "contact", value: "groups@sirius.example.com", sourceUrl: source},
+      {kind: "fact", value: "52 published guest rooms", sourceUrl: source},
+      {kind: "fact", value: "Advertises a 4-star hotel classification", sourceUrl: source},
+    ]));
+  });
 });

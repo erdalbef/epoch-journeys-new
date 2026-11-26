@@ -78,7 +78,9 @@ export function extractStructuredHotelResearch(
     const explicitTotals = /\b(\d{1,4})\s+(?:(?:fully renovated|modern|spacious|well-appointed|newly renovated|beautifully appointed|thoughtfully designed)\s+)*(?:guest\s*rooms?|hotel rooms?|bedrooms?|rooms?\s+and\s+suites?)\b/gi;
     const statedInventory = /\b(?:has|offers|features|boasts|comprises|with|our|total of)\s+(\d{1,4})\s+(?:(?:fully renovated|modern|spacious|well-appointed|newly renovated)\s+)*rooms?\b/gi;
 
-    for (const pattern of [explicitTotals, statedInventory]) {
+    const labeledInventory = /\b(?:total number of rooms|total rooms|guest rooms)\s*:\s*(\d{1,4})\b/gi;
+
+    for (const pattern of [explicitTotals, statedInventory, labeledInventory]) {
       for (const match of excerpt.matchAll(pattern)) {
         const prefix = excerpt.slice(Math.max(0, match.index - 45), match.index);
         const suffix = excerpt.slice(match.index + match[0].length);

@@ -4,6 +4,7 @@ import {compileHotelEvidence,mapBraveHotelResults,validHotelEvidenceRequest} fro
 import {extractStructuredHotelResearch} from "@/lib/epoch-ai/hotelStructuredResearch";
 import {buildHotelSupplierResearch} from "@/lib/epoch-ai/hotelSupplierResearch";
 import {hotelPublicResearchName} from "@/lib/epoch-ai/hotelPublicVerification";
+import {buildHotelCrmEntries} from "@/lib/epoch-ai/hotelCrmProfile";
 import type {WebHotelResult} from "@/lib/epoch-ai/hotelWebResearch";
 import {officialHotelSearchDomain,selectHotelOfficialSiteCandidates} from "@/lib/epoch-ai/hotelOfficialSiteSelection";
 export const runtime="nodejs";
@@ -17,6 +18,7 @@ export async function POST(request:Request){
   let value:unknown;try{value=await request.json()}catch{return respond({error:"Invalid request"},400)}
   if(!validHotelEvidenceRequest(value))return respond({error:"Valid hotel, destination and country required"},400);
   const {city,country}=value;
+  const crmProfile = "crmProfile" in value && value.crmProfile === true;
   const hotelName=hotelPublicResearchName(value.hotelName,city,country);
   const key=process.env.BRAVE_SEARCH_API_KEY?.trim();
   if(!key)return respond({error:"Brave Search API key is not configured on the server"},503);
@@ -55,7 +57,8 @@ export async function POST(request:Request){
       const structuredResearch = extractStructuredHotelResearch(hotelName, prioritizedPages);
       const report = compileHotelEvidence(hotelName, city, country, pages, searchedAt);
       const supplierResearch = buildHotelSupplierResearch(hotelName, city, pages, officialSiteCandidates, structuredResearch.contacts, report.findings);
-      return {report, structuredResearch, officialSiteCandidates, supplierResearch};
+      const crmEntries = buildHotelCrmEntries(city, pages, officialSiteCandidates, supplierResearch, structuredResearch.capacities);
+      return {report, structuredResearch, officialSiteCandidates, supplierResearch, crmEntries};
     }
     mergePages(lists.flat());
     let research = compile();
@@ -79,6 +82,10 @@ export async function POST(request:Request){
     const best = research.supplierResearch.contacts[0];
     if (!best || (best.corroboratingSourceUrl && !best.phone)) {
       await tryFollowup(`${hotelName} ${city} ${country} hotel reservations email telephone`);
+    }
+    if (crmProfile && (!research.crmEntries.some(entry => entry.kind === "website") ||
+      !research.crmEntries.some(entry => entry.kind === "address"))) {
+      await tryFollowup(`${property} official website street address postal code`);
     }
     return respond({
       ...research,
