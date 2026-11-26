@@ -114,6 +114,7 @@ type Panel =
   | "contacts"
   | "services"
   | "rates"
+  | "policies"
   | "contracts";
 
 const SERVICE_TYPES = [
@@ -262,9 +263,11 @@ function date(
 export default function SupplierWorkspace({
   supplier,
   initialPanel = "contacts",
+  policies,
 }: {
   supplier: SupplierData;
   initialPanel?: Panel;
+  policies?: React.ReactNode;
 }) {
   const router =
     useRouter();
@@ -398,6 +401,7 @@ export default function SupplierWorkspace({
             "contacts",
             "services",
             "rates",
+            "policies",
             "contracts",
           ] as Panel[]
         ).map((item) => (
@@ -406,6 +410,10 @@ export default function SupplierWorkspace({
             type="button"
             onClick={() => {
               setPanel(item);
+              const url = new URL(window.location.href);
+              if (item === "contacts") url.searchParams.delete("tab");
+              else url.searchParams.set("tab", item);
+              window.history.replaceState(null, "", url);
               setAdding(false);
               setViewingServiceId(null);
               setEditingServiceId(null);
@@ -425,7 +433,7 @@ export default function SupplierWorkspace({
           </button>
         ))}
 
-        <button
+        {panel !== "policies" && <button
           type="button"
           onClick={() =>
             setAdding(
@@ -437,7 +445,7 @@ export default function SupplierWorkspace({
         >
           <Plus className="h-4 w-4" />
           Add
-        </button>
+        </button>}
       </div>
 
       {adding && (
@@ -859,6 +867,8 @@ export default function SupplierWorkspace({
             )}
           </div>
         )}
+
+        {panel === "policies" && policies}
 
         {panel === "contracts" && (
           <div className="space-y-3">

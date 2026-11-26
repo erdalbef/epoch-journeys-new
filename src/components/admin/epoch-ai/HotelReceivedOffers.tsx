@@ -2,8 +2,10 @@
 
 import { useState } from "react";
 import HotelOfferRateDraft, { SupplierRatesLink } from "./HotelOfferRateDraft";
-import { hotelOfferDeadlines } from "@/lib/epoch-ai/hotelOfferDeadlines";
-import { hotelOfferFields, type HotelOfferTerms, type ManualHotelOffer } from "@/lib/epoch-ai/receivedHotelOffer";
+import OfferDeadlines from "./OfferDeadlines";
+import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { hotelOfferFields, hotelOfferPolicyFields, type HotelOfferTerms, type ManualHotelOffer } from "@/lib/epoch-ai/receivedHotelOffer";
 
 type Offer = {
   id: string;
@@ -24,26 +26,8 @@ type Offer = {
 const fields = Object.entries(hotelOfferFields) as [keyof HotelOfferTerms, string][];
 const emptyTerms = () => Object.fromEntries(fields.map(([key]) => [key, ""])) as HotelOfferTerms;
 
-function OfferDeadlines({offer}: {offer: Offer}) {
-  if (!offer.reviewedTerms || !offer.stay || ["REJECTED", "SUPERSEDED"].includes(offer.acceptanceStatus)) return null;
-  const deadlines = hotelOfferDeadlines(offer.reviewedTerms, offer.sourceDate.slice(0, 10), offer.stay.checkIn);
-  if (!deadlines.length) return null;
-  const today = new Intl.DateTimeFormat("sv-SE", {timeZone: "Europe/Istanbul"}).format(new Date());
-  const inSevenDays = new Date(Date.parse(today) + 7 * 86_400_000).toISOString().slice(0, 10);
-  return <section className="space-y-2 rounded border border-amber-200 bg-amber-50 p-3" aria-label="Offer deadlines">
-    <h5 className="font-semibold">Offer deadlines</h5>
-    <p>Dates are calculated from the recorded receipt and stay dates. Confirm cutoff times with the hotel. Room-block penalties apply only to a confirmed block.</p>
-    <ul className="list-disc space-y-1 pl-5">
-      {deadlines.map(({date, label, kind}) => <li key={`${date}:${label}`}>
-        <time dateTime={date}>{date}</time> · {label}
-        {kind === "roomBlock" && offer.acceptanceStatus !== "RECORDED_ACCEPTED" ? " · Confirm room-block status" : ""}
-        {date < today ? " · Date passed" : date <= inSevenDays ? " · Due within 7 days" : ""}
-      </li>)}
-    </ul>
-  </section>;
-}
-
-export default function HotelReceivedOffers(props: { inquiryId: string } | { manual: ManualHotelOffer; expanded?: boolean }) {
+export default function HotelReceivedOffers(props: ({ inquiryId: string } | { manual: ManualHotelOffer; expanded?: boolean }) & { policiesHref?: string }) {
+  const router = useRouter();
   const manual = "manual" in props ? props.manual : null;
   const inquiryId = "inquiryId" in props ? props.inquiryId : "manual";
   const url = `/api/admin/epoch-ai/hotel-inquiries/${encodeURIComponent(inquiryId)}/offers`;
@@ -78,6 +62,7 @@ export default function HotelReceivedOffers(props: { inquiryId: string } | { man
     form.reset();
     setStatus(result.alreadyRecorded ? "This offer is already in the history." : "Offer recorded for review.");
     await load();
+    if (props.policiesHref) router.refresh();
   }
 
   async function offerAction(id: string, action: "analyze" | "review") {
@@ -97,6 +82,7 @@ export default function HotelReceivedOffers(props: { inquiryId: string } | { man
       setEditing(null);
       setStatus("Reviewed terms saved. Offer acceptance is pending.");
       await load();
+      if (props.policiesHref) router.refresh();
     }
   }
 
@@ -131,7 +117,11 @@ export default function HotelReceivedOffers(props: { inquiryId: string } | { man
     {status && <p role="status">{status}</p>}
     {busy && <p role="status">Working…</p>}
     {!busy && offers === null && <button type="button" className={buttonClass} onClick={()=>void run(load)}>Reload offers</button>}
-    {offers?.map(offer => (
+    {offers?.map(offer => {
+      const showPolicyLink = props.policiesHref && offer === offers[0] && offer.reviewStatus === "TERMS_VERIFIED" &&
+        offer.reviewedTerms && !["REJECTED", "SUPERSEDED"].includes(offer.acceptanceStatus) &&
+        hotelOfferPolicyFields.some(key => offer.reviewedTerms?.[key]);
+      return (
       <section key={offer.id} className="space-y-2 rounded border bg-white p-3">
         <p className="font-semibold">Version {offer.version} · {offer.sourceSubject}</p>
         <p>{offer.sourceDate.slice(0, 10)} · {offer.sourceSender} · {offer.reviewStatus === "TERMS_VERIFIED" ? "Terms verified" : "Received — pending review"}</p>
@@ -150,11 +140,13 @@ export default function HotelReceivedOffers(props: { inquiryId: string } | { man
           }}>Enter terms manually</button>
         </div>}
         {offer.reviewedTerms && <dl className="grid gap-2 sm:grid-cols-2">
-          {fields.filter(([key])=>offer.reviewedTerms?.[key]).map(([key,label])=><div key={key}>
+          {fields.filter(([key])=>offer.reviewedTerms?.[key] && (!showPolicyLink || !hotelOfferPolicyFields.some(field => field === key))).map(([key,label])=><div key={key}>
             <dt className="font-semibold">{label}</dt><dd className="whitespace-pre-wrap">{offer.reviewedTerms?.[key]}</dd>
           </div>)}
         </dl>}
-        {offer === offers[0] && offer.reviewStatus === "TERMS_VERIFIED" ? <OfferDeadlines offer={offer}/> : null}
+        {showPolicyLink && props.policiesHref ? <Link href={props.policiesHref}
+          className="font-semibold text-blue-800 underline">View offer policies and deadlines</Link> :
+          offer === offers[0] && offer.reviewStatus === "TERMS_VERIFIED" ? <OfferDeadlines offer={offer}/> : null}
         {offer.ratesSaved ? <p className="font-semibold">Rates saved in Supplier CRM. <SupplierRatesLink supplierId={offer.supplierId}/></p> :
           offer === offers[0] && offer.reviewStatus === "TERMS_VERIFIED" && offer.reviewedTerms && offer.stay &&
             !["REJECTED", "SUPERSEDED"].includes(offer.acceptanceStatus) ? <details className="rounded border border-blue-200 p-2">
@@ -174,7 +166,8 @@ export default function HotelReceivedOffers(props: { inquiryId: string } | { man
             }}>Verify and save reviewed terms</button>
         </div>}
       </section>
-    ))}
+      );
+    })}
     {offers?.length === 0 && <p>No received offers recorded for this inquiry.</p>}
   </details>;
 }

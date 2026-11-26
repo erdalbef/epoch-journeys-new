@@ -13,6 +13,12 @@ import SupplierWorkspace from "@/components/admin/suppliers/SupplierWorkspace";
 import DeleteSupplierButton from "@/components/admin/suppliers/DeleteSupplierButton";
 import HotelReceivedOffers from "@/components/admin/epoch-ai/HotelReceivedOffers";
 import HotelCrmResearch from "@/components/admin/suppliers/HotelCrmResearch";
+import OfferDeadlines from "@/components/admin/epoch-ai/OfferDeadlines";
+import { hotelOfferFields, hotelOfferPolicyFields, hotelOfferTerms, manualHotelOfferStay } from "@/lib/epoch-ai/receivedHotelOffer";
+
+const offerPolicySelect = {
+  id: true, version: true, sourceDate: true, reviewedTerms: true, reviewStatus: true, acceptanceStatus: true,
+} as const;
 
 type Props = {
   params: Promise<{
@@ -57,7 +63,8 @@ export default async function SupplierDetailPage({
   const {
     id,
   } = await params;
-  const initialPanel = (await searchParams).tab === "rates" ? "rates" : "contacts";
+  const {tab} = await searchParams;
+  const initialPanel = tab === "services" || tab === "rates" || tab === "policies" || tab === "contracts" ? tab : "contacts";
 
   const supplier =
     await db.supplier.findUnique({
@@ -184,15 +191,59 @@ export default async function SupplierDetailPage({
     where: { supplierId: supplier.id, receivedOffers: { some: {} } },
     orderBy: { createdAt: "desc" },
     take: 25,
-    select: { id: true, destination: true, checkIn: true, checkOut: true, rooms: true, tour: { select: { title: true } } },
+    select: { id: true, destination: true, checkIn: true, checkOut: true, rooms: true,
+      tour: { select: { title: true } },
+      receivedOffers: {orderBy: {version: "desc"}, take: 1, select: offerPolicySelect} },
   }), db.supplierCommercialEvidence.findMany({
     where: { supplierId: supplier.id, manualHotelTourId: { not: null } },
-    orderBy: { createdAt: "desc" },
+    orderBy: [{createdAt: "desc"}, {version: "desc"}],
     distinct: ["manualHotelTourId", "manualHotelStayKey"],
     take: 25,
-    select: { manualHotelTourId: true, manualHotelStayKey: true, manualHotelTour: { select: { title: true } } },
+    select: { ...offerPolicySelect, manualHotelTourId: true, manualHotelStayKey: true, manualHotelTour: { select: { title: true } } },
   })]) : [[], []];
 
+  const manualOffersWithStay = manualHotelOffers.flatMap(offer => {
+    if (!offer.manualHotelTourId || !offer.manualHotelStayKey) return [];
+    try {
+      const result = manualHotelOfferStay.safeParse(JSON.parse(offer.manualHotelStayKey));
+      return result.success ? [{...offer, manualHotelTourId: offer.manualHotelTourId,
+        manualHotelStayKey: offer.manualHotelStayKey, stay: result.data}] : [];
+    } catch { return []; }
+  });
+  const policyOffers = [
+    ...offerInquiries.map(inquiry => ({
+      offer: inquiry.receivedOffers[0], city: inquiry.destination, title: inquiry.tour.title,
+      checkIn: inquiry.checkIn, checkOut: inquiry.checkOut, sourceAnchor: `received-offer-${inquiry.id}`,
+    })),
+    ...manualOffersWithStay.map(offer => ({
+      offer, city: offer.stay[0], title: offer.manualHotelTour?.title,
+      checkIn: offer.stay[1], checkOut: offer.stay[2], sourceAnchor: `received-offer-${offer.id}`,
+    })),
+  ].flatMap(({offer, ...stay}) => {
+    if (!offer || offer.reviewStatus !== "TERMS_VERIFIED" || ["REJECTED", "SUPERSEDED"].includes(offer.acceptanceStatus)) return [];
+    const terms = hotelOfferTerms.safeParse(offer.reviewedTerms);
+    return terms.success && hotelOfferPolicyFields.some(field => terms.data[field]) ? [{...stay, offer, terms: terms.data}] : [];
+  }).sort((a, b) => a.checkIn.localeCompare(b.checkIn));
+  const policiesHref = `/admin/suppliers/${encodeURIComponent(supplier.id)}?tab=policies#supplier-workspace`;
+  const policies = <div className="space-y-4 text-sm">
+    {(supplier.paymentTerms || supplier.cancellationTerms) && <section className="space-y-2">
+      <h3 className="font-semibold">Supplier policies</h3>
+      {supplier.paymentTerms && <TextBlock title="Payment terms" value={supplier.paymentTerms}/>}
+      {supplier.cancellationTerms && <TextBlock title="Cancellation terms" value={supplier.cancellationTerms}/>}
+    </section>}
+    {policyOffers.map(({offer, title, city, checkIn, checkOut, sourceAnchor, terms}) => <section
+      key={offer.id} className="space-y-3 rounded-xl border border-slate-200 p-3">
+      <h3 className="font-semibold">{[title, city].filter(Boolean).join(" · ")}</h3>
+      <p className="text-slate-600">{checkIn} to {checkOut} · Offer version {offer.version}</p>
+      {hotelOfferPolicyFields.map(field => terms[field] &&
+        <TextBlock key={field} title={hotelOfferFields[field]} value={terms[field]}/>)}
+      <OfferDeadlines offer={{reviewedTerms: terms, sourceDate: offer.sourceDate?.toISOString() ?? "",
+        stay: {checkIn, checkOut}, acceptanceStatus: offer.acceptanceStatus}}/>
+      <a href={`#${sourceAnchor}`} className="font-semibold text-blue-800 underline">Go to received offer</a>
+    </section>)}
+    {!supplier.paymentTerms && !supplier.cancellationTerms && !policyOffers.length ?
+      <p className="text-slate-600">No supplier policies or reviewed offer terms recorded yet.</p> : null}
+  </div>;
   const serialized = {
     id:
       supplier.id,
@@ -533,36 +584,9 @@ export default async function SupplierDetailPage({
             />
           </div>
 
-          {(supplier.paymentTerms ||
-            supplier.cancellationTerms ||
-            supplier.notes) && (
-            <div className="mt-6 space-y-4 border-t border-slate-100 pt-5 text-sm">
-              {supplier.paymentTerms && (
-                <TextBlock
-                  title="Payment terms"
-                  value={
-                    supplier.paymentTerms
-                  }
-                />
-              )}
-
-              {supplier.cancellationTerms && (
-                <TextBlock
-                  title="Cancellation terms"
-                  value={
-                    supplier.cancellationTerms
-                  }
-                />
-              )}
-
-              {supplier.notes && (
-                <TextBlock
-                  title="Internal notes"
-                  value={
-                    supplier.notes
-                  }
-                />
-              )}
+          {supplier.notes && (
+            <div className="mt-6 border-t border-slate-100 pt-5 text-sm">
+              <TextBlock title="Internal notes" value={supplier.notes}/>
             </div>
           )}
         </div>
@@ -570,27 +594,27 @@ export default async function SupplierDetailPage({
         <SupplierWorkspace
           key={initialPanel}
           initialPanel={initialPanel}
+          policies={policies}
           supplier={
             serialized
           }
         />
       </section>
 
-      {(offerInquiries.length > 0 || manualHotelOffers.length > 0) && <section className="space-y-3 rounded-2xl border bg-white p-5">
+      {(offerInquiries.length > 0 || manualOffersWithStay.length > 0) && <section className="space-y-3 rounded-2xl border bg-white p-5">
         <h2 className="text-lg font-semibold">Received hotel offers</h2>
-        {manualHotelOffers.map(({ manualHotelTourId, manualHotelStayKey, manualHotelTour }) => {
-          if (!manualHotelTourId || !manualHotelStayKey) return null;
-          const [city, checkIn, checkOut] = JSON.parse(manualHotelStayKey) as [string, string, string];
-          return <div key={`${manualHotelTourId}:${manualHotelStayKey}`} className="space-y-1 text-sm">
+        {manualOffersWithStay.map(({ id: offerId, manualHotelTourId, manualHotelStayKey, manualHotelTour, stay }) => {
+          const [city, checkIn, checkOut] = stay;
+          return <div key={`${manualHotelTourId}:${manualHotelStayKey}`} id={`received-offer-${offerId}`} className="scroll-mt-28 space-y-1 text-sm">
             <p className="font-medium">{manualHotelTour?.title} · {city}</p>
             <p>{checkIn} to {checkOut} · Manually sent request</p>
-            <HotelReceivedOffers manual={{ tourId: manualHotelTourId, supplierId: supplier.id, stayKey: manualHotelStayKey }} />
+            <HotelReceivedOffers policiesHref={policiesHref} manual={{ tourId: manualHotelTourId, supplierId: supplier.id, stayKey: manualHotelStayKey }} />
           </div>;
         })}
-        {offerInquiries.map(inquiry => <div key={inquiry.id} className="space-y-1 text-sm">
+        {offerInquiries.map(inquiry => <div key={inquiry.id} id={`received-offer-${inquiry.id}`} className="scroll-mt-28 space-y-1 text-sm">
           <p className="font-medium">{inquiry.tour.title} · {inquiry.destination}</p>
           <p>{inquiry.checkIn} to {inquiry.checkOut} · {inquiry.rooms} rooms</p>
-          <HotelReceivedOffers inquiryId={inquiry.id} />
+          <HotelReceivedOffers inquiryId={inquiry.id} policiesHref={policiesHref} />
         </div>)}
       </section>}
 

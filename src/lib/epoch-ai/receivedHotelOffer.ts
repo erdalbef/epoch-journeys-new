@@ -16,6 +16,7 @@ export const hotelOfferFields = {
 } as const;
 
 export type HotelOfferTerms = Record<keyof typeof hotelOfferFields, string>;
+export const hotelOfferPolicyFields = ["payment", "cancellation", "validity", "other"] as const;
 const term = z.string().trim().max(2000);
 export const hotelOfferTerms = z.object({
   availability: term, doubleTwin: term, single: term, triple: term,
