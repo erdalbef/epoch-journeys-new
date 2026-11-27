@@ -1,3 +1,4 @@
+import { procurementReferenceStays } from "@/lib/epoch-ai/hotelProcurement";
 import { itineraryProcurementStays } from "@/lib/epoch-ai/hotelStayCities";
 import type { SupplierHotelResult } from "./supplierHotelSelection";
 
@@ -29,12 +30,38 @@ export function quotePreparationDateRange(startDate: string, endDate: string) {
   return nights > 0;
 }
 
+export function quoteProcurementReferenceDates(tourId: string) {
+  const stays = procurementReferenceStays(tourId);
+  const first = stays[0];
+  const last = stays.at(-1);
+  if (!first || !last || !stays.every((stay, index) =>
+    quotePreparationDateRange(stay.checkIn, stay.checkOut) &&
+    (index === 0 || stays[index - 1].checkOut === stay.checkIn))) return null;
+  return { startDate: first.checkIn, endDate: last.checkOut };
+}
+
 export function prepareItineraryHotelStays(tour: QuotePreparationTour, startDate: string, endDate: string) {
   if (!quotePreparationDateRange(startDate, endDate)) throw new Error("Enter a valid requested start date and a later end date.");
+  const dates = quoteProcurementReferenceDates(tour.id);
+  const duration = Date.parse(endDate) - Date.parse(startDate);
+  if (dates && Date.parse(dates.endDate) - Date.parse(dates.startDate) === duration) {
+    const shift = Date.parse(startDate) - Date.parse(dates.startDate);
+    const requestedDate = (date: string) => new Date(Date.parse(date) + shift).toISOString().slice(0, 10);
+    const hotels = procurementReferenceStays(tour.id).map(stay => ({
+      city: stay.city,
+      checkIn: requestedDate(stay.checkIn),
+      checkOut: requestedDate(stay.checkOut),
+      nights: (Date.parse(stay.checkOut) - Date.parse(stay.checkIn)) / DATE_MS,
+    }));
+    return { hotels, warnings: [] as string[], source: "procurement" as const };
+  }
+
   const itinerary = tour.itinerary?.trim() || tour.overviewItinerary?.trim();
   const stops = itineraryProcurementStays(itinerary, tour.destinations ?? [], startDate);
   const availableDates = new Set<string>();
-  const warnings: string[] = [];
+  const warnings = dates
+    ? ["The requested duration differs from the Hotel Procurement schedule. Review the stays derived from the tour itinerary."]
+    : [];
   const hotels: QuotePreparationStay[] = [];
   for (const stop of stops) {
     const { checkIn, checkOut } = stop;
@@ -57,7 +84,7 @@ export function prepareItineraryHotelStays(tour: QuotePreparationTour, startDate
   if (unassignedNights > 0) {
     warnings.push(`${unassignedNights} night(s) have no identifiable hotel or ferry stay. Check the itinerary and requested dates.`);
   }
-  return { hotels, warnings };
+  return { hotels, warnings, source: "itinerary" as const };
 }
 
 export function findUsableQuotePreparationRates(results: SupplierHotelResult[], stay: QuotePreparationStay, currency: string) {

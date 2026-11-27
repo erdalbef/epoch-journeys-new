@@ -19,9 +19,14 @@ export function createProcurementStay(id: number, city = ""): ProcurementStay {
   return { id, city, checkIn: "", checkOut: "", rooms: 20, massRoom: false };
 }
 
+export function procurementReferenceStays(tourId: string): readonly Stay[] {
+  return tourId === balkanPilotTourId ? balkanStays : [];
+}
+
 export function initialProcurementStays(tourId: string, destinations: string[], itinerary?: string | null): ProcurementStay[] {
-  if (tourId === balkanPilotTourId) {
-    return balkanStays.map((reference, id) => ({ ...reference, id, reference }));
+  const references = procurementReferenceStays(tourId);
+  if (references.length) {
+    return references.map((reference, id) => ({ ...reference, id, reference }));
   }
 
   return itineraryProcurementStays(itinerary, destinations)

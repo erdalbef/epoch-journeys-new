@@ -30,7 +30,7 @@ type Props = {
 };
 
 export default function EpochQuotePreparation({tour, startDate, endDate, groupSize, currency, onApply}: Props) {
-  const [proposal, setProposal] = useState<{hotels: HotelProposal[]; warnings: string[]}>();
+  const [proposal, setProposal] = useState<{hotels: HotelProposal[]; warnings: string[]; source: "procurement" | "itinerary"}>();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const request = useRef<AbortController | null>(null);
@@ -44,7 +44,7 @@ export default function EpochQuotePreparation({tour, startDate, endDate, groupSi
     setError("");
     setLoading(true);
     try {
-      const {hotels, warnings} = prepareItineraryHotelStays(tour, startDate, endDate);
+      const {hotels, warnings, source} = prepareItineraryHotelStays(tour, startDate, endDate);
       const proposals: HotelProposal[] = [];
       async function research(stay: QuotePreparationStay): Promise<HotelProposal> {
         const open = {stay, rates: [], selectedRateId: ""};
@@ -74,7 +74,7 @@ export default function EpochQuotePreparation({tour, startDate, endDate, groupSi
       for (let index = 0; index < hotels.length; index += 4) {
         proposals.push(...await Promise.all(hotels.slice(index, index + 4).map(research)));
       }
-      if (!controller.signal.aborted) setProposal({hotels: proposals, warnings});
+      if (!controller.signal.aborted) setProposal({hotels: proposals, warnings, source});
     } catch (error) {
       if (!controller.signal.aborted) setError(error instanceof Error ? error.message : "Could not prepare the quote.");
     } finally {
@@ -86,7 +86,7 @@ export default function EpochQuotePreparation({tour, startDate, endDate, groupSi
   return (
     <section className="space-y-3 rounded-xl border border-blue-200 bg-blue-50 p-5" aria-label="Epoch AI quotation preparation">
       <h2 className="font-semibold text-[#001F3F]">Prepare a new quote with Epoch AI</h2>
-      <p className="text-sm text-slate-700">Epoch AI checks hotel nights and applicable Supplier CRM rates. Enter the date of itinerary Day 1 as the requested start date.</p>
+      <p className="text-sm text-slate-700">Epoch AI checks hotel nights and applicable Supplier CRM rates. If Hotel Procurement has no dated schedule, use itinerary Day 1 as the start date.</p>
       <button type="button" disabled={!tour || !quotePreparationDateRange(startDate, endDate) || groupSize < 1 || loading}
         onClick={() => void prepare()} className="rounded-lg bg-[#001F3F] px-4 py-2 text-sm font-semibold text-white disabled:opacity-50">
         {loading ? "Checking itinerary and CRM rates…" : proposal ? "Check rates again" : "Prepare quote draft"}
@@ -96,6 +96,9 @@ export default function EpochQuotePreparation({tour, startDate, endDate, groupSi
       ) : null}
       {error ? <p role="alert" className="text-sm text-red-700">{error}</p> : null}
       {proposal ? <>
+        <p className="text-sm text-slate-700">
+          Hotel stays from {proposal.source === "procurement" ? "the Hotel Procurement schedule" : "the saved tour itinerary"}.
+        </p>
         <ul className="space-y-2 text-sm">
           {proposal.hotels.map(({stay, rates, selectedRateId, issue}, index) => {
             const selected = rates.find(result => result.rate.id === selectedRateId);

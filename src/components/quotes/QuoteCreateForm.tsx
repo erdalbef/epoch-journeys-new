@@ -22,6 +22,7 @@ import RecipientSection from "@/components/quotes/create/RecipientSection";
 import GroupSetupSection from "@/components/quotes/create/GroupSetupSection";
 import HotelsSection from "@/components/quotes/create/HotelsSection";
 import EpochQuotePreparation, { type PreparedQuoteHotel } from "@/components/quotes/create/EpochQuotePreparation";
+import { quoteProcurementReferenceDates } from "@/lib/quotes/epochQuotePreparation";
 import { supplierHotelSnapshot } from "@/lib/quotes/supplierHotelSelection";
 
 import OperationalCostsSection, {
@@ -1407,6 +1408,7 @@ export default function QuoteCreateForm({
     useRouter();
   const [preparedHotelBasis, setPreparedHotelBasis] = useState("");
   const previousPreparationNote = useRef("");
+  const suggestedQuoteDates = useRef<{startDate: string; endDate: string} | null>(null);
 
   const [
     purpose,
@@ -4728,9 +4730,20 @@ export default function QuoteCreateForm({
                     false
                   );
 
-                  setTourId(
-                    e.target.value
-                  );
+                  const selectedTourId = e.target.value;
+                  setTourId(selectedTourId);
+                  if (prepareWithEpochAi && mode === "create") {
+                    const previousDates = suggestedQuoteDates.current;
+                    const usingSuggestedDates = previousDates &&
+                      previousDates.startDate === group.startDate && previousDates.endDate === group.endDate;
+                    if (usingSuggestedDates || (!group.startDate && !group.endDate)) {
+                      const scheduledDates = quoteProcurementReferenceDates(selectedTourId);
+                      suggestedQuoteDates.current = scheduledDates;
+                      setGroup(current => ({...current, ...(scheduledDates ?? {startDate: "", endDate: ""})}));
+                    } else {
+                      suggestedQuoteDates.current = null;
+                    }
+                  }
                 }}
               >
                 <option value="">

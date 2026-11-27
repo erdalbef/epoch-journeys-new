@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { findUsableQuotePreparationRates, prepareItineraryHotelStays, quotePreparationDateRange } from "./epochQuotePreparation";
+import { findUsableQuotePreparationRates, prepareItineraryHotelStays, quotePreparationDateRange, quoteProcurementReferenceDates } from "./epochQuotePreparation";
 import type { SupplierHotelResult } from "./supplierHotelSelection";
 
 const tour = {
@@ -29,6 +29,21 @@ describe("Epoch AI quote preparation", () => {
       {city:"Stockholm",country:"Sweden",checkIn:"2027-10-06",checkOut:"2027-10-07",nights:1},
     ]);
     expect(plan.warnings).toEqual([expect.stringContaining("add the ferry cost under transport")]);
+  });
+
+  it("uses all seven dated procurement stays for the Balkans instead of incomplete itinerary prose", () => {
+    const balkans = {...tour, id:"cmwjahwcc0000c1fglvy5yrdm", itinerary:"Day 1 – Arrival\nOvernight in Sarajevo."};
+    expect(quoteProcurementReferenceDates(balkans.id)).toEqual({startDate:"2027-05-07",endDate:"2027-05-19"});
+    const plan = prepareItineraryHotelStays(balkans, "2027-05-07", "2027-05-19");
+    expect(plan.source).toBe("procurement");
+    expect(plan.hotels.map(stay => [stay.city,stay.nights])).toEqual([
+      ["Sarajevo",1],["Kotor Bay",2],["Tirana",2],["Ohrid",2],["Pristina",1],["Skopje",2],["Belgrade",2],
+    ]);
+    expect(plan.warnings).toEqual([]);
+    expect(prepareItineraryHotelStays(balkans, "2027-06-07", "2027-06-19").hotels[1]).toMatchObject({
+      city:"Kotor Bay",checkIn:"2027-06-08",checkOut:"2027-06-10",
+    });
+    expect(prepareItineraryHotelStays(balkans, "2027-05-07", "2027-05-15").source).toBe("itinerary");
   });
 
   it("keeps dates and prices pending when the itinerary has no reliable night allocation", () => {
