@@ -4,6 +4,7 @@ import { getServerSession } from "next-auth";
 import { Role } from "@prisma/client";
 import { authOptions } from "@/lib/authOptions";
 import { db } from "@/lib/db";
+import { PENDING_HOTEL_CONTACT_NOTE } from "@/lib/epoch-ai/hotelResearchRegistration";
 import HotelProcurementPilot from "@/components/admin/epoch-ai/HotelProcurementPilot";
 
 export const dynamic = "force-dynamic";
@@ -42,6 +43,8 @@ export default async function EpochTourHotelProcurementPage({
       country: true,
       email: true,
       preferred: true,
+      status: true,
+      notes: true,
       contacts: {
         select: { email: true, isPrimary: true, notes: true },
         orderBy: { isPrimary: "desc" },
@@ -92,7 +95,10 @@ export default async function EpochTourHotelProcurementPage({
         tourId={tour.id}
         destinations={tour.destinations}
         itinerary={tour.itinerary}
-        hotels={hotels}
+        hotels={hotels.map(({status, notes, ...hotel}) => ({
+          ...hotel,
+          contactPending: status === "INACTIVE" && Boolean(notes?.split("\n").includes(PENDING_HOTEL_CONTACT_NOTE)),
+        }))}
       />
     </main>
   );

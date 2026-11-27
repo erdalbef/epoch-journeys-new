@@ -4,7 +4,7 @@ import { NextResponse } from "next/server";
 import { Role, SupplierStatus, SupplierType } from "@prisma/client";
 import { authOptions } from "@/lib/authOptions";
 import { db } from "@/lib/db";
-import { canonicalHotelName,parseResearchRegistration } from "@/lib/epoch-ai/hotelResearchRegistration";
+import { canonicalHotelName,parseResearchRegistration,PENDING_HOTEL_CONTACT_NOTE } from "@/lib/epoch-ai/hotelResearchRegistration";
 import { publishedHotelVerification } from "@/lib/epoch-ai/hotelPublicVerification";
 import { hotelCrmContactName, hotelCrmNotes, parseHotelCrmEntries } from "@/lib/epoch-ai/hotelCrmProfile";
 
@@ -24,34 +24,56 @@ export async function POST(request:Request) {
     if (crmEntries.some(entry => entry.kind === "email" || entry.kind === "phone")) {
       return NextResponse.json({error: "Review the email and phone in the main contact fields."}, {status: 400});
     }
-    // A static Sarajevo research profile or a documented, explicitly verified Admin entry.
-    // User-provided links are provenance, NOT evidence that we independently checked the website.
-    const approved=publishedHotelVerification(input.name);
-    const sarajevoVerified=Boolean(approved && input.city.toLowerCase()==="sarajevo" &&
-      input.country.toLowerCase()==="bosnia and herzegovina" &&
-      input.email.toLowerCase()===approved.email.toLowerCase() &&
-      input.source===approved.source && input.facilitiesSource===approved.facilitiesSource && input.phone===approved.phone);
-    const manualVerified=input.adminVerification?.confirmation==="REGISTER VERIFIED RESEARCH LEAD" &&
-      input.adminVerification.contactChecked===true &&
-      (!input.facilitiesSource || input.adminVerification.facilitiesChecked===true);
-    if ((!sarajevoVerified || crmEntries.length > 0) && !manualVerified) {
-      return NextResponse.json({error:"Confirm the contact source and review any facilities source provided before CRM registration."},{status:400});
+    let sarajevoVerified = false;
+    if (input.mode === "pending-contact" && crmEntries.length) {
+      return NextResponse.json({error:"Approve contact evidence before saving additional CRM details."},{status:400});
+    }
+    if (input.mode === "verified") {
+      const approved = publishedHotelVerification(input.name);
+      sarajevoVerified = Boolean(approved && input.city.toLowerCase() === "sarajevo" &&
+        input.country.toLowerCase() === "bosnia and herzegovina" &&
+        input.email.toLowerCase() === approved.email.toLowerCase() &&
+        input.source === approved.source && input.facilitiesSource === approved.facilitiesSource && input.phone === approved.phone);
+      const manualVerified = input.adminVerification?.confirmation === "REGISTER VERIFIED RESEARCH LEAD" &&
+        input.adminVerification.contactChecked === true &&
+        (!input.facilitiesSource || input.adminVerification.facilitiesChecked === true);
+      if ((!sarajevoVerified || crmEntries.length > 0) && !manualVerified) {
+        return NextResponse.json({error:"Confirm the contact source and review any facilities source provided before CRM registration."},{status:400});
+      }
     }
     const matchKey=`hotel-research:${canonicalHotelName(input.country)}:${canonicalHotelName(input.city)}:${canonicalHotelName(input.name)}`;
     const result=await db.$transaction(async tx=>{
       // Serializes concurrent registration of the same city/property without changing the schema.
       const locks=await tx.$queryRaw<{locked:boolean}[]>`SELECT pg_try_advisory_xact_lock(hashtext(${matchKey})) AS locked`;
       if (!locks[0]?.locked) throw new Error("Hotel registration already in progress; retry after reviewing CRM.");
-      const candidates=await tx.supplier.findMany({where:{type:SupplierType.HOTEL,city:{equals:input.city,mode:"insensitive"}},select:{id:true,name:true,country:true}});
+      const candidates=await tx.supplier.findMany({where:{type:SupplierType.HOTEL,city:{equals:input.city,mode:"insensitive"}},select:{id:true,name:true,country:true,status:true,email:true,notes:true,
+        contacts:{where:{email:{not:null}},select:{id:true},take:1}}});
       const existing=candidates.find(x=>canonicalHotelName(x.name)===canonicalHotelName(input.name) &&
         canonicalHotelName(x.country||"")===canonicalHotelName(input.country));
-      if (existing) return {supplierId:existing.id,alreadyExists:true};
+      const canCompletePendingContact = Boolean(existing &&
+        existing.status === SupplierStatus.INACTIVE && !existing.email && !existing.contacts.length &&
+        existing.notes?.split("\n").includes(PENDING_HOTEL_CONTACT_NOTE));
+      if (existing && (input.mode === "pending-contact" || !canCompletePendingContact)) {
+        return {supplierId:existing.id,alreadyExists:true,contactCompleted:false};
+      }
       const when=new Date().toISOString();
+      const actor = session.user.email || session.user.id || "Admin";
+      const stayNote = `Hotel stay context: ${input.hotelStay.checkIn} to ${input.hotelStay.checkOut}; ${input.hotelStay.rooms} rooms REQUESTED, NOT CONFIRMED`;
+      if (input.mode === "pending-contact") {
+        const supplier = await tx.supplier.create({data:{
+          name:input.name,type:SupplierType.HOTEL,status:SupplierStatus.INACTIVE,
+          country:input.country,city:input.city,preferred:false,
+          notes:["EPOCH RESEARCH CANDIDATE - NOT CONTACTED / NOT CONTRACTED",
+            PENDING_HOTEL_CONTACT_NOTE, `Recorded at: ${when}`, stayNote,
+            `Approved by Admin: ${actor}`].join("\n"),
+        }});
+        return {supplierId:supplier.id,alreadyExists:false,contactCompleted:false};
+      }
       const researchNote=["EPOCH RESEARCH CANDIDATE - NOT CONTACTED / NOT CONTRACTED",
         `Recorded at: ${when}`,`Evidence method: ${sarajevoVerified?"Reviewed Sarajevo static profile":"Admin-attested website review (not independently verified by Epoch AI)"}`,
         `Public contact evidence: ${input.source}`,
         input.facilitiesSource ? `Facilities evidence: ${input.facilitiesSource}` : "Facilities evidence: pending hotel follow-up",
-        `Hotel stay context: ${input.hotelStay.checkIn} to ${input.hotelStay.checkOut}; ${input.hotelStay.rooms} rooms REQUESTED, NOT CONFIRMED`,
+        stayNote,
         "Still to confirm directly: group room availability and rates, shower access, lifts, coach access, porterage, dinner, cancellation and payment terms",
         `Registered by Admin: ${session.user.email || session.user.id || "unknown"}`].join("\n");
       const fields: {website?: string; address?: string; postalCode?: string} = {};
@@ -64,11 +86,23 @@ export async function POST(request:Request) {
           contacts.set(value.toLowerCase(), {firstName: hotelCrmContactName(value), email: value, phone: "", notes: `Public source: ${sourceUrl}`});
         }
       }
-      const notes = [researchNote, hotelCrmNotes(crmEntries, session.user.email || session.user.id || "Admin")].filter(Boolean).join("\n\n");
+      const notes = [
+        existing?.notes?.replace(PENDING_HOTEL_CONTACT_NOTE, `Contact verified at: ${when}`),
+        researchNote, hotelCrmNotes(crmEntries, actor),
+      ].filter(Boolean).join("\n\n");
+      if (existing) {
+        const updated = await tx.supplier.updateMany({
+          where:{id:existing.id,status:SupplierStatus.INACTIVE,email:existing.email,notes:existing.notes},
+          data:{email:input.email,phone:input.phone,notes,...fields},
+        });
+        if (!updated.count) return {supplierId:existing.id,alreadyExists:true,contactCompleted:false};
+        await tx.supplierContact.createMany({data:[...contacts.values()].map(contact => ({...contact,supplierId:existing.id}))});
+        return {supplierId:existing.id,alreadyExists:true,contactCompleted:true};
+      }
       const supplier=await tx.supplier.create({data:{name:input.name,type:SupplierType.HOTEL,status:SupplierStatus.INACTIVE,
         country:input.country,city:input.city,email:input.email,phone:input.phone,notes,preferred:false,
         ...fields, contacts: {create: [...contacts.values()]}}});
-      return {supplierId:supplier.id,alreadyExists:false};
+      return {supplierId:supplier.id,alreadyExists:false,contactCompleted:false};
     });
     return NextResponse.json(result,{status:result.alreadyExists?200:201});
   } catch(err) {

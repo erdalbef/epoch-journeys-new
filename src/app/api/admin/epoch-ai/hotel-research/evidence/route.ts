@@ -81,14 +81,15 @@ export async function POST(request:Request){
       // this query so localized contact pages can surface.
       await tryFollowup(`site:${domain} "${hotelName.replace(/"/g, "")}" contact reservations`);
     }
-    const officialContact = research.supplierResearch.contacts[0];
-    if (domain && (!officialContact || officialContact.corroboratingSourceUrl)) {
-      await tryFollowup(`site:${domain} "${hotelName.replace(/"/g, "")}" meetings events sales email`);
-    }
     const best = research.supplierResearch.contacts[0];
-    if (!best || (best.corroboratingSourceUrl && !best.phone)) {
-      await tryFollowup(`${hotelName} ${city} ${country} hotel reservations email telephone`);
+    const fallbackSearches: Promise<void>[] = [];
+    if (domain && (!best || best.corroboratingSourceUrl)) {
+      fallbackSearches.push(tryFollowup(`site:${domain} "${hotelName.replace(/"/g, "")}" meetings events sales email`));
     }
+    if (!best || (!best.phone && !research.supplierResearch.phone)) {
+      fallbackSearches.push(tryFollowup(`${hotelName} ${city} ${country} hotel reservations email telephone`));
+    }
+    await Promise.all(fallbackSearches);
     if (crmProfile && (!research.crmEntries.some(entry => entry.kind === "website") ||
       !research.crmEntries.some(entry => entry.kind === "address"))) {
       await tryFollowup(`${property} official website street address postal code`);

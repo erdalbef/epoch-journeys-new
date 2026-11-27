@@ -1,7 +1,7 @@
 import { itineraryProcurementStays } from "./hotelStayCities";
 
 export type Stay = { city: string; checkIn: string; checkOut: string; rooms: number; massRoom: boolean; originCountry?: string };
-export type HotelContact = { id: string; name: string; city: string | null; country: string | null; email: string | null; preferred: boolean; contacts: { email: string | null; isPrimary: boolean; notes?: string | null }[] };
+export type HotelContact = { id: string; name: string; city: string | null; country: string | null; email: string | null; preferred: boolean; contactPending?: boolean; contacts: { email: string | null; isPrimary: boolean; notes?: string | null }[] };
 export const balkanStays: Stay[] = [
   {city:"Sarajevo",checkIn:"2027-05-07",checkOut:"2027-05-08",rooms:20,massRoom:false,originCountry:"USA"},
   {city:"Kotor Bay",checkIn:"2027-05-08",checkOut:"2027-05-10",rooms:20,massRoom:true,originCountry:"USA"},
@@ -31,7 +31,7 @@ export function initialProcurementStays(tourId: string, destinations: string[], 
     }));
 }
 
-const key=(v:string)=>v.normalize("NFD").replace(/[\u0300-\u036f]/g,"").toLowerCase().replace(/[^a-z]/g,"");
+const key=(v:string)=>v.normalize("NFD").replace(/(\p{Script=Latin})\p{M}+/gu,"$1").normalize("NFC").toLowerCase().replace(/[^\p{L}\p{N}]/gu,"");
 export function matchingHotels(city:string, hotels:HotelContact[]):HotelContact[]{
  if (!key(city)) return [];
  const terms = key(city).includes("kotor")?["kotor","dobrota","prcanj","perast","tivat"]:[key(city),...(key(city)==="pristina"?["prishtina"]:[])];

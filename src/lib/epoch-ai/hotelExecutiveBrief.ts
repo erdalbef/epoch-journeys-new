@@ -7,9 +7,9 @@ export function meetsHotelGuestRatingMinimum(brief?: HotelBrief): boolean {
 
 /** Canonicalize common hotel naming variants for deduplication. */
 export function stableHotelIdentity(value:string):string{
-  return value.toLowerCase().normalize("NFKD").replace(/[\u0300-\u036f]/g,"")
+  return value.toLowerCase().normalize("NFKD").replace(/(\p{Script=Latin})\p{M}+/gu,"$1").normalize("NFC")
     .replace(/\bby sheraton\b/g,"").replace(/\bprishtina\b/g,"pristina")
-    .replace(/[^a-z0-9]/g,"");
+    .replace(/[^\p{L}\p{N}]/gu,"");
 }
 const facts:[RegExp,string][]=[
   [/\brestaurants? (?:within walking distance|nearby)\b|\bnearby (?:cafes?|restaurants?)\b/i,"Nearby restaurants or cafés mentioned"],

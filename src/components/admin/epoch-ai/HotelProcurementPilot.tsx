@@ -204,43 +204,50 @@ export default function HotelProcurementPilot({tourId,destinations,itinerary,hot
       setEvidenceLoading(p=>({...p,[requestKey]:false}));
     }
   }
-  async function saveApprovedLead() {
-    const selected = selectedLeadName;
-    const saveKey = locationKey(selected);
+  async function saveApprovedLead(mode: "verified" | "pending-contact") {
+    if (!stay || !selectedName || !contactLocationReady || crmSaving) return;
+
+    const saveKey = evidenceKey;
     const setStatus = (message: string) => setCrmSaveStatusByHotel(previous => ({...previous, [saveKey]: message}));
-    const recipient = leadEmail;
+    const pending = mode === "pending-contact";
     const phone = researchForm.phone.trim();
-    const source = contactLink;
+    if (!pending && (!contactChecked || !phone)) return;
+
     const facilities = facilitiesChecked ? facilitiesLink : undefined;
-    if (!stay || !selected || !country) {
-      setStatus("Enter the hotel city and country in Stay details.");
-      return;
-    }
-    if (!contactChecked || !source) {
-      setStatus("Review the published email and its source, then tick the contact review checkbox.");
-      return;
-    }
-    if (!phone) {
-      setStatus("Enter the hotel's published phone number.");
-      return;
-    }
     const crmEntries = crmDraftEntries.filter(entry => !excludedEntries.includes(hotelCrmEntryKey(entry)));
-    const confirmation = `Register ${selected} in ${stay.city}, ${country} as an INACTIVE research candidate?\n\nContact: ${recipient}, ${phone}\nContact evidence: ${source}\nFacilities evidence: ${facilities || "Pending hotel follow-up"}\nAdditional details selected: ${crmEntries.length}\n\nThis creates a CRM candidate only. No email will be sent.`;
+    const location = `${selectedName} in ${contactCity}, ${contactCountry}`;
+    const confirmation = pending
+      ? `Save ${location} as an inactive CRM lead with contact pending?`
+      : `${pendingCrmContact ? "Add the reviewed contact to" : "Register"} ${location}?\n\nEmail: ${leadEmail}\nPhone: ${phone}\nSource: ${contactLink}`;
     if (!window.confirm(confirmation)) return;
-    setCrmSaving(true); setStatus("");
+
+    const base = {mode, name:selectedName, city:contactCity, country:contactCountry,
+      hotelStay:{checkIn:stay.checkIn, checkOut:stay.checkOut, rooms:stay.rooms}};
+    const payload = pending
+      ? {...base, confirmation:"REGISTER LEAD WITH CONTACT PENDING"}
+      : {...base, email:leadEmail, phone, source:contactLink, facilitiesSource:facilities, crmEntries,
+        adminVerification:{confirmation:"REGISTER VERIFIED RESEARCH LEAD", contactChecked:true, facilitiesChecked}};
+
+    setCrmSaving(true);
+    setStatus("");
     try {
       const response = await fetch("/api/admin/epoch-ai/hotel-research/register", {
         method:"POST", headers:{"Content-Type":"application/json"},
-        body: JSON.stringify({name:selected,city:stay.city,country,email:recipient,phone,source,facilitiesSource:facilities || undefined,crmEntries,adminVerification:{confirmation:"REGISTER VERIFIED RESEARCH LEAD",contactChecked:true,facilitiesChecked},hotelStay:{checkIn:stay.checkIn,checkOut:stay.checkOut,rooms:stay.rooms}}),
+        body: JSON.stringify(payload),
       });
-      const result = await response.json() as {error?:string;supplierId?:string;alreadyExists?:boolean};
+      const result = await readResearchJson<{error?:string; supplierId?:string; alreadyExists?:boolean; contactCompleted?:boolean}>(response);
       if (!response.ok || !result.supplierId) throw new Error(result.error || "CRM registration did not complete.");
       const registeredSupplierId = result.supplierId;
       setSavedSupplierByHotel(previous => ({...previous, [saveKey]: registeredSupplierId}));
-      setStatus(result.alreadyExists ? "Hotel already exists in CRM; no duplicate created." : "Approved research candidate added to Supplier CRM (INACTIVE). No inquiry sent.");
+      if (result.contactCompleted) setStatus("Reviewed contact added to the existing CRM lead.");
+      else if (result.alreadyExists) setStatus("Hotel already exists in Supplier CRM.");
+      else setStatus(pending ? "Inactive lead saved. Contact verification is pending." : "Inactive candidate saved with the reviewed contact.");
       router.refresh();
-    } catch(err) {setStatus(err instanceof Error ? err.message : "Could not register supplier.");}
-    finally {setCrmSaving(false);}
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : "Could not register supplier.");
+    } finally {
+      setCrmSaving(false);
+    }
   }
   const referenceStay = stay?.reference;
   const referenceMismatch=Boolean(referenceStay&&stay&&(stay.city!==referenceStay.city||stay.checkIn!==referenceStay.checkIn||stay.checkOut!==referenceStay.checkOut||stay.rooms!==referenceStay.rooms));
@@ -254,6 +261,11 @@ export default function HotelProcurementPilot({tourId,destinations,itinerary,hot
   const chosen=hotels.find(h=>h.id===supplierId[active]);
   const selectedLeadName=leadByStay[active] || "";
   const selectedName=chosen?.name||selectedLeadName;
+  const savedEmail = chosen ? contactEmail(chosen) : "";
+  const pendingCrmContact = Boolean(chosen?.contactPending && !savedEmail);
+  const contactCity = chosen?.city?.trim() || stay?.city.trim() || "";
+  const contactCountry = chosen?.country?.trim() || country;
+  const contactLocationReady = validHotelResearchLocation(contactCity, contactCountry);
 
   useEffect(()=>{
     if(selectedLeadName&&!chosen){
@@ -269,7 +281,7 @@ export default function HotelProcurementPilot({tourId,destinations,itinerary,hot
   const crmMatchesForSelected = stay && selectedName ? matchHotelCrmRecords(selectedName, stay.city, hotels) : [];
   const structuredResearch=structuredResearchByKey[evidenceKey];
   const officialSiteCandidates=officialSitesByKey[evidenceKey]||[];
-  const publishedProfile = publishedHotelVerification(selectedName, stay?.city, country);
+  const publishedProfile = publishedHotelVerification(selectedName, contactCity, contactCountry);
   const researchForm = hotelResearchForm(supplierResearch, publishedProfile, contactEdits[evidenceKey], facilitiesSource[evidenceKey], officialContacts[evidenceKey]);
   const {contactLink, contactReviewKey, facilitiesLink} = researchForm;
   const contactChecked = Boolean(contactReviewKey && reviewedContact[evidenceKey] === contactReviewKey);
@@ -317,10 +329,10 @@ export default function HotelProcurementPilot({tourId,destinations,itinerary,hot
     setFacilitiesSource(previous => ({...previous, [evidenceKey]: value}));
     setReviewedFacilitiesSource(previous => ({...previous, [evidenceKey]: ""}));
   }
-  function researchSelectedContact(name: string) {
+  function researchSelectedContact(name: string, city = stay?.city.trim() || "", researchCountry = country) {
     const key = locationKey(name);
-    if (stay && locationReady && !supplierResearchByKey[key]) {
-      void researchSelectedHotel(name, stay.city.trim(), country, key);
+    if (name && !supplierResearchByKey[key]) {
+      void researchSelectedHotel(name, city, researchCountry, key);
     }
   }
 
@@ -359,7 +371,7 @@ export default function HotelProcurementPilot({tourId,destinations,itinerary,hot
     setSupplierId(p=>({...p,[active]:hotel.id}));
     setLeadByStay(p=>({...p,[active]:""}));
     setManualLead(p=>({...p,[active]:""}));
-    researchSelectedContact(hotel.name);
+    researchSelectedContact(hotel.name, hotel.city?.trim() || stay?.city.trim(), hotel.country?.trim() || country);
     setCopyStatus("");
     document.getElementById("epoch-hotel-inquiry")?.scrollIntoView({behavior:"smooth",block:"start"});
   }
@@ -473,10 +485,10 @@ export default function HotelProcurementPilot({tourId,destinations,itinerary,hot
     {stay?<div className="grid gap-5"><div className="space-y-4 rounded-xl border bg-white p-5">
       <h2 id="epoch-hotel-inquiry" className="text-lg font-bold text-[#001F3F]">2. Review &amp; save quotation request</h2>
       <p className="text-sm text-slate-700">Hotel to approach: <strong>{selectedName || "Not selected"}</strong>. Contact email: <strong>{chosen?contactEmail(chosen)||"Not in CRM":leadEmail||"Not found"}</strong>{!chosen && leadEmail && !contactChecked ? " (review required)" : ""}.</p>
-      {!chosen && selectedLeadName ? <ResearchHotelManualInquiry key={JSON.stringify([evidenceKey,stay.checkIn,stay.checkOut,stay.rooms,stay.massRoom])} hotelName={selectedLeadName} stay={stay} recipient={leadEmail} contactVerified={contactChecked} /> : null}
+      {(!chosen || pendingCrmContact) && selectedName ? <ResearchHotelManualInquiry key={JSON.stringify([evidenceKey,stay.checkIn,stay.checkOut,stay.rooms,stay.massRoom])} hotelName={selectedName} stay={stay} recipient={leadEmail} contactVerified={contactChecked} /> : null}
       {!chosen && !selectedLeadName ? <p className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">Select a CRM hotel or a researched hotel to prepare an inquiry. No email is sent here.</p> : null}
       {chosen&&!contactEmail(chosen)?<p className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">Recipient not verified — check the hotel's current official contact source before proceeding.</p>:null}
-      {chosen?<HotelInquiryWorkspace key={`${active}:${chosen.id}:${stay.city}:${stay.checkIn}:${stay.checkOut}:${stay.rooms}:${stay.massRoom}`} tourId={tourId} hotel={chosen} stay={stay}/>:null}
+      {chosen&&!pendingCrmContact?<HotelInquiryWorkspace key={`${active}:${chosen.id}:${stay.city}:${stay.checkIn}:${stay.checkOut}:${stay.rooms}:${stay.massRoom}`} tourId={tourId} hotel={chosen} stay={stay}/>:null}
     </div><div className="space-y-4 rounded-xl border bg-white p-5" aria-label="Optional hotel research">
       {coverage?<details className="rounded-xl border border-slate-200 bg-slate-50/50 p-3"><summary className="cursor-pointer font-semibold text-[#001F3F]">3. Discover additional hotels (optional)</summary><section className="mt-3 space-y-4 text-sm" aria-label="Hotel research and supplier selection">
         <button type="button" disabled={destinationResearchLoading||!locationReady} onClick={()=>void researchDestinationHotels()} className="rounded border border-[#001F3F] px-3 py-2 text-xs font-semibold disabled:opacity-40">{destinationResearchLoading?"Researching...":"Find more hotel options"}</button>
@@ -612,7 +624,7 @@ export default function HotelProcurementPilot({tourId,destinations,itinerary,hot
       </section></details>:null}
         {selectedName ? <details ref={researchDetailsRef} key={`${active}:${selectedName}`} open className="scroll-mt-8 space-y-2 rounded-lg border border-blue-300 bg-white p-3"><summary className="cursor-pointer text-sm font-semibold text-[#001F3F]">{chosen?"View research details":"Verify contact & register"} — {selectedName} {chosen?"(CRM)":"(research lead)"}</summary><div className="mt-3 space-y-3">
           <OfficialHotelPageResearch key={evidenceKey} hotelName={selectedName}
-            onContactRetrieved={!chosen ? extraction => setOfficialContacts(previous => ({...previous, [evidenceKey]: extraction})) : undefined} />
+            onContactRetrieved={(!chosen || pendingCrmContact) ? extraction => setOfficialContacts(previous => ({...previous, [evidenceKey]: extraction})) : undefined} />
           {(() => { const profile=publishedProfile; return profile ? <div className="rounded-lg border border-sky-200 bg-sky-50 p-3 text-xs text-slate-800 space-y-2">
             <p className="font-bold text-[#001F3F]">Published hotel information ({profile.reviewedOn ?? "18 Nov 2026"})</p>
             <p><strong>Published contact:</strong> {profile.email} ({profile.contactType})</p>
@@ -620,23 +632,23 @@ export default function HotelProcurementPilot({tourId,destinations,itinerary,hot
             <p><strong>Publicly advertised:</strong> {profile.publishedFacts.join("; ")}</p>
             <p className="text-amber-900"><strong>Confirm with hotel:</strong> {profile.openQuestions.join("; ")}</p>
             <div className="flex flex-wrap items-center gap-2"><a href={profile.source} target="_blank" rel="noopener noreferrer" className="text-blue-700 underline">Contact evidence</a><a href={profile.facilitiesSource} target="_blank" rel="noopener noreferrer" className="text-blue-700 underline">Facilities evidence</a>
-              {!chosen ? <button type="button" onClick={()=>updateContact({email:profile.email,source:profile.source,phone:profile.phone})} className="rounded border border-blue-300 bg-white px-2 py-1 font-semibold">Use published contact in draft</button> : null}</div>
+              {(!chosen || pendingCrmContact) ? <button type="button" onClick={()=>updateContact({email:profile.email,source:profile.source,phone:profile.phone})} className="rounded border border-blue-300 bg-white px-2 py-1 font-semibold">Use published contact in draft</button> : null}</div>
             <p className="text-slate-600">This research snapshot is not live monitoring, and the published address may be a general inbox. Check recipient and terms before approval. No message is sent or CRM record created.</p>
           </div>:null; })()}
           <section className="rounded-lg border border-blue-200 bg-blue-50/50 p-3 text-xs space-y-2" aria-label="Automated hotel evidence research">
             <div className="flex flex-wrap items-center justify-between gap-2"><p className="font-semibold text-[#001F3F]">Automated public research</p>
-              <button type="button" disabled={Boolean(evidenceLoading[evidenceKey])||!locationReady} onClick={()=>void researchSelectedHotel(selectedName,stay.city.trim(),country,evidenceKey)} className="rounded-lg bg-[#001F3F] px-3 py-2 text-xs font-semibold text-white disabled:opacity-50">{evidenceLoading[evidenceKey]?"Researching...":"Research hotel contact and facilities"}</button></div>
+              <button type="button" disabled={Boolean(evidenceLoading[evidenceKey])||!contactLocationReady} onClick={()=>void researchSelectedHotel(selectedName,contactCity,contactCountry,evidenceKey)} className="rounded-lg bg-[#001F3F] px-3 py-2 text-xs font-semibold text-white disabled:opacity-50">{evidenceLoading[evidenceKey]?"Researching...":"Research hotel contact and facilities"}</button></div>
             <p className="text-slate-600">Searches public pages and groups source-linked indications. This does not automatically verify claims, update CRM, or confirm supplier terms.</p>
             {evidenceErrors[evidenceKey]?<p role="alert" className="text-amber-900">{evidenceErrors[evidenceKey]}</p>:null}
             {partialResearchByKey[evidenceKey] ? <p role="status">Some research sources were unavailable. You can retry the search.</p> : null}
             {supplierResearch ? <HotelSupplierResearchCard
               research={supplierResearch}
               massRoom={stay.massRoom}
-              onUseContact={!chosen ? contact => updateContact({
+              onUseContact={(!chosen || pendingCrmContact) ? contact => updateContact({
                 email:contact.email, source:contact.sourceUrl,
                 ...(contact.phone ? {phone:contact.phone.number} : {})
               }) : undefined}
-              onUseFacilities={!chosen ? updateFacilitiesSource : undefined}
+              onUseFacilities={(!chosen || pendingCrmContact) ? updateFacilitiesSource : undefined}
             /> : null}
             {evidenceReport?<details className="space-y-2 rounded border p-2">
               <summary className="cursor-pointer font-semibold">Additional research sources</summary>
@@ -782,24 +794,24 @@ export default function HotelProcurementPilot({tourId,destinations,itinerary,hot
             <p className="text-slate-600">Mark confirmed only after receiving attributable hotel evidence. Ask the hotel to confirm the requested {stay.rooms} rooms for these dates.</p>
             {hotelConfirmationChecklist.filter(item=>!item.includes("Mass room")||stay.massRoom).map(item=><label key={item} className="flex items-start gap-2"><input type="checkbox" checked={Boolean(checkStatus[reviewKey]?.[item])} onChange={e=>setCheckStatus(prev=>({...prev,[reviewKey]:{...(prev[reviewKey]||{}),[item]:e.target.checked}}))}/>{item}</label>)}
           </div>
-          {chosen ? <section className="space-y-2 rounded-lg border border-blue-200 bg-blue-50 p-4 text-sm" aria-label="Supplier CRM status">
+          {chosen && !pendingCrmContact ? <section className="space-y-2 rounded-lg border border-blue-200 bg-blue-50 p-4 text-sm" aria-label="Supplier CRM status">
             <h3 className="font-semibold text-[#001F3F]">Already in Supplier CRM</h3>
             <p>{chosen.name} is registered. Use its saved record for this stay.</p>
+            {crmSaveState ? <p role="status">{crmSaveState}</p> : null}
             <div className="flex flex-wrap gap-3">
               <Link href={`/admin/suppliers/${chosen.id}`} className="text-blue-700 underline">Open supplier record</Link>
               <a href="#epoch-hotel-inquiry" className="text-blue-700 underline">Review inquiry draft</a>
             </div>
-          </section> : crmMatchesForSelected.length ? <section className="space-y-2 rounded-lg border border-blue-200 bg-blue-50 p-4 text-sm" aria-label="Supplier CRM matches">
+          </section> : !chosen && crmMatchesForSelected.length ? <section className="space-y-2 rounded-lg border border-blue-200 bg-blue-50 p-4 text-sm" aria-label="Supplier CRM matches">
             <h3 className="font-semibold text-[#001F3F]">Matching hotel in Supplier CRM</h3>
             {crmSaveState ? <p role="status">{crmSaveState}</p> : null}
             <p>Select the existing supplier record for this stay.</p>
             {crmMatchesForSelected.map(hotel => <button key={hotel.id} type="button"
               className="block rounded border bg-white px-3 py-2 font-semibold" onClick={()=>selectCrmHotel(hotel)}>
-              Use CRM record — {hotel.name}{contactEmail(hotel) ? ` · ${contactEmail(hotel)}` : ""}
+              {hotel.contactPending && !contactEmail(hotel) ? "Review pending contact" : "Use CRM record"} — {hotel.name}{contactEmail(hotel) ? ` · ${contactEmail(hotel)}` : ""}
             </button>)}
           </section> : <section className="space-y-3 rounded-lg border border-blue-200 bg-blue-50 p-4 text-sm" aria-label="Review and approve hotel for Supplier CRM">
-            <h3 className="font-semibold text-[#001F3F]">Review and approve hotel for Supplier CRM</h3>
-            <p className="text-xs text-slate-600">Approval creates an inactive research candidate. No email is sent.</p>
+            <h3 className="font-semibold text-[#001F3F]">{pendingCrmContact ? "Complete contact verification" : "Review and approve hotel for Supplier CRM"}</h3>
             <div className="grid gap-3 sm:grid-cols-2">
               <label className="block font-medium">Hotel recipient email
                 <input type="email" value={researchForm.email} onChange={e=>updateContact({email:e.target.value})} className="mt-1 w-full rounded border bg-white p-2"/>
@@ -824,11 +836,15 @@ export default function HotelProcurementPilot({tourId,destinations,itinerary,hot
                 }}/>
               I checked that this published source lists the hotel's recipient email.
             </label>
-            {!contactReviewKey ? <p className="text-xs text-amber-900">
-              {evidenceLoading[evidenceKey] ? "Searching for the hotel email and its source…" : "The checkbox becomes available when the hotel email and its public HTTPS source are filled."}
+            {!contactReviewKey ? <p role="status" className="text-xs text-amber-900">
+              {evidenceLoading[evidenceKey] ? "Epoch AI is searching for published contact details…"
+                : evidenceErrors[evidenceKey] || (evidenceReport
+                  ? "Epoch AI did not find a clear match for a published email and its source. Review the research results or enter a source you found."
+                  : contactLocationReady ? "Enter a published email and its source, or run contact research." : "Enter the city and country in Stay details to search.")}
             </p> : null}
-            {!contactReviewKey && !evidenceLoading[evidenceKey] ? <button type="button" disabled={!locationReady}
-              onClick={()=>void researchSelectedHotel(selectedName, stay.city.trim(), country, evidenceKey)}
+            {contactReviewKey && !researchForm.phone.trim() ? <p className="text-xs text-amber-900">Add the hotel’s published phone to complete verified registration.</p> : null}
+            {!contactReviewKey && !evidenceLoading[evidenceKey] ? <button type="button" disabled={!contactLocationReady}
+              onClick={()=>void researchSelectedHotel(selectedName, contactCity, contactCountry, evidenceKey)}
               className="rounded border border-blue-300 bg-white px-2 py-1 font-medium text-blue-800 disabled:opacity-50">
               Search again for contact details
             </button> : null}
@@ -858,13 +874,21 @@ export default function HotelProcurementPilot({tourId,destinations,itinerary,hot
             </div> : null}
             <div className="flex flex-wrap items-center gap-3">
               <a href="#epoch-hotel-inquiry" className="text-blue-700 underline">Review inquiry draft</a>
-              {!registeredSupplierId ? <button type="button" disabled={crmSaving} onClick={()=>void saveApprovedLead()}
-                className="rounded-lg bg-[#001F3F] px-3 py-2 font-semibold text-white disabled:opacity-50">
-                {crmSaving ? "Registering..." : "Approve & register in Supplier CRM"}
-              </button> : <>
-                <button type="button" className="text-blue-700 underline" onClick={()=>router.refresh()}>Refresh CRM hotel list</button>
-                <Link href={`/admin/suppliers/${registeredSupplierId}`} className="text-blue-700 underline">Open registered hotel</Link>
-              </>}
+              {(!registeredSupplierId || pendingCrmContact) && contactChecked && researchForm.phone.trim() ? (
+                <button type="button" disabled={crmSaving || !contactLocationReady} onClick={()=>void saveApprovedLead("verified")}
+                  className="rounded-lg bg-[#001F3F] px-3 py-2 font-semibold text-white disabled:opacity-50">
+                  {crmSaving ? "Saving…" : pendingCrmContact ? "Approve & save verified contact" : "Approve & register in Supplier CRM"}
+                </button>
+              ) : null}
+              {!chosen && !registeredSupplierId && (!contactChecked || !researchForm.phone.trim()) ? (
+                <button type="button" disabled={crmSaving || !contactLocationReady} onClick={()=>void saveApprovedLead("pending-contact")}
+                  className="rounded-lg bg-[#001F3F] px-3 py-2 font-semibold text-white disabled:opacity-50">
+                  {crmSaving ? "Saving…" : "Save inactive lead · contact pending"}
+                </button>
+              ) : null}
+              {registeredSupplierId || chosen ? (
+                <Link href={`/admin/suppliers/${registeredSupplierId || chosen?.id}`} className="text-blue-700 underline">Open supplier record</Link>
+              ) : null}
             </div>
             {crmSaveState ? <p role="status">{crmSaveState}</p> : null}
           </section>}

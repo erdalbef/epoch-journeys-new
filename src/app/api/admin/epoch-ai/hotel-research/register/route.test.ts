@@ -1,9 +1,13 @@
 import {beforeEach, describe, expect, it, vi} from "vitest";
 
-const {query, findHotels, createHotel} = vi.hoisted(() => ({
+import { PENDING_HOTEL_CONTACT_NOTE } from "@/lib/epoch-ai/hotelResearchRegistration";
+
+const {query, findHotels, createHotel, updateHotel, createContacts} = vi.hoisted(() => ({
   query: vi.fn(async () => [{locked: true}]),
-  findHotels: vi.fn(async () => []),
-  createHotel: vi.fn(async () => ({id: "hotel-1"}))
+  findHotels: vi.fn(async (): Promise<unknown[]> => []),
+  createHotel: vi.fn(async () => ({id: "hotel-1"})),
+  updateHotel: vi.fn(async () => ({count:1})),
+  createContacts: vi.fn(async () => ({count:1}))
 }));
 
 vi.mock("@/lib/security/requireAdminApiAccess", () => ({requireAdminApiAccess: async () => null}));
@@ -13,7 +17,8 @@ vi.mock("@/lib/db", () => ({
   db: {
     $transaction: (callback: (tx: unknown) => unknown) => callback({
       $queryRaw: query,
-      supplier: {findMany: findHotels, create: createHotel}
+      supplier: {findMany: findHotels, create: createHotel, updateMany: updateHotel},
+      supplierContact: {createMany: createContacts}
     })
   }
 }));
@@ -83,5 +88,41 @@ describe("Hotel research CRM registration", () => {
     expect(createHotel).toHaveBeenCalledWith({data: expect.objectContaining({
       notes: expect.stringContaining("Facilities evidence: https://hotel.example/facilities")
     })});
+  });
+
+  const identity = {name:"ホテル京都", city:"Kyoto", country:"Japan"};
+  const pending = {...identity,mode:"pending-contact",confirmation:"REGISTER LEAD WITH CONTACT PENDING",
+    email:undefined,phone:undefined,source:undefined,adminVerification:undefined};
+
+  it("creates an inactive lead without recipient details and distinguishes non-Latin names", async () => {
+    findHotels.mockResolvedValueOnce([{...identity,id:"other",name:"ホテル大阪"}]);
+    expect((await register(pending)).status).toBe(201);
+    expect(createHotel).toHaveBeenCalledWith({data:expect.objectContaining({
+      ...identity,status:"INACTIVE",notes:expect.stringContaining(PENDING_HOTEL_CONTACT_NOTE),
+    })});
+    expect(createHotel).not.toHaveBeenCalledWith({data:expect.objectContaining({email:expect.anything()})});
+    expect(createContacts).not.toHaveBeenCalled();
+  });
+
+  it("requires approval and rejects contact details through the pending path", async () => {
+    expect((await register({...pending,confirmation:undefined})).status).toBe(400);
+    expect((await register({...pending,email:"groups@hotel.example"})).status).toBe(400);
+    expect(createHotel).not.toHaveBeenCalled();
+  });
+
+  it("reuses a pending supplier when the Admin approves its contact", async () => {
+    const existing = {...identity,id:"hotel-1",status:"INACTIVE",email:null,
+      notes:PENDING_HOTEL_CONTACT_NOTE,contacts:[]};
+    findHotels.mockResolvedValueOnce([existing]).mockResolvedValueOnce([existing]);
+    expect((await register(pending)).status).toBe(200);
+
+    const response = await register(identity);
+    expect(await response.json()).toMatchObject({supplierId:"hotel-1",alreadyExists:true,contactCompleted:true});
+    expect(updateHotel).toHaveBeenCalledWith(expect.objectContaining({
+      data:expect.objectContaining({email:"groups@hotel.example",
+        notes:expect.stringContaining("Public contact evidence: https://hotel.example/contact")}),
+    }));
+    expect(createContacts).toHaveBeenCalledWith({data:[expect.objectContaining({supplierId:"hotel-1"})]});
+    expect(createHotel).not.toHaveBeenCalled();
   });
 });

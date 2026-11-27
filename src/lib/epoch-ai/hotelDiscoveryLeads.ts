@@ -154,6 +154,6 @@ export function hotelResearchSearchUrl(city: string, name: string) {
   return "https://www.google.com/search?q="+encodeURIComponent(`${name} ${city} hotel official website reservations contact`);
 }
 export function compareLeadToCrm(name: string, supplierNames: string[]) {
-  const normalize = (x: string) => x.toLocaleLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9]/g, "");
+  const normalize = (x: string) => x.toLocaleLowerCase().normalize("NFD").replace(/(\p{Script=Latin})\p{M}+/gu, "$1").normalize("NFC").replace(/[^\p{L}\p{N}]/gu, "");
   return supplierNames.some(x => normalize(x) === normalize(name));
 }
