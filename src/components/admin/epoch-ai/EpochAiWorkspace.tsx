@@ -23,6 +23,9 @@ export default function EpochAiWorkspace() {
   const [options, setOptions] = useState<Option[]>([]);
   const [selected, setSelected] = useState<Option | null>(null);
   const [searching, setSearching] = useState(false);
+  const [searchComplete, setSearchComplete] = useState(false);
+  const [searchError, setSearchError] = useState("");
+  const searchRequest = useRef<AbortController | null>(null);
   const [question, setQuestion] = useState("");
   const [history, setHistory] = useState<Message[]>([]);
   const [document, setDocument] = useState<File | null>(null);
@@ -30,29 +33,59 @@ export default function EpochAiWorkspace() {
   const [error, setError] = useState("");
   const uploadRef = useRef<HTMLInputElement>(null);
 
-  async function findRecords() {
-    if (kind === "none" || search.trim().length < 2) return;
+  function resetSearchResults() {
+    searchRequest.current?.abort();
+    searchRequest.current = null;
+    setSearching(false);
+    setSearchComplete(false);
+    setSearchError("");
+    setOptions([]);
+  }
+
+  async function findRecords(type: Exclude<RecordKind, "none">, query: string) {
+    resetSearchResults();
+    const request = new AbortController();
+    searchRequest.current = request;
     setSearching(true);
+    setSelected(null);
+    setHistory([]);
     setError("");
     try {
-      const params = new URLSearchParams({ type: kind, q: search });
-      const response = await fetch(`/api/admin/epoch-ai/context?${params}`, { cache: "no-store" });
-      const payload = await response.json();
-      if (!response.ok) throw new Error(payload.error || "Could not search records.");
-      setOptions(Array.isArray(payload.results) ? payload.results : []);
+      const params = new URLSearchParams({ type, q: query.trim() });
+      const response = await fetch(`/api/admin/epoch-ai/context?${params}`, {
+        cache: "no-store", signal: request.signal,
+      });
+      const payload = await response.json().catch(() => null);
+      if (!response.ok || !Array.isArray(payload?.results)) {
+        throw new Error(payload?.error || "Could not search records. Please try again.");
+      }
+      if (searchRequest.current === request) {
+        setOptions(payload.results);
+        setSearchComplete(true);
+      }
     } catch (issue) {
-      setError(issue instanceof Error ? issue.message : "Search failed.");
+      if (searchRequest.current === request) {
+        setSearchError(issue instanceof Error ? issue.message : "Could not search records.");
+      }
     } finally {
-      setSearching(false);
+      if (searchRequest.current === request) {
+        searchRequest.current = null;
+        setSearching(false);
+      }
     }
   }
 
   function changeKind(next: RecordKind) {
     setKind(next);
-    setSelected(null);
     setSearch("");
-    setOptions([]);
+    if (next !== "none") {
+      void findRecords(next, "");
+      return;
+    }
+    resetSearchResults();
+    setSelected(null);
     setHistory([]);
+    setError("");
   }
 
   function onFileChange(event: ChangeEvent<HTMLInputElement>) {
@@ -135,19 +168,34 @@ export default function EpochAiWorkspace() {
             </select>
             {kind !== "none" && (
               <div className="mt-3 space-y-3">
-                <div className="flex gap-2">
-                  <input value={search} onChange={(event) => setSearch(event.target.value)}
-                    onKeyDown={(event) => { if (event.key === "Enter") { event.preventDefault(); void findRecords(); } }}
-                    placeholder={kind === "supplier" ? "Hotel / supplier name" : "Reference / destination"}
+                <form className="flex gap-2" onSubmit={(event) => {
+                  event.preventDefault();
+                  if (!searching) void findRecords(kind, search);
+                }}>
+                  <input value={search}
+                    onChange={(event) => { setSearch(event.target.value); resetSearchResults(); }}
+                    aria-label={kind === "supplier" ? "Search suppliers" : "Search quotations"}
+                    placeholder={kind === "supplier" ? "Hotel / supplier name" : "Quote number, tour or destination"}
                     className="min-w-0 flex-1 rounded-xl border border-slate-300 px-3 py-2 text-sm" />
-                  <button type="button" onClick={() => void findRecords()} disabled={searching || search.trim().length < 2}
+                  <button type="submit" disabled={searching}
                     className="rounded-xl bg-[#001F3F] px-3 text-xs font-semibold text-white disabled:opacity-50">
-                    {searching ? "..." : "Find"}
+                    {searching ? "Finding…" : "Find"}
                   </button>
-                </div>
+                </form>
+                {searchError && <p role="alert" className="text-xs text-red-700">{searchError}</p>}
+                {searchComplete && !options.length && (
+                  <p role="status" className="text-xs text-slate-600">
+                    {kind === "quote"
+                      ? search.trim() ? "No saved quotations match this search." : "There are no saved quotations yet."
+                      : search.trim() ? "No suppliers match this search." : "There are no suppliers yet."}
+                  </p>
+                )}
+                {searchComplete && options.length > 0 && !search.trim() && (
+                  <p className="text-xs font-semibold text-slate-600">{kind === "quote" ? "Recent quotations" : "Recently updated suppliers"}</p>
+                )}
                 {options.length > 0 && <div className="max-h-60 space-y-1 overflow-auto rounded-xl border border-slate-200 p-1">
                   {options.map((item) => (
-                    <button key={item.id} type="button" onClick={() => { setSelected(item); setOptions([]); setHistory([]); }}
+                    <button key={item.id} type="button" onClick={() => { setSelected(item); resetSearchResults(); setHistory([]); }}
                       className="block w-full rounded-lg px-3 py-2 text-left hover:bg-slate-100">
                       <span className="block text-xs font-semibold text-slate-800">{item.label}</span>
                       <span className="block text-[11px] text-slate-500">{item.detail}</span>
@@ -157,7 +205,7 @@ export default function EpochAiWorkspace() {
                 {selected && <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-3 text-xs">
                   <p className="font-bold text-emerald-900">Selected: {selected.label}</p>
                   <p className="mt-1 text-emerald-800">{selected.detail}</p>
-                  <button type="button" onClick={() => { setSelected(null); setHistory([]); }} className="mt-2 font-semibold text-emerald-900 underline">Change selection</button>
+                  <button type="button" onClick={() => { void findRecords(kind, search); }} className="mt-2 font-semibold text-emerald-900 underline">Change selection</button>
                 </div>}
               </div>
             )}

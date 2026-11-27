@@ -19,18 +19,12 @@ export async function findEpochAiRecords(
   rawQuery: string,
 ): Promise<ContextOption[]> {
   const q = rawQuery.trim().slice(0, 80);
-  if (q.length < 2) return [];
+  const contains = { contains: q, mode: "insensitive" as const };
   if (type === "supplier") {
     const records = await db.supplier.findMany({
-      where: {
-        OR: [
-          { name: { contains: q, mode: "insensitive" } },
-          { city: { contains: q, mode: "insensitive" } },
-          { code: { contains: q, mode: "insensitive" } },
-        ],
-      },
+      where: q ? { OR: [{ name: contains }, { city: contains }, { code: contains }] } : undefined,
       select: { id: true, name: true, city: true, country: true, status: true },
-      orderBy: { name: "asc" },
+      orderBy: q ? { name: "asc" } : { updatedAt: "desc" },
       take: 10,
     });
     return records.map((r) => ({
@@ -39,26 +33,35 @@ export async function findEpochAiRecords(
       detail: [r.city, r.country, r.status].filter(Boolean).join(" · "),
     }));
   }
-  const records = await db.quote.findMany({
-    where: {
+  const select = {
+    id: true, title: true, quoteReference: true, quoteNumber: true,
+    status: true, destination: true, tour: { select: { title: true } },
+  } as const;
+  const numberMatch = q.match(/^(?:quot(?:e|ation)\s*)?#?\s*(\d+)$/i);
+  const quoteNumber = numberMatch ? Number(numberMatch[1]) : 0;
+  const exact = quoteNumber > 0 && quoteNumber <= 2_147_483_647
+    ? await db.quote.findUnique({ where: { quoteNumber }, select })
+    : null;
+  const records = exact ? [exact] : await db.quote.findMany({
+    where: q ? {
       OR: [
-        { title: { contains: q, mode: "insensitive" } },
-        { quoteReference: { contains: q, mode: "insensitive" } },
-        { destination: { contains: q, mode: "insensitive" } },
-        { recipientName: { contains: q, mode: "insensitive" } },
+        { title: contains },
+        { quoteReference: contains },
+        { destination: contains },
+        { recipientName: contains },
+        { agentName: contains },
+        { clientName: contains },
+        { tour: { is: { title: contains } } },
       ],
-    },
-    select: {
-      id: true, title: true, quoteReference: true, quoteNumber: true,
-      status: true, destination: true,
-    },
-    orderBy: { updatedAt: "desc" },
+    } : undefined,
+    select,
+    orderBy: [{ updatedAt: "desc" }, { quoteNumber: "desc" }],
     take: 10,
   });
-  return records.map((r) => ({
-    id: r.id,
-    label: `${r.quoteReference ?? `#${r.quoteNumber}`} · ${r.title ?? "Untitled quotation"}`,
-    detail: [r.destination, r.status].filter(Boolean).join(" · "),
+  return records.map((record) => ({
+    id: record.id,
+    label: `${record.quoteReference ?? `#${record.quoteNumber}`} · ${record.title ?? record.tour?.title ?? "Untitled quotation"}`,
+    detail: [record.destination, record.status].filter(Boolean).join(" · "),
   }));
 }
 
