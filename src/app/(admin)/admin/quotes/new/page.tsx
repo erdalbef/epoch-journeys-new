@@ -6,7 +6,9 @@ import { db } from "@/lib/db";
 import { getToursForQuoteForm } from "@/lib/quote-queries";
 import QuoteCreateForm from "@/components/quotes/QuoteCreateForm";
 
-export default async function NewQuotePage() {
+export default async function NewQuotePage({searchParams}: {
+  searchParams: Promise<{prepare?: string}>;
+}) {
   const session = await getServerSession(authOptions);
 
   if (!session?.user || session.user.role !== "ADMIN") {
@@ -14,6 +16,7 @@ export default async function NewQuotePage() {
   }
 
   const tours = await getToursForQuoteForm();
+  const {prepare} = await searchParams;
 
   /*
    * AGENT MASTER DATA
@@ -93,6 +96,7 @@ export default async function NewQuotePage() {
       <QuoteCreateForm
         tours={tours}
         agents={agents}
+        prepareWithEpochAi={prepare === "epoch-ai"}
       />
     </div>
   );

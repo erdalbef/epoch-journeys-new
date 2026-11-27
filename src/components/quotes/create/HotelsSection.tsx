@@ -9,6 +9,7 @@ import {
   Star,
 } from "lucide-react";
 import { toast } from "sonner";
+import { supplierHotelSnapshot, type SupplierHotelResult } from "@/lib/quotes/supplierHotelSelection";
 import { hotelExtraDisplay, hotelExtraOverlapWarnings, type HotelExtraService } from "@/lib/quotes/hotelExtraDisplay";
 
 type HotelRow = {
@@ -19,6 +20,8 @@ type HotelRow = {
   doubleTwinPerPerson: number;
   triplePerPerson: number;
   stayType: "CORE" | "PRE" | "POST";
+  stayCheckIn?: string;
+  stayCheckOut?: string;
 
   supplierId?: string;
   supplierName?: string;
@@ -62,91 +65,6 @@ type HotelRow = {
   supplierBeverageMeals?: number;
 };
 
-type SupplierHotelResult = {
-  supplier: {
-    id: string;
-    name: string;
-    code: string | null;
-    preferred: boolean;
-    rating: number | null;
-    country: string | null;
-    city: string | null;
-    defaultCurrency: string;
-  };
-
-  service: {
-    id: string;
-    name: string;
-    description: string | null;
-    country: string | null;
-    city: string | null;
-    notes: string | null;
-  };
-
-  rate: {
-    id: string;
-    name: string;
-    description: string | null;
-    validFrom: string;
-    validTo: string;
-    currency: string;
-    amount: number;
-    unit: string;
-    roomType: string | null;
-    mealBasis: string | null;
-    minPax: number | null;
-    maxPax: number | null;
-    breakfastIncluded: boolean | null;
-    dinnerIncluded: boolean | null;
-    dinnerAmount: number | null;
-    dinnerUnit: string | null;
-    dinnerNotes: string | null;
-    cityTaxIncluded: boolean;
-    cityTaxAmount: number | null;
-    cityTaxCurrency: string | null;
-    cityTaxUnit: string | null;
-    porterageAvailable: boolean | null;
-    porterageIncluded: boolean | null;
-    porterageAmount: number | null;
-    porterageUnit: string | null;
-    beveragePackageIncluded: boolean | null;
-    beveragePackageDescription: string | null;
-    beveragePackageAmount: number | null;
-    beveragePackageUnit: string | null;
-    beverageNotes: string | null;
-    freePlaces: string | null;
-    freePlaceRatio: number | null;
-    freePlaceMax: number | null;
-    freePlaceNotes: string | null;
-    minimumRooms: number | null;
-    minimumNights: number | null;
-    rateRestrictions: string | null;
-    singleSupplement: number | null;
-    tripleReduction: number | null;
-    cancellationTerms: string | null;
-    paymentTerms: string | null;
-    supplierReference: string | null;
-    lastVerifiedAt: string | null;
-    staySpecific?: boolean;
-    notes: string | null;
-  };
-
-  rateValidity:
-    | "VALID_FOR_REQUEST"
-    | "EXPIRED_ESTIMATE";
-  requiresReconfirmation: boolean;
-  cityTaxNeedsReview?: boolean;
-
-  effectiveCost: {
-    singlePerPersonPerNight: number | null;
-    doubleTwinPerPersonPerNight: number | null;
-    triplePerPersonPerNight: number | null;
-    singleStatus: string;
-    doubleTwinStatus: string;
-    tripleStatus: string;
-    currency: string;
-  };
-};
 
 type Props = {
   hotels: HotelRow[];
@@ -297,11 +215,8 @@ export default function HotelsSection({
       SearchState
     >
   >({});
-  const [staySearchDates, setStaySearchDates] = useState<Record<number, {checkIn: string; checkOut: string}>>({});
-
   function searchDates(index: number) {
-    const {checkIn = "", checkOut = ""} = staySearchDates[index] ?? {};
-    return {checkIn, checkOut};
+    return {checkIn: hotels[index]?.stayCheckIn ?? "", checkOut: hotels[index]?.stayCheckOut ?? ""};
   }
 
   const safePax =
@@ -507,125 +422,12 @@ export default function HotelsSection({
       return;
     }
 
-    onUpdateHotel(
-      index,
-      {
-        ...(result.rate.staySpecific ? {nights: (Date.parse(effectiveCheckOut) - Date.parse(effectiveCheckIn)) / 86_400_000} : {}),
-        hotelName:
-          result.supplier
-            .name,
-
-        destination:
-          result.service
-            .city ||
-          result.supplier
-            .city ||
-          hotels[index]
-            ?.destination ||
-          "",
-
-        singlePerPerson:
-          result
-            .effectiveCost
-            .singlePerPersonPerNight ??
-          0,
-
-        doubleTwinPerPerson:
-          result
-            .effectiveCost
-            .doubleTwinPerPersonPerNight ??
-          0,
-
-        triplePerPerson:
-          result
-            .effectiveCost
-            .triplePerPersonPerNight ??
-          0,
-
-        supplierId:
-          result.supplier
-            .id,
-
-        supplierName:
-          result.supplier
-            .name,
-
-        supplierPreferred:
-          result.supplier
-            .preferred,
-
-        supplierServiceId:
-          result.service
-            .id,
-
-        supplierRateId:
-          result.rate.id,
-
-        supplierRateName:
-          result.rate.name,
-
-        supplierRateCurrency:
-          result.rate
-            .currency,
-
-        supplierRateValidFrom:
-          result.rate
-            .validFrom,
-
-        supplierRateValidTo:
-          result.rate
-            .validTo,
-
-        supplierRateValidity:
-          result.rateValidity,
-
-        supplierRateRequiresReconfirmation:
-          result.requiresReconfirmation,
-
-        supplierMealBasis:
-          result.rate
-            .mealBasis,
-        supplierSelectedMealBasis: /^(HB|HALF[ _-]?BOARD)$/i.test(result.rate.mealBasis || "") ? "HB" : "BB",
-        supplierBaseSinglePerNight: result.effectiveCost.singlePerPersonPerNight ?? 0,
-        supplierBaseDoubleTwinPerNight: result.effectiveCost.doubleTwinPerPersonPerNight ?? 0,
-        supplierBaseTriplePerNight: result.effectiveCost.triplePerPersonPerNight ?? 0,
-        supplierDinnerIncluded: result.rate.dinnerIncluded,
-        supplierDinnerAmount: result.rate.dinnerAmount,
-        supplierDinnerUnit: result.rate.dinnerUnit,
-        supplierCityTaxCurrency: result.rate.cityTaxCurrency,
-        supplierCityTaxUnit: result.rate.cityTaxUnit,
-
-        supplierCityTaxIncluded:
-          result.rate
-            .cityTaxIncluded,
-
-        supplierCityTaxAmount:
-          result.rate
-            .cityTaxAmount,
-
-        supplierPorterageIncluded:
-          result.rate
-            .porterageIncluded,
-        supplierPorterageAvailable: result.rate.porterageAvailable,
-        supplierPorterageAmount: result.rate.porterageAmount,
-        supplierPorterageUnit: result.rate.porterageUnit,
-
-        supplierBeveragePackageIncluded:
-          result.rate
-            .beveragePackageIncluded,
-        supplierBeveragePackageAmount: result.rate.beveragePackageAmount,
-        supplierBeveragePackageUnit: result.rate.beveragePackageUnit,
-
-        supplierBeveragePackageDescription:
-          result.rate
-            .beveragePackageDescription,
-        supplierDinnerSelected: false,
-        supplierDinnerMeals: 0,
-        supplierPorterageSelected: false,
-        supplierBeverageSelected: false,
-        supplierBeverageMeals: 0,
-      },
-    );
+    onUpdateHotel(index, {
+      ...supplierHotelSnapshot(result, hotels[index]?.destination ?? ""),
+      stayCheckIn: checkIn || undefined,
+      stayCheckOut: checkOut || undefined,
+      ...(result.rate.staySpecific ? {nights: (Date.parse(effectiveCheckOut) - Date.parse(effectiveCheckIn)) / 86_400_000} : {}),
+    });
 
     if (
       result.rateValidity ===
@@ -858,12 +660,9 @@ export default function HotelsSection({
                       {([["checkIn", "Hotel check-in"], ["checkOut", "Hotel check-out"]] as const).map(([key, label]) =>
                         <label key={key} className="block text-sm font-medium">{label}
                           <input type="date" className="mt-1 w-full rounded-md border bg-white p-2" value={searchDates(index)[key]}
-                            onChange={event => {
-                              const value = event.target.value;
-                              setStaySearchDates(previous => ({
-                                ...previous, [index]: {...(previous[index] ?? {checkIn: "", checkOut: ""}), [key]: value},
-                              }));
-                            }}/>
+                            onChange={event => onUpdateHotel(index, {
+                              [key === "checkIn" ? "stayCheckIn" : "stayCheckOut"]: event.target.value || undefined,
+                            })}/>
                         </label>)}
                     </div>
                     <p className="mt-2 text-xs text-slate-500">Enter the exact stay dates to find rates approved from a hotel offer. Blank fields use the tour dates.</p>

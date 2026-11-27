@@ -56,10 +56,22 @@ function headingDate(heading: string): number | null | undefined {
     ? date.getTime() : null;
 }
 
-function itineraryNightDates(headings: RegExpMatchArray[]): StayDates[] {
+function itineraryNightDates(headings: RegExpMatchArray[], requestedStart?: string): StayDates[] {
   const days = headings.map(match => Number(match[1]));
   const dates = headings.map(match => headingDate(match[0]));
   const anchor = dates.findIndex(date => typeof date === "number");
+  if (requestedStart !== undefined) {
+    const start = headingDate(requestedStart);
+    if (typeof start !== "number") return days.map(() => ({}));
+    if (days.some((day, index) => day < 1 || (index > 0 && day !== days[index - 1] + 1))) {
+      return days.map(() => ({}));
+    }
+    const toDate = (time: number) => new Date(time).toISOString().slice(0, 10);
+    return days.map(day => ({
+      checkIn: toDate(start + (day - 1) * dayMilliseconds),
+      checkOut: toDate(start + day * dayMilliseconds),
+    }));
+  }
   const start = anchor === -1 ? undefined : dates[anchor]! - (days[anchor] - 1) * dayMilliseconds;
   const consistent = start !== undefined && days.every((day, index) =>
     day >= 1 && (index === 0 || day === days[index - 1] + 1) &&
@@ -81,10 +93,10 @@ function itineraryNightDates(headings: RegExpMatchArray[]): StayDates[] {
   });
 }
 
-export function itineraryProcurementStays(itinerary: string | null | undefined, destinations: string[]): ItineraryStay[] {
+export function itineraryProcurementStays(itinerary: string | null | undefined, destinations: string[], requestedStart?: string): ItineraryStay[] {
   const text = (itinerary ?? "").replace(/\*\*/g, "");
   const headings = [...text.matchAll(/^[\t ]*Day\s+(\d{1,2})\b[^\r\n]*/gim)];
-  const dates = itineraryNightDates(headings);
+  const dates = itineraryNightDates(headings, requestedStart);
   const stays: ItineraryStay[] = [];
   let previousDay = 0;
 

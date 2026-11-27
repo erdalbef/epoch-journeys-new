@@ -5,7 +5,7 @@ import { buildGroupFinancialSummary } from "@/lib/quotes/groupFinancialSummary";
 import { validateMealQuantities } from "@/lib/quotes/mealQuantityValidation";
 import { calculateComplimentaryExpenses, type CompExpenseSettings } from "@/lib/quotes/complimentaryCosts";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 
@@ -21,6 +21,8 @@ import QuoteValiditySection from "@/components/quotes/create/QuoteValiditySectio
 import RecipientSection from "@/components/quotes/create/RecipientSection";
 import GroupSetupSection from "@/components/quotes/create/GroupSetupSection";
 import HotelsSection from "@/components/quotes/create/HotelsSection";
+import EpochQuotePreparation, { type PreparedQuoteHotel } from "@/components/quotes/create/EpochQuotePreparation";
+import { supplierHotelSnapshot } from "@/lib/quotes/supplierHotelSelection";
 
 import OperationalCostsSection, {
   type OperationalCostCategory,
@@ -55,6 +57,7 @@ type TourOption = {
   currency: string;
   overviewItinerary: string | null;
   itinerary: string | null;
+  destinations?: string[];
 };
 
 type SeasonalRateReference = {
@@ -123,6 +126,8 @@ type HotelRow = {
   doubleTwinPerPerson: number;
   triplePerPerson: number;
 
+  stayCheckIn?: string;
+  stayCheckOut?: string;
   stayType:
     | "CORE"
     | "PRE"
@@ -351,6 +356,7 @@ type Props = {
   initialData?: InitialQuoteData;
 
   mode?: "create" | "edit";
+  prepareWithEpochAi?: boolean;
 };
 
 type GeneratedQuoteItemType =
@@ -1395,9 +1401,12 @@ export default function QuoteCreateForm({
   agents,
   initialData,
   mode = "create",
+  prepareWithEpochAi = false,
 }: Props) {
   const router =
     useRouter();
+  const [preparedHotelBasis, setPreparedHotelBasis] = useState("");
+  const previousPreparationNote = useRef("");
 
   const [
     purpose,
@@ -2286,6 +2295,9 @@ export default function QuoteCreateForm({
             destination:
               row.destination ||
               "",
+
+            stayCheckIn: row.stayCheckIn,
+            stayCheckOut: row.stayCheckOut,
 
             nights:
               toNumber(
@@ -3486,6 +3498,43 @@ export default function QuoteCreateForm({
     );
   }
 
+  const quotePreparationBasis = JSON.stringify([tourId, group.startDate, group.endDate, calculations.totalTravelers]);
+
+  function applyEpochQuotePreparation(rows: PreparedQuoteHotel[], warnings: string[]) {
+    const tour = tours.find(item => item.id === tourId);
+    if (!tour) return;
+    if (rows.length && hotels.some(hotel => hotel.hotelName || hotel.destination || hotel.supplierRateId ||
+        hotel.singlePerPerson || hotel.doubleTwinPerPerson || hotel.triplePerPerson) &&
+        !window.confirm("Replace the hotel rows currently in this draft with the reviewed Epoch AI proposal?")) return;
+
+    if (!title.trim()) setTitle(tour.title);
+    if (rows.length) {
+      setHotels(rows.map(({stay, rate}) => ({
+        ...createEmptyHotelRow(),
+        destination: stay.city,
+        nights: stay.nights,
+        stayCheckIn: stay.checkIn,
+        stayCheckOut: stay.checkOut,
+        ...(rate ? supplierHotelSnapshot(rate, stay.city) : {}),
+      })));
+      setPreparedHotelBasis(quotePreparationBasis);
+    }
+    const pending = rows.filter(row => !row.rate).map(row => row.stay.city);
+    const preparationNotes = [
+      pending.length ? `Hotel rates pending: ${pending.join(", ")}.` : "",
+      ...warnings,
+      "Review transport, guides, entrances, meals and other services.",
+    ].filter(Boolean);
+    const note = `Epoch AI quote preparation — review before issuing:\n${preparationNotes.join("\n")}`;
+    const previous = previousPreparationNote.current;
+    previousPreparationNote.current = note;
+    setInternalNotes(current => {
+      const existing = previous ? current.replace(previous, "").trim() : current.trim();
+      return [existing, note].filter(Boolean).join("\n\n");
+    });
+    toast.success("Epoch AI proposal applied to the quote draft.");
+  }
+
   function updateHotel(
     index: number,
     patch: Partial<HotelRow>
@@ -4256,6 +4305,9 @@ export default function QuoteCreateForm({
               destination:
                 row.destination,
 
+              stayCheckIn: row.stayCheckIn,
+              stayCheckOut: row.stayCheckOut,
+
               nights:
                 row.nights,
 
@@ -4890,6 +4942,20 @@ export default function QuoteCreateForm({
           </div>
         )}
       </section>
+
+      {mode === "create" && prepareWithEpochAi ? (
+        <EpochQuotePreparation key={quotePreparationBasis}
+          tour={tours.find(item => item.id === tourId)}
+          startDate={group.startDate} endDate={group.endDate}
+          groupSize={calculations.totalTravelers} currency={currency}
+          onApply={applyEpochQuotePreparation}
+        />
+      ) : null}
+      {preparedHotelBasis && preparedHotelBasis !== quotePreparationBasis ? (
+        <p role="status" className="rounded border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900">
+          The tour, dates or group size have changed. Recheck the prepared hotel rates before using this draft.
+        </p>
+      ) : null}
 
       <HotelsSection
         hotels={hotels}

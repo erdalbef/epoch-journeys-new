@@ -15,6 +15,7 @@ export async function getToursForQuoteForm() {
       title: true,
       category: true,
       overviewItinerary: true,
+      destinations: true,
       itinerary: true,
 
       pricingTiers: {
@@ -43,6 +44,7 @@ export async function getToursForQuoteForm() {
       title: tour.title,
       category: tour.category,
       overviewItinerary: tour.overviewItinerary,
+      destinations: tour.destinations,
       itinerary: tour.itinerary,
 
       /*

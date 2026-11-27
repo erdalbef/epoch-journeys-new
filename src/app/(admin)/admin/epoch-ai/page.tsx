@@ -36,6 +36,11 @@ export default function EpochAiPage() {
                 Open workspace
               </p>
             </Link>
+            <Link href="/admin/quotes/new?prepare=epoch-ai"
+              className="rounded-lg border border-slate-200 p-4 hover:border-[#001F3F] hover:bg-slate-50">
+              <h3 className="font-bold text-[#001F3F]">Prepare a new quote with Epoch AI</h3>
+              <p className="mt-1 text-sm text-slate-600">Check the itinerary and Supplier CRM rates, then review the draft in the quote builder.</p>
+            </Link>
           </div>
         </div>
       </section>
