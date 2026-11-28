@@ -7,7 +7,7 @@ import { getToursForQuoteForm } from "@/lib/quote-queries";
 import QuoteCreateForm from "@/components/quotes/QuoteCreateForm";
 
 export default async function NewQuotePage({searchParams}: {
-  searchParams: Promise<{prepare?: string}>;
+  searchParams: Promise<{tourId?: string}>;
 }) {
   const session = await getServerSession(authOptions);
 
@@ -16,7 +16,7 @@ export default async function NewQuotePage({searchParams}: {
   }
 
   const tours = await getToursForQuoteForm();
-  const {prepare} = await searchParams;
+  const {tourId} = await searchParams;
 
   /*
    * AGENT MASTER DATA
@@ -96,7 +96,7 @@ export default async function NewQuotePage({searchParams}: {
       <QuoteCreateForm
         tours={tours}
         agents={agents}
-        prepareWithEpochAi={prepare === "epoch-ai"}
+        initialTourId={tours.some(tour => tour.id === tourId) ? tourId : undefined}
       />
     </div>
   );

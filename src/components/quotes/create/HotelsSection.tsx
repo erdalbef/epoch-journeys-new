@@ -67,6 +67,8 @@ type HotelRow = {
 
 
 type Props = {
+  tourId?: string;
+  groupSize?: number;
   hotels: HotelRow[];
   /** Other services already selected in this quotation; review-only overlap detection. */
   perPersonServices?: HotelExtraService[];
@@ -193,6 +195,8 @@ function hasUsableRoomCost(result: SupplierHotelResult) {
 }
 
 export default function HotelsSection({
+  tourId,
+  groupSize,
   hotels,
   perPersonServices = [],
   currency,
@@ -278,7 +282,7 @@ export default function HotelsSection({
             city,
             pax:
               String(
-                safePax,
+                groupSize ?? safePax,
               ),
           },
         );
@@ -300,6 +304,8 @@ export default function HotelsSection({
           checkOut || endDate,
         );
       }
+
+      if (tourId) params.set("tourId", tourId);
 
       const response =
         await fetch(

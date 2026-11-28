@@ -1,6 +1,6 @@
 import { itineraryProcurementStays } from "./hotelStayCities";
 
-export type Stay = { city: string; checkIn: string; checkOut: string; rooms: number; massRoom: boolean; originCountry?: string };
+export type Stay = { city: string; checkIn: string; checkOut: string; rooms: number; massRoom: boolean; massDate?: string; hotelName?: string; originCountry?: string };
 export type HotelContact = { id: string; name: string; city: string | null; country: string | null; email: string | null; preferred: boolean; contactPending?: boolean; contacts: { email: string | null; isPrimary: boolean; notes?: string | null }[] };
 export const balkanStays: Stay[] = [
   {city:"Sarajevo",checkIn:"2027-05-07",checkOut:"2027-05-08",rooms:20,massRoom:false,originCountry:"USA"},
@@ -30,8 +30,8 @@ export function initialProcurementStays(tourId: string, destinations: string[], 
   }
 
   return itineraryProcurementStays(itinerary, destinations)
-    .map(({ city, country, ferry, checkIn, checkOut }, id) => ({
-      ...createProcurementStay(id, city), country, ferry,
+    .map(({ city, country, ferry, checkIn, checkOut, massRoom, massDate, hotelName }, id) => ({
+      ...createProcurementStay(id, city), country, ferry, massRoom: massRoom ?? false, massDate, hotelName,
       checkIn: checkIn ?? "", checkOut: checkOut ?? "",
     }));
 }
@@ -69,10 +69,11 @@ export function inquiry(stay:Stay,hotelName:string): { subject:string; body:stri
  if(!hotelName.trim())errors.push("Hotel name required");
  if(nights(stay)<1 || nights(stay)>30)errors.push("Valid check-in and check-out dates required");
  if(!Number.isInteger(stay.rooms)||stay.rooms<1||stay.rooms>250)errors.push("Valid room count required");
+ if (stay.massRoom && stay.massDate && (stay.massDate < stay.checkIn || stay.massDate > stay.checkOut)) errors.push("Mass date must fall within the hotel stay");
  const subject=hotelInquirySubject(stay);
  const origin=stay.originCountry?.trim();
  const originPhrase=origin ? ` from ${origin.toUpperCase()==="USA"?"the USA":origin}` : "";
- const body=`Dear Reservations Team,\n\nGreetings from Epoch Journeys.\n\nWe are organizing a Catholic pilgrimage group${originPhrase} and would appreciate your best group accommodation offer for the following:\n\nAccommodation Details\n- Destination: ${stay.city}\n- Hotel: ${hotelName.trim()}\n- Check-in: ${formatInquiryDate(stay.checkIn)}\n- Check-out: ${formatInquiryDate(stay.checkOut)}\n- Duration: ${nights(stay)} night${nights(stay)===1?"":"s"}\n- Rooms requested: ${stay.rooms} rooms (Double/Twin, Single, and Triple where available)\n- Meal plan: Bed & Breakfast (BB)\n\nPlease advise on availability for the requested dates and quote your best group rates for Double/Twin and Single rooms, plus Triple rooms where available.\n\nPlease itemize these additional charges separately from the BB room rate:\n- Half-board supplement (HB)\n- Dinner beverage package supplement: 2 glasses of wine, beer, or soft drinks\n- City tax, if applicable\n- Porterage charges, if available\n\nAdditional Information\nPlease also advise on:\n- Standard guest room sizes (m²), walk-in showers and accessible rooms\n- Lobby facilities and suitability for group check-in\n- Full-size coach access and parking arrangements\n- Complimentary room policy\n- Payment and cancellation conditions.\n- Offer validity${stay.massRoom?"\n- Availability of a suitable private meeting room for the group's Mass on "+formatInquiryDate(stay.checkIn)+" (please advise whether complimentary or subject to a charge)":""}\n\nThank you for your assistance. We look forward to receiving your offer.\n\nKind regards,`;
+ const body=`Dear Reservations Team,\n\nGreetings from Epoch Journeys.\n\nWe are organizing a Catholic pilgrimage group${originPhrase} and would appreciate your best group accommodation offer for the following:\n\nAccommodation Details\n- Destination: ${stay.city}\n- Hotel: ${hotelName.trim()}\n- Check-in: ${formatInquiryDate(stay.checkIn)}\n- Check-out: ${formatInquiryDate(stay.checkOut)}\n- Duration: ${nights(stay)} night${nights(stay)===1?"":"s"}\n- Rooms requested: ${stay.rooms} rooms (Double/Twin, Single, and Triple where available)\n- Meal plan: Bed & Breakfast (BB)\n\nPlease advise on availability for the requested dates and quote your best group rates for Double/Twin and Single rooms, plus Triple rooms where available.\n\nPlease itemize these additional charges separately from the BB room rate:\n- Half-board supplement (HB)\n- Dinner beverage package supplement: 2 glasses of wine, beer, or soft drinks\n- City tax, if applicable\n- Porterage charges, if available\n\nAdditional Information\nPlease also advise on:\n- Standard guest room sizes (m²), walk-in showers, accessible rooms and guest elevators\n- Lobby facilities and suitability for group check-in\n- Full-size coach access and parking arrangements, including luggage unloading\n- Complimentary room policy\n- Payment and cancellation conditions.\n- Offer validity${stay.massRoom?"\n- Availability of a suitable private meeting room for the group's Mass on "+formatInquiryDate(stay.massDate || stay.checkIn)+" (please advise the available time, permitted duration and whether the room is complimentary or subject to a charge)":""}\n\nThank you for your assistance. We look forward to receiving your offer.\n\nKind regards,`;
 
  return {subject,body:body.replaceAll("\\n","\n"),errors};
 }

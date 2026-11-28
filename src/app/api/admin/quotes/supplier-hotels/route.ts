@@ -1,14 +1,14 @@
 import {
-  Role,
   SupplierRateUnit,
   SupplierServiceType,
   SupplierStatus,
 } from "@prisma/client";
-import { getServerSession } from "next-auth";
 import { NextResponse } from "next/server";
 
-import { authOptions } from "@/lib/authOptions";
 import { db } from "@/lib/db";
+import { requireAdminApiAccess } from "@/lib/security/requireAdminApiAccess";
+import { hotelOfferDeadlines } from "@/lib/epoch-ai/hotelOfferDeadlines";
+import { hotelOfferTerms } from "@/lib/epoch-ai/receivedHotelOffer";
 import { OFFER_RATE_SOURCE } from "@/lib/epoch-ai/hotelOfferRateDraft";
 
 type EffectiveCostStatus =
@@ -23,26 +23,11 @@ function clean(
   return value?.trim() ?? "";
 }
 
-function optionalDate(
-  value: string | null,
-) {
-  const cleaned =
-    clean(value);
-
-  if (!cleaned) {
-    return null;
-  }
-
-  const parsed =
-    new Date(
-      `${cleaned}T00:00:00.000Z`,
-    );
-
-  return Number.isNaN(
-    parsed.getTime(),
-  )
-    ? null
-    : parsed;
+function optionalDate(value: string | null) {
+  const date = clean(value);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return null;
+  const parsed = new Date(`${date}T00:00:00Z`);
+  return Number.isFinite(parsed.getTime()) && parsed.toISOString().slice(0, 10) === date ? parsed : null;
 }
 
 function optionalPositiveInteger(
@@ -313,27 +298,8 @@ export async function GET(
   request: Request,
 ) {
   try {
-    const session =
-      await getServerSession(
-        authOptions,
-      );
-
-    if (
-      !session?.user ||
-      session.user.role !==
-        Role.ADMIN
-    ) {
-      return NextResponse.json(
-        {
-          ok: false,
-          error:
-            "Unauthorized.",
-        },
-        {
-          status: 401,
-        },
-      );
-    }
+    const denied = await requireAdminApiAccess();
+    if (denied) return denied;
 
     const {
       searchParams,
@@ -348,6 +314,8 @@ export async function GET(
           "city",
         ),
       );
+
+    const tourId = clean(searchParams.get("tourId"));
 
     const country =
       clean(
@@ -720,9 +688,42 @@ export async function GET(
         (a.rateSource === OFFER_RATE_SOURCE && b.rateSource === OFFER_RATE_SOURCE &&
           a.supplierReference !== null && a.supplierReference === b.supplierReference));
 
-    const availableForQuote = (rate: HotelRate) => rate.rateSource !== OFFER_RATE_SOURCE ||
+    const isExactOfferRate = (rate: HotelRate) => rate.rateSource === OFFER_RATE_SOURCE &&
       Boolean(startDate && endDate && rate.validFrom.getTime() === startDate.getTime() &&
         rate.validTo.getTime() === endDate.getTime() && withinTravelAndPax(rate));
+    const offerIds = [...new Set(suppliers.flatMap(supplier => supplier.services.flatMap(service =>
+      service.rates.filter(isExactOfferRate).flatMap(rate => rate.supplierReference ? [rate.supplierReference] : []))))];
+    const checkIn = startDate?.toISOString().slice(0, 10);
+    const checkOut = endDate?.toISOString().slice(0, 10);
+    const offers = tourId && checkIn && checkOut && offerIds.length
+      ? await db.supplierCommercialEvidence.findMany({
+        where: {
+          id: { in: offerIds },
+          reviewStatus: "TERMS_VERIFIED",
+          acceptanceStatus: { notIn: ["REJECTED", "SUPERSEDED"] },
+          newerEvidence: { none: {} },
+          OR: [
+            { hotelInquiry: { tourId, destination: { equals: city, mode: "insensitive" }, checkIn, checkOut } },
+            { manualHotelTourId: tourId, manualHotelStayKey: { equals: JSON.stringify([city, checkIn, checkOut]), mode: "insensitive" } },
+          ],
+        },
+        select: { id: true, supplierId: true, reviewedTerms: true, sourceDate: true, acceptanceStatus: true },
+      })
+      : [];
+    const currentOffers = new Map(offers.map(offer => [offer.id, offer]));
+    const today = new Date().toISOString().slice(0, 10);
+    const availableForQuote = (rate: HotelRate) => rate.rateSource !== OFFER_RATE_SOURCE ||
+      Boolean(isExactOfferRate(rate) && rate.supplierReference &&
+        currentOffers.get(rate.supplierReference)?.supplierId === rate.supplierId);
+
+    const needsOfferReconfirmation = (rate: HotelRate) => {
+      const offer = rate.rateSource === OFFER_RATE_SOURCE && rate.supplierReference
+        ? currentOffers.get(rate.supplierReference) : undefined;
+      if (!offer || offer.acceptanceStatus === "RECORDED_ACCEPTED") return false;
+      const terms = hotelOfferTerms.safeParse(offer.reviewedTerms);
+      return !terms.success || hotelOfferDeadlines(terms.data, offer.sourceDate?.toISOString().slice(0, 10) ?? "", checkIn ?? "")
+        .some(deadline => deadline.kind === "expiry" && deadline.date < today);
+    };
 
     const hotels =
       suppliers
@@ -812,7 +813,7 @@ export async function GET(
                           .filter((item): item is HotelRate => item !== null));
                     // Preserve the existing two-state field for saved quotes,
                     // but use it for ANY out-of-date/pax-mismatched estimate.
-                    const rateValidity = referencedRoomRates.every(withinTravelAndPax)
+                    const rateValidity = referencedRoomRates.every(item => withinTravelAndPax(item) && !needsOfferReconfirmation(item))
                       ? "VALID_FOR_REQUEST"
                       : "EXPIRED_ESTIMATE";
                     const unresolvedCityTax = referencedRoomRates.some((roomRate) => {

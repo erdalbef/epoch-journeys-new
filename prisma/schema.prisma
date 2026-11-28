@@ -92,6 +92,7 @@ model User {
 model Tour {
   hotelInquiries HotelInquiry[]
   manualHotelOffers SupplierCommercialEvidence[]
+  hotelProcurementSchedule Json?
   id                       String                    @id @default(cuid())
   title                    String
   category                 String

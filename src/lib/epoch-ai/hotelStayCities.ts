@@ -32,8 +32,8 @@ function cityCountry(value: string) {
 
 type StayDates = { checkIn?: string; checkOut?: string };
 type ItineraryStay = StayDates & (
-  | { city: string; country?: string; ferry?: never }
-  | { city: ""; country?: never; ferry: { day: number; label: string } });
+  | { city: string; country?: string; ferry?: never; massRoom?: boolean; massDate?: string; hotelName?: string; nightCount?: number }
+  | { city: ""; country?: never; ferry: { day: number; label: string }; massRoom?: never; massDate?: never; hotelName?: never; nightCount?: never });
 
 const dayMilliseconds = 86_400_000;
 const shortMonths = "jan feb mar apr may jun jul aug sep oct nov dec".split(" ");
@@ -93,18 +93,35 @@ function itineraryNightDates(headings: RegExpMatchArray[], requestedStart?: stri
   });
 }
 
-export function itineraryProcurementStays(itinerary: string | null | undefined, destinations: string[], requestedStart?: string): ItineraryStay[] {
+export function itineraryDays(itinerary: string | null | undefined, requestedStart?: string) {
   const text = (itinerary ?? "").replace(/\*\*/g, "");
   const headings = [...text.matchAll(/^[\t ]*Day\s+(\d{1,2})\b[^\r\n]*/gim)];
   const dates = itineraryNightDates(headings, requestedStart);
+  return headings.map((match, index) => ({
+    day: Number(match[1]),
+    heading: match[0],
+    block: text.slice(match.index + match[0].length, headings[index + 1]?.index),
+    date: dates[index].checkIn,
+    nextDate: dates[index].checkOut,
+  }));
+}
+
+export function itineraryTravelDates(itinerary: string | null | undefined) {
+  const days = itineraryDays(itinerary);
+  const first = days[0];
+  const last = days.at(-1);
+  if (days.length < 2 || first.day !== 1 || !first.date || !last?.date ||
+      days.some(({day, date, nextDate}, index) => day !== index + 1 || !date || !nextDate)) return null;
+  return {startDate: first.date, endDate: last.date};
+}
+
+export function itineraryProcurementStays(itinerary: string | null | undefined, destinations: string[], requestedStart?: string): ItineraryStay[] {
   const stays: ItineraryStay[] = [];
   let previousDay = 0;
 
-  for (const [index, heading] of headings.entries()) {
-    const day = Number(heading[1]);
-    const block = text.slice(heading.index + heading[0].length, headings[index + 1]?.index);
+  for (const {day, heading, block, date: checkIn, nextDate: checkOut} of itineraryDays(itinerary, requestedStart)) {
     const labeled = block.match(/^[\t ]*Overnight:[\t ]*(.+)$/im)?.[1];
-    const content = `${heading[0]}\n${block}`;
+    const content = `${heading}\n${block}`;
     const locations = [...(labeled ?? block).matchAll(labeled
       ? /\b(?:overnight(?:\s+stay)?|hotel)\s+in\s+([^\r\n.!?;]+)/gi
       : /\bovernight(?:\s+stay)?\s+(?:at\s+(?:your |the )?hotel\s+)?in\s+([^\r\n.!?;]+)/gi)];
@@ -113,10 +130,10 @@ export function itineraryProcurementStays(itinerary: string | null | undefined, 
       /\b(?:overnight (?:on\s*board|at sea)|overnight:\s*(?:on\s*board|(?:the )?ferry|(?:the )?cruise))/i.test(content);
     if (!locations.length && (ferry || onboardFerry)) {
       const port = ferry?.[1] && cityCountry(ferry[1].trim())?.city;
-      const headingOrigin = heading[0].match(/(?:[–—:]\s*|^Day\s+\d+\s*-\s*)([\p{L}\p{M} .’']+?)\s+[–—-]\s+overnight\s+(?:ferry|cruise)/iu)?.[1];
+      const headingOrigin = heading.match(/(?:[–—:]\s*|^Day\s+\d+\s*-\s*)([\p{L}\p{M} .’']+?)\s+[–—-]\s+overnight\s+(?:ferry|cruise)/iu)?.[1];
       const from = headingOrigin && cityCountry(headingOrigin)?.city;
       const label = from && port ? `Ferry: ${from} → ${port}` : port ? `Ferry to ${port}` : `Overnight ferry · Day ${day}`;
-      stays.push({ city: "", ferry: { day, label }, ...dates[index] });
+      stays.push({ city: "", ferry: { day, label }, checkIn, checkOut });
       continue;
     }
     const location = locations.at(-1)?.[1] ?? labeled;
@@ -124,11 +141,24 @@ export function itineraryProcurementStays(itinerary: string | null | undefined, 
 
     const place = cityCountry(location);
     if (!place) continue;
+    const hotelName = block.match(/^[\t ]*(?:Accommodation|Hotel):[\t ]*([^\r\n]+)$/im)?.[1]?.trim();
+    const property = hotelName && /\b(?:hotel|inn|resort|hilton|scandic|marriott|thon|radisson)\b/i.test(hotelName) &&
+      !/\bor similar\b|\bto be confirmed\b|\bTBC\b/i.test(hotelName) ? hotelName : undefined;
+    const massLine = block.match(/^[\t ]*Mass:[\t ]*([^\r\n]+)/im)?.[1] ??
+      block.match(/(?:^|[.!?\n])\s*((?:celebrate|we celebrate|celebration of) Mass\b[^.!?\n]*)/i)?.[1] ?? "";
+    const massRoom = /\b(?:at|in|inside)\s+(?:the\s+|our\s+)?hotel\b|\bprivate (?:meeting |function )?room\b/i.test(massLine) &&
+      !/\b(?:no mass|optional|backup|if|alternative|or)\b/i.test(massLine);
     const previous = stays.at(-1);
-    if (day === previousDay + 1 && previous && placeKey(previous.city) === placeKey(place.city)) {
-      previous.checkOut = previous.checkOut === dates[index].checkIn ? dates[index].checkOut : undefined;
+    if (day === previousDay + 1 && previous && placeKey(previous.city) === placeKey(place.city) && (!property || !previous.hotelName || previous.hotelName === property)) {
+      if (property && !previous.hotelName) previous.hotelName = property;
+      if (massRoom && !previous.massRoom) {
+        previous.massRoom = true;
+        previous.massDate = checkIn;
+      }
+      previous.nightCount = (previous.nightCount ?? 0) + 1;
+      previous.checkOut = previous.checkOut === checkIn ? checkOut : undefined;
     } else {
-      stays.push({ ...place, ...dates[index] });
+      stays.push({ ...place, checkIn, checkOut, nightCount: 1, ...(property ? {hotelName: property} : {}), ...(massRoom ? {massRoom, massDate: checkIn} : {}) });
     }
     previousDay = day;
   }

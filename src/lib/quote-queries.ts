@@ -1,4 +1,5 @@
 import { db } from "@/lib/db";
+import { readHotelProcurementSchedule } from "@/lib/epoch-ai/hotelProcurementSchedule";
 
 export async function getToursForQuoteForm() {
   const tours = await db.tour.findMany({
@@ -15,8 +16,11 @@ export async function getToursForQuoteForm() {
       title: true,
       category: true,
       overviewItinerary: true,
+      hotelProcurementSchedule: true,
       destinations: true,
       itinerary: true,
+      inclusions: true,
+      exclusions: true,
 
       pricingTiers: {
         where: {
@@ -44,8 +48,11 @@ export async function getToursForQuoteForm() {
       title: tour.title,
       category: tour.category,
       overviewItinerary: tour.overviewItinerary,
+      hotelProcurementSchedule: readHotelProcurementSchedule(tour.hotelProcurementSchedule),
       destinations: tour.destinations,
       itinerary: tour.itinerary,
+      inclusions: tour.inclusions.join("\n"),
+      exclusions: tour.exclusions.join("\n"),
 
       /*
        * Tour no longer stores startingPrice

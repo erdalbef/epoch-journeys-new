@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
-import { findUsableQuotePreparationRates, prepareItineraryHotelStays, quotePreparationDateRange, quoteProcurementReferenceDates } from "./epochQuotePreparation";
+import { findUsableQuotePreparationRates, prepareItineraryHotelStays, quotePreparationDateRange, quoteProcurementReferenceDates, suggestedItineraryQuoteDates } from "./epochQuotePreparation";
+import { hotelProcurementScheduleStays } from "@/lib/epoch-ai/hotelProcurementSchedule";
 import type { SupplierHotelResult } from "./supplierHotelSelection";
 
 const tour = {
@@ -31,6 +32,14 @@ describe("Epoch AI quote preparation", () => {
     expect(plan.warnings).toEqual([expect.stringContaining("add the ferry cost under transport")]);
   });
 
+  it("prefills dated travel and keeps an undated itinerary's named hotel available for review", () => {
+    expect(suggestedItineraryQuoteDates(tour)).toEqual({startDate:"2026-09-02", endDate:"2026-09-06"});
+    const undated = {...tour, itinerary:"Day 1 – Helsinki\nHotel: Scandic Grand Marina\nOvernight: Helsinki\nDay 2 – Departure"};
+    const plan = prepareItineraryHotelStays(undated, "", "");
+    expect(plan.hotels).toMatchObject([{city:"Helsinki", hotelName:"Scandic Grand Marina", nights:1}]);
+    expect(plan.warnings).toContainEqual(expect.stringContaining("Enter travel dates"));
+  });
+
   it("uses all seven dated procurement stays for the Balkans instead of incomplete itinerary prose", () => {
     const balkans = {...tour, id:"cmwjahwcc0000c1fglvy5yrdm", itinerary:"Day 1 – Arrival\nOvernight in Sarajevo."};
     expect(quoteProcurementReferenceDates(balkans.id)).toEqual({startDate:"2027-05-07",endDate:"2027-05-19"});
@@ -44,6 +53,29 @@ describe("Epoch AI quote preparation", () => {
       city:"Kotor Bay",checkIn:"2027-06-08",checkOut:"2027-06-10",
     });
     expect(prepareItineraryHotelStays(balkans, "2027-05-07", "2027-05-15").source).toBe("itinerary");
+  });
+
+  it("reads edited hotel and ferry stays from the saved procurement schedule", () => {
+    const base = {rooms: 20, massRoom: false};
+    const stays = hotelProcurementScheduleStays.parse([
+      {...base, city:"Helsinki", country:"Finland", checkIn:"2027-10-03", checkOut:"2027-10-04"},
+      {...base, city:"", ferry:{day:2, label:"Helsinki to Stockholm ferry"}, checkIn:"2027-10-04", checkOut:"2027-10-05"},
+      {...base, city:"Stockholm", country:"Sweden", checkIn:"2027-10-05", checkOut:"2027-10-07"},
+    ]);
+    const hotelProcurementSchedule = {revision: "7f37a124-da15-4cc4-a492-1474384c5817", stays};
+    const plan = prepareItineraryHotelStays({...tour, hotelProcurementSchedule}, "2027-10-02", "2027-10-07");
+    expect(plan.source).toBe("procurement");
+    expect(plan.hotels).toEqual([
+      {city:"Helsinki", country:"Finland", checkIn:"2027-10-03", checkOut:"2027-10-04", nights:1},
+      {city:"Stockholm", country:"Sweden", checkIn:"2027-10-05", checkOut:"2027-10-07", nights:2},
+    ]);
+    expect(plan.warnings).toEqual([
+      expect.stringContaining("add the ferry cost under transport"),
+      expect.stringContaining("1 night(s)"),
+    ]);
+    expect(hotelProcurementScheduleStays.safeParse([
+      stays[0], {...stays[2], checkIn:"2027-10-03"},
+    ]).success).toBe(false);
   });
 
   it("keeps dates and prices pending when the itinerary has no reliable night allocation", () => {

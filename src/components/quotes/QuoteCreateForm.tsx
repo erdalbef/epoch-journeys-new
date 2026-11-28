@@ -22,7 +22,9 @@ import RecipientSection from "@/components/quotes/create/RecipientSection";
 import GroupSetupSection from "@/components/quotes/create/GroupSetupSection";
 import HotelsSection from "@/components/quotes/create/HotelsSection";
 import EpochQuotePreparation, { type PreparedQuoteHotel } from "@/components/quotes/create/EpochQuotePreparation";
-import { quoteProcurementReferenceDates } from "@/lib/quotes/epochQuotePreparation";
+import { suggestedItineraryQuoteDates } from "@/lib/quotes/epochQuotePreparation";
+import { mergeItineraryDraftRows, type prepareItineraryQuoteServices } from "@/lib/quotes/itineraryQuoteServices";
+import type { HotelProcurementSchedule } from "@/lib/epoch-ai/hotelProcurementSchedule";
 import { supplierHotelSnapshot } from "@/lib/quotes/supplierHotelSelection";
 
 import OperationalCostsSection, {
@@ -59,6 +61,9 @@ type TourOption = {
   overviewItinerary: string | null;
   itinerary: string | null;
   destinations?: string[];
+  inclusions?: string | null;
+  exclusions?: string | null;
+  hotelProcurementSchedule?: HotelProcurementSchedule | null;
 };
 
 type SeasonalRateReference = {
@@ -357,7 +362,7 @@ type Props = {
   initialData?: InitialQuoteData;
 
   mode?: "create" | "edit";
-  prepareWithEpochAi?: boolean;
+  initialTourId?: string;
 };
 
 type GeneratedQuoteItemType =
@@ -1402,13 +1407,17 @@ export default function QuoteCreateForm({
   agents,
   initialData,
   mode = "create",
-  prepareWithEpochAi = false,
+  initialTourId,
 }: Props) {
   const router =
     useRouter();
   const [preparedHotelBasis, setPreparedHotelBasis] = useState("");
   const previousPreparationNote = useRef("");
-  const suggestedQuoteDates = useRef<{startDate: string; endDate: string} | null>(null);
+  const priorTermsDraft = useRef({includes: "", excludes: ""});
+  const priorServiceDraft = useRef<{ fixed: FixedCostRow[]; operational: OperationalCostRow[] }>({ fixed: [], operational: [] });
+  const initialTour = tours.find(tour => tour.id === initialTourId);
+  const [initialSuggestedDates] = useState(() => initialTour ? suggestedItineraryQuoteDates(initialTour) : null);
+  const suggestedQuoteDates = useRef(initialSuggestedDates);
 
   const [
     purpose,
@@ -1422,7 +1431,7 @@ export default function QuoteCreateForm({
     tourId,
     setTourId,
   ] =
-    useState("");
+    useState(initialTourId ?? "");
 
   const [
     departureDateId,
@@ -1588,9 +1597,9 @@ export default function QuoteCreateForm({
 
       freePassengers: 2,
 
-      startDate: "",
+      startDate: initialSuggestedDates?.startDate ?? "",
 
-      endDate: "",
+      endDate: initialSuggestedDates?.endDate ?? "",
     });
 
   const [
@@ -3502,7 +3511,11 @@ export default function QuoteCreateForm({
 
   const quotePreparationBasis = JSON.stringify([tourId, group.startDate, group.endDate, calculations.totalTravelers]);
 
-  function applyEpochQuotePreparation(rows: PreparedQuoteHotel[], warnings: string[]) {
+  function applyEpochQuotePreparation(
+    rows: PreparedQuoteHotel[],
+    serviceDraft: ReturnType<typeof prepareItineraryQuoteServices>,
+    warnings: string[],
+  ) {
     const tour = tours.find(item => item.id === tourId);
     if (!tour) return;
     if (rows.length && hotels.some(hotel => hotel.hotelName || hotel.destination || hotel.supplierRateId ||
@@ -3510,10 +3523,21 @@ export default function QuoteCreateForm({
         !window.confirm("Replace the hotel rows currently in this draft with the reviewed Epoch AI proposal?")) return;
 
     if (!title.trim()) setTitle(tour.title);
+    if (!clientIncludes.trim() || clientIncludes === priorTermsDraft.current.includes) {
+      const includes = tour.inclusions ?? "";
+      if (includes !== clientIncludes) setClientIncludes(includes);
+      priorTermsDraft.current.includes = includes;
+    }
+    if (!clientExcludes.trim() || clientExcludes === priorTermsDraft.current.excludes) {
+      const excludes = tour.exclusions ?? "";
+      if (excludes !== clientExcludes) setClientExcludes(excludes);
+      priorTermsDraft.current.excludes = excludes;
+    }
     if (rows.length) {
       setHotels(rows.map(({stay, rate}) => ({
         ...createEmptyHotelRow(),
         destination: stay.city,
+        hotelName: stay.hotelName || "",
         nights: stay.nights,
         stayCheckIn: stay.checkIn,
         stayCheckOut: stay.checkOut,
@@ -3521,11 +3545,27 @@ export default function QuoteCreateForm({
       })));
       setPreparedHotelBasis(quotePreparationBasis);
     }
+    const previousDraft = priorServiceDraft.current;
+    const fixed = mergeItineraryDraftRows(
+      serviceDraft.fixed.length ? fixedCostRows.filter(row => row.label.trim() || row.unitCost > 0) : fixedCostRows,
+      previousDraft.fixed, serviceDraft.fixed,
+    );
+    const operational = mergeItineraryDraftRows(
+      serviceDraft.operational.some(row => row.category === "BUS")
+        ? operationalCostRows.filter(row => JSON.stringify(row) !== JSON.stringify(createEmptyOperationalCostRow()))
+        : operationalCostRows,
+      previousDraft.operational, serviceDraft.operational.map(row => ({...createEmptyOperationalCostRow(), ...row})),
+    );
+    setFixedCostRows(fixed.rows.length ? fixed.rows : [createEmptyFixedCostRow()]);
+    setOperationalCostRows(operational.rows.length ? operational.rows : [createEmptyOperationalCostRow()]);
+    priorServiceDraft.current = {fixed: fixed.added, operational: operational.added};
+
     const pending = rows.filter(row => !row.rate).map(row => row.stay.city);
     const preparationNotes = [
       pending.length ? `Hotel rates pending: ${pending.join(", ")}.` : "",
       ...warnings,
-      "Review transport, guides, entrances, meals and other services.",
+      ...serviceDraft.notes,
+      "Confirm supplier costs and review the draft inclusions and exclusions.",
     ].filter(Boolean);
     const note = `Epoch AI quote preparation — review before issuing:\n${preparationNotes.join("\n")}`;
     const previous = previousPreparationNote.current;
@@ -4732,12 +4772,13 @@ export default function QuoteCreateForm({
 
                   const selectedTourId = e.target.value;
                   setTourId(selectedTourId);
-                  if (prepareWithEpochAi && mode === "create") {
+                  if (mode === "create") {
                     const previousDates = suggestedQuoteDates.current;
                     const usingSuggestedDates = previousDates &&
                       previousDates.startDate === group.startDate && previousDates.endDate === group.endDate;
                     if (usingSuggestedDates || (!group.startDate && !group.endDate)) {
-                      const scheduledDates = quoteProcurementReferenceDates(selectedTourId);
+                      const selectedTour = tours.find(tour => tour.id === selectedTourId);
+                      const scheduledDates = selectedTour ? suggestedItineraryQuoteDates(selectedTour) : null;
                       suggestedQuoteDates.current = scheduledDates;
                       setGroup(current => ({...current, ...(scheduledDates ?? {startDate: "", endDate: ""})}));
                     } else {
@@ -4956,7 +4997,7 @@ export default function QuoteCreateForm({
         )}
       </section>
 
-      {mode === "create" && prepareWithEpochAi ? (
+      {mode === "create" ? (
         <EpochQuotePreparation key={quotePreparationBasis}
           tour={tours.find(item => item.id === tourId)}
           startDate={group.startDate} endDate={group.endDate}
@@ -4971,6 +5012,9 @@ export default function QuoteCreateForm({
       ) : null}
 
       <HotelsSection
+        key={quotePreparationBasis}
+        tourId={tourId}
+        groupSize={calculations.totalTravelers}
         hotels={hotels}
         perPersonServices={fixedCostRows.map((service) => ({ label: service.label, category: service.category }))}
         currency={currency}

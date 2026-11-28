@@ -171,7 +171,8 @@ export default function HotelReceivedOffers(props: ({ inquiryId: string } | { ma
           offer === offers[0] && offer.reviewStatus === "TERMS_VERIFIED" && offer.reviewedTerms && offer.stay &&
             !["REJECTED", "SUPERSEDED"].includes(offer.acceptanceStatus) ? <details className="rounded border border-blue-200 p-2">
               <summary className="cursor-pointer font-semibold text-[#001F3F]">Prepare rate draft with Epoch AI</summary>
-              <HotelOfferRateDraft terms={offer.reviewedTerms} {...offer.stay} url={`${url}/${encodeURIComponent(offer.id)}/rates${query}`}/>
+              <HotelOfferRateDraft terms={offer.reviewedTerms} {...offer.stay} url={`${url}/${encodeURIComponent(offer.id)}/rates${query}`}
+                analysisUrl={`${url}/${encodeURIComponent(offer.id)}${query}`}/>
             </details> : null}
         {editing === offer.id && <div className="space-y-2">
           <div className="grid gap-2 sm:grid-cols-2">{fields.map(([key,label])=><label key={key}>{label}

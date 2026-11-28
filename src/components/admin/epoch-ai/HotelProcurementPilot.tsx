@@ -23,12 +23,26 @@ import { capacityBand, type HotelCapacityCandidate, type StructuredHotelResearch
 import type { HotelSupplierResearch } from "@/lib/epoch-ai/hotelSupplierResearch";
 import type { HotelOfficialSiteCandidate } from "@/lib/epoch-ai/hotelOfficialSiteSelection";
 import type { OfficialPageExtraction } from "@/lib/epoch-ai/hotelOfficialPageExtraction";
-import { contactEmail, createProcurementStay, initialProcurementStays, inquiry, searchCrmHotels, nights, type HotelContact, type Stay } from "@/lib/epoch-ai/hotelProcurement";
+import { contactEmail, createProcurementStay, initialProcurementStays, inquiry, searchCrmHotels, nights, type HotelContact, type ProcurementStay, type Stay } from "@/lib/epoch-ai/hotelProcurement";
+import { hotelProcurementScheduleStays, type HotelProcurementSchedule } from "@/lib/epoch-ai/hotelProcurementSchedule";
 import { hotelStayCountry } from "@/lib/epoch-ai/hotelStayCities";
 
-export default function HotelProcurementPilot({tourId,destinations,itinerary,hotels}:{tourId:string;destinations:string[];itinerary:string|null;hotels:HotelContact[]}) {
+export default function HotelProcurementPilot({
+  tourId, destinations, itinerary, hotels, savedSchedule,
+}: {
+  tourId: string;
+  destinations: string[];
+  itinerary: string | null;
+  hotels: HotelContact[];
+  savedSchedule: HotelProcurementSchedule | null;
+}) {
   const router = useRouter();
-  const [stays,setStays]=useState(()=>initialProcurementStays(tourId,destinations,itinerary));
+  const [stays,setStays]=useState<ProcurementStay[]>(() => savedSchedule
+    ? savedSchedule.stays.map((stay, id) => ({ ...stay, id }))
+    : initialProcurementStays(tourId, destinations, itinerary));
+  const [schedule, setSchedule] = useState(savedSchedule);
+  const [savingSchedule, setSavingSchedule] = useState(false);
+  const [scheduleError, setScheduleError] = useState("");
   const [active,setActive]=useState(stays[0]?.id ?? -1);
   const nextStayId = useRef(stays.length);
   const activeStay = stays.find(item => item.id === active);
@@ -259,6 +273,8 @@ export default function HotelProcurementPilot({tourId,destinations,itinerary,hot
   const matches=useMemo(()=>stay?searchCrmHotels(hotels,stay.city,crmSearch[active]||""):[],[stay,hotels,crmSearch,active])
     .filter(hotel => eligibleByGuestRating(hotel.name));
   const chosen=hotels.find(h=>h.id===supplierId[active]);
+  const plannedHotel = stay?.hotelName;
+  const plannedMatches = stay && plannedHotel ? matchHotelCrmRecords(plannedHotel, stay.city, hotels) : [];
   const selectedLeadName=leadByStay[active] || "";
   const selectedName=chosen?.name||selectedLeadName;
   const savedEmail = chosen ? contactEmail(chosen) : "";
@@ -416,7 +432,46 @@ export default function HotelProcurementPilot({tourId,destinations,itinerary,hot
     setStays(remaining);
     setActive(remaining[Math.min(position, remaining.length - 1)]?.id ?? -1);
   }
+  const scheduleDraft = hotelProcurementScheduleStays.safeParse(stays.map(item => ({
+    ...item, country: (researchCountry[item.id] ?? item.country ?? countryForCity[item.city] ?? hotelStayCountry(item.city)) || undefined,
+  })));
+  const isSavedSchedule = Boolean(schedule && scheduleDraft.success &&
+    JSON.stringify(schedule.stays) === JSON.stringify(scheduleDraft.data));
+
+  async function saveSchedule() {
+    if (!scheduleDraft.success || savingSchedule) return;
+    setSavingSchedule(true);
+    setScheduleError("");
+    try {
+      const response = await fetch(`/api/admin/epoch-ai/hotel-procurement/${encodeURIComponent(tourId)}/schedule`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ revision: schedule?.revision ?? null, stays: scheduleDraft.data }),
+      });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error || "Could not save the stay schedule.");
+      setSchedule(result.schedule);
+      router.refresh();
+    } catch (error) {
+      setScheduleError(error instanceof Error ? error.message : "Could not save the stay schedule.");
+    } finally {
+      setSavingSchedule(false);
+    }
+  }
+
   return <div className="space-y-5">
+    <section aria-label="Stay schedule" className="space-y-2 rounded-xl border bg-white p-4 text-sm">
+      <h2 className="font-semibold text-[#001F3F]">Stay schedule</h2>
+      <p className="text-slate-600">Review and save the hotel and ferry dates for quotation preparation.</p>
+      <button type="button" disabled={!scheduleDraft.success || isSavedSchedule || savingSchedule}
+        onClick={() => void saveSchedule()} className="rounded-lg bg-[#001F3F] px-3 py-2 font-semibold text-white disabled:opacity-50">
+        {savingSchedule ? "Saving…" : "Save stay schedule"}
+      </button>
+      {isSavedSchedule && <p role="status" className="text-green-800">Schedule saved for quotation preparation.</p>}
+      {schedule && !isSavedSchedule && <p className="text-amber-800">The quote will use the last saved schedule until you save these edits.</p>}
+      {!scheduleDraft.success && <p className="text-amber-800">{scheduleDraft.error.issues[0]?.message}</p>}
+      {scheduleError && <p role="alert" className="text-red-700">{scheduleError}</p>}
+    </section>
     <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-950"><strong>Preparation only.</strong> This page does not send email, book hotels or change supplier rates. Saving a draft records it in Hotel Inquiry History only. {stays.some(item=>item.reference)?"Balkan reference dates are editable. Verify hotel stays before preparing inquiries.":"Review which destinations need hotel stays and verify their dates before preparing inquiries."} Include the official Epoch Journeys signature in any approved message.</div>
     <div className="flex flex-wrap gap-2">
       {stays.map((item, position) => {
@@ -436,10 +491,14 @@ export default function HotelProcurementPilot({tourId,destinations,itinerary,hot
     {ferry && activeStay ? <section className="space-y-2 rounded-xl border bg-white p-4" aria-label="Overnight ferry">
       <h2 className="text-lg font-bold text-[#001F3F]">{ferry.label}</h2>
       <p className="text-sm text-slate-600">Day {ferry.day} · Overnight cabins</p>
-      <dl className="grid grid-cols-2 gap-3 text-sm">
-        <div><dt className="font-medium">Sailing date</dt><dd>{activeStay.checkIn || "Review itinerary dates"}</dd></div>
-        <div><dt className="font-medium">Arrival date</dt><dd>{activeStay.checkOut || "Review itinerary dates"}</dd></div>
-      </dl>
+      <div className="grid grid-cols-2 gap-3 text-sm">
+        <label className="font-medium">Sailing date
+          <input type="date" className="mt-1 block w-full rounded-lg border p-2" value={activeStay.checkIn} onChange={event => update("checkIn", event.target.value)} />
+        </label>
+        <label className="font-medium">Arrival date
+          <input type="date" className="mt-1 block w-full rounded-lg border p-2" value={activeStay.checkOut} onChange={event => update("checkOut", event.target.value)} />
+        </label>
+      </div>
     </section> : null}
     {stay?<section className="rounded-xl border bg-white p-4 space-y-3" aria-label="Hotel stay details">
       <h2 className="text-lg font-bold text-[#001F3F]">Stay details — review before use</h2>
@@ -459,6 +518,18 @@ export default function HotelProcurementPilot({tourId,destinations,itinerary,hot
       <p className="text-sm text-slate-600">Calculated nights: {nights(stay)||"Review dates"}</p>
       <label className="block text-sm font-medium">Number of rooms<input type="number" min={1} max={250} className="mt-1 w-full rounded-lg border p-2" value={stay.rooms} onChange={e=>update("rooms",Number(e.target.value))}/></label>
       <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={stay.massRoom} onChange={e=>update("massRoom",e.target.checked)}/> Ask about private Mass meeting room (only where needed)</label>
+      {stay.massRoom && <label className="block text-sm font-medium">Mass date
+        <input type="date" className="mt-1 block rounded-lg border p-2" value={stay.massDate ?? stay.checkIn}
+          min={stay.checkIn || undefined} max={stay.checkOut || undefined}
+          onChange={event => update("massDate", event.target.value || undefined)} />
+      </label>}
+      {plannedHotel && <div className="flex flex-wrap items-center gap-2 text-sm">
+        <span>Hotel listed in the itinerary: <strong>{plannedHotel}</strong></span>
+        <button type="button" className="rounded border px-2 py-1 font-semibold text-blue-800" onClick={() => {
+          if (plannedMatches.length === 1) selectCrmHotel(plannedMatches[0]);
+          else reviewHotelLead(plannedHotel);
+        }}>{plannedMatches.length === 1 ? "Prepare inquiry for this hotel" : "Research this hotel"}</button>
+      </div>}
       <button type="button" onClick={removeStay} className="rounded border px-2 py-1 text-sm">Remove stay</button>
     </section>:null}
     {stay?<section className="rounded-xl border border-blue-200 bg-white p-4 space-y-3" aria-label="Quick hotel quotation preparation">
@@ -485,10 +556,10 @@ export default function HotelProcurementPilot({tourId,destinations,itinerary,hot
     {stay?<div className="grid gap-5"><div className="space-y-4 rounded-xl border bg-white p-5">
       <h2 id="epoch-hotel-inquiry" className="text-lg font-bold text-[#001F3F]">2. Review &amp; save quotation request</h2>
       <p className="text-sm text-slate-700">Hotel to approach: <strong>{selectedName || "Not selected"}</strong>. Contact email: <strong>{chosen?contactEmail(chosen)||"Not in CRM":leadEmail||"Not found"}</strong>{!chosen && leadEmail && !contactChecked ? " (review required)" : ""}.</p>
-      {(!chosen || pendingCrmContact) && selectedName ? <ResearchHotelManualInquiry key={JSON.stringify([evidenceKey,stay.checkIn,stay.checkOut,stay.rooms,stay.massRoom])} hotelName={selectedName} stay={stay} recipient={leadEmail} contactVerified={contactChecked} /> : null}
+      {(!chosen || pendingCrmContact) && selectedName ? <ResearchHotelManualInquiry key={JSON.stringify([evidenceKey,stay.checkIn,stay.checkOut,stay.rooms,stay.massRoom,stay.massDate])} hotelName={selectedName} stay={stay} recipient={leadEmail} contactVerified={contactChecked} /> : null}
       {!chosen && !selectedLeadName ? <p className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">Select a CRM hotel or a researched hotel to prepare an inquiry. No email is sent here.</p> : null}
       {chosen&&!contactEmail(chosen)?<p className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">Recipient not verified — check the hotel's current official contact source before proceeding.</p>:null}
-      {chosen&&!pendingCrmContact?<HotelInquiryWorkspace key={`${active}:${chosen.id}:${stay.city}:${stay.checkIn}:${stay.checkOut}:${stay.rooms}:${stay.massRoom}`} tourId={tourId} hotel={chosen} stay={stay}/>:null}
+      {chosen&&!pendingCrmContact?<HotelInquiryWorkspace key={`${active}:${chosen.id}:${stay.city}:${stay.checkIn}:${stay.checkOut}:${stay.rooms}:${stay.massRoom}:${stay.massDate ?? ""}`} tourId={tourId} hotel={chosen} stay={stay}/>:null}
     </div><div className="space-y-4 rounded-xl border bg-white p-5" aria-label="Optional hotel research">
       {coverage?<details className="rounded-xl border border-slate-200 bg-slate-50/50 p-3"><summary className="cursor-pointer font-semibold text-[#001F3F]">3. Discover additional hotels (optional)</summary><section className="mt-3 space-y-4 text-sm" aria-label="Hotel research and supplier selection">
         <button type="button" disabled={destinationResearchLoading||!locationReady} onClick={()=>void researchDestinationHotels()} className="rounded border border-[#001F3F] px-3 py-2 text-xs font-semibold disabled:opacity-40">{destinationResearchLoading?"Researching...":"Find more hotel options"}</button>

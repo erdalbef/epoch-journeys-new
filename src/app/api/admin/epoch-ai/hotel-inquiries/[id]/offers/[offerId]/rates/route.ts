@@ -109,6 +109,7 @@ export async function POST(request: Request, {params}: {params: Promise<{id: str
         porterageAvailable: rates.porterage.amount ? true : null,
         extraBedRate: rates.extraBed || null,
         cancellationTerms: terms.data.cancellation || null,
+        paymentTerms: terms.data.payment || null,
         rateSource: OFFER_RATE_SOURCE, supplierReference: offer.id, lastVerifiedAt: confirmedOn,
         notes: ["Rates apply to the approved stay only.", terms.data.validity ? `Offer validity: ${terms.data.validity}` : "",
           terms.data.other, terms.data.cityTax, terms.data.porterage,

@@ -5,6 +5,7 @@ import { Role } from "@prisma/client";
 import { authOptions } from "@/lib/authOptions";
 import { db } from "@/lib/db";
 import { PENDING_HOTEL_CONTACT_NOTE } from "@/lib/epoch-ai/hotelResearchRegistration";
+import { readHotelProcurementSchedule } from "@/lib/epoch-ai/hotelProcurementSchedule";
 import HotelProcurementPilot from "@/components/admin/epoch-ai/HotelProcurementPilot";
 
 export const dynamic = "force-dynamic";
@@ -29,6 +30,8 @@ export default async function EpochTourHotelProcurementPage({
       title: true,
       destinations: true,
       itinerary: true,
+      overviewItinerary: true,
+      hotelProcurementSchedule: true,
     },
   });
 
@@ -72,6 +75,12 @@ export default async function EpochTourHotelProcurementPage({
         >
           View tour record
         </Link>
+        <Link
+          href={`/admin/quotes/new?tourId=${encodeURIComponent(tour.id)}`}
+          className="underline"
+        >
+          Prepare quotation for this tour
+        </Link>
       </div>
 
       <div>
@@ -94,10 +103,11 @@ export default async function EpochTourHotelProcurementPage({
         key={tour.id}
         tourId={tour.id}
         destinations={tour.destinations}
-        itinerary={tour.itinerary}
+        itinerary={tour.itinerary?.trim() || tour.overviewItinerary}
+        savedSchedule={readHotelProcurementSchedule(tour.hotelProcurementSchedule)}
         hotels={hotels.map(({status, notes, ...hotel}) => ({
           ...hotel,
-          contactPending: status === "INACTIVE" && Boolean(notes?.split("\n").includes(PENDING_HOTEL_CONTACT_NOTE)),
+          contactPending: status === "INACTIVE" && Boolean(notes?.split(/\r?\n/).includes(PENDING_HOTEL_CONTACT_NOTE)),
         }))}
       />
     </main>

@@ -9,14 +9,14 @@ const db = vi.hoisted(() => {
     supplierService: {findMany: vi.fn(), create: vi.fn()},
     supplierRate: {createMany: vi.fn(), updateMany: vi.fn()},
   };
-  return {tx, supplier: {findMany: vi.fn()}};
+  return {tx, supplier: {findMany: vi.fn()}, eligibleOffers: vi.fn()};
 });
 
 vi.mock("@/lib/security/requireAdminApiAccess", () => ({requireAdminApiAccess: async () => null}));
 vi.mock("@/lib/security/requestBodyLimit", () => ({isRequestWithinLimit: async () => true}));
 vi.mock("@/lib/authOptions", () => ({authOptions: {}}));
 vi.mock("next-auth", () => ({getServerSession: async () => ({user: {id: "admin", role: "ADMIN"}})}));
-vi.mock("@/lib/db", () => ({db: {supplier: db.supplier, $transaction: (run: (tx: typeof db.tx) => unknown) => run(db.tx)}}));
+vi.mock("@/lib/db", () => ({db: {supplier: db.supplier, supplierCommercialEvidence: {findMany: db.eligibleOffers}, $transaction: (run: (tx: typeof db.tx) => unknown) => run(db.tx)}}));
 
 import { GET } from "@/app/api/admin/quotes/supplier-hotels/route";
 import { hotelOfferPriceQualifier, hotelOfferRateApproval, hotelOfferRateApprovalIssues, OFFER_RATE_SOURCE, prepareHotelOfferRateDraft } from "@/lib/epoch-ai/hotelOfferRateDraft";
@@ -89,6 +89,28 @@ describe("Supplier rates from reviewed hotel offers", () => {
     });
   });
 
+  it("prefills Hotel Crystal group prices, half board and excluded city tax", () => {
+    expect(prepareHotelOfferRateDraft({...terms,
+      doubleTwin: "€210.00 (FIT), €200.00 (GROUP) per room, per night",
+      single: "€180.00 (FIT), €170.00 (GROUP) per room, per night",
+      halfBoard: "€30.00 per person",
+      cityTax: "€0.60 per person per night (excluded)",
+      other: "Rates exclude insurance (EUR 0.60 per person per night). Rates include breakfast, Wi-Fi, and VAT.",
+    })).toMatchObject({
+      currency: "EUR", doubleTwin: "200.00", single: "170.00", unit: "PER_ROOM_PER_NIGHT",
+      mealBasis: "BB", taxIncluded: "yes", cityTaxIncluded: false,
+      halfBoard: {amount: "30.00", unit: "PER_PERSON_PER_NIGHT"},
+      cityTax: {amount: "0.60", unit: "PER_PERSON_PER_NIGHT"},
+    });
+  });
+
+  it("leaves conflicting group prices and FIT-only prices for review", () => {
+    expect(prepareHotelOfferRateDraft({...terms,
+      doubleTwin: "€210 (FIT), €200 (GROUP), €190 (GROUP) per room, per night",
+      single: "€180 (FIT) per room, per night",
+    })).toMatchObject({doubleTwin: "", single: ""});
+  });
+
   it("requires confirmation before saving a starting price or approximate tax", async () => {
     expect((await save({...approval, confirmIndicativeCharges: false})).status).toBe(400);
     expect(db.tx.supplierRate.createMany).not.toHaveBeenCalled();
@@ -109,7 +131,7 @@ describe("Supplier rates from reviewed hotel offers", () => {
     expect(hotelOfferRateApproval.safeParse({...approval, supplierConfirmation: "EMAIL"}).success).toBe(true);
   });
 
-  it("imports once and makes the source-linked room rates available only for the confirmed check-in and checkout", async () => {
+  it("makes reviewed offer rates available only for the matching tour and stay", async () => {
     expect((await save(approval)).status).toBe(201);
     const [{data}] = db.tx.supplierRate.createMany.mock.calls[0];
     expect(data).toMatchObject([
@@ -121,12 +143,35 @@ describe("Supplier rates from reviewed hotel offers", () => {
     db.supplier.findMany.mockResolvedValue([{services: [{rates: [...data.map((rate: object, index: number) =>
       ({...rate, id: String(index)})), legacySingle]}]}]);
 
-    const matching = await (await quote("&startDate=2027-05-17&endDate=2027-05-19")).json();
+    const dates = "&startDate=2027-05-17&endDate=2027-05-19";
+    db.eligibleOffers.mockImplementation(async (args) => args.where.OR[0].hotelInquiry.tourId === "balkans"
+      ? [{id: "offer", supplierId: "hotel", acceptanceStatus: "NOT_ESTABLISHED", reviewedTerms: terms}]
+      : []);
+    const matching = await (await quote("&tourId=balkans" + dates)).json();
+    expect(db.eligibleOffers).toHaveBeenCalledWith(expect.objectContaining({
+      where: expect.objectContaining({
+        id: {in: ["offer"]}, reviewStatus: "TERMS_VERIFIED", newerEvidence: {none: {}},
+      }),
+    }));
     expect(matching.hotels.find((item: {rate: {staySpecific: boolean}}) => item.rate.staySpecific)).toMatchObject({
       rate: {supplierReference: "offer", staySpecific: true}, rateValidity: "VALID_FOR_REQUEST",
       effectiveCost: {singlePerPersonPerNight: 201, doubleTwinPerPersonPerNight: 121.5, triplePerPersonPerNight: null},
     });
-    const otherDates = await (await quote("&startDate=2027-05-18&endDate=2027-05-19")).json();
+    const [otherDates, otherTour, noTour] = await Promise.all([
+      quote("&tourId=balkans&startDate=2027-05-18&endDate=2027-05-19"),
+      quote("&tourId=another-tour" + dates),
+      quote(dates),
+    ]).then(responses => Promise.all(responses.map(response => response.json())));
+    expect(otherTour.hotels).toHaveLength(1);
+    expect(noTour.hotels).toHaveLength(1);
+    db.eligibleOffers.mockResolvedValue([{
+      id: "offer", supplierId: "hotel", acceptanceStatus: "NOT_ESTABLISHED",
+      sourceDate: new Date("2020-01-01"), reviewedTerms: {...terms, validity: "Valid for 10 days from receipt"},
+    }]);
+    const expired = await (await quote("&tourId=balkans" + dates)).json();
+    expect(expired.hotels.find((item: {rate: {staySpecific: boolean}}) => item.rate.staySpecific)).toMatchObject({
+      rateValidity: "EXPIRED_ESTIMATE", requiresReconfirmation: true,
+    });
     expect(otherDates.hotels).toHaveLength(1);
     expect(otherDates.hotels[0].rate.staySpecific).toBe(false);
   });

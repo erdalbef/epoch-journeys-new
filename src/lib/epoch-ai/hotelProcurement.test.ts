@@ -18,6 +18,19 @@ describe("read-only hotel procurement preparation",()=>{
      {id: 0, city: "Rome"}, {id: 1, city: "Assisi"}, {id: 2, city: "Rome"}
    ]);
  });
+ it("fills the hotel and actual Mass date from a two-night itinerary", () => {
+   const itinerary = [
+     "Day 1 – 2027-09-03 – Oslo\nOvernight: Oslo\nHotel: Thon Hotel Opera",
+     "Day 2 – Oslo\nOvernight: Oslo\nMass: Celebrate Mass in the hotel meeting room",
+     "Day 3 – Departure",
+   ].join("\n");
+   const [stay] = initialProcurementStays("nordic", [], itinerary);
+   expect(stay).toMatchObject({
+     hotelName: "Thon Hotel Opera", city: "Oslo", checkIn: "2027-09-03", checkOut: "2027-09-05",
+     massRoom: true, massDate: "2027-09-04",
+   });
+   expect(inquiry(stay, "Thon Hotel Opera").body).toContain("Mass on 4 September 2027");
+ });
  it("uses the saved Scandinavia itinerary for city tabs and includes overnight ferries in order", () => {
    const itinerary = [
      "Day 1, September 2, 2027 – Thursday Departure",
