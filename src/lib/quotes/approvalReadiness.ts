@@ -6,6 +6,7 @@
  */
 import { buildGroupFinancialSummary } from "./groupFinancialSummary";
 import { validateMealQuantities, type MealHotelRow } from "./mealQuantityValidation";
+import { operationalRateSnapshotIssue, readOperationalRateSource } from "./operationalSupplierRates";
 
 export type ApprovalReadiness = {
   ready: boolean;
@@ -57,6 +58,12 @@ export function checkQuoteApprovalReadiness(input: {
     addError("Tour dates are invalid or the end date precedes the start date.");
   }
   const hotelRows = rows(summary.hotels);
+  for (const row of rows(summary.operationalCostRows)) {
+    const source = readOperationalRateSource(row.supplierOperationalRate);
+    if (!source) continue;
+    const issue = operationalRateSnapshotIssue(source, source.rate.currency, total, {startDate, endDate});
+    if (issue) addWarning(`${text(row.label) || source.serviceName}: ${issue}`);
+  }
   const coreHotels = hotelRows.filter(h => h.stayType === "CORE" && money(h.nights) > 0 && (text(h.hotelName) || text(h.destination) || text(h.supplierRateId) || money(h.doubleTwinPerPerson) > 0));
   if (!coreHotels.length) addError("Enter actual core hotel stays and nights; a blank placeholder is not a hotel booking.");
   for (const hotel of coreHotels) {

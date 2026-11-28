@@ -8,6 +8,8 @@ import { NextResponse } from "next/server";
 
 import { authOptions } from "@/lib/authOptions";
 import { db } from "@/lib/db";
+import type { Prisma } from "@prisma/client";
+import { isOperationalCostCategory, matchesOperationalSupplierService, operationalSupplierTypes, operationalSupplierUnits } from "@/lib/quotes/operationalSupplierRates";
 
 function param(value: string | null): string {
   return value?.trim() ?? "";
@@ -49,6 +51,8 @@ export async function GET(request: Request) {
     const startInput = param(search.get("startDate"));
     const endInput = param(search.get("endDate"));
     const paxInput = param(search.get("pax"));
+    const operationalInput = param(search.get("operationalCategory"));
+    const currency = param(search.get("currency")).toUpperCase();
 
     if (
       typeInput &&
@@ -82,19 +86,40 @@ export async function GET(request: Request) {
 
     const from = startDate ?? endDate;
     const to = endDate ?? startDate;
+    const operationalCategory = isOperationalCostCategory(operationalInput) ? operationalInput : null;
+    if (operationalInput && (!operationalCategory || !startDate || !endDate || pax === null || !/^[A-Z]{3}$/.test(currency))) {
+      return NextResponse.json({ok: false, error: "Enter service dates, group size and quote currency to check operational rates."}, {status: 400});
+    }
+    const rateFilter: Prisma.SupplierRateWhereInput = {
+      isActive: true,
+      ...(operationalCategory && from && to && pax !== null ? {
+        validFrom: {lte: from}, validTo: {gte: to},
+        currency: {equals: currency, mode: "insensitive"}, taxIncluded: true,
+        amount: {gte: 0},
+        unit: {in: operationalSupplierUnits.filter(unit => unit !== "PER_PERSON_PER_NIGHT" || from < to)},
+        AND: [
+          {OR: [{minPax: null}, {minPax: {lte: pax}}]},
+          {OR: [{maxPax: null}, {maxPax: {gte: pax}}]},
+        ],
+      } : {}),
+    };
+    const serviceFilter: Prisma.SupplierServiceWhereInput = {
+      isActive: true,
+      ...(typeInput ? {type: typeInput as SupplierServiceType} : {}),
+      ...(city ? {city: {equals: city, mode: "insensitive"}} : {}),
+      ...(country ? {country: {equals: country, mode: "insensitive"}} : {}),
+      ...(query ? {name: {contains: query, mode: "insensitive"}} : {}),
+      ...(operationalCategory ? {
+        type: operationalCategory === "ADDITIONAL_SERVICE" ? {not: SupplierServiceType.ACCOMMODATION}
+          : {in: operationalSupplierTypes[operationalCategory]},
+        rates: {some: rateFilter},
+      } : {}),
+    };
 
     const suppliers = await db.supplier.findMany({
       where: {
         status: SupplierStatus.ACTIVE,
-        services: {
-          some: {
-            isActive: true,
-            ...(typeInput ? { type: typeInput as SupplierServiceType } : {}),
-            ...(city ? { city: { equals: city, mode: "insensitive" } } : {}),
-            ...(country ? { country: { equals: country, mode: "insensitive" } } : {}),
-            ...(query ? { name: { contains: query, mode: "insensitive" } } : {}),
-          },
-        },
+        services: {some: serviceFilter},
       },
       select: {
         id: true,
@@ -103,13 +128,7 @@ export async function GET(request: Request) {
         preferred: true,
         defaultCurrency: true,
         services: {
-          where: {
-            isActive: true,
-            ...(typeInput ? { type: typeInput as SupplierServiceType } : {}),
-            ...(city ? { city: { equals: city, mode: "insensitive" } } : {}),
-            ...(country ? { country: { equals: country, mode: "insensitive" } } : {}),
-            ...(query ? { name: { contains: query, mode: "insensitive" } } : {}),
-          },
+          where: serviceFilter,
           select: {
             id: true,
             name: true,
@@ -119,7 +138,7 @@ export async function GET(request: Request) {
             country: true,
             notes: true,
             rates: {
-              where: { isActive: true },
+              where: rateFilter,
               orderBy: [{ validTo: "desc" }, { validFrom: "desc" }],
               select: {
                 id: true,
@@ -158,7 +177,7 @@ export async function GET(request: Request) {
 
     const services = suppliers.flatMap((supplier) =>
       supplier.services.map((service) => {
-        const rates = service.rates.map((rate) => {
+        const rates = service.rates.filter(rate => !operationalCategory || matchesOperationalSupplierService(operationalCategory, service, rate)).map((rate) => {
           const dateMatches =
             !from || !to || (rate.validFrom <= from && rate.validTo >= to);
           const paxMatches =
@@ -210,7 +229,7 @@ export async function GET(request: Request) {
           rates,
         };
       }),
-    );
+    ).filter(service => !operationalCategory || service.rates.length > 0);
 
     return NextResponse.json({
       ok: true,

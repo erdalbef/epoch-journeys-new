@@ -102,7 +102,7 @@ export function auditQuotationExpenses(summary: unknown): QuoteExpenseAudit {
   const displayCategories: Record<string, string> = {
     BUS: "Bus / Coach", TOUR_GUIDE: "Local / Tour Guide", TOUR_MANAGER: "Tour Manager",
     ASSISTANT: "Assistant", TRANSFERMAN: "Transferman", DRIVER: "Driver",
-    FERRY: "Ferry", TRANSFER: "Transportation / Transfer", OTHER: "Other",
+    FERRY: "Ferry", TRANSFER: "Transportation / Transfer", OTHER: "Other", ADDITIONAL_SERVICE: "Additional Service",
   };
   const lines = entries(data.operationalCostRows).map((row, index): OperationalAuditLine => {
     const scope = scopeOf(row.scope);

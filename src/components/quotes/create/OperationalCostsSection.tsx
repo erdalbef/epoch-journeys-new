@@ -1,20 +1,14 @@
 "use client";
 
-export type OperationalCostCategory =
-  | "BUS"
-  | "TOUR_GUIDE"
-  | "TOUR_MANAGER"
-  | "ASSISTANT"
-  | "TRANSFERMAN"
-  | "DRIVER"
-  | "FERRY"
-  | "TRANSFER"
-  | "OTHER";
+import { useState } from "react";
+import {
+  operationalCategoryLabels, operationalDisplayBasis, operationalRateSnapshotIssue, operationalRateUnitLabel,
+  type applyOperationalSupplierRate, type OperationalCostCategory, type OperationalCostScope,
+  type OperationalRateDates, type OperationalRateSource,
+} from "@/lib/quotes/operationalSupplierRates";
+import OperationalSupplierRatePicker from "./OperationalSupplierRatePicker";
 
-export type OperationalCostScope =
-  | "CORE"
-  | "PRE"
-  | "POST";
+export type { OperationalCostCategory, OperationalCostScope } from "@/lib/quotes/operationalSupplierRates";
 
 export type OperationalCostMode =
   | "TOTAL"
@@ -75,6 +69,7 @@ export type OperationalCostRow = {
   mealDays: number;
 
   otherExpenses: number;
+  supplierOperationalRate?: OperationalRateSource;
 };
 
 type Props = {
@@ -83,8 +78,11 @@ type Props = {
   currency: string;
 
   payingPassengers: number;
+  totalTravelers: number;
+  quoteDates: OperationalRateDates;
 
   onAddRow: () => void;
+  onAddAdditionalRate: (rate: ReturnType<typeof applyOperationalSupplierRate>) => void;
 
   onRemoveRow: (index: number) => void;
 
@@ -116,47 +114,7 @@ type Props = {
   }>;
 };
 
-const categories: Array<{
-  value: OperationalCostCategory;
-  label: string;
-}> = [
-  {
-    value: "BUS",
-    label: "Bus / Coach",
-  },
-  {
-    value: "TOUR_GUIDE",
-    label: "Tour Guide",
-  },
-  {
-    value: "TOUR_MANAGER",
-    label: "Tour Manager",
-  },
-  {
-    value: "ASSISTANT",
-    label: "Assistant",
-  },
-  {
-    value: "TRANSFERMAN",
-    label: "Transferman",
-  },
-  {
-    value: "DRIVER",
-    label: "Driver",
-  },
-  {
-    value: "FERRY",
-    label: "Ferry",
-  },
-  {
-    value: "TRANSFER",
-    label: "Transportation / Transfer",
-  },
-  {
-    value: "OTHER",
-    label: "Other",
-  },
-];
+const categories = Object.entries(operationalCategoryLabels) as [OperationalCostCategory, string][];
 
 const scopeOptions: Array<{
   value: OperationalCostScope;
@@ -237,7 +195,7 @@ function defaultCostMode(
     category === "FERRY" ||
     category === "TRANSFER" ||
     category === "TRANSFERMAN" ||
-    category === "OTHER"
+    category === "ADDITIONAL_SERVICE"
   ) {
     return "TOTAL";
   }
@@ -286,7 +244,10 @@ export default function OperationalCostsSection({
   rows,
   currency,
   payingPassengers,
+  totalTravelers,
+  quoteDates,
   onAddRow,
+  onAddAdditionalRate,
   onRemoveRow,
   onUpdateRow,
   rowTotal,
@@ -296,6 +257,9 @@ export default function OperationalCostsSection({
   toNumber,
   staffHotels,
 }: Props) {
+  const [rateTarget, setRateTarget] = useState<number | "additional" | null>(null);
+  const rateSearchProps = {quoteDates, totalTravelers, currency, formatMoney, onClose: () => setRateTarget(null)};
+  const quoteDateKey = `${quoteDates.startDate}-${quoteDates.endDate}`;
   const safePayingPassengers = Math.max(
     Math.floor(toNumber(payingPassengers)),
     1
@@ -374,6 +338,9 @@ export default function OperationalCostsSection({
       <div className="space-y-5 p-5">
         {rows.map((row, index) => {
           const total = rowTotal(row);
+          const crmRate = row.supplierOperationalRate;
+          const rateIssue = crmRate && operationalRateSnapshotIssue(crmRate, currency, totalTravelers, quoteDates);
+          const categoryLabel = operationalCategoryLabels[row.category];
 
           const perPerson =
             row.scope === "CORE"
@@ -412,7 +379,7 @@ export default function OperationalCostsSection({
                     </span>
 
                     <div className="font-semibold text-[#001F3F]">
-                      {categories.find((item) => item.value === row.category)?.label || "Operational Cost"}
+                      {categoryLabel}
                     </div>
 
                     {row.scope === "CORE" && (
@@ -435,7 +402,7 @@ export default function OperationalCostsSection({
                   </div>
 
                   <div className="mt-1 text-xs text-slate-500">
-                    {row.label && row.label !== "Bus / Coach" && row.label !== categories.find((item) => item.value === row.category)?.label
+                    {row.label && row.label !== categoryLabel
                       ? `${row.label} — ` : ""}
                     {row.scope === "CORE"
                       ? "Internal core tour costing"
@@ -478,9 +445,7 @@ export default function OperationalCostsSection({
                           total,
                           currency
                         )}{" "}
-                        {pricingBasisLabel(
-                          row.pricingBasis
-                        )}
+                        {pricingBasisLabel(operationalDisplayBasis(row) ?? row.pricingBasis)}
                       </span>
                     </div>
                   )}
@@ -505,6 +470,7 @@ export default function OperationalCostsSection({
                               .value as OperationalCostScope,
                         })
                       }
+                      disabled={Boolean(crmRate)}
                     >
                       {scopeOptions.map((option) => (
                         <option
@@ -530,8 +496,8 @@ export default function OperationalCostsSection({
                           e.target
                             .value as OperationalCostCategory;
 
-                        const previousCategoryLabel = categories.find((item) => item.value === row.category)?.label;
-                        const isDefaultLabel = !row.label.trim() || row.label === previousCategoryLabel || row.label === "Bus / Coach";
+                        const isDefaultLabel = !row.label.trim() || row.label === categoryLabel;
+                        setRateTarget(null);
                         onUpdateRow(index, {
                           category,
                           label: isDefaultLabel ? "" : row.label,
@@ -539,15 +505,10 @@ export default function OperationalCostsSection({
                           pricingBasis: defaultPricingBasis(category),
                         });
                       }}
+                      disabled={Boolean(crmRate)}
                     >
-                      {categories.map((category) => (
-                        <option
-                          key={category.value}
-                          value={category.value}
-                        >
-                          {category.label}
-                        </option>
-                      ))}
+                      {categories.filter(([value]) => value !== "ADDITIONAL_SERVICE" || row.category === value)
+                        .map(([value, label]) => <option key={value} value={value}>{label}</option>)}
                     </select>
                   </label>
 
@@ -576,6 +537,7 @@ export default function OperationalCostsSection({
                     <select
                       className="w-full rounded-md border bg-white p-2"
                       value={row.costMode}
+                      disabled={Boolean(crmRate)}
                       onChange={(e) =>
                         onUpdateRow(index, {
                           costMode:
@@ -602,6 +564,7 @@ export default function OperationalCostsSection({
                     <select
                       className="w-full rounded-md border bg-white p-2"
                       value={row.pricingBasis}
+                      disabled={Boolean(crmRate)}
                       onChange={(e) =>
                         onUpdateRow(index, {
                           pricingBasis:
@@ -624,6 +587,28 @@ export default function OperationalCostsSection({
                   </label>
                 </div>
 
+                <div className="flex flex-wrap items-center gap-3 text-sm">
+                  <button type="button" onClick={() => setRateTarget(rateTarget === index ? null : index)}
+                    className="rounded-md border bg-white px-3 py-2 font-semibold text-[#001F3F]">
+                    {crmRate ? "Change CRM rate" : "Find CRM rate"}
+                  </button>
+                  {crmRate && <span>
+                    {crmRate.supplierName} · {crmRate.rate.name} · {formatMoney(crmRate.rate.amount, crmRate.rate.currency)} {operationalRateUnitLabel(crmRate.rate.unit)}
+                    {" · "}{crmRate.dates.startDate}{crmRate.dates.endDate !== crmRate.dates.startDate && ` to ${crmRate.dates.endDate}`}
+                  </span>}
+                  {crmRate && row.category !== "ADDITIONAL_SERVICE" && <button type="button"
+                    onClick={() => onUpdateRow(index, {supplierOperationalRate: undefined})}
+                    className="font-medium underline">Use manual cost</button>}
+                </div>
+                {rateIssue && <p role="status" className="text-sm text-amber-900">{rateIssue}</p>}
+                {rateTarget === index && <OperationalSupplierRatePicker
+                  key={`${index}-${row.category}-${row.scope}-${quoteDateKey}`}
+                  {...rateSearchProps} category={row.category} initialScope={row.scope} changingScope={Boolean(crmRate)}
+                  initialDates={crmRate && crmRate.quoteDates.startDate === quoteDates.startDate &&
+                    crmRate.quoteDates.endDate === quoteDates.endDate ? crmRate.dates : undefined}
+                  onSelect={rate => {onUpdateRow(index, rate); setRateTarget(null);}}
+                />}
+
                 {/* COST ENTRY */}
                 <div className="rounded-lg border bg-white/80 p-4">
                   {row.costMode === "TOTAL" ? (
@@ -639,6 +624,7 @@ export default function OperationalCostsSection({
                           step="0.01"
                           className="w-full rounded-md border bg-white p-2"
                           value={row.totalContractCost}
+                          readOnly={Boolean(crmRate)}
                           onChange={(e) =>
                             onUpdateRow(index, {
                               totalContractCost:
@@ -669,6 +655,7 @@ export default function OperationalCostsSection({
                           step="0.01"
                           className="w-full rounded-md border bg-white p-2"
                           value={row.dailyRate}
+                          readOnly={Boolean(crmRate)}
                           onChange={(e) =>
                             onUpdateRow(index, {
                               dailyRate:
@@ -688,7 +675,7 @@ export default function OperationalCostsSection({
                         <input
                           type="number"
                           min="0"
-                          step="1"
+                          step={crmRate?.rate.unit === "PER_HOUR" ? "any" : "1"}
                           className="w-full rounded-md border bg-white p-2"
                           value={row.numberOfDays}
                           onChange={(e) =>
@@ -936,9 +923,7 @@ export default function OperationalCostsSection({
                           total,
                           currency
                         )}{" "}
-                        {pricingBasisLabel(
-                          row.pricingBasis
-                        )}
+                        {pricingBasisLabel(operationalDisplayBasis(row) ?? row.pricingBasis)}
                       </span>
                     </div>
                   </div>
@@ -972,7 +957,7 @@ export default function OperationalCostsSection({
                   <button
                     type="button"
                     onClick={() =>
-                      onRemoveRow(index)
+                      {setRateTarget(null); onRemoveRow(index);}
                     }
                     disabled={rows.length === 1}
                     className="rounded-md border border-red-200 bg-white px-4 py-2 text-sm font-medium text-red-700 transition hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-40"
@@ -986,7 +971,7 @@ export default function OperationalCostsSection({
         })}
 
         {/* BOTTOM ADD BUTTON */}
-        <div className="flex justify-center border-t pt-5">
+        <div className="flex flex-wrap justify-center gap-3 border-t pt-5">
           <button
             type="button"
             onClick={onAddRow}
@@ -994,7 +979,15 @@ export default function OperationalCostsSection({
           >
             + Add Another Operational Cost
           </button>
+          <button type="button" onClick={() => setRateTarget(rateTarget === "additional" ? null : "additional")}
+            className="rounded-lg bg-[#001F3F] px-6 py-3 text-sm font-semibold text-white">
+            + Add Additional Service
+          </button>
         </div>
+        {rateTarget === "additional" && <OperationalSupplierRatePicker
+          key={quoteDateKey} {...rateSearchProps} category="ADDITIONAL_SERVICE" initialScope="CORE" changingScope adding
+          onSelect={rate => {onAddAdditionalRate(rate); setRateTarget(null);}}
+        />}
       </div>
     </section>
   );

@@ -1,3 +1,5 @@
+import { operationalDisplayBasis } from "@/lib/quotes/operationalSupplierRates";
+
 type PaxPricingRow = {
   paxCount: number;
   calculatedSinglePrice?: number;
@@ -35,6 +37,9 @@ type OperationalCostRow = {
   category?: string;
   scope?: "CORE" | "PRE" | "POST";
   pricingBasis?: "GROUP_TOTAL" | "PER_PERSON" | "PER_SERVICE" | "PER_VEHICLE";
+  costMode?: string;
+  numberOfDays?: number;
+  supplierOperationalRate?: unknown;
   totalCost?: number;
 };
 
@@ -470,7 +475,7 @@ export function buildAgentClientQuotePdfData(quote: QuoteWithRelations) {
     .map((row) => ({
       scope: row.scope === "PRE" ? "Pre-Stay" : "Post-Stay",
       label: row.label?.trim() || row.category || "Optional Service",
-      pricingBasis: row.pricingBasis || "PER_SERVICE",
+      pricingBasis: operationalDisplayBasis(row) || "PER_SERVICE",
       amount: toNumber(row.totalCost),
     }))
     .filter((row) => row.amount > 0 || row.label.trim().length > 0);

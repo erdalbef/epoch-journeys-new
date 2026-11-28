@@ -26,6 +26,7 @@ import { suggestedItineraryQuoteDates } from "@/lib/quotes/epochQuotePreparation
 import { mergeItineraryDraftRows, type prepareItineraryQuoteServices } from "@/lib/quotes/itineraryQuoteServices";
 import type { HotelProcurementSchedule } from "@/lib/epoch-ai/hotelProcurementSchedule";
 import { supplierHotelSnapshot } from "@/lib/quotes/supplierHotelSelection";
+import { isOperationalCostCategory, operationalDisplayBasis, readOperationalRateSource, type applyOperationalSupplierRate } from "@/lib/quotes/operationalSupplierRates";
 
 import OperationalCostsSection, {
   type OperationalCostCategory,
@@ -259,7 +260,9 @@ type LegacyFixedCostRow = {
   unitCost?: number;
 };
 
-type SavedOperationalCostRow = Partial<OperationalCostRow> & {
+type SavedOperationalCostRow = Partial<Omit<OperationalCostRow, "category" | "supplierOperationalRate">> & {
+  category?: string;
+  supplierOperationalRate?: unknown;
   totalCost?: number;
 };
 
@@ -480,28 +483,12 @@ function normalizeFixedCostCategory(
   return "OTHER";
 }
 
-function isOperationalCategory(
-  value: unknown
-): value is OperationalCostCategory {
-  return (
-    value === "BUS" ||
-    value === "TOUR_GUIDE" ||
-    value === "TOUR_MANAGER" ||
-    value === "ASSISTANT" ||
-    value === "TRANSFERMAN" ||
-    value === "DRIVER" ||
-    value === "FERRY" ||
-    value === "TRANSFER" ||
-    value === "OTHER"
-  );
-}
-
 function normalizeOperationalCategory(
   value: unknown
 ): OperationalCostCategory {
-  return isOperationalCategory(value)
+  return typeof value === "string" && isOperationalCostCategory(value)
     ? value
-    : "OTHER";
+    : "ADDITIONAL_SERVICE";
 }
 
 function normalizeOperationalScope(
@@ -1334,6 +1321,7 @@ function normalizeSavedOperationalRow(
       : "DAILY";
 
   return {
+    supplierOperationalRate: readOperationalRateSource(row.supplierOperationalRate),
     label:
       typeof row.label ===
       "string"
@@ -2626,7 +2614,7 @@ export default function QuoteCreateForm({
                   "",
 
                 category:
-                  "OTHER",
+                  "ADDITIONAL_SERVICE",
 
                 scope:
                   "CORE",
@@ -3480,7 +3468,7 @@ export default function QuoteCreateForm({
               "Template Cost",
 
             category:
-              "OTHER",
+              "ADDITIONAL_SERVICE",
 
             scope:
               "CORE",
@@ -3707,6 +3695,13 @@ export default function QuoteCreateForm({
     );
   }
 
+  function addAdditionalOperationalRate(rate: ReturnType<typeof applyOperationalSupplierRate>) {
+    setOperationalCostRows(previous => [
+      ...previous,
+      {...createEmptyOperationalCostRow(), ...rate, category: "ADDITIONAL_SERVICE"},
+    ]);
+  }
+
   function removeOperationalCostRow(
     index: number
   ) {
@@ -3796,6 +3791,12 @@ export default function QuoteCreateForm({
   }
 
   async function onSubmit() {
+    const mismatchedRate = operationalCostRows.find(row => row.supplierOperationalRate &&
+      row.supplierOperationalRate.rate.currency.toUpperCase() !== currency.toUpperCase());
+    if (mismatchedRate) {
+      toast.error(`Choose a CRM rate in ${currency} for ${mismatchedRate.label || "the operational service"} before saving.`);
+      return;
+    }
     setLoading(true);
 
     try {
@@ -4096,7 +4097,7 @@ export default function QuoteCreateForm({
                   row.category,
 
                 description:
-                  `${scopeLabel} operational cost / ${row.category} / ${row.pricingBasis}`,
+                  `${scopeLabel} operational cost / ${row.category} / ${operationalDisplayBasis(row)}`,
 
                 itemType:
                   row.category ===
@@ -4483,6 +4484,7 @@ export default function QuoteCreateForm({
         operationalCostRows:
           pricedOperationalCostRows.map(
             (row) => ({
+              supplierOperationalRate: row.supplierOperationalRate ?? null,
               label:
                 row.label,
 
@@ -5061,6 +5063,9 @@ export default function QuoteCreateForm({
 
       <OperationalCostsSection
         rows={pricedOperationalCostRows}
+        quoteDates={{startDate: group.startDate, endDate: group.endDate}}
+        totalTravelers={calculations.totalTravelers}
+        onAddAdditionalRate={addAdditionalOperationalRate}
         staffHotels={hotels.map((hotel) => ({
           hotelName: hotel.hotelName,
           destination: hotel.destination,
