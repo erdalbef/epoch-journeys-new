@@ -23,6 +23,7 @@ import GroupSetupSection from "@/components/quotes/create/GroupSetupSection";
 import HotelsSection from "@/components/quotes/create/HotelsSection";
 import EpochQuotePreparation, { type PreparedQuoteHotel } from "@/components/quotes/create/EpochQuotePreparation";
 import { suggestedItineraryQuoteDates } from "@/lib/quotes/epochQuotePreparation";
+import { fetchQuoteBriefItinerary, labeledQuoteBriefItinerary } from "@/lib/quotes/briefItineraryDraft";
 import { mergeItineraryDraftRows, type prepareItineraryQuoteServices } from "@/lib/quotes/itineraryQuoteServices";
 import type { HotelProcurementSchedule } from "@/lib/epoch-ai/hotelProcurementSchedule";
 import { supplierHotelSnapshot } from "@/lib/quotes/supplierHotelSelection";
@@ -1402,6 +1403,9 @@ export default function QuoteCreateForm({
     useRouter();
   const [preparedHotelBasis, setPreparedHotelBasis] = useState("");
   const previousPreparationNote = useRef("");
+  const previousClientTitle = useRef("");
+  const briefItineraryRequest = useRef<AbortController | null>(null);
+  const [briefItineraryLoading, setBriefItineraryLoading] = useState(false);
   const priorTermsDraft = useRef({includes: "", excludes: ""});
   const priorServiceDraft = useRef<{ fixed: FixedCostRow[]; operational: OperationalCostRow[] }>({ fixed: [], operational: [] });
   const initialTour = tours.find(tour => tour.id === initialTourId);
@@ -1877,16 +1881,16 @@ export default function QuoteCreateForm({
       return;
     }
 
-    setBriefItinerary(
-      selectedTour.overviewItinerary?.trim() ||
-      selectedTour.itinerary?.trim() ||
-      ""
-    );
+    setBriefItinerary(mode === "create" ? labeledQuoteBriefItinerary(selectedTour).briefItinerary
+      : selectedTour.overviewItinerary?.trim() || selectedTour.itinerary?.trim() || "");
   }, [
+    mode,
     tourId,
     tours,
     briefItineraryTouched,
   ]);
+
+  useEffect(() => () => briefItineraryRequest.current?.abort(), [tourId]);
 
   useEffect(() => {
     if (!initialData) {
@@ -3506,6 +3510,7 @@ export default function QuoteCreateForm({
     rows: PreparedQuoteHotel[],
     serviceDraft: ReturnType<typeof prepareItineraryQuoteServices>,
     warnings: string[],
+    preparedBriefItinerary: string,
   ) {
     const tour = tours.find(item => item.id === tourId);
     if (!tour) return;
@@ -3514,6 +3519,14 @@ export default function QuoteCreateForm({
         !window.confirm("Replace the hotel rows currently in this draft with the reviewed Epoch AI proposal?")) return;
 
     if (!title.trim()) setTitle(tour.title);
+    const previousTitle = previousClientTitle.current;
+    const preparedTitle = tour.title.trim();
+    setClientDocumentTitle(current => !current.trim() || current === previousTitle ? preparedTitle : current);
+    previousClientTitle.current = preparedTitle;
+    if (!briefItineraryTouched && preparedBriefItinerary) {
+      briefItineraryRequest.current?.abort();
+      setBriefItinerary(preparedBriefItinerary);
+    }
     if (!clientIncludes.trim() || clientIncludes === priorTermsDraft.current.includes) {
       const includes = tour.inclusions ?? "";
       if (includes !== clientIncludes) setClientIncludes(includes);
@@ -3566,6 +3579,27 @@ export default function QuoteCreateForm({
       return [existing, note].filter(Boolean).join("\n\n");
     });
     toast.success("Epoch AI proposal applied to the quote draft.");
+  }
+
+  async function reloadBriefItinerary() {
+    const tour = tours.find(item => item.id === tourId);
+    if (!tour || briefItineraryLoading) return;
+    const controller = new AbortController();
+    briefItineraryRequest.current = controller;
+    setBriefItineraryLoading(true);
+    try {
+      const draft = await fetchQuoteBriefItinerary(tour, controller.signal);
+      if (controller.signal.aborted) return;
+      if (draft.briefItinerary) setBriefItinerary(draft.briefItinerary);
+      if (draft.warning) toast.warning(draft.warning);
+    } catch (error) {
+      if (!controller.signal.aborted) toast.error("Could not reload the brief itinerary.");
+    } finally {
+      if (briefItineraryRequest.current === controller) {
+        briefItineraryRequest.current = null;
+        setBriefItineraryLoading(false);
+      }
+    }
   }
 
   function updateHotel(
@@ -5285,44 +5319,28 @@ export default function QuoteCreateForm({
 
           <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
             <p className="mt-1 text-sm text-slate-600">
-              Automatically loaded from the selected Tour. You may edit it for
-              this quotation. Enter one day per line; the PDF calculates the
-              actual date and weekday from the tour start date.
+              List each day on its own line with the names of the sites visited.
+              The PDF uses the tour start date to display the date and weekday.
             </p>
 
             <button
               type="button"
-              onClick={() => {
-                const selectedTour =
-                  tours.find(
-                    (tour) =>
-                      tour.id === tourId
-                  );
-
-                setBriefItinerary(
-                  selectedTour?.overviewItinerary?.trim() ||
-                  selectedTour?.itinerary?.trim() ||
-                  ""
-                );
-
-                setBriefItineraryTouched(
-                  false
-                );
-              }}
-              disabled={!tourId}
+              onClick={() => void reloadBriefItinerary()}
+              disabled={!tourId || briefItineraryLoading}
               className="shrink-0 rounded-md border bg-white px-3 py-2 text-xs font-medium text-[#001F3F] transition hover:bg-blue-50 disabled:cursor-not-allowed disabled:opacity-40"
             >
-              Reload from Tour
+              {briefItineraryLoading ? "Reading tour itinerary…" : "Reload from Tour"}
             </button>
           </div>
 
           <textarea
             className="mt-3 min-h-55 w-full resize-y rounded-md border bg-white p-4 text-sm leading-relaxed"
-            placeholder={`Athens - Acropolis, Areopagus, Plaka
-Corinth - Ancient Corinth, Bema of St. Paul
-Delphi - Sanctuary of Apollo, Archaeological Museum`}
+            placeholder={`Day 1: Acropolis, Areopagus, Plaka
+Day 2: Ancient Corinth, Bema of St. Paul
+Day 3: Sanctuary of Apollo, Archaeological Museum`}
             value={briefItinerary}
             onChange={(e) => {
+              briefItineraryRequest.current?.abort();
               setBriefItineraryTouched(
                 true
               );

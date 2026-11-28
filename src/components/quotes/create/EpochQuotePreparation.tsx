@@ -13,6 +13,7 @@ import {
 } from "@/lib/quotes/epochQuotePreparation";
 import { stableHotelIdentity } from "@/lib/epoch-ai/hotelExecutiveBrief";
 import { prepareItineraryQuoteServices } from "@/lib/quotes/itineraryQuoteServices";
+import { fetchQuoteBriefItinerary, type QuoteBriefItinerary } from "@/lib/quotes/briefItineraryDraft";
 import type { SupplierHotelResult } from "@/lib/quotes/supplierHotelSelection";
 
 type PendingHotelOffer = { offerId: string; supplierId: string; supplierName: string; status: string; nextStep: string };
@@ -33,11 +34,14 @@ type Props = {
   endDate: string;
   groupSize: number;
   currency: string;
-  onApply: (rows: PreparedQuoteHotel[], services: ReturnType<typeof prepareItineraryQuoteServices>, warnings: string[]) => void;
+  onApply: (rows: PreparedQuoteHotel[], services: ReturnType<typeof prepareItineraryQuoteServices>, warnings: string[], briefItinerary: string) => void;
 };
 
 export default function EpochQuotePreparation({tour, startDate, endDate, groupSize, currency, onApply}: Props) {
-  const [proposal, setProposal] = useState<{hotels: HotelProposal[]; ferries: QuotePreparationFerry[]; warnings: string[]; source: "procurement" | "itinerary"}>();
+  const [proposal, setProposal] = useState<{
+    hotels: HotelProposal[]; ferries: QuotePreparationFerry[]; warnings: string[];
+    source: "procurement" | "itinerary"; clientBrief: QuoteBriefItinerary;
+  }>();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const request = useRef<AbortController | null>(null);
@@ -53,7 +57,6 @@ export default function EpochQuotePreparation({tour, startDate, endDate, groupSi
     setLoading(true);
     try {
       const {hotels, ferries, warnings, source} = prepareItineraryHotelStays(tour, startDate, endDate);
-      const proposals: HotelProposal[] = [];
       async function research(stay: QuotePreparationStay): Promise<HotelProposal> {
         const open = {stay, rates: [], selectedRateId: ""};
         if (!stay.checkIn || !stay.checkOut) return {...open, issue: "Hotel dates need review."};
@@ -86,10 +89,18 @@ export default function EpochQuotePreparation({tour, startDate, endDate, groupSi
           return {...open, issue: "Supplier CRM lookup failed. Retry or check rates in Hotels."};
         }
       }
-      for (let index = 0; index < hotels.length; index += 4) {
-        proposals.push(...await Promise.all(hotels.slice(index, index + 4).map(research)));
+      async function findHotelRates() {
+        const proposals: HotelProposal[] = [];
+        for (let index = 0; index < hotels.length && !controller.signal.aborted; index += 4) {
+          proposals.push(...await Promise.all(hotels.slice(index, index + 4).map(research)));
+        }
+        return proposals;
       }
-      if (!controller.signal.aborted) setProposal({hotels: proposals, ferries, warnings, source});
+      const [proposals, clientBrief] = await Promise.all([
+        findHotelRates(),
+        fetchQuoteBriefItinerary(tour, controller.signal),
+      ]);
+      if (!controller.signal.aborted) setProposal({hotels: proposals, ferries, warnings, source, clientBrief});
     } catch (error) {
       if (!controller.signal.aborted) setError(error instanceof Error ? error.message : "Could not prepare the quote.");
     } finally {
@@ -117,7 +128,7 @@ export default function EpochQuotePreparation({tour, startDate, endDate, groupSi
   return (
     <section className="space-y-3 rounded-xl border border-blue-200 bg-blue-50 p-5" aria-label="Epoch AI quotation preparation">
       <h2 className="font-semibold text-[#001F3F]">Prepare a new quote with Epoch AI</h2>
-      <p className="text-sm text-slate-700">Epoch AI drafts accommodation and listed services from the itinerary, and checks available hotel rates in Supplier CRM. Review the draft before adding it to the quotation.</p>
+      <p className="text-sm text-slate-700">Draft the client document title, daily visits, accommodation and itinerary services. Review the draft and available Supplier CRM rates before applying it.</p>
       <button type="button" disabled={!tour || hasIncompleteDates || groupSize < 1 || loading}
         onClick={() => void prepare()} className="rounded-lg bg-[#001F3F] px-4 py-2 text-sm font-semibold text-white disabled:opacity-50">
         {loading ? "Checking itinerary and CRM rates…" : proposal ? "Check rates again" : "Prepare quote draft"}
@@ -127,6 +138,12 @@ export default function EpochQuotePreparation({tour, startDate, endDate, groupSi
       ) : null}
       {error ? <p role="alert" className="text-sm text-red-700">{error}</p> : null}
       {proposal ? <>
+        <details className="rounded-lg border bg-white p-3 text-sm">
+          <summary className="cursor-pointer font-semibold">Review client title and daily visits</summary>
+          <p className="mt-2 font-medium">{tour?.title.trim()}</p>
+          {proposal.clientBrief.briefItinerary && <p className="mt-2 whitespace-pre-line">{proposal.clientBrief.briefItinerary}</p>}
+          {proposal.clientBrief.warning && <p role="status" className="mt-2 text-amber-900">{proposal.clientBrief.warning}</p>}
+        </details>
         <p className="text-sm text-slate-700">
           Hotel stays from {proposal.source === "procurement" ? "the Hotel Procurement schedule" : "the saved tour itinerary"}.
         </p>
@@ -192,7 +209,7 @@ export default function EpochQuotePreparation({tour, startDate, endDate, groupSi
           <li>Review transport, guides, entrances, meals and other services in the quote builder.</li>
         </ul>
         <button type="button" onClick={() => {
-          if (servicePreview) onApply(selectedHotels, servicePreview, proposal.warnings);
+          if (servicePreview) onApply(selectedHotels, servicePreview, proposal.warnings, proposal.clientBrief.briefItinerary);
         }} className="rounded-lg border border-blue-700 bg-white px-4 py-2 text-sm font-semibold text-blue-800">
           Use in quote builder
         </button>

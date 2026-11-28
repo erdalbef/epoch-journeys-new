@@ -267,7 +267,7 @@ function buildBriefItinerary(
       .trim();
 
   const dayHeaderRegex =
-    /(?:^|\n)\s*Day\s*(\d+)\s*[-–—,:.]?\s*([^\n]*)/gi;
+    /(?:^|\n)[\t ]*Day[\t ]*(\d+)[\t ]*[-–—,:.]?[\t ]*([^\n]*)/gi;
 
   const matches =
     Array.from(
@@ -330,9 +330,7 @@ function buildBriefItinerary(
             date
               ? formatItineraryDate(date)
               : `Day ${dayNumber}`,
-          details:
-            details ||
-            `Day ${dayNumber}`,
+          details,
         };
       }
     );
