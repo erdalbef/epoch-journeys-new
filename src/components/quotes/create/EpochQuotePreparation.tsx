@@ -75,10 +75,11 @@ export default function EpochQuotePreparation({tour, startDate, endDate, groupSi
             ? rates.filter(rate => stableHotelIdentity(rate.supplier.name) === stableHotelIdentity(plannedHotel))
             : rates;
           return {
-            stay, rates, selectedRateId: preferred.length === 1 ? preferred[0].rate.id : "",
+            stay, rates, selectedRateId: preferred.length === 1 && preferred[0].effectiveCost.singlePerPersonPerNight !== null
+              ? preferred[0].rate.id : "",
             pendingOffers: Array.isArray(data.offerStatuses) ? (data.offerStatuses as PendingHotelOffer[])
               .filter(offer => offer.status !== "READY") : [],
-            issue: rates.length ? undefined : "No active CRM rate covers this stay with both Single and Double/Twin prices in the quote currency.",
+            issue: rates.length ? undefined : "No usable accommodation rate covers this stay in the quote currency.",
           };
         } catch (error) {
           if (controller.signal.aborted) throw error;
@@ -158,11 +159,16 @@ export default function EpochQuotePreparation({tour, startDate, endDate, groupSi
                   </p>
                 ))}
                 {selected ? <p className="text-xs text-slate-700">
-                  Single {selected.rate.currency} {selected.effectiveCost.singlePerPersonPerNight} per person/night.
+                  {selected.effectiveCost.singlePerPersonPerNight === null
+                    ? "Single price pending."
+                    : `Single ${selected.rate.currency} ${selected.effectiveCost.singlePerPersonPerNight} per person/night.`}
                   {" "}Confirm allotment and supplier terms before sending.
                   {selected.rate.minimumRooms ? ` Minimum: ${selected.rate.minimumRooms} rooms.` : ""}
                   {selected.rate.rateRestrictions ? ` Rate restrictions: ${selected.rate.rateRestrictions}` : ""}
                 </p> : null}
+                {selected?.offerWarnings?.length ? (
+                  <ul className="list-disc pl-5 text-xs text-amber-900">{selected.offerWarnings.map(warning => <li key={warning}>{warning}</li>)}</ul>
+                ) : null}
               </li>
             );
           })}

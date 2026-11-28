@@ -1,11 +1,12 @@
 "use client";
 
-import { useId, useState } from "react";
+import { useCallback, useEffect, useId, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
-  hotelOfferRateApproval, hotelOfferRateApprovalIssues, nightlyUnits, offerRoomFields, offerChargeFields, hotelOfferChargeUnit, hotelOfferPriceQualifier,
-  prepareHotelOfferRateDraft, supplementaryUnits,
+  canSaveHotelRoomRates, fillHotelOfferRateDraft, hotelOfferRateApproval, hotelOfferRateApprovalIssues, hotelOfferRateWarnings,
+  nightlyUnits, offerRoomFields, offerChargeFields, hotelOfferChargeUnit, hotelOfferPriceQualifier,
+  prepareHotelOfferRateDraft, supplementaryUnits, type HotelOfferRateApproval,
 } from "@/lib/epoch-ai/hotelOfferRateDraft";
 import type { readHotelOfferRateExtraction } from "@/lib/epoch-ai/hotelOfferRateExtraction";
 import { readHotelOfferResponse, type HotelOfferTerms } from "@/lib/epoch-ai/receivedHotelOffer";
@@ -23,57 +24,60 @@ export function SupplierRatesLink({supplierId}: {supplierId: string}) {
     className="font-semibold text-blue-800 underline">Open Supplier CRM Rates</Link>;
 }
 
-export default function HotelOfferRateDraft({terms, url, analysisUrl, checkIn, checkOut, supplierInactive}: {
+export default function HotelOfferRateDraft({terms, url, analysisUrl, checkIn, checkOut, supplierInactive, reference, savedDraft}: {
   terms: HotelOfferTerms; url: string; analysisUrl: string; checkIn: string; checkOut: string; supplierInactive?: boolean;
+  reference: string; savedDraft?: HotelOfferRateApproval;
 }) {
   const approvalRequirementsId = useId();
   const router = useRouter();
-  const [draft, setDraft] = useState(() => prepareHotelOfferRateDraft(terms));
+  const singleNight = Date.parse(checkOut) - Date.parse(checkIn) === 86_400_000;
+  const [draft, setDraft] = useState(() => savedDraft ? {
+    currency: savedDraft.currency, unit: savedDraft.unit, mealBasis: savedDraft.mealBasis,
+    taxIncluded: typeof savedDraft.taxIncluded === "boolean" ? (savedDraft.taxIncluded ? "yes" : "no") : savedDraft.taxIncluded,
+    doubleTwin: savedDraft.doubleTwin, single: savedDraft.single, triple: savedDraft.triple, extraBed: savedDraft.extraBed,
+    halfBoard: savedDraft.halfBoard, beverages: savedDraft.beverages, cityTax: savedDraft.cityTax, cityTaxIncluded: savedDraft.cityTaxIncluded,
+    porterage: savedDraft.porterage,
+  } : prepareHotelOfferRateDraft(terms, singleNight));
   const [sources, setSources] = useState<RateExtraction["sources"]>({});
   const [extracting, setExtracting] = useState(false);
-  const [supplierConfirmation, setSupplierConfirmation] = useState("");
+  const [supplierConfirmation, setSupplierConfirmation] = useState(savedDraft?.supplierConfirmation || reference);
   const [confirmed, setConfirmed] = useState(false);
-  const [activateSupplier, setActivateSupplier] = useState(false);
-  const [confirmIndicativeCharges, setConfirmIndicativeCharges] = useState(false);
+  const [activateSupplier, setActivateSupplier] = useState(savedDraft?.activateSupplier ?? false);
+  const [confirmIndicativeCharges, setConfirmIndicativeCharges] = useState(savedDraft?.confirmIndicativeCharges ?? false);
   const [busy, setBusy] = useState(false);
-  const [saved, setSaved] = useState<{supplierId: string; supplierActive?: boolean}>();
+  const [saved, setSaved] = useState<{supplierId: string; supplierActive?: boolean; warnings?: string[]}>();
+  const [draftRecorded, setDraftRecorded] = useState(Boolean(savedDraft));
+  const [sourceWarning, setSourceWarning] = useState("");
   const [error, setError] = useState("");
-  const cityTaxNeedsReview = Boolean((terms.cityTax.trim() || sources.cityTax || sources.cityTaxIncluded) && !draft.cityTaxIncluded && !draft.cityTax.amount);
   const indicativeCharges = (Object.keys(offerChargeFields) as (keyof typeof offerChargeFields)[])
     .filter(key => draft[key].amount && (hotelOfferPriceQualifier(terms[key]) || hotelOfferPriceQualifier(sources[key] ?? "")));
-  const chargesNeedConfirmation = Boolean(indicativeCharges.length && !confirmIndicativeCharges);
   const approval = hotelOfferRateApproval.safeParse({
-    ...draft, taxIncluded: draft.taxIncluded === "yes", supplierConfirmation, activateSupplier: Boolean(supplierInactive && activateSupplier), confirmIndicativeCharges,
+    ...draft, supplierConfirmation, activateSupplier: Boolean(supplierInactive && activateSupplier), confirmIndicativeCharges,
     confirmation: "APPROVE_HOTEL_OFFER_RATES",
   });
   const approvalIssues = [
     ...(approval.success ? [] : hotelOfferRateApprovalIssues(approval.error.issues)),
-    ...(cityTaxNeedsReview ? ["Confirm the city tax or indicate it is included or not charged."] : []),
-    ...(chargesNeedConfirmation ? ["Confirm the indicative charges with the hotel."] : []),
-    ...(!confirmed ? ["Check the box confirming that you reviewed the supplier’s written confirmation."] : []),
+    ...(!confirmed ? ["Confirm that you reviewed the supplier’s offer."] : []),
   ];
+  const warnings = approval.success ? hotelOfferRateWarnings(approval.data, terms) : [];
+  const importingRates = approval.success && canSaveHotelRoomRates(approval.data);
 
-  async function extractRates() {
+  const extractRates = useCallback(async () => {
     setExtracting(true);
     setError("");
+    setSourceWarning("");
     try {
       const response = await fetch(analysisUrl, {
         method: "POST",
         headers: {"Content-Type": "application/json"},
         body: JSON.stringify({action: "draft-rates"}),
       });
-      const {rateDraft} = await readHotelOfferResponse<{rateDraft?: RateExtraction}>(response, "Could not draft rates from the original offer.");
-      if (!rateDraft?.draft.doubleTwin && !rateDraft?.draft.single) {
-        throw new Error("Epoch AI could not identify a Double/Twin or Single price in the original offer. Review the source and enter the rates.");
-      }
-      const extracted = rateDraft.draft;
-      for (const key of ["halfBoard", "beverages", "porterage"] as const) {
-        if (extracted[key].amount && !extracted[key].unit) {
-          extracted[key].unit = hotelOfferChargeUnit(rateDraft.sources[key] || terms[key], key);
-        }
-      }
-      setDraft(extracted);
+      const {rateDraft, sourceWarning} = await readHotelOfferResponse<{rateDraft: RateExtraction; sourceWarning?: string}>(
+        response, "Could not read the original offer. The existing draft is available.",
+      );
+      setDraft(current => fillHotelOfferRateDraft(current, rateDraft.draft, terms));
       setSources(rateDraft.sources);
+      setSourceWarning(sourceWarning ?? "");
       setConfirmed(false);
       setConfirmIndicativeCharges(false);
     } catch (err) {
@@ -81,18 +85,28 @@ export default function HotelOfferRateDraft({terms, url, analysisUrl, checkIn, c
     } finally {
       setExtracting(false);
     }
-  }
+  }, [analysisUrl, terms]);
+  const hasReadOriginal = useRef(false);
+  useEffect(() => {
+    if (hasReadOriginal.current || savedDraft) return;
+    hasReadOriginal.current = true;
+    void extractRates();
+  }, [extractRates, savedDraft]);
 
   async function approve() {
-    if (!approval.success || !confirmed || cityTaxNeedsReview || chargesNeedConfirmation) return;
+    if (!approval.success || !confirmed) return;
     setBusy(true);
     setError("");
     try {
       const response = await fetch(url, {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify(approval.data)});
-      const result = await response.json() as {error?: string; supplierId?: string; supplierActive?: boolean};
-      if (!response.ok || !result.supplierId) throw new Error(result.error || "Could not save the approved rates.");
-      setSaved({supplierId: result.supplierId, supplierActive: result.supplierActive});
-      router.refresh();
+      const result = await readHotelOfferResponse<{supplierId: string; supplierActive?: boolean; savedDraft?: boolean; warnings?: string[]}>(
+        response, "Could not save the offer rates.",
+      );
+      if (result.savedDraft) setDraftRecorded(true);
+      else {
+        setSaved(result);
+        router.refresh();
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not save the approved rates.");
     } finally {
@@ -102,24 +116,25 @@ export default function HotelOfferRateDraft({terms, url, analysisUrl, checkIn, c
 
   if (saved) return <div role="status" className="space-y-1">
     <p>Rates saved in Supplier CRM. Select a hotel later from CRM in Quote Form.</p>
+    {saved.warnings?.length ? <ul className="list-disc pl-5 text-xs text-amber-900">{saved.warnings.map(warning => <li key={warning}>{warning}</li>)}</ul> : null}
     {saved.supplierActive === false ? <p>This supplier is inactive. Activate it in Supplier CRM when you’re ready to include it in quote searches.</p> : null}
     <SupplierRatesLink supplierId={saved.supplierId}/>
   </div>;
 
   return <form className="space-y-3 rounded-lg border bg-slate-50 p-3" onSubmit={event => { event.preventDefault(); void approve(); }}>
     <h5 className="font-semibold">Rate draft for {checkIn} to {checkOut}</h5>
-    <p>Check dates, allotment, nightly units, taxes and terms against the hotel’s written confirmation. Save rates for each candidate here, then choose a hotel from CRM when building the quote.</p>
-    <p className="text-xs text-slate-600">Half board, drinks and porterage default to per person, per night when the offer does not specify a billing unit.</p>
+    <p>Review the rates and supplier wording before saving. You can save while details are pending.</p>
     <button type="button" disabled={busy || extracting} onClick={() => void extractRates()}
       className="rounded border border-blue-500 bg-white px-3 py-2 font-semibold disabled:opacity-50">
       {extracting ? "Reading original offer…" : "Refill rates from original offer"}
     </button>
-    <p className="text-xs text-slate-600">Refilling replaces the current draft. Compare the quoted source excerpts with the original before approving.</p>
-    <fieldset disabled={busy || extracting} className="space-y-3">
+    <p className="text-xs text-slate-600">Refill checks the original offer for fields that are still blank.</p>
+    {sourceWarning && <p className="text-xs text-amber-900" role="status">{sourceWarning}</p>}
+    <fieldset disabled={busy} className="space-y-3">
       <div className="grid gap-2 sm:grid-cols-4">
         <label>Currency<input className={input} value={draft.currency} maxLength={3}
           onChange={event => setDraft({...draft, currency: event.target.value.toUpperCase()})}/></label>
-        <label>Room rate unit (required)<select className={input} value={draft.unit} required
+        <label>Room rate unit<select className={input} value={draft.unit}
           onChange={event => setDraft({...draft, unit: event.target.value})}>
           <option value="">Select a unit</option>{nightlyUnits.map(unit => <option key={unit} value={unit}>{units[unit]}</option>)}
         </select></label>
@@ -149,7 +164,7 @@ export default function HotelOfferRateDraft({terms, url, analysisUrl, checkIn, c
         ][]).map(([key, label]) => <label key={key}>
           {label}<input className={input} inputMode="decimal" value={draft[key]}
             onChange={event => setDraft({...draft, [key]: event.target.value})}/>
-          <span className="block text-xs text-slate-600">{sources[key] || terms[key === "extraBed" ? "triple" : key]}</span>
+          <span className="block text-xs text-slate-600">{sources[key] || (key === "extraBed" ? draft.extraBed && terms.triple : terms[key])}</span>
         </label>)}
       </div>
       <div className="grid gap-2 sm:grid-cols-2">
@@ -179,12 +194,9 @@ export default function HotelOfferRateDraft({terms, url, analysisUrl, checkIn, c
             City tax is included or the hotel confirmed no charge
           </label> : null}
           <p className="text-xs text-slate-600">{sources[key] || terms[key]}</p>
-          {key !== "cityTax" && draft[key].amount && hotelOfferChargeUnit(sources[key] || terms[key], key) !== "PER_PERSON_PER_NIGHT"
-            ? <p className="text-xs text-amber-900">Review the offer’s billing unit.</p> : null}
           {(hotelOfferPriceQualifier(terms[key]) || hotelOfferPriceQualifier(sources[key] ?? "")) && draft[key].amount ? <p className="text-xs font-medium text-amber-900">
             {hotelOfferPriceQualifier(terms[key]) || hotelOfferPriceQualifier(sources[key] ?? "")} in supplier offer
           </p> : null}
-          {key === "cityTax" && cityTaxNeedsReview ? <p className="text-xs text-amber-900">Confirm the city tax before approving.</p> : null}
         </fieldset>)}
       </div>
       {indicativeCharges.length ? <label className="flex items-start gap-2">
@@ -195,12 +207,17 @@ export default function HotelOfferRateDraft({terms, url, analysisUrl, checkIn, c
       <label className="block">Supplier confirmation reference<input className={input} value={supplierConfirmation}
         onChange={event => setSupplierConfirmation(event.target.value)} maxLength={500} placeholder="Confirmation email subject and date or document reference"/></label>
       <label className="flex items-start gap-2"><input type="checkbox" className="mt-1" checked={confirmed}
-        onChange={event => setConfirmed(event.target.checked)}/>I checked the supplier’s written confirmation for this stay, including the room allotment, rate units and charges.</label>
+        onChange={event => setConfirmed(event.target.checked)}/>I reviewed the supplier’s offer and approve saving the available information.</label>
       {supplierInactive && <label className="flex items-start gap-2">
         <input type="checkbox" className="mt-1" checked={activateSupplier} onChange={event=>setActivateSupplier(event.target.checked)} />
         Activate this supplier when saving these rates so it can appear in the quote form.
       </label>}
       {error ? <p role="alert">{error}</p> : null}
+    {draftRecorded && <p role="status">Draft saved with this offer. You can continue when more information is available.</p>}
+    {warnings.length ? <div className="rounded border border-amber-200 bg-amber-50 p-2 text-sm text-amber-950">
+      <p className="font-semibold">Details to review</p>
+      <ul className="list-disc pl-5">{warnings.map(warning => <li key={warning}>{warning}</li>)}</ul>
+    </div> : null}
       <div aria-live="polite" id={approvalRequirementsId}>
         {approvalIssues.length ? <div className="rounded border border-amber-200 bg-amber-50 p-2 text-sm text-amber-950">
           <p className="font-semibold">Complete before approving</p>
@@ -209,9 +226,9 @@ export default function HotelOfferRateDraft({terms, url, analysisUrl, checkIn, c
           </ul>
         </div> : null}
       </div>
-      <button type="submit" disabled={Boolean(approvalIssues.length)} aria-describedby={approvalRequirementsId}
+        <button type="submit" disabled={busy || Boolean(approvalIssues.length)} aria-describedby={approvalRequirementsId}
         className="rounded border border-blue-500 bg-white px-3 py-2 font-semibold disabled:opacity-50">
-        {busy ? "Saving…" : "Approve and save to Supplier CRM"}
+        {busy ? "Saving…" : importingRates ? "Approve and save to Supplier CRM" : "Save partial draft with offer"}
       </button>
     </fieldset>
   </form>;

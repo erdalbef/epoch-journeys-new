@@ -133,6 +133,6 @@ export function findUsableQuotePreparationRates(results: SupplierHotelResult[], 
     rateValidity === "VALID_FOR_REQUEST" && !requiresReconfirmation && !cityTaxNeedsReview &&
     rate.currency.toUpperCase() === currency.toUpperCase() &&
     (rate.minimumNights === null || rate.minimumNights <= stay.nights) &&
-    effectiveCost.singleStatus === "COMPLETE" && (effectiveCost.singlePerPersonPerNight ?? 0) > 0 &&
+    (rate.staySpecific || (effectiveCost.singleStatus === "COMPLETE" && (effectiveCost.singlePerPersonPerNight ?? 0) > 0)) &&
     effectiveCost.doubleTwinStatus === "COMPLETE" && (effectiveCost.doubleTwinPerPersonPerNight ?? 0) > 0);
 }

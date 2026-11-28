@@ -3,8 +3,8 @@ import { NextResponse } from "next/server";
 import type { Prisma, RoomType } from "@prisma/client";
 import { authOptions } from "@/lib/authOptions";
 import { db } from "@/lib/db";
-import { HOTEL_OFFER_RATE_IMPORT_EVENT, hotelOfferRateApproval, hotelOfferPriceQualifier, OFFER_RATE_SOURCE, offerChargeFields } from "@/lib/epoch-ai/hotelOfferRateDraft";
-import { currentHotelOfferBlock, hotelOfferStaySelect, loadHotelOfferWorkflow, recordedHotelOfferStay, verifiedHotelOfferTerms } from "@/lib/epoch-ai/hotelOfferWorkflow";
+import { canSaveHotelRoomRates, HOTEL_OFFER_RATE_DRAFT_EVENT, HOTEL_OFFER_RATE_IMPORT_EVENT, hotelOfferRateApproval, hotelOfferRateWarnings, hotelOfferPriceQualifier, OFFER_RATE_SOURCE, offerChargeFields } from "@/lib/epoch-ai/hotelOfferRateDraft";
+import { currentHotelOfferBlock, hotelOfferSourceReference, hotelOfferStaySelect, loadHotelOfferWorkflow, recordedHotelOfferStay, verifiedHotelOfferTerms } from "@/lib/epoch-ai/hotelOfferWorkflow";
 import { manualHotelOfferScope } from "@/lib/epoch-ai/receivedHotelOffer";
 import { requireAdminApiAccess } from "@/lib/security/requireAdminApiAccess";
 import { isRequestWithinLimit } from "@/lib/security/requestBodyLimit";
@@ -21,9 +21,8 @@ export async function POST(request: Request, {params}: {params: Promise<{id: str
 
   const parsed = hotelOfferRateApproval.safeParse(await request.json().catch(() => null));
   if (!parsed.success) {
-    return reply({error: "Confirm the supplier's terms and enter valid Single and Double/Twin prices, currency, meal basis, VAT and billing units."}, 400);
+    return reply({error: "Check the supplied rate values and confirm that you reviewed the offer."}, 400);
   }
-  const rates = parsed.data;
   const {id, offerId} = await params;
   const scope = id === "manual" ? manualHotelOfferScope(request.url) : {hotelInquiryId: id};
   if (!scope) return reply({error: "Select the hotel and enter valid stay dates."}, 400);
@@ -40,6 +39,7 @@ export async function POST(request: Request, {params}: {params: Promise<{id: str
         where: {id: offerId, ...scope},
         select: {
           id: true, supplierId: true, reviewedTerms: true, reviewStatus: true, version: true, acceptanceStatus: true,
+          sourceSubject: true, sourceDate: true, sourceDocument: {select: {originalFileName: true}},
           ...hotelOfferStaySelect,
         },
       });
@@ -49,17 +49,10 @@ export async function POST(request: Request, {params}: {params: Promise<{id: str
       });
       if (existing) return reply({alreadySaved: true, supplierId: offer.supplierId});
 
+      const rates = {...parsed.data, supplierConfirmation: parsed.data.supplierConfirmation || hotelOfferSourceReference(offer)};
       const terms = verifiedHotelOfferTerms(offer);
       if (!terms) {
         return reply({error: "Use a reviewed, current offer to approve rates."}, 409);
-      }
-      if (terms.cityTax && !rates.cityTaxIncluded && !rates.cityTax.amount) {
-        return reply({error: "Confirm the city tax amount and billing unit, or confirm it is included or there is no charge."}, 400);
-      }
-      const indicatedCharges = (Object.keys(offerChargeFields) as (keyof typeof offerChargeFields)[])
-        .filter(key => rates[key].amount && hotelOfferPriceQualifier(terms[key]));
-      if (indicatedCharges.length && !rates.confirmIndicativeCharges) {
-        return reply({error: "Confirm the indicative charges with the hotel before saving them to Supplier CRM Rates."}, 400);
       }
       const stay = recordedHotelOfferStay(offer);
       if (!stay) return reply({error: "The offer is missing a valid hotel stay."}, 409);
@@ -74,6 +67,14 @@ export async function POST(request: Request, {params}: {params: Promise<{id: str
       const activate = supplier.status === "INACTIVE" && rates.activateSupplier;
       if (supplier.status !== "ACTIVE" && supplier.status !== "INACTIVE") {
         return reply({error: "Rates cannot be imported for this supplier status."}, 409);
+      }
+      const warnings = hotelOfferRateWarnings(rates, terms);
+      if (!canSaveHotelRoomRates(rates)) {
+        await tx.supplierCommercialEvidenceEvent.create({data: {
+          evidenceId: offer.id, actorId, eventType: HOTEL_OFFER_RATE_DRAFT_EVENT,
+          detail: JSON.stringify({stay, rates, warnings}),
+        }});
+        return reply({savedDraft: true, supplierId: supplier.id, warnings}, 201);
       }
 
       const confirmedOn = new Date();
@@ -90,23 +91,35 @@ export async function POST(request: Request, {params}: {params: Promise<{id: str
           city: stay.city, country: supplier.country},
         select: {id: true},
       });
+      const approvedCharge = (key: keyof typeof offerChargeFields) => {
+        const {amount, unit} = rates[key];
+        return (amount && unit && (rates.confirmIndicativeCharges || !hotelOfferPriceQualifier(terms[key])))
+          ? {amount, unit} : null;
+      };
+      const dinner = approvedCharge("halfBoard");
+      const tax = approvedCharge("cityTax");
+      const beverages = approvedCharge("beverages");
+      const porterage = approvedCharge("porterage");
+      const vatIncluded = rates.taxIncluded === true || rates.taxIncluded === "yes";
       const shared: Omit<Prisma.SupplierRateUncheckedCreateInput, "name" | "amount"> = {
         supplierId: supplier.id, serviceId: service.id, validFrom, validTo,
-        currency: rates.currency, unit: rates.unit, mealBasis: rates.mealBasis, taxIncluded: rates.taxIncluded,
-        breakfastIncluded: true, dinnerIncluded: rates.mealBasis === "HB",
-        dinnerAmount: rates.halfBoard.amount || null, dinnerUnit: rates.halfBoard.unit || null, dinnerNotes: terms.halfBoard || null,
-        cityTaxIncluded: rates.cityTaxIncluded, cityTaxAmount: rates.cityTax.amount || null, cityTaxUnit: rates.cityTax.unit || null,
-        cityTaxCurrency: rates.cityTax.amount ? rates.currency : null,
-        beveragePackageAmount: rates.beverages.amount || null, beveragePackageUnit: rates.beverages.unit || null,
-        beverageNotes: terms.beverages || null,
-        porterageAmount: rates.porterage.amount || null, porterageUnit: rates.porterage.unit || null,
-        porterageAvailable: rates.porterage.amount ? true : null,
+        currency: rates.currency, unit: rates.unit, mealBasis: rates.mealBasis || null, taxIncluded: vatIncluded,
+        taxNotes: rates.taxIncluded === "" ? "VAT treatment unspecified in the offer." : null,
+        breakfastIncluded: rates.mealBasis ? true : null, dinnerIncluded: rates.mealBasis ? rates.mealBasis === "HB" : null,
+        dinnerAmount: dinner?.amount ?? null, dinnerUnit: dinner?.unit ?? null, dinnerNotes: terms.halfBoard || null,
+        cityTaxIncluded: rates.cityTaxIncluded, cityTaxAmount: tax?.amount ?? null, cityTaxUnit: tax?.unit ?? null,
+        cityTaxCurrency: tax ? rates.currency : null,
+        beveragePackageAmount: beverages?.amount ?? null, beveragePackageUnit: beverages?.unit ?? null,
+        beveragePackageDescription: terms.beverages || null, beverageNotes: terms.beverages || null,
+        porterageAmount: porterage?.amount ?? null, porterageUnit: porterage?.unit ?? null,
+        porterageAvailable: /\b(?:not available|not offered|no porterage)\b/i.test(terms.porterage) ? false : porterage ? true : null,
         extraBedRate: rates.extraBed || null,
         cancellationTerms: terms.cancellation || null,
         paymentTerms: terms.payment || null,
+        rateRestrictions: terms.availability || null,
         rateSource: OFFER_RATE_SOURCE, supplierReference: offer.id, lastVerifiedAt: confirmedOn,
         notes: ["Rates apply to the approved stay only.", terms.validity ? `Offer validity: ${terms.validity}` : "",
-          terms.other, terms.cityTax, terms.porterage,
+          terms.other, terms.cityTax, terms.porterage, ...warnings,
           rates.extraBed ? `Extra-bed supplement: ${rates.currency} ${rates.extraBed} per night (separate from the Triple room rate).` : ""].filter(Boolean).join("\n"),
       };
       const rooms: [RoomType, string, string][] = [
@@ -124,9 +137,9 @@ export async function POST(request: Request, {params}: {params: Promise<{id: str
       if (activate) await tx.supplier.update({where: {id: supplier.id}, data: {status: "ACTIVE"}});
       await tx.supplierCommercialEvidenceEvent.create({data: {
         evidenceId: offer.id, actorId, eventType: HOTEL_OFFER_RATE_IMPORT_EVENT,
-        detail: JSON.stringify({stay, serviceId: service.id, ...rates}),
+        detail: JSON.stringify({stay, serviceId: service.id, rates, warnings}),
       }});
-      return reply({saved: true, supplierId: supplier.id, supplierActive: activate || supplier.status === "ACTIVE"}, 201);
+      return reply({saved: true, supplierId: supplier.id, supplierActive: activate || supplier.status === "ACTIVE", warnings}, 201);
     });
   } catch (error) {
     console.error("HOTEL_OFFER_RATES_SAVE_FAILED", error instanceof Error ? error.name : "Unknown");

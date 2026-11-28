@@ -158,6 +158,7 @@ type HotelRow = {
     | "VALID_FOR_REQUEST"
     | "EXPIRED_ESTIMATE";
   supplierRateRequiresReconfirmation?: boolean;
+  supplierOfferWarnings?: string[];
   supplierMealBasis?: string | null;
   // Frozen supplier cost components for BB/HB comparison.
   supplierSelectedMealBasis?: "BB" | "HB";
@@ -2378,6 +2379,8 @@ export default function QuoteCreateForm({
               Boolean(
                 row.supplierRateRequiresReconfirmation
               ),
+            supplierOfferWarnings: Array.isArray(row.supplierOfferWarnings)
+              ? row.supplierOfferWarnings.filter((value: unknown): value is string => typeof value === "string") : [],
 
             supplierMealBasis:
               row.supplierMealBasis ??
@@ -4409,6 +4412,7 @@ export default function QuoteCreateForm({
                 Boolean(
                   row.supplierRateRequiresReconfirmation
                 ),
+              supplierOfferWarnings: row.supplierOfferWarnings ?? [],
 
               supplierMealBasis:
                 row.supplierMealBasis ??

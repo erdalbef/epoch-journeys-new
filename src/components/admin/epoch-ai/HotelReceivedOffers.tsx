@@ -5,6 +5,7 @@ import HotelOfferRateDraft, { SupplierRatesLink } from "./HotelOfferRateDraft";
 import OfferDeadlines from "./OfferDeadlines";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import type { HotelOfferRateApproval } from "@/lib/epoch-ai/hotelOfferRateDraft";
 import { hotelOfferFields, hotelOfferPolicyFields, maxHotelOfferFileSizeMB, readHotelOfferResponse, validateHotelOfferAttachment,
   type HotelOfferTerms, type ManualHotelOffer } from "@/lib/epoch-ai/receivedHotelOffer";
 
@@ -21,6 +22,9 @@ type Offer = {
   acceptanceStatus: string;
   stay: {checkIn: string; checkOut: string} | null;
   ratesSaved: boolean;
+  savedDraft?: HotelOfferRateApproval;
+  warnings: string[];
+  supplierConfirmation: string;
   approvalBlock: string | null;
   supplierStatus?: string;
   reviewedTerms: HotelOfferTerms | null;
@@ -41,6 +45,7 @@ export default function HotelReceivedOffers(props: ({ inquiryId: string } | { ma
   const query = manual ? `?${new URLSearchParams(manual)}` : "";
   const [offers, setOffers] = useState<Offer[] | null>(null);
   const [editing, setEditing] = useState<string | null>(null);
+  const [openedRateDrafts, setOpenedRateDrafts] = useState<Record<string, boolean>>({});
   const [terms, setTerms] = useState(emptyTerms);
   const [busy, setBusy] = useState(false);
   const [status, setStatus] = useState("");
@@ -183,11 +188,20 @@ export default function HotelReceivedOffers(props: ({ inquiryId: string } | { ma
         {offer.ratesSaved ? <p className="font-semibold">Rates saved in Supplier CRM. {offer.supplierStatus === "INACTIVE" && "Activate this supplier in CRM to use its rates in a quote. "}
           <SupplierRatesLink supplierId={offer.supplierId}/></p> :
           !offer.approvalBlock && offer.reviewStatus === "TERMS_VERIFIED" && offer.reviewedTerms && offer.stay &&
-            !["REJECTED", "SUPERSEDED"].includes(offer.acceptanceStatus) ? <details className="rounded border border-blue-200 p-2">
-              <summary className="cursor-pointer font-semibold text-[#001F3F]">Prepare rate draft with Epoch AI</summary>
-              <HotelOfferRateDraft terms={offer.reviewedTerms} {...offer.stay} url={`${url}/${encodeURIComponent(offer.id)}/rates${query}`}
-                supplierInactive={offer.supplierStatus === "INACTIVE"} analysisUrl={`${url}/${encodeURIComponent(offer.id)}${query}`}/>
+            !["REJECTED", "SUPERSEDED"].includes(offer.acceptanceStatus) ? <details className="rounded border border-blue-200 p-2"
+              onToggle={event => {
+                if (event.currentTarget.open && !openedRateDrafts[offer.id]) {
+                  setOpenedRateDrafts(current => ({...current, [offer.id]: true}));
+                }
+              }}>
+              <summary className="cursor-pointer font-semibold text-[#001F3F]">{offer.savedDraft ? "Continue saved rate draft" : "Prepare rate draft with Epoch AI"}</summary>
+              {openedRateDrafts[offer.id] && <HotelOfferRateDraft terms={offer.reviewedTerms} {...offer.stay} url={`${url}/${encodeURIComponent(offer.id)}/rates${query}`}
+                reference={offer.supplierConfirmation} savedDraft={offer.savedDraft}
+                supplierInactive={offer.supplierStatus === "INACTIVE"} analysisUrl={`${url}/${encodeURIComponent(offer.id)}${query}`}/>}
             </details> : null}
+        {offer.ratesSaved && Boolean(offer.warnings?.length) && (
+          <ul className="list-disc pl-5 text-amber-900">{offer.warnings.map(warning => <li key={warning}>{warning}</li>)}</ul>
+        )}
         {offer.approvalBlock && offer.reviewStatus === "TERMS_VERIFIED" &&
           <p className="text-slate-700">{offer.approvalBlock}</p>}
         {offerError?.id === offer.id && <p role="alert" className="text-red-800">{offerError.message}</p>}

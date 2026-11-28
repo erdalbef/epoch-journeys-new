@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { authOptions } from "@/lib/authOptions";
 import { db } from "@/lib/db";
 import { hotelOfferRateExtractionFormat, readHotelOfferRateExtraction } from "@/lib/epoch-ai/hotelOfferRateExtraction";
+import { prepareHotelOfferRateDraft } from "@/lib/epoch-ai/hotelOfferRateDraft";
 import { readAiAttachment } from "@/lib/epoch-ai/documentText";
 import { currentHotelOfferBlock, hotelOfferStaySelect, loadHotelOfferWorkflow, recordedHotelOfferStay, verifiedHotelOfferTerms } from "@/lib/epoch-ai/hotelOfferWorkflow";
 import { hotelOfferFields, hotelOfferTerms, manualHotelOfferScope, maxHotelOfferFileSize } from "@/lib/epoch-ai/receivedHotelOffer";
@@ -65,9 +66,20 @@ export async function POST(request: Request, { params }: Params) {
 
   const drafting = input?.action === "draft-rates";
   if (!drafting && input?.action !== "analyze") return reply({ error: "Invalid offer action." }, 400);
+  const terms = drafting ? verifiedHotelOfferTerms(offer) : null;
+  const stay = drafting ? recordedHotelOfferStay(offer) : null;
+  const fallback = (error: string, status: number) => {
+    if (!terms || !stay) return reply({error}, status);
+    return reply({
+      rateDraft: {
+        draft: prepareHotelOfferRateDraft(terms, Date.parse(stay.checkOut) - Date.parse(stay.checkIn) === 86_400_000),
+        sources: {},
+      },
+      sourceWarning: "The original offer could not be read again. Epoch AI used the reviewed terms already saved for this offer.",
+    });
+  };
   if (drafting) {
-    const stay = recordedHotelOfferStay(offer);
-    if (!stay || !verifiedHotelOfferTerms(offer)) return reply({ error: "Verify the current offer before preparing rates." }, 409);
+    if (!stay || !terms) return reply({ error: "Verify the current offer before preparing rates." }, 409);
     const workflow = await loadHotelOfferWorkflow(db, stay, offer.supplierId);
     const blocked = currentHotelOfferBlock(offer.id, workflow.currentBySupplier.get(offer.supplierId));
     if (blocked) return reply({error: blocked}, 409);
@@ -76,10 +88,10 @@ export async function POST(request: Request, { params }: Params) {
     return reply({ error: "These terms have already been reviewed." }, 409);
   }
   if (!checkRateLimit(`hotel-offer-analysis:${actorId}`, 6, 10 * 60_000).allowed) {
-    return reply({ error: "Analysis request limit reached. Try again later." }, 429);
+    return fallback("Analysis request limit reached. Try again later.", 429);
   }
   const key = process.env.OPENAI_API_KEY?.trim();
-  if (!key) return reply({ error: "AI analysis is unavailable. You can enter the terms for review manually." }, 503);
+  if (!key) return fallback("AI analysis is unavailable. You can enter the terms for review manually.", 503);
 
   try {
     const content: Array<{ type: "input_text"; text: string } | { type: "input_file"; filename: string; file_data: string }> = [];
@@ -89,21 +101,21 @@ export async function POST(request: Request, { params }: Params) {
       const url = new URL(file.storagePath);
       if (url.protocol !== "https:" || !url.hostname.endsWith(".private.blob.vercel-storage.com") ||
           file.fileSize > maxHotelOfferFileSize) {
-        return reply({ error: "Private attachment analysis is unavailable for this document." }, 422);
+        return fallback("Private attachment analysis is unavailable for this document.", 422);
       }
       const bytes = await readFinanceFile(file.storagePath);
       if (!bytes || bytes.byteLength > maxHotelOfferFileSize) {
-        return reply({ error: "The stored attachment could not be analyzed." }, 422);
+        return fallback("The stored attachment could not be analyzed.", 422);
       }
       const attachment = await readAiAttachment(new File([new Uint8Array(bytes)], file.originalFileName)).catch(() => null);
       if (!attachment) {
-        return reply({ error: "No readable text could be extracted from this attachment. Download the original and enter its terms manually." }, 422);
+        return fallback("No readable text could be extracted from this attachment. Download the original and enter its terms manually.", 422);
       }
       content.push(attachment.kind === "pdf"
         ? { type: "input_file", filename: attachment.fileName, file_data: attachment.content }
         : { type: "input_text", text: attachment.content });
     }
-    if (!content.length) return reply({ error: "No readable offer source." }, 422);
+    if (!content.length) return fallback("No readable offer source.", 422);
 
     const response = await fetch("https://api.openai.com/v1/responses", {
       method: "POST",
@@ -125,7 +137,7 @@ export async function POST(request: Request, { params }: Params) {
         } } },
       }),
     });
-    if (!response.ok) return reply({ error: "AI analysis could not be completed. The offer is still saved." }, 502);
+    if (!response.ok) return fallback("AI analysis could not be completed. The offer is still saved.", 502);
     const result = await response.json() as {
       output_text?: string;
       output?: Array<{ type?: string; content?: Array<{ type?: string; text?: string }> }>;
@@ -138,6 +150,6 @@ export async function POST(request: Request, { params }: Params) {
     return reply({ rateDraft: readHotelOfferRateExtraction(output, textSources) });
   } catch (error) {
     console.error("HOTEL_OFFER_ANALYSIS_FAILED", error instanceof Error ? error.name : "Unknown");
-    return reply({ error: "AI analysis could not be completed. The offer is still saved." }, 502);
+    return fallback("AI analysis could not be completed. The offer is still saved.", 502);
   }
 }

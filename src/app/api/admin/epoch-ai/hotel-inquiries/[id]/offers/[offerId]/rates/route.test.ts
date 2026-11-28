@@ -19,7 +19,8 @@ vi.mock("next-auth", () => ({getServerSession: async () => ({user: {id: "admin",
 vi.mock("@/lib/db", () => ({db: {supplier: db.supplier, supplierCommercialEvidence: {findMany: db.eligibleOffers}, $transaction: (run: (tx: typeof db.tx) => unknown) => run(db.tx)}}));
 
 import { GET } from "@/app/api/admin/quotes/supplier-hotels/route";
-import { hotelOfferPriceQualifier, hotelOfferRateApproval, hotelOfferRateApprovalIssues, OFFER_RATE_SOURCE, prepareHotelOfferRateDraft } from "@/lib/epoch-ai/hotelOfferRateDraft";
+import { fillHotelOfferRateDraft, HOTEL_OFFER_RATE_DRAFT_EVENT, HOTEL_OFFER_RATE_IMPORT_EVENT, hotelOfferPriceQualifier, OFFER_RATE_SOURCE, prepareHotelOfferRateDraft } from "@/lib/epoch-ai/hotelOfferRateDraft";
+import { readHotelOfferRateEvent } from "@/lib/epoch-ai/hotelOfferWorkflow";
 import { POST } from "./route";
 
 const terms = {
@@ -38,7 +39,7 @@ const currentOffer = {
   id: "offer", supplierId: "hotel", version: 2, reviewStatus: "TERMS_VERIFIED",
   acceptanceStatus: "NOT_ESTABLISHED", reviewedTerms: terms,
   sourceDate: new Date("2026-11-25T00:00:00Z"),
-  supplier: {name: "Ibis", status: "ACTIVE"}, events: [{id: "rate-approved"}],
+  supplier: {name: "Ibis", status: "ACTIVE"}, events: [{eventType: HOTEL_OFFER_RATE_IMPORT_EVENT, detail: null}],
 };
 
 const approval = {
@@ -65,6 +66,7 @@ describe("Supplier rates from reviewed hotel offers", () => {
     vi.resetAllMocks();
     db.tx.supplierCommercialEvidence.findFirst.mockResolvedValueOnce({
       id: "offer", supplierId: "hotel", reviewStatus: "TERMS_VERIFIED", reviewedTerms: terms, version: 2,
+      sourceSubject: "Group accommodation offer", sourceDate: currentOffer.sourceDate,
       hotelInquiry: {tourId: "balkans", supplierId: "hotel", destination: "Belgrade", checkIn: "2027-05-17", checkOut: "2027-05-19"},
     }).mockResolvedValueOnce(null);
     db.tx.supplierCommercialEvidence.findMany.mockResolvedValue([currentOffer, {...currentOffer, id: "earlier-offer", version: 3, sourceDate: new Date("2026-11-19"), reviewStatus: "REVIEW_PENDING"}]);
@@ -72,13 +74,13 @@ describe("Supplier rates from reviewed hotel offers", () => {
     db.tx.supplierService.findMany.mockResolvedValue([{id: "accommodation"}]);
   });
 
-  it("prefills supplier amounts and applies the standard unit even when the drinks list includes alternatives", () => {
+  it("prefills the supplier amounts and leaves unstated units open", () => {
     expect(prepareHotelOfferRateDraft(terms)).toMatchObject({
       currency: "EUR", doubleTwin: "239", single: "199", triple: "", extraBed: "50", unit: "",
-      halfBoard: {amount: "30", unit: "PER_PERSON_PER_NIGHT"},
+      halfBoard: {amount: "30", unit: ""},
       cityTax: {amount: "2", unit: "PER_PERSON_PER_NIGHT"},
-      beverages: {amount: "8", unit: "PER_PERSON_PER_NIGHT"},
-      porterage: {amount: "6", unit: "PER_PERSON_PER_NIGHT"},
+      beverages: {amount: "8", unit: ""},
+      porterage: {amount: "6", unit: ""},
     });
     expect(hotelOfferPriceQualifier(terms.halfBoard)).toBe("Starting price");
     expect(hotelOfferPriceQualifier(terms.cityTax)).toBe("Approximate");
@@ -106,7 +108,7 @@ describe("Supplier rates from reviewed hotel offers", () => {
     })).toMatchObject({
       currency: "EUR", doubleTwin: "200.00", single: "170.00", unit: "PER_ROOM_PER_NIGHT",
       mealBasis: "BB", taxIncluded: "yes", cityTaxIncluded: false,
-      halfBoard: {amount: "30.00", unit: "PER_PERSON_PER_NIGHT"},
+      halfBoard: {amount: "30.00", unit: "PER_PERSON"},
       cityTax: {amount: "0.60", unit: "PER_PERSON_PER_NIGHT"},
     });
   });
@@ -118,24 +120,50 @@ describe("Supplier rates from reviewed hotel offers", () => {
     })).toMatchObject({doubleTwin: "", single: ""});
   });
 
-  it("requires confirmation before saving a starting price or approximate tax", async () => {
-    expect((await save({...approval, confirmIndicativeCharges: false})).status).toBe(400);
-    expect(db.tx.supplierRate.createMany).not.toHaveBeenCalled();
+  it("approves the room rates with a warning and keeps indicative charges out of costing", async () => {
+    const response = await save({...approval, confirmIndicativeCharges: false});
+    expect(response.status).toBe(201);
+    expect(await response.json()).toMatchObject({warnings: expect.arrayContaining([
+      "City tax (EUR 2) is indicative and is excluded from the costing.",
+    ])});
+    expect(db.tx.supplierRate.createMany.mock.calls[0][0].data[0]).toMatchObject({
+      cityTaxAmount: null, dinnerAmount: null, amount: "239",
+    });
   });
 
-  it("requires explicit approval and a confirmation reference, and rejects incomplete charges", async () => {
-    expect((await save({...approval, supplierConfirmation: ""})).status).toBe(400);
-    expect((await save({...approval, beverages: {amount: "8", unit: ""}})).status).toBe(400);
-    expect(db.tx.supplierRate.createMany).not.toHaveBeenCalled();
+  it("uses the saved source reference and saves quoted room rates with missing details", async () => {
+    const response = await save({...approval, supplierConfirmation: "", single: "", mealBasis: "", taxIncluded: "",
+      cityTax: {amount: "", unit: ""}, beverages: {amount: "8", unit: ""}});
+    expect(response.status).toBe(201);
+    const record = db.tx.supplierCommercialEvidenceEvent.create.mock.calls[0][0].data;
+    expect(JSON.parse(record.detail).rates).toMatchObject({
+      supplierConfirmation: "Group accommodation offer · 2026-11-25",
+      beverages: {amount: "8", unit: ""},
+    });
+    expect(db.tx.supplierRate.createMany.mock.calls[0][0].data).toEqual([expect.objectContaining({
+      roomType: "DOUBLE_TWIN", cityTaxAmount: null, beveragePackageAmount: null, breakfastIncluded: null, mealBasis: null,
+    })]);
+    expect(readHotelOfferRateEvent(record)).toMatchObject({ratesSaved: true, warnings: expect.arrayContaining([
+      "Dinner beverages (EUR 8) needs a billing unit.",
+      "City tax is unspecified or unconfirmed and is excluded from the costing.",
+    ])});
   });
 
-  it("identifies the room rate unit as the remaining approval blocker", () => {
-    const result = hotelOfferRateApproval.safeParse({...approval, unit: "", supplierConfirmation: "EMAIL"});
-    expect(result.success).toBe(false);
-    expect(hotelOfferRateApprovalIssues(result.error?.issues ?? [])).toEqual([
-      "Select the room rate unit for the Double/Twin and Single prices.",
-    ]);
-    expect(hotelOfferRateApproval.safeParse({...approval, supplierConfirmation: "EMAIL"}).success).toBe(true);
+  it("saves a recoverable partial draft when the room unit is missing", async () => {
+    const response = await save({...approval, unit: "", activateSupplier: true});
+    expect(response.status).toBe(201);
+    expect(await response.json()).toMatchObject({savedDraft: true, warnings: expect.arrayContaining(["Room billing unit is missing or unclear."])});
+    expect(db.tx.supplierRate.createMany).not.toHaveBeenCalled();
+    expect(db.tx.supplier.update).not.toHaveBeenCalled();
+    const record = db.tx.supplierCommercialEvidenceEvent.create.mock.calls[0][0].data;
+    expect(record.eventType).toBe(HOTEL_OFFER_RATE_DRAFT_EVENT);
+    expect(readHotelOfferRateEvent(record)).toMatchObject({ratesSaved: false, savedDraft: {unit: "", doubleTwin: "239"}});
+  });
+
+  it("still requires explicit approval before writing rates or a draft", async () => {
+    expect((await save({...approval, confirmation: "", unit: ""})).status).toBe(400);
+    expect(db.tx.supplierCommercialEvidenceEvent.create).not.toHaveBeenCalled();
+    expect(db.tx.supplierRate.createMany).not.toHaveBeenCalled();
   });
 
   it("makes reviewed offer rates available only for the matching tour and stay", async () => {
@@ -151,8 +179,9 @@ describe("Supplier rates from reviewed hotel offers", () => {
       ({...rate, id: String(index)})), legacySingle]}]}]);
 
     const dates = "&startDate=2027-05-17&endDate=2027-05-19";
+    const savedEvent = db.tx.supplierCommercialEvidenceEvent.create.mock.calls[0][0].data;
     db.eligibleOffers.mockImplementation(async (args) => args.where.OR[0].hotelInquiry.tourId === "balkans"
-      ? [currentOffer]
+      ? [{...currentOffer, events: [{...savedEvent, detail: JSON.stringify({warnings: ["Verify hotel allotment."]})}]}]
       : []);
     const matching = await (await quote("&tourId=balkans" + dates)).json();
     expect(db.eligibleOffers).toHaveBeenCalledWith(expect.objectContaining({
@@ -163,6 +192,7 @@ describe("Supplier rates from reviewed hotel offers", () => {
     }));
     expect(matching.hotels.find((item: {rate: {staySpecific: boolean}}) => item.rate.staySpecific)).toMatchObject({
       rate: {supplierReference: "offer", staySpecific: true}, rateValidity: "VALID_FOR_REQUEST",
+      offerWarnings: ["Verify hotel allotment."],
       effectiveCost: {singlePerPersonPerNight: 201, doubleTwinPerPersonPerNight: 121.5, triplePerPersonPerNight: null},
     });
     const [otherDates, otherTour, noTour] = await Promise.all([
@@ -204,14 +234,22 @@ describe("Supplier rates from reviewed hotel offers", () => {
     });
   });
 
-  it("keeps quoted base prices separate from combined tax and insurance", () => {
-    expect(prepareHotelOfferRateDraft({...terms,
+  it("prefills the Ibis one-night offer and preserves the combined tax wording for review", () => {
+    const ibis = {...terms,
       doubleTwin: "44.62 EUR per person per day + 1.79 EUR tax and insurance per person per day.",
       single: "79.25 EUR + 1.79 EUR tax and insurance per day.",
       triple: "33.08 EUR per person per day + 1.79 EUR tax and insurance per person per day.",
       cityTax: "1.79 EUR tax and insurance per person per day included in stated prices.",
-    })).toMatchObject({doubleTwin: "44.62", single: "79.25", triple: "33.08", unit: "",
-      currency: "EUR", cityTaxIncluded: false, cityTax: {amount: "", unit: ""}});
+      halfBoard: "20.45 EUR per person per day with unlimited non-alcoholic drinks.",
+    };
+    const draft = prepareHotelOfferRateDraft(ibis, true);
+    expect(draft).toMatchObject({doubleTwin: "44.62", single: "79.25", triple: "33.08", unit: "PER_PERSON_PER_NIGHT",
+      currency: "EUR", cityTaxIncluded: false, cityTax: {amount: "", unit: ""},
+      halfBoard: {amount: "20.45", unit: "PER_PERSON_PER_NIGHT"}});
+    expect(fillHotelOfferRateDraft(draft, {...draft, doubleTwin: "46.41", extraBed: "20", cityTaxIncluded: false,
+      cityTax: {amount: "1.79", unit: "PER_PERSON_PER_NIGHT"}}, ibis)).toMatchObject({
+      doubleTwin: "44.62", extraBed: "20", cityTax: {amount: "", unit: ""}, cityTaxIncluded: false,
+    });
   });
 
   it("returns the existing result when the same approval is retried", async () => {

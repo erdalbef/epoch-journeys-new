@@ -4,8 +4,7 @@ import { NextResponse } from "next/server";
 import { authOptions } from "@/lib/authOptions";
 import { db } from "@/lib/db";
 import { hotelOfferSource, hotelOfferUploadTooLarge, manualHotelOfferScope, maxHotelOfferFileSize, maxHotelOfferRequestSize } from "@/lib/epoch-ai/receivedHotelOffer";
-import { currentHotelOfferBlock, hotelOfferSourceOrder, hotelOfferStaySelect, loadHotelOfferWorkflow, recordedHotelOfferStay } from "@/lib/epoch-ai/hotelOfferWorkflow";
-import { HOTEL_OFFER_RATE_IMPORT_EVENT } from "@/lib/epoch-ai/hotelOfferRateDraft";
+import { currentHotelOfferBlock, hotelOfferRateEventSelect, hotelOfferSourceOrder, hotelOfferSourceReference, hotelOfferStaySelect, loadHotelOfferWorkflow, readHotelOfferRateEvent, recordedHotelOfferStay } from "@/lib/epoch-ai/hotelOfferWorkflow";
 import { requireAdminApiAccess } from "@/lib/security/requireAdminApiAccess";
 import { isRequestWithinLimit } from "@/lib/security/requestBodyLimit";
 import { deleteFinanceFile, saveFinanceFile } from "@/lib/storage/finansFileStorage";
@@ -29,7 +28,7 @@ export async function GET(request: Request, { params }: Params) {
       sourceSender: true, sourceSubject: true, sourceMessageId: true,
       sourceBody: true, reviewStatus: true, reviewedTerms: true,
       acceptanceStatus: true, ...hotelOfferStaySelect,
-      events: {where: {eventType: HOTEL_OFFER_RATE_IMPORT_EVENT}, take: 1, select: {id: true}},
+      events: hotelOfferRateEventSelect,
       sourceDocument: { select: { id: true, originalFileName: true } },
     },
   });
@@ -43,7 +42,8 @@ export async function GET(request: Request, { params }: Params) {
     return {
       ...offer,
       stay: stay && {checkIn: stay.checkIn, checkOut: stay.checkOut},
-      ratesSaved: events.length > 0,
+      ...readHotelOfferRateEvent(events[0]),
+      supplierConfirmation: hotelOfferSourceReference(offer),
       supplierStatus: current?.supplier.status,
       approvalBlock: currentHotelOfferBlock(offer.id, current),
     };

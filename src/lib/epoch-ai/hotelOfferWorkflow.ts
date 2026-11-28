@@ -1,6 +1,6 @@
 import type { Prisma, PrismaClient } from "@prisma/client";
 import { hotelOfferDeadlines } from "./hotelOfferDeadlines";
-import { HOTEL_OFFER_RATE_IMPORT_EVENT, hotelOfferStay } from "./hotelOfferRateDraft";
+import { HOTEL_OFFER_RATE_DRAFT_EVENT, HOTEL_OFFER_RATE_IMPORT_EVENT, hotelOfferRateApproval, hotelOfferStay } from "./hotelOfferRateDraft";
 import { hotelOfferTerms, manualHotelOfferStay } from "./receivedHotelOffer";
 
 type OfferClient = Pick<PrismaClient, "supplierCommercialEvidence">;
@@ -46,6 +46,34 @@ export const hotelOfferStaySelect = {
   hotelInquiry: { select: { tourId: true, supplierId: true, destination: true, checkIn: true, checkOut: true } },
 } satisfies Prisma.SupplierCommercialEvidenceSelect;
 
+export const hotelOfferRateEventSelect = {
+  where: {eventType: {in: [HOTEL_OFFER_RATE_IMPORT_EVENT, HOTEL_OFFER_RATE_DRAFT_EVENT]}},
+  orderBy: [{createdAt: "desc"}, {id: "desc"}],
+  take: 1,
+  select: {eventType: true, detail: true},
+} satisfies Prisma.SupplierCommercialEvidence$eventsArgs;
+
+export function readHotelOfferRateEvent(event?: {eventType: string; detail: string | null}) {
+  const ratesSaved = event?.eventType === HOTEL_OFFER_RATE_IMPORT_EVENT;
+  try {
+    const data = JSON.parse(event?.detail ?? "{}");
+    const rates = hotelOfferRateApproval.safeParse(data?.rates);
+    const warnings = Array.isArray(data?.warnings) ? data.warnings.filter((item: unknown): item is string => typeof item === "string") : [];
+    return {ratesSaved, savedDraft: !ratesSaved && rates.success ? rates.data : undefined, warnings};
+  } catch {
+    return {ratesSaved, savedDraft: undefined, warnings: [] as string[]};
+  }
+}
+
+export function hotelOfferSourceReference(offer: {
+  id: string; sourceDate: Date | null; sourceSubject: string | null;
+  sourceDocument?: {originalFileName: string} | null;
+}) {
+  const title = offer.sourceDocument?.originalFileName?.trim() || offer.sourceSubject?.trim() || `Recorded offer ${offer.id}`;
+  const received = offer.sourceDate?.toISOString().slice(0, 10);
+  return [title, received].filter(Boolean).join(" · ").slice(0, 500);
+}
+
 /** Compare offers for the same supplier and stay, including those recorded from a different screen. */
 export async function loadHotelOfferWorkflow(
   client: OfferClient, {tourId, city, checkIn, checkOut}: HotelOfferStay, supplierId?: string,
@@ -62,7 +90,7 @@ export async function loadHotelOfferWorkflow(
     select: {
       id: true, supplierId: true, version: true, reviewStatus: true, reviewedTerms: true, sourceDate: true,
       acceptanceStatus: true, supplier: { select: { name: true, status: true } },
-      events: { where: { eventType: HOTEL_OFFER_RATE_IMPORT_EVENT }, take: 1, select: { id: true } },
+      events: hotelOfferRateEventSelect,
     },
   });
   const currentBySupplier = new Map<string, (typeof offers)[number]>();
@@ -96,7 +124,9 @@ export function hotelOfferRateReadiness(offer: CurrentOffer, checkIn: string, to
   if (offer.acceptanceStatus !== "RECORDED_ACCEPTED" &&
       hotelOfferDeadlines(terms, offer.sourceDate?.toISOString().slice(0, 10) ?? "", checkIn)
         .some(deadline => deadline.kind === "expiry" && deadline.date < today)) return "RECONFIRM";
-  if (!offer.events.length) return "APPROVE_RATES";
+  const event = offer.events[0];
+  if (event?.eventType === HOTEL_OFFER_RATE_DRAFT_EVENT) return "DRAFT_SAVED";
+  if (event?.eventType !== HOTEL_OFFER_RATE_IMPORT_EVENT) return "APPROVE_RATES";
   if (offer.supplier.status !== "ACTIVE") return "ACTIVATE_SUPPLIER";
   return "READY";
 }
@@ -104,6 +134,7 @@ export function hotelOfferRateReadiness(offer: CurrentOffer, checkIn: string, to
 export const hotelOfferRateNextSteps = {
   REVIEW_TERMS: "Review the supplier offer.",
   RECONFIRM: "Reconfirm the expired offer with the hotel.",
+  DRAFT_SAVED: "Draft saved. Add a room price, currency and nightly unit when available.",
   APPROVE_RATES: "Terms verified. Approve the room rates in Supplier CRM.",
   ACTIVATE_SUPPLIER: "Rates saved. Review the supplier's inactive status.",
   READY: "Rates approved in Supplier CRM.",

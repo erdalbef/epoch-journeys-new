@@ -72,6 +72,7 @@ export type SupplierHotelResult = {
     | "EXPIRED_ESTIMATE";
   requiresReconfirmation: boolean;
   cityTaxNeedsReview?: boolean;
+  offerWarnings?: string[];
 
   effectiveCost: {
     singlePerPersonPerNight: number | null;
@@ -84,7 +85,7 @@ export type SupplierHotelResult = {
   };
 };
 
-export function supplierHotelSnapshot({supplier, service, rate, effectiveCost, rateValidity, requiresReconfirmation}: SupplierHotelResult, destination: string) {
+export function supplierHotelSnapshot({supplier, service, rate, effectiveCost, rateValidity, requiresReconfirmation, offerWarnings}: SupplierHotelResult, destination: string) {
   const single = effectiveCost.singlePerPersonPerNight ?? 0;
   const doubleTwin = effectiveCost.doubleTwinPerPersonPerNight ?? 0;
   const triple = effectiveCost.triplePerPersonPerNight ?? 0;
@@ -105,6 +106,7 @@ export function supplierHotelSnapshot({supplier, service, rate, effectiveCost, r
     supplierRateValidTo: rate.validTo,
     supplierRateValidity: rateValidity,
     supplierRateRequiresReconfirmation: requiresReconfirmation,
+    supplierOfferWarnings: offerWarnings ?? [],
     supplierMealBasis: rate.mealBasis,
     supplierSelectedMealBasis: /^(HB|HALF[ _-]?BOARD)$/i.test(rate.mealBasis || "") ? "HB" as const : "BB" as const,
     supplierBaseSinglePerNight: single,

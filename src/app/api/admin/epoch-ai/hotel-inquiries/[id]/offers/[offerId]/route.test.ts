@@ -94,4 +94,19 @@ describe("Drafting rates from original hotel offers", () => {
     expect((await draft()).status).toBe(409);
     expect(fetchModel).not.toHaveBeenCalled();
   });
+
+  it("returns reviewed rate values with a warning when the original cannot be processed", async () => {
+    findFirst.mockResolvedValue({
+      ...verifiedOffer,
+      reviewedTerms: {...verifiedOffer.reviewedTerms, doubleTwin: groupDouble, single: groupSingle},
+      sourceBody: `${groupDouble}\n${groupSingle}`,
+    });
+    fetchModel.mockResolvedValue(new Response(null, {status: 502}));
+    const response = await draft();
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({
+      rateDraft: {draft: {doubleTwin: "200", single: "170", unit: "PER_ROOM_PER_NIGHT"}},
+      sourceWarning: expect.stringContaining("used the reviewed terms"),
+    });
+  });
 });

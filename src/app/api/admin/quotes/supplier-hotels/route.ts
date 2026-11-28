@@ -7,7 +7,7 @@ import { NextResponse } from "next/server";
 
 import { db } from "@/lib/db";
 import { requireAdminApiAccess } from "@/lib/security/requireAdminApiAccess";
-import { hotelOfferRateNextSteps, hotelOfferRateReadiness, loadHotelOfferWorkflow } from "@/lib/epoch-ai/hotelOfferWorkflow";
+import { hotelOfferRateNextSteps, hotelOfferRateReadiness, loadHotelOfferWorkflow, readHotelOfferRateEvent } from "@/lib/epoch-ai/hotelOfferWorkflow";
 import { OFFER_RATE_SOURCE } from "@/lib/epoch-ai/hotelOfferRateDraft";
 
 type EffectiveCostStatus =
@@ -698,9 +698,10 @@ export async function GET(
     const today = new Date().toISOString().slice(0, 10);
     const offerStatuses = [...workflow?.currentBySupplier.values() ?? []].map(offer => {
       const status = hotelOfferRateReadiness(offer, checkIn ?? "", today);
+      const {ratesSaved, warnings} = readHotelOfferRateEvent(offer.events[0]);
       return {
         offerId: offer.id, supplierId: offer.supplierId, supplierName: offer.supplier.name,
-        status, nextStep: hotelOfferRateNextSteps[status], ratesSaved: offer.events.length > 0,
+        status, nextStep: hotelOfferRateNextSteps[status], ratesSaved, warnings,
       };
     });
     const offerStatusesBySupplier = new Map(offerStatuses.map(offer => [offer.supplierId, offer]));
@@ -1016,6 +1017,8 @@ export async function GET(
                         rateValidity ===
                         "EXPIRED_ESTIMATE",
                       cityTaxNeedsReview: unresolvedCityTax,
+                      offerWarnings: rate.rateSource === OFFER_RATE_SOURCE
+                        ? offerStatusesBySupplier.get(rate.supplierId)?.warnings : undefined,
 
                       effectiveCost: {
                         singlePerPersonPerNight:

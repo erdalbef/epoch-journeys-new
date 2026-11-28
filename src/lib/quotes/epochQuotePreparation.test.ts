@@ -103,5 +103,8 @@ describe("Epoch AI quote preparation", () => {
       {...base, effectiveCost:{...base.effectiveCost,singleStatus:"INCOMPLETE"}},
     ];
     expect(findUsableQuotePreparationRates(rates, stay, "EUR")).toEqual([base]);
+    const partialOffer = {...base, rate:{...base.rate, staySpecific:true}, offerWarnings:["Single room price is missing."],
+      effectiveCost:{...base.effectiveCost, singleStatus:"INCOMPLETE", singlePerPersonPerNight:null}};
+    expect(findUsableQuotePreparationRates([partialOffer], stay, "EUR")).toEqual([partialOffer]);
   });
 });

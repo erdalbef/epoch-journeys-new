@@ -72,6 +72,11 @@ export function checkQuoteApprovalReadiness(input: {
     if (hotel.supplierRateRequiresReconfirmation === true || hotel.supplierRateValidity === "EXPIRED_ESTIMATE") {
       addWarning(`${label}: supplier rate requires reconfirmation before the quote is commercially committed.`);
     }
+    if (Array.isArray(hotel.supplierOfferWarnings)) {
+      for (const warning of hotel.supplierOfferWarnings) {
+        if (typeof warning === "string" && warning.trim()) addWarning(`${label}: ${warning}`);
+      }
+    }
     if (hotel.supplierDinnerSelected === true && hotel.supplierDinnerIncluded !== true && hotel.supplierSelectedMealBasis !== "HB") {
       // The current quote serializer does not always persist dinner amount.
       // Never infer a zero rate from an omitted field; the selected expense

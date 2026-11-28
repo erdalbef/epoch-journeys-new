@@ -88,7 +88,8 @@ export function readHotelOfferRateExtraction(input: unknown, textSources?: reado
   const roomUnit = quoted("unit");
   const mealBasis = quoted("mealBasis");
   const taxIncluded = quoted("taxIncluded");
-  const cityTax = quotedAmount("cityTax");
+  const hasCombinedCharge = /\binsurance\b/i.test(`${sources.cityTax} ${sources.cityTaxIncluded}`);
+  const cityTax = hasCombinedCharge ? "" : quotedAmount("cityTax");
   const charge = (key: keyof typeof offerChargeFields) => ({
     amount: currency ? quotedAmount(key) : "",
     unit: currency && quotedAmount(key) ? extraction[key].unit : "",
@@ -105,7 +106,7 @@ export function readHotelOfferRateExtraction(input: unknown, textSources?: reado
       extraBed: currency ? quotedAmount("extraBed") : "",
       halfBoard: charge("halfBoard"),
       beverages: charge("beverages"),
-      cityTaxIncluded: !cityTax && quoted("cityTaxIncluded") === "yes",
+      cityTaxIncluded: !hasCombinedCharge && !cityTax && quoted("cityTaxIncluded") === "yes",
       cityTax: { amount: currency ? cityTax : "", unit: currency && cityTax
         ? nightlyUnits.find(unit => unit === extraction.cityTax.unit) ?? "" : "" },
       porterage: charge("porterage"),

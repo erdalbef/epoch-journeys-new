@@ -36,6 +36,7 @@ type HotelRow = {
     | "VALID_FOR_REQUEST"
     | "EXPIRED_ESTIMATE";
   supplierRateRequiresReconfirmation?: boolean;
+  supplierOfferWarnings?: string[];
   supplierMealBasis?: string | null;
   // Frozen supplier cost components for BB/HB comparison.
   supplierSelectedMealBasis?: "BB" | "HB";
@@ -883,6 +884,9 @@ export default function HotelsSection({
                                       City tax is stated in Supplier CRM but its unit or currency cannot be used in this quotation. The room price is available; the unverified tax has NOT been added. Verify the tax and enter any applicable amount separately before issuing the proposal. Avoid charging it twice.
                                     </p>
                                   )}
+                                  {result.offerWarnings?.length ? (
+                                    <ul className="mt-2 list-disc pl-5 text-xs text-amber-900">{result.offerWarnings.map(warning => <li key={warning}>{warning}</li>)}</ul>
+                                  ) : null}
 
                                   {!sameCurrency && (
                                     <p className="mt-3 text-xs font-medium text-amber-700">
@@ -1140,7 +1144,7 @@ export default function HotelsSection({
                         <div className="mt-3 rounded-md border border-slate-200 bg-white p-3 text-sm">
                           <p className="font-semibold text-slate-900">Hotel meal basis and taxes</p>
                           <p className="mt-2 text-xs text-slate-700">
-                            Supplier meal plan: <strong>{supplierIncludesHB ? "Half Board (HB — dinner included)" : (row.supplierMealBasis || "Bed & Breakfast / confirm with supplier")}</strong>.
+                            Supplier meal plan: <strong>{supplierIncludesHB ? "Half Board (HB — dinner included)" : (row.supplierMealBasis || "Unspecified")}</strong>.
                             {hasLegacyHbUpgrade ? " A previous HB upgrade is retained in this saved quote until reviewed." : " Hotel-provided dinners may be selected above; restaurant dinners belong in Standard Per-Person Services."}
                           </p>
                           <p className="mt-2 text-xs text-slate-600">
@@ -1162,6 +1166,9 @@ export default function HotelsSection({
                         </div>
                       )}
 
+                      {row.supplierOfferWarnings?.length ? (
+                        <ul className="mt-2 list-disc pl-5 text-xs text-amber-900">{row.supplierOfferWarnings.map(warning => <li key={warning}>{warning}</li>)}</ul>
+                      ) : null}
                       {row.supplierRateRequiresReconfirmation ? (
                         <p className="mt-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-900">
                           Estimated from supplier rate outside the requested dates or pax range — reconfirm before booking.
