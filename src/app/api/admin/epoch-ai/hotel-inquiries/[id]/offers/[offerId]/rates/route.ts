@@ -3,8 +3,9 @@ import { NextResponse } from "next/server";
 import type { Prisma, RoomType } from "@prisma/client";
 import { authOptions } from "@/lib/authOptions";
 import { db } from "@/lib/db";
-import { HOTEL_OFFER_RATE_IMPORT_EVENT, hotelOfferRateApproval, hotelOfferPriceQualifier, hotelOfferStay, OFFER_RATE_SOURCE, offerChargeFields } from "@/lib/epoch-ai/hotelOfferRateDraft";
-import { hotelOfferTerms, manualHotelOfferScope, manualHotelOfferStay } from "@/lib/epoch-ai/receivedHotelOffer";
+import { HOTEL_OFFER_RATE_IMPORT_EVENT, hotelOfferRateApproval, hotelOfferPriceQualifier, OFFER_RATE_SOURCE, offerChargeFields } from "@/lib/epoch-ai/hotelOfferRateDraft";
+import { currentHotelOfferBlock, hotelOfferStaySelect, loadHotelOfferWorkflow, recordedHotelOfferStay, verifiedHotelOfferTerms } from "@/lib/epoch-ai/hotelOfferWorkflow";
+import { manualHotelOfferScope } from "@/lib/epoch-ai/receivedHotelOffer";
 import { requireAdminApiAccess } from "@/lib/security/requireAdminApiAccess";
 import { isRequestWithinLimit } from "@/lib/security/requestBodyLimit";
 
@@ -39,7 +40,7 @@ export async function POST(request: Request, {params}: {params: Promise<{id: str
         where: {id: offerId, ...scope},
         select: {
           id: true, supplierId: true, reviewedTerms: true, reviewStatus: true, version: true, acceptanceStatus: true,
-          hotelInquiry: {select: {supplierId: true, destination: true, checkIn: true, checkOut: true}},
+          ...hotelOfferStaySelect,
         },
       });
       if (!offer) return reply({error: "Offer not found for this hotel stay."}, 404);
@@ -48,31 +49,24 @@ export async function POST(request: Request, {params}: {params: Promise<{id: str
       });
       if (existing) return reply({alreadySaved: true, supplierId: offer.supplierId});
 
-      const terms = hotelOfferTerms.safeParse(offer.reviewedTerms);
-      if (offer.reviewStatus !== "TERMS_VERIFIED" || !terms.success ||
-          offer.acceptanceStatus === "REJECTED" || offer.acceptanceStatus === "SUPERSEDED") {
+      const terms = verifiedHotelOfferTerms(offer);
+      if (!terms) {
         return reply({error: "Use a reviewed, current offer to approve rates."}, 409);
       }
-      if (terms.data.cityTax && !rates.cityTaxIncluded && !rates.cityTax.amount) {
+      if (terms.cityTax && !rates.cityTaxIncluded && !rates.cityTax.amount) {
         return reply({error: "Confirm the city tax amount and billing unit, or confirm it is included or there is no charge."}, 400);
       }
       const indicatedCharges = (Object.keys(offerChargeFields) as (keyof typeof offerChargeFields)[])
-        .filter(key => rates[key].amount && hotelOfferPriceQualifier(terms.data[key]));
+        .filter(key => rates[key].amount && hotelOfferPriceQualifier(terms[key]));
       if (indicatedCharges.length && !rates.confirmIndicativeCharges) {
         return reply({error: "Confirm the indicative charges with the hotel before saving them to Supplier CRM Rates."}, 400);
       }
-      const newer = await tx.supplierCommercialEvidence.findFirst({
-        where: {...scope, version: {gt: offer.version}}, select: {id: true},
-      });
-      if (newer) return reply({error: "A newer offer is on file. Review that version before approving rates."}, 409);
-
-      const manual = "manualHotelStayKey" in scope ? manualHotelOfferStay.parse(JSON.parse(scope.manualHotelStayKey!)) : null;
-      const inquiry = offer.hotelInquiry;
-      const stay = manual ? hotelOfferStay(...manual) : inquiry && inquiry.supplierId === offer.supplierId
-        ? hotelOfferStay(inquiry.destination, inquiry.checkIn, inquiry.checkOut) : null;
+      const stay = recordedHotelOfferStay(offer);
       if (!stay) return reply({error: "The offer is missing a valid hotel stay."}, 409);
-
       await tx.$queryRaw`SELECT "id" FROM "Supplier" WHERE "id" = ${offer.supplierId} FOR UPDATE`;
+      const workflow = await loadHotelOfferWorkflow(tx, stay, offer.supplierId);
+      const blocked = currentHotelOfferBlock(offer.id, workflow.currentBySupplier.get(offer.supplierId));
+      if (blocked) return reply({error: blocked}, 409);
       const supplier = await tx.supplier.findUnique({
         where: {id: offer.supplierId}, select: {id: true, name: true, type: true, status: true, country: true},
       });
@@ -100,30 +94,28 @@ export async function POST(request: Request, {params}: {params: Promise<{id: str
         supplierId: supplier.id, serviceId: service.id, validFrom, validTo,
         currency: rates.currency, unit: rates.unit, mealBasis: rates.mealBasis, taxIncluded: rates.taxIncluded,
         breakfastIncluded: true, dinnerIncluded: rates.mealBasis === "HB",
-        dinnerAmount: rates.halfBoard.amount || null, dinnerUnit: rates.halfBoard.unit || null, dinnerNotes: terms.data.halfBoard || null,
+        dinnerAmount: rates.halfBoard.amount || null, dinnerUnit: rates.halfBoard.unit || null, dinnerNotes: terms.halfBoard || null,
         cityTaxIncluded: rates.cityTaxIncluded, cityTaxAmount: rates.cityTax.amount || null, cityTaxUnit: rates.cityTax.unit || null,
         cityTaxCurrency: rates.cityTax.amount ? rates.currency : null,
         beveragePackageAmount: rates.beverages.amount || null, beveragePackageUnit: rates.beverages.unit || null,
-        beverageNotes: terms.data.beverages || null,
+        beverageNotes: terms.beverages || null,
         porterageAmount: rates.porterage.amount || null, porterageUnit: rates.porterage.unit || null,
         porterageAvailable: rates.porterage.amount ? true : null,
         extraBedRate: rates.extraBed || null,
-        cancellationTerms: terms.data.cancellation || null,
-        paymentTerms: terms.data.payment || null,
+        cancellationTerms: terms.cancellation || null,
+        paymentTerms: terms.payment || null,
         rateSource: OFFER_RATE_SOURCE, supplierReference: offer.id, lastVerifiedAt: confirmedOn,
-        notes: ["Rates apply to the approved stay only.", terms.data.validity ? `Offer validity: ${terms.data.validity}` : "",
-          terms.data.other, terms.data.cityTax, terms.data.porterage,
+        notes: ["Rates apply to the approved stay only.", terms.validity ? `Offer validity: ${terms.validity}` : "",
+          terms.other, terms.cityTax, terms.porterage,
           rates.extraBed ? `Extra-bed supplement: ${rates.currency} ${rates.extraBed} per night (separate from the Triple room rate).` : ""].filter(Boolean).join("\n"),
       };
       const rooms: [RoomType, string, string][] = [
         ["DOUBLE_TWIN", "Double/Twin", rates.doubleTwin], ["SINGLE", "Single", rates.single],
         ["TRIPLE", "Triple", rates.triple],
       ];
-      const earlierOffers = await tx.supplierCommercialEvidence.findMany({
-        where: {...scope, supplierId: supplier.id, version: {lt: offer.version}}, select: {id: true},
-      });
-      if (earlierOffers.length) await tx.supplierRate.updateMany({
-        where: {supplierId: supplier.id, rateSource: OFFER_RATE_SOURCE, supplierReference: {in: earlierOffers.map(item => item.id)}},
+      const priorOfferIds = workflow.offers.filter(item => item.id !== offer.id).map(item => item.id);
+      if (priorOfferIds.length) await tx.supplierRate.updateMany({
+        where: {supplierId: supplier.id, rateSource: OFFER_RATE_SOURCE, supplierReference: {in: priorOfferIds}},
         data: {isActive: false},
       });
       await tx.supplierRate.createMany({data: rooms.filter(([, , amount]) => amount).map(([roomType, label, amount]) => ({

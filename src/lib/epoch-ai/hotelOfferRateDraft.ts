@@ -118,33 +118,42 @@ export function hotelOfferChargeUnit(text: string, key: OfferChargeKey) {
   return "PER_PERSON_PER_NIGHT";
 }
 
+function roomRateWithoutItemizedCharges(text: string) {
+  const parts = text.split(/\s+\+\s+/);
+  return parts.length === 2 && /\b(?:tax|insurance)\b/i.test(parts[1]) &&
+    quotedPrice(parts[1]) ? parts[0] : text;
+}
+
 export function prepareHotelOfferRateDraft(terms: HotelOfferTerms) {
-  const double = exactPrice(terms.doubleTwin, true);
-  const single = exactPrice(terms.single, true);
+  const doubleText = roomRateWithoutItemizedCharges(terms.doubleTwin);
+  const singleText = roomRateWithoutItemizedCharges(terms.single);
+  const double = exactPrice(doubleText, true);
+  const single = exactPrice(singleText, true);
   const currency = double?.currency ?? single?.currency ?? "";
   const amount = (candidate: ReturnType<typeof exactPrice>) => candidate?.currency === currency ? candidate.amount : "";
   const extraBed = /\b(?:extra|additional) bed\b/i.test(terms.triple);
-  const roomUnit = quotedUnit(terms.doubleTwin);
+  const roomUnit = quotedUnit(doubleText);
   const chargeDraft = (key: OfferChargeKey) => {
     const text = terms[key];
     const value = amount(quotedPrice(text));
     return {amount: value, unit: value ? hotelOfferChargeUnit(text, key) : ""};
   };
-  const cityTaxIncluded = /\bcity tax (?:is )?included\b/i.test(terms.cityTax) && !/\b(?:not|excluded?)\b/i.test(terms.cityTax);
+  const combinedTaxAndInsurance = /\binsurance\b/i.test(terms.cityTax);
+  const cityTaxIncluded = !combinedTaxAndInsurance && /\bcity tax (?:is )?included\b/i.test(terms.cityTax) && !/\b(?:not|excluded?)\b/i.test(terms.cityTax);
 
   return {
     currency,
-    unit: roomUnit === quotedUnit(terms.single) ? roomUnit : "",
+    unit: roomUnit === quotedUnit(singleText) ? roomUnit : "",
     mealBasis: /(?:rates?|prices?) include breakfast|breakfast included/i.test(terms.other) ? "BB" : "",
     taxIncluded: /\bVAT included\b|\b(?:rates?|prices?) include[^.]*\bVAT\b/i.test(terms.other) ? "yes" : "",
     doubleTwin: amount(double),
     single: amount(single),
-    triple: extraBed ? "" : amount(exactPrice(terms.triple, true)),
+    triple: extraBed ? "" : amount(exactPrice(roomRateWithoutItemizedCharges(terms.triple), true)),
     extraBed: extraBed && /per night/i.test(terms.triple) ? amount(exactPrice(terms.triple)) : "",
     halfBoard: chargeDraft("halfBoard"),
     beverages: chargeDraft("beverages"),
     cityTaxIncluded,
-    cityTax: cityTaxIncluded ? {amount: "", unit: ""} : chargeDraft("cityTax"),
+    cityTax: cityTaxIncluded || combinedTaxAndInsurance ? {amount: "", unit: ""} : chargeDraft("cityTax"),
     porterage: chargeDraft("porterage"),
   };
 }

@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 
 import {
@@ -14,11 +15,14 @@ import { stableHotelIdentity } from "@/lib/epoch-ai/hotelExecutiveBrief";
 import { prepareItineraryQuoteServices } from "@/lib/quotes/itineraryQuoteServices";
 import type { SupplierHotelResult } from "@/lib/quotes/supplierHotelSelection";
 
+type PendingHotelOffer = { offerId: string; supplierId: string; supplierName: string; status: string; nextStep: string };
+
 type HotelProposal = {
   stay: QuotePreparationStay;
   rates: SupplierHotelResult[];
   selectedRateId: string;
   issue?: string;
+  pendingOffers?: PendingHotelOffer[];
 };
 
 export type PreparedQuoteHotel = { stay: QuotePreparationStay; rate?: SupplierHotelResult };
@@ -72,6 +76,8 @@ export default function EpochQuotePreparation({tour, startDate, endDate, groupSi
             : rates;
           return {
             stay, rates, selectedRateId: preferred.length === 1 ? preferred[0].rate.id : "",
+            pendingOffers: Array.isArray(data.offerStatuses) ? (data.offerStatuses as PendingHotelOffer[])
+              .filter(offer => offer.status !== "READY") : [],
             issue: rates.length ? undefined : "No active CRM rate covers this stay with both Single and Double/Twin prices in the quote currency.",
           };
         } catch (error) {
@@ -124,7 +130,7 @@ export default function EpochQuotePreparation({tour, startDate, endDate, groupSi
           Hotel stays from {proposal.source === "procurement" ? "the Hotel Procurement schedule" : "the saved tour itinerary"}.
         </p>
         <ul className="space-y-2 text-sm">
-          {proposal.hotels.map(({stay, rates, selectedRateId, issue}, index) => {
+          {proposal.hotels.map(({stay, rates, selectedRateId, issue, pendingOffers}, index) => {
             const selected = rates.find(result => result.rate.id === selectedRateId);
             return (
               <li key={index} className="space-y-2 rounded-lg border bg-white p-3">
@@ -144,6 +150,13 @@ export default function EpochQuotePreparation({tour, startDate, endDate, groupSi
                     </select>
                   </label>
                 )}
+                {pendingOffers?.map(offer => (
+                  <p key={offer.offerId} className="text-amber-900">
+                    <Link href={`/admin/suppliers/${encodeURIComponent(offer.supplierId)}#hotel-received-offers`}
+                      className="font-semibold underline">{offer.supplierName}</Link>
+                    <span> · {offer.nextStep}</span>
+                  </p>
+                ))}
                 {selected ? <p className="text-xs text-slate-700">
                   Single {selected.rate.currency} {selected.effectiveCost.singlePerPersonPerNight} per person/night.
                   {" "}Confirm allotment and supplier terms before sending.

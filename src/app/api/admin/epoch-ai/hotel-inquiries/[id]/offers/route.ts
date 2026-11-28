@@ -4,6 +4,7 @@ import { NextResponse } from "next/server";
 import { authOptions } from "@/lib/authOptions";
 import { db } from "@/lib/db";
 import { hotelOfferSource, hotelOfferUploadTooLarge, manualHotelOfferScope, maxHotelOfferFileSize, maxHotelOfferRequestSize } from "@/lib/epoch-ai/receivedHotelOffer";
+import { currentHotelOfferBlock, hotelOfferSourceOrder, hotelOfferStaySelect, loadHotelOfferWorkflow, recordedHotelOfferStay } from "@/lib/epoch-ai/hotelOfferWorkflow";
 import { HOTEL_OFFER_RATE_IMPORT_EVENT } from "@/lib/epoch-ai/hotelOfferRateDraft";
 import { requireAdminApiAccess } from "@/lib/security/requireAdminApiAccess";
 import { isRequestWithinLimit } from "@/lib/security/requestBodyLimit";
@@ -22,21 +23,30 @@ export async function GET(request: Request, { params }: Params) {
   if (!scope) return reply({ error: "Select the hotel and enter valid stay dates." }, 400);
   const offers = await db.supplierCommercialEvidence.findMany({
     where: scope,
-    orderBy: { version: "desc" },
+    orderBy: hotelOfferSourceOrder,
     select: {
       id: true, supplierId: true, version: true, sourceDate: true, sourceType: true,
       sourceSender: true, sourceSubject: true, sourceMessageId: true,
       sourceBody: true, reviewStatus: true, reviewedTerms: true,
-      acceptanceStatus: true, manualHotelStayKey: true,
-      hotelInquiry: {select: {checkIn: true, checkOut: true}},
+      acceptanceStatus: true, ...hotelOfferStaySelect,
       events: {where: {eventType: HOTEL_OFFER_RATE_IMPORT_EVENT}, take: 1, select: {id: true}},
       sourceDocument: { select: { id: true, originalFileName: true } },
     },
   });
-  return reply({offers: offers.map(({events, hotelInquiry, manualHotelStayKey, ...offer}) => {
-    const manual = manualHotelStayKey ? manualHotelOfferScope(request.url) : null;
-    const [, checkIn, checkOut] = manual ? JSON.parse(manual.manualHotelStayKey) as [string, string, string] : [];
-    return {...offer, stay: hotelInquiry ?? (checkIn && checkOut ? {checkIn, checkOut} : null), ratesSaved: events.length > 0};
+  const first = offers[0];
+  const firstStay = first && recordedHotelOfferStay(first);
+  const workflow = firstStay ? await loadHotelOfferWorkflow(db, firstStay, first.supplierId) : null;
+  const current = first && workflow?.currentBySupplier.get(first.supplierId);
+  return reply({offers: offers.map(record => {
+    const stay = recordedHotelOfferStay(record);
+    const {events, hotelInquiry: _inquiry, manualHotelStayKey: _stayKey, manualHotelTourId: _tourId, ...offer} = record;
+    return {
+      ...offer,
+      stay: stay && {checkIn: stay.checkIn, checkOut: stay.checkOut},
+      ratesSaved: events.length > 0,
+      supplierStatus: current?.supplier.status,
+      approvalBlock: currentHotelOfferBlock(offer.id, current),
+    };
   })});
 }
 
@@ -130,6 +140,7 @@ export async function POST(request: Request, { params }: Params) {
       } else {
         await tx.$queryRaw`SELECT "id" FROM "HotelInquiry" WHERE "id" = ${id} FOR UPDATE`;
       }
+      await tx.$queryRaw`SELECT "id" FROM "Supplier" WHERE "id" = ${supplierId} FOR UPDATE`;
       const previous = await tx.supplierCommercialEvidence.findFirst({
         where: scope, orderBy: { version: "desc" }, select: { id: true, version: true },
       });

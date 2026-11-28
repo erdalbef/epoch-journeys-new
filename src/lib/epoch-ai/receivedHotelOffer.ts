@@ -54,7 +54,8 @@ export async function readHotelOfferResponse<T>(response: Response, fallback: st
   if (response.status === 413) throw new Error(hotelOfferUploadTooLarge);
   const body = await response.json().catch(() => null);
   if (!response.ok || !body || typeof body !== "object" || Array.isArray(body)) {
-    throw new Error(!response.ok && typeof body?.error === "string" ? body.error : fallback);
+    const reason = body?.error ?? body?.message;
+    throw new Error(!response.ok && typeof reason === "string" ? reason : fallback);
   }
   return body as T;
 }

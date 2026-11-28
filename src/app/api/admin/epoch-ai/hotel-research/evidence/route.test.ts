@@ -138,6 +138,21 @@ describe("Selected hotel contact and facilities", () => {
     });
   });
 
+  it("suggests the reviewed Colosseo contact when search returns no usable listing", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => searchResults([])));
+
+    const response = await POST(request("Hotel Colosseo Tirana", "Tirana", "Albania"));
+    expect(response.status).toBe(200);
+    const sourceUrl = "https://hotelcolosseotirana.com/contact";
+    const email = "reservations@hotelcolosseotirana.com";
+    const body = await response.json();
+    expect(body.supplierResearch.contacts).toMatchObject([{
+      email, sourceUrl, phone: {number: "+355 4 223 0004", sourceUrl},
+      status: "requires-admin-verification",
+    }]);
+    expect(body.crmEntries).toContainEqual({kind: "email", value: email, sourceUrl});
+  });
+
   it("searches the new property name and accepts the operator's Reykjavík property page", async () => {
     const source = "https://www.islandshotel.is/is/hotelin/hilton-reykjavik/";
     const fetch = vi.fn(async (searchUrl: URL) => {

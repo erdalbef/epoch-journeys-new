@@ -1,3 +1,4 @@
+import { publishedHotelVerification } from "./hotelPublicVerification";
 import { hotelSourceMatch, type EvidenceFinding } from "./hotelEvidenceResearch";
 import { categoryForEmail } from "./hotelOfficialPageExtraction";
 import { officialHotelSearchDomain, type HotelOfficialSiteCandidate } from "./hotelOfficialSiteSelection";
@@ -144,7 +145,8 @@ export function buildHotelSupplierResearch(
   pages: WebHotelResult[],
   officialCandidates: HotelOfficialSiteCandidate[],
   contacts: HotelContactCandidate[],
-  findings: EvidenceFinding[]
+  findings: EvidenceFinding[],
+  country?: string,
 ): HotelSupplierResearch {
   const officialUrls = new Set(officialCandidates.map(candidate => candidate.sourceUrl));
   const cityKey = locationWords(city);
@@ -193,9 +195,18 @@ export function buildHotelSupplierResearch(
     if (!uniqueContacts.has(contact.email)) uniqueContacts.set(contact.email, contact);
   }
 
+  const orderedContacts = [...uniqueContacts.values()];
+  const reviewed = country && publishedHotelVerification(hotelName, city, country);
+  const published = reviewed && orderedContacts.every(contact => contact.corroboratingSourceUrl)
+    ? {
+      email: reviewed.email, sourceUrl: reviewed.source, sourceTitle: `${hotelName} published contact`,
+      status: "requires-admin-verification" as const, category: reviewed.contactType,
+      phone: {number: reviewed.phone, sourceUrl: reviewed.source},
+    } : undefined;
+
   return {
-    contacts: [...uniqueContacts.values()].slice(0, 3),
-    phone: phones.values().next().value,
+    contacts: (published ? [published, ...orderedContacts.filter(contact => contact.email !== published.email)] : orderedContacts).slice(0, 3),
+    phone: published?.phone ?? phones.values().next().value,
     suggestedFacilitiesSource: publishedFacilities.find(item => item.evidence)?.evidence?.sourceUrl ??
       findings.find(item => (item.topic === "facilities" || item.topic === "accessibility") &&
         sourceByUrl.has(item.sourceUrl))?.sourceUrl,

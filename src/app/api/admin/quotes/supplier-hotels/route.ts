@@ -7,8 +7,7 @@ import { NextResponse } from "next/server";
 
 import { db } from "@/lib/db";
 import { requireAdminApiAccess } from "@/lib/security/requireAdminApiAccess";
-import { hotelOfferDeadlines } from "@/lib/epoch-ai/hotelOfferDeadlines";
-import { hotelOfferTerms } from "@/lib/epoch-ai/receivedHotelOffer";
+import { hotelOfferRateNextSteps, hotelOfferRateReadiness, loadHotelOfferWorkflow } from "@/lib/epoch-ai/hotelOfferWorkflow";
 import { OFFER_RATE_SOURCE } from "@/lib/epoch-ai/hotelOfferRateDraft";
 
 type EffectiveCostStatus =
@@ -691,39 +690,28 @@ export async function GET(
     const isExactOfferRate = (rate: HotelRate) => rate.rateSource === OFFER_RATE_SOURCE &&
       Boolean(startDate && endDate && rate.validFrom.getTime() === startDate.getTime() &&
         rate.validTo.getTime() === endDate.getTime() && withinTravelAndPax(rate));
-    const offerIds = [...new Set(suppliers.flatMap(supplier => supplier.services.flatMap(service =>
-      service.rates.filter(isExactOfferRate).flatMap(rate => rate.supplierReference ? [rate.supplierReference] : []))))];
     const checkIn = startDate?.toISOString().slice(0, 10);
     const checkOut = endDate?.toISOString().slice(0, 10);
-    const offers = tourId && checkIn && checkOut && offerIds.length
-      ? await db.supplierCommercialEvidence.findMany({
-        where: {
-          id: { in: offerIds },
-          reviewStatus: "TERMS_VERIFIED",
-          acceptanceStatus: { notIn: ["REJECTED", "SUPERSEDED"] },
-          newerEvidence: { none: {} },
-          OR: [
-            { hotelInquiry: { tourId, destination: { equals: city, mode: "insensitive" }, checkIn, checkOut } },
-            { manualHotelTourId: tourId, manualHotelStayKey: { equals: JSON.stringify([city, checkIn, checkOut]), mode: "insensitive" } },
-          ],
-        },
-        select: { id: true, supplierId: true, reviewedTerms: true, sourceDate: true, acceptanceStatus: true },
-      })
-      : [];
-    const currentOffers = new Map(offers.map(offer => [offer.id, offer]));
+    const workflow = tourId && checkIn && checkOut && checkIn < checkOut
+      ? await loadHotelOfferWorkflow(db, {tourId, city, checkIn, checkOut})
+      : null;
     const today = new Date().toISOString().slice(0, 10);
-    const availableForQuote = (rate: HotelRate) => rate.rateSource !== OFFER_RATE_SOURCE ||
-      Boolean(isExactOfferRate(rate) && rate.supplierReference &&
-        currentOffers.get(rate.supplierReference)?.supplierId === rate.supplierId);
-
-    const needsOfferReconfirmation = (rate: HotelRate) => {
-      const offer = rate.rateSource === OFFER_RATE_SOURCE && rate.supplierReference
-        ? currentOffers.get(rate.supplierReference) : undefined;
-      if (!offer || offer.acceptanceStatus === "RECORDED_ACCEPTED") return false;
-      const terms = hotelOfferTerms.safeParse(offer.reviewedTerms);
-      return !terms.success || hotelOfferDeadlines(terms.data, offer.sourceDate?.toISOString().slice(0, 10) ?? "", checkIn ?? "")
-        .some(deadline => deadline.kind === "expiry" && deadline.date < today);
+    const offerStatuses = [...workflow?.currentBySupplier.values() ?? []].map(offer => {
+      const status = hotelOfferRateReadiness(offer, checkIn ?? "", today);
+      return {
+        offerId: offer.id, supplierId: offer.supplierId, supplierName: offer.supplier.name,
+        status, nextStep: hotelOfferRateNextSteps[status], ratesSaved: offer.events.length > 0,
+      };
+    });
+    const offerStatusesBySupplier = new Map(offerStatuses.map(offer => [offer.supplierId, offer]));
+    const availableForQuote = (rate: HotelRate) => {
+      if (rate.rateSource !== OFFER_RATE_SOURCE) return true;
+      const current = offerStatusesBySupplier.get(rate.supplierId);
+      return isExactOfferRate(rate) && current?.ratesSaved && current.offerId === rate.supplierReference &&
+        (current.status === "READY" || current.status === "RECONFIRM");
     };
+    const needsOfferReconfirmation = (rate: HotelRate) => rate.rateSource === OFFER_RATE_SOURCE &&
+      offerStatusesBySupplier.get(rate.supplierId)?.status === "RECONFIRM";
 
     const hotels =
       suppliers
@@ -1138,6 +1126,7 @@ export async function GET(
         },
 
         hotels,
+        offerStatuses,
       },
       {
         status: 200,

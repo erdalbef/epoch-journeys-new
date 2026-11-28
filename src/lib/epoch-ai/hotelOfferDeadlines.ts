@@ -10,11 +10,25 @@ function calendarDate(date: string, days: number) {
   return new Date(midnight.getTime() + days * day).toISOString().slice(0, 10);
 }
 
+const monthNames = "january february march april may june july august september october november december".split(" ");
+const writtenExpiry = /\b(?:valid (?:until|through)|expires? on)\s+(?:(?:monday|tuesday|wednesday|thursday|friday|saturday|sunday),?\s+)?(?:(\d{4}-\d{2}-\d{2})|(\d{1,2})\s+([a-z]+)\s+(\d{4}))\b/gi;
+
+function absoluteOfferExpiry(text: string) {
+  const dates = [...text.matchAll(writtenExpiry)].map(([, iso, dayOfMonth, month, year]) => {
+    if (iso) return calendarDate(iso, 0);
+    const monthNumber = monthNames.indexOf((month ?? "").toLowerCase()) + 1;
+    return monthNumber ? calendarDate(`${year}-${String(monthNumber).padStart(2, "0")}-${dayOfMonth.padStart(2, "0")}`, 0) : null;
+  });
+  return dates.length && dates.every(date => date === dates[0]) ? dates[0] : null;
+}
+
 export function hotelOfferDeadlines(terms: HotelOfferTerms, received: string, checkIn: string): HotelOfferDeadline[] {
   const deadlines: HotelOfferDeadline[] = [];
   const validity = terms.validity.match(/\bvalid for (\d{1,3}) (?:calendar )?days? (?:from|after) receipt\b/i);
-  const expiry = validity && Number(validity[1]) > 0 ? calendarDate(received, Number(validity[1])) : null;
-  if (expiry) deadlines.push({date: expiry, label: "Calculated offer expiry from receipt date", kind: "expiry"});
+  const explicitExpiry = absoluteOfferExpiry(terms.validity);
+  const calculatedExpiry = validity && Number(validity[1]) > 0 ? calendarDate(received, Number(validity[1])) : null;
+  const expiry = explicitExpiry ?? calculatedExpiry;
+  if (expiry) deadlines.push({date: expiry, label: explicitExpiry ? "Offer expiry stated by supplier" : "Calculated offer expiry from receipt date", kind: "expiry"});
 
   const [block, reductions] = terms.cancellation.split(/\breduction of room nights within block\s*:/i, 2);
   if (/cancellation of (?:the )?entire room block\s*:/i.test(block)) {

@@ -1,10 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { hotelOfferRateExtractionFormat } from "@/lib/epoch-ai/hotelOfferRateExtraction";
 import { POST } from "./route";
+import { hotelOfferFields } from "@/lib/epoch-ai/receivedHotelOffer";
 
-const { findFirst, readFinanceFile } = vi.hoisted(() => ({findFirst: vi.fn(), readFinanceFile: vi.fn()}));
+const { findFirst, findMany, readFinanceFile } = vi.hoisted(() => ({findFirst: vi.fn(), findMany: vi.fn(), readFinanceFile: vi.fn()}));
 vi.mock("server-only", () => ({}));
-vi.mock("@/lib/db", () => ({db: {supplierCommercialEvidence: {findFirst}}}));
+vi.mock("@/lib/db", () => ({db: {supplierCommercialEvidence: {findFirst, findMany}}}));
 vi.mock("@/lib/storage/finansFileStorage", () => ({readFinanceFile}));
 vi.mock("@/lib/security/requireAdminApiAccess", () => ({requireAdminApiAccess: async () => null}));
 vi.mock("@/lib/authOptions", () => ({authOptions: {}}));
@@ -27,6 +28,11 @@ const output = {
   cityTax: {value: "0.60", unit: "PER_PERSON_PER_NIGHT", source: separatelyChargedTax},
 };
 
+const verifiedOffer = {
+  id: "offer", supplierId: "hotel", reviewStatus: "TERMS_VERIFIED", acceptanceStatus: "NOT_ESTABLISHED",
+  reviewedTerms: Object.fromEntries(Object.keys(hotelOfferFields).map(field => [field, ""])),
+  hotelInquiry: {tourId: "balkans", supplierId: "hotel", destination: "Sarajevo", checkIn: "2027-05-07", checkOut: "2027-05-08"},
+};
 function draft() {
   return POST(new Request("https://epoch.example/api/admin/epoch-ai/hotel-inquiries/inquiry/offers/offer", {
     method: "POST", headers: {origin: "https://epoch.example", "content-type": "application/json"},
@@ -40,6 +46,7 @@ describe("Drafting rates from original hotel offers", () => {
     vi.resetAllMocks();
     vi.stubEnv("OPENAI_API_KEY", "test-key");
     vi.stubGlobal("fetch", fetchModel);
+    findMany.mockResolvedValue([verifiedOffer]);
     fetchModel.mockImplementation(async () => Response.json({output_text: JSON.stringify(output)}));
   });
   afterEach(() => {
@@ -49,7 +56,7 @@ describe("Drafting rates from original hotel offers", () => {
 
   it("reads original email text and ignores an AI excerpt absent from the source", async () => {
     findFirst.mockResolvedValue({
-      id: "offer", reviewStatus: "TERMS_VERIFIED",
+      ...verifiedOffer,
       sourceBody: `Group offer\nDouble/twin: ${groupDouble}\nCity tax: ${separatelyChargedTax}`,
     });
     const response = await draft();
@@ -67,7 +74,7 @@ describe("Drafting rates from original hotel offers", () => {
 
   it("passes the original private PDF to the model for a previously reviewed offer", async () => {
     findFirst.mockResolvedValue({
-      id: "offer", reviewStatus: "TERMS_VERIFIED",
+      ...verifiedOffer,
       sourceDocument: {originalFileName: "Crystal.pdf", fileSize: 8,
         storagePath: "https://store.private.blob.vercel-storage.com/offer.pdf"},
     });

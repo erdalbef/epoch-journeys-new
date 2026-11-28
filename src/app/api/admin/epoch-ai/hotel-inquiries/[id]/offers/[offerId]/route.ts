@@ -4,6 +4,7 @@ import { authOptions } from "@/lib/authOptions";
 import { db } from "@/lib/db";
 import { hotelOfferRateExtractionFormat, readHotelOfferRateExtraction } from "@/lib/epoch-ai/hotelOfferRateExtraction";
 import { readAiAttachment } from "@/lib/epoch-ai/documentText";
+import { currentHotelOfferBlock, hotelOfferStaySelect, loadHotelOfferWorkflow, recordedHotelOfferStay, verifiedHotelOfferTerms } from "@/lib/epoch-ai/hotelOfferWorkflow";
 import { hotelOfferFields, hotelOfferTerms, manualHotelOfferScope, maxHotelOfferFileSize } from "@/lib/epoch-ai/receivedHotelOffer";
 import { checkRateLimit } from "@/lib/rate-limit";
 import { requireAdminApiAccess } from "@/lib/security/requireAdminApiAccess";
@@ -34,7 +35,8 @@ export async function POST(request: Request, { params }: Params) {
   const offer = await db.supplierCommercialEvidence.findFirst({
     where: { id: offerId, ...scope },
     select: {
-      id: true, reviewStatus: true, acceptanceStatus: true, sourceBody: true,
+      id: true, supplierId: true, reviewStatus: true, acceptanceStatus: true, reviewedTerms: true, sourceBody: true,
+      ...hotelOfferStaySelect,
       sourceDocument: { select: { storagePath: true, originalFileName: true, fileSize: true } },
     },
   });
@@ -63,9 +65,12 @@ export async function POST(request: Request, { params }: Params) {
 
   const drafting = input?.action === "draft-rates";
   if (!drafting && input?.action !== "analyze") return reply({ error: "Invalid offer action." }, 400);
-  if (drafting && (offer.reviewStatus !== "TERMS_VERIFIED" ||
-      offer.acceptanceStatus === "REJECTED" || offer.acceptanceStatus === "SUPERSEDED")) {
-    return reply({ error: "Use a reviewed, current offer to prepare rates." }, 409);
+  if (drafting) {
+    const stay = recordedHotelOfferStay(offer);
+    if (!stay || !verifiedHotelOfferTerms(offer)) return reply({ error: "Verify the current offer before preparing rates." }, 409);
+    const workflow = await loadHotelOfferWorkflow(db, stay, offer.supplierId);
+    const blocked = currentHotelOfferBlock(offer.id, workflow.currentBySupplier.get(offer.supplierId));
+    if (blocked) return reply({error: blocked}, 409);
   }
   if (!drafting && offer.reviewStatus !== "REVIEW_PENDING") {
     return reply({ error: "These terms have already been reviewed." }, 409);
@@ -90,7 +95,10 @@ export async function POST(request: Request, { params }: Params) {
       if (!bytes || bytes.byteLength > maxHotelOfferFileSize) {
         return reply({ error: "The stored attachment could not be analyzed." }, 422);
       }
-      const attachment = await readAiAttachment(new File([new Uint8Array(bytes)], file.originalFileName));
+      const attachment = await readAiAttachment(new File([new Uint8Array(bytes)], file.originalFileName)).catch(() => null);
+      if (!attachment) {
+        return reply({ error: "No readable text could be extracted from this attachment. Download the original and enter its terms manually." }, 422);
+      }
       content.push(attachment.kind === "pdf"
         ? { type: "input_file", filename: attachment.fileName, file_data: attachment.content }
         : { type: "input_text", text: attachment.content });

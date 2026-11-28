@@ -23,8 +23,8 @@ export function SupplierRatesLink({supplierId}: {supplierId: string}) {
     className="font-semibold text-blue-800 underline">Open Supplier CRM Rates</Link>;
 }
 
-export default function HotelOfferRateDraft({terms, url, analysisUrl, checkIn, checkOut}: {
-  terms: HotelOfferTerms; url: string; analysisUrl: string; checkIn: string; checkOut: string;
+export default function HotelOfferRateDraft({terms, url, analysisUrl, checkIn, checkOut, supplierInactive}: {
+  terms: HotelOfferTerms; url: string; analysisUrl: string; checkIn: string; checkOut: string; supplierInactive?: boolean;
 }) {
   const approvalRequirementsId = useId();
   const router = useRouter();
@@ -33,6 +33,7 @@ export default function HotelOfferRateDraft({terms, url, analysisUrl, checkIn, c
   const [extracting, setExtracting] = useState(false);
   const [supplierConfirmation, setSupplierConfirmation] = useState("");
   const [confirmed, setConfirmed] = useState(false);
+  const [activateSupplier, setActivateSupplier] = useState(false);
   const [confirmIndicativeCharges, setConfirmIndicativeCharges] = useState(false);
   const [busy, setBusy] = useState(false);
   const [saved, setSaved] = useState<{supplierId: string; supplierActive?: boolean}>();
@@ -42,7 +43,7 @@ export default function HotelOfferRateDraft({terms, url, analysisUrl, checkIn, c
     .filter(key => draft[key].amount && (hotelOfferPriceQualifier(terms[key]) || hotelOfferPriceQualifier(sources[key] ?? "")));
   const chargesNeedConfirmation = Boolean(indicativeCharges.length && !confirmIndicativeCharges);
   const approval = hotelOfferRateApproval.safeParse({
-    ...draft, taxIncluded: draft.taxIncluded === "yes", supplierConfirmation, activateSupplier: false, confirmIndicativeCharges,
+    ...draft, taxIncluded: draft.taxIncluded === "yes", supplierConfirmation, activateSupplier: Boolean(supplierInactive && activateSupplier), confirmIndicativeCharges,
     confirmation: "APPROVE_HOTEL_OFFER_RATES",
   });
   const approvalIssues = [
@@ -195,6 +196,10 @@ export default function HotelOfferRateDraft({terms, url, analysisUrl, checkIn, c
         onChange={event => setSupplierConfirmation(event.target.value)} maxLength={500} placeholder="Confirmation email subject and date or document reference"/></label>
       <label className="flex items-start gap-2"><input type="checkbox" className="mt-1" checked={confirmed}
         onChange={event => setConfirmed(event.target.checked)}/>I checked the supplier’s written confirmation for this stay, including the room allotment, rate units and charges.</label>
+      {supplierInactive && <label className="flex items-start gap-2">
+        <input type="checkbox" className="mt-1" checked={activateSupplier} onChange={event=>setActivateSupplier(event.target.checked)} />
+        Activate this supplier when saving these rates so it can appear in the quote form.
+      </label>}
       {error ? <p role="alert">{error}</p> : null}
       <div aria-live="polite" id={approvalRequirementsId}>
         {approvalIssues.length ? <div className="rounded border border-amber-200 bg-amber-50 p-2 text-sm text-amber-950">

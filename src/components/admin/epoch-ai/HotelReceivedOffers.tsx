@@ -12,7 +12,7 @@ type Offer = {
   id: string;
   supplierId: string;
   version: number;
-  sourceDate: string;
+  sourceDate: string | null;
   sourceSender: string;
   sourceSubject: string;
   sourceMessageId: string | null;
@@ -21,6 +21,8 @@ type Offer = {
   acceptanceStatus: string;
   stay: {checkIn: string; checkOut: string} | null;
   ratesSaved: boolean;
+  approvalBlock: string | null;
+  supplierStatus?: string;
   reviewedTerms: HotelOfferTerms | null;
   sourceDocument: { id: string; originalFileName: string } | null;
 };
@@ -42,6 +44,7 @@ export default function HotelReceivedOffers(props: ({ inquiryId: string } | { ma
   const [terms, setTerms] = useState(emptyTerms);
   const [busy, setBusy] = useState(false);
   const [status, setStatus] = useState("");
+  const [offerError, setOfferError] = useState<{ id: string; message: string } | null>(null);
   const [attachmentSize, setAttachmentSize] = useState<number | null>(null);
 
   async function load() {
@@ -54,6 +57,7 @@ export default function HotelReceivedOffers(props: ({ inquiryId: string } | { ma
   async function run(action: () => Promise<void>) {
     setBusy(true);
     setStatus("");
+    setOfferError(null);
     try { await action(); }
     catch (error) { setStatus(error instanceof Error ? error.message : "Could not complete the offer action."); }
     finally { setBusy(false); }
@@ -77,15 +81,24 @@ export default function HotelReceivedOffers(props: ({ inquiryId: string } | { ma
   }
 
   async function offerAction(id: string, action: "analyze" | "review") {
+    try {
+      await submitOfferAction(id, action);
+    } catch (error) {
+      setOfferError({id, message: error instanceof Error ? error.message : "Could not complete the offer action."});
+    }
+  }
+
+  async function submitOfferAction(id: string, action: "analyze" | "review") {
     const response = await fetch(`${url}/${encodeURIComponent(id)}${query}`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(action === "review" ? { action, confirmation: "VERIFY_OFFER_TERMS", terms } : { action }),
     });
     const result = await readHotelOfferResponse<{terms?: HotelOfferTerms; reviewed?: boolean}>(
-      response, "Could not complete the offer action.",
+      response, action === "analyze" ? "Could not extract this offer. Try again or enter its terms manually." : "Could not save the reviewed terms.",
     );
     if (action === "review" && !result.reviewed) throw new Error("Could not confirm the review was saved.");
+    if (action === "analyze" && !result.terms) throw new Error("The analysis returned no terms. Enter terms manually or retry.");
     if (action === "analyze" && result.terms) {
       setEditing(id);
       setTerms(result.terms);
@@ -138,13 +151,13 @@ export default function HotelReceivedOffers(props: ({ inquiryId: string } | { ma
     {busy && <p role="status">Working…</p>}
     {!busy && offers === null && <button type="button" className={buttonClass} onClick={()=>void run(load)}>Reload offers</button>}
     {offers?.map(offer => {
-      const showPolicyLink = props.policiesHref && offer === offers[0] && offer.reviewStatus === "TERMS_VERIFIED" &&
+      const showPolicyLink = props.policiesHref && !offer.approvalBlock && offer.reviewStatus === "TERMS_VERIFIED" &&
         offer.reviewedTerms && !["REJECTED", "SUPERSEDED"].includes(offer.acceptanceStatus) &&
         hotelOfferPolicyFields.some(key => offer.reviewedTerms?.[key]);
       return (
       <section key={offer.id} className="space-y-2 rounded border bg-white p-3">
         <p className="font-semibold">Version {offer.version} · {offer.sourceSubject}</p>
-        <p>{offer.sourceDate.slice(0, 10)} · {offer.sourceSender} · {offer.reviewStatus === "TERMS_VERIFIED" ? "Terms verified" : "Received — pending review"}</p>
+        <p>{offer.sourceDate?.slice(0, 10) || "Received date unavailable"} · {offer.sourceSender} · {offer.reviewStatus === "TERMS_VERIFIED" ? "Terms verified" : "Received — pending review"}</p>
         {offer.sourceMessageId && <p>Message ID: {offer.sourceMessageId}</p>}
         {offer.sourceBody && <details>
           <summary className="cursor-pointer">View original email text</summary>
@@ -166,14 +179,18 @@ export default function HotelReceivedOffers(props: ({ inquiryId: string } | { ma
         </dl>}
         {showPolicyLink && props.policiesHref ? <Link href={props.policiesHref}
           className="font-semibold text-blue-800 underline">View offer policies and deadlines</Link> :
-          offer === offers[0] && offer.reviewStatus === "TERMS_VERIFIED" ? <OfferDeadlines offer={offer}/> : null}
-        {offer.ratesSaved ? <p className="font-semibold">Rates saved in Supplier CRM. <SupplierRatesLink supplierId={offer.supplierId}/></p> :
-          offer === offers[0] && offer.reviewStatus === "TERMS_VERIFIED" && offer.reviewedTerms && offer.stay &&
+          !offer.approvalBlock && offer.reviewStatus === "TERMS_VERIFIED" ? <OfferDeadlines offer={{ ...offer, sourceDate: offer.sourceDate ?? "" }}/> : null}
+        {offer.ratesSaved ? <p className="font-semibold">Rates saved in Supplier CRM. {offer.supplierStatus === "INACTIVE" && "Activate this supplier in CRM to use its rates in a quote. "}
+          <SupplierRatesLink supplierId={offer.supplierId}/></p> :
+          !offer.approvalBlock && offer.reviewStatus === "TERMS_VERIFIED" && offer.reviewedTerms && offer.stay &&
             !["REJECTED", "SUPERSEDED"].includes(offer.acceptanceStatus) ? <details className="rounded border border-blue-200 p-2">
               <summary className="cursor-pointer font-semibold text-[#001F3F]">Prepare rate draft with Epoch AI</summary>
               <HotelOfferRateDraft terms={offer.reviewedTerms} {...offer.stay} url={`${url}/${encodeURIComponent(offer.id)}/rates${query}`}
-                analysisUrl={`${url}/${encodeURIComponent(offer.id)}${query}`}/>
+                supplierInactive={offer.supplierStatus === "INACTIVE"} analysisUrl={`${url}/${encodeURIComponent(offer.id)}${query}`}/>
             </details> : null}
+        {offer.approvalBlock && offer.reviewStatus === "TERMS_VERIFIED" &&
+          <p className="text-slate-700">{offer.approvalBlock}</p>}
+        {offerError?.id === offer.id && <p role="alert" className="text-red-800">{offerError.message}</p>}
         {editing === offer.id && <div className="space-y-2">
           <div className="grid gap-2 sm:grid-cols-2">{fields.map(([key,label])=><label key={key}>{label}
             <textarea className={inputClass} value={terms[key]} rows={2} maxLength={2000} disabled={busy}

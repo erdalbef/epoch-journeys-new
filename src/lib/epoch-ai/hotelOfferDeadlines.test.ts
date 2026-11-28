@@ -18,6 +18,11 @@ describe("hotel offer deadlines", () => {
     expect(deadlines[5].label).toContain("confirm exact time");
   });
 
+  it("reads the written expiry date from the Ibis offer", () => {
+    expect(hotelOfferDeadlines({...terms, validity: "Offer is valid until Monday, 7 December 2026.", cancellation: ""},
+      "2026-11-25", "2027-05-07")).toEqual([{date: "2026-12-07", kind: "expiry", label: "Offer expiry stated by supplier"}]);
+  });
+
   it("leaves ambiguous terms and missing or invalid source dates unresolved", () => {
     expect(hotelOfferDeadlines({...terms, validity: "10 business days", cancellation: "Penalty may apply"},
       "2026-11-25", "2027-05-17")).toEqual([]);

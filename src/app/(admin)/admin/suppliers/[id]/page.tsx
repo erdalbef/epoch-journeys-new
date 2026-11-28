@@ -19,7 +19,8 @@ import OfferReminderButton from "@/components/admin/epoch-ai/OfferReminderButton
 import { deadlineReminderToday, HOTEL_REMINDER_EVENT } from "@/lib/epoch-ai/hotelDeadlineReminders";
 import { hotelOfferDeadlines } from "@/lib/epoch-ai/hotelOfferDeadlines";
 import { contactEmail, hotelInquirySubject } from "@/lib/epoch-ai/hotelProcurement";
-import { hotelOfferFields, hotelOfferPolicyFields, hotelOfferTerms, manualHotelOfferStay } from "@/lib/epoch-ai/receivedHotelOffer";
+import { currentHotelOfferFilter, hotelOfferSourceOrder, verifiedHotelOfferTerms } from "@/lib/epoch-ai/hotelOfferWorkflow";
+import { hotelOfferFields, hotelOfferPolicyFields, manualHotelOfferStay } from "@/lib/epoch-ai/receivedHotelOffer";
 
 const offerPolicySelect = {
   id: true, version: true, sourceDate: true, reviewedTerms: true, reviewStatus: true, acceptanceStatus: true,
@@ -200,10 +201,10 @@ export default async function SupplierDetailPage({
     take: 25,
     select: { id: true, destination: true, checkIn: true, checkOut: true, rooms: true, recipient: true, subject: true,
       tour: { select: { title: true } },
-      receivedOffers: {orderBy: {version: "desc"}, take: 1, select: offerPolicySelect} },
+      receivedOffers: {where: currentHotelOfferFilter, orderBy: hotelOfferSourceOrder, take: 1, select: offerPolicySelect} },
   }), db.supplierCommercialEvidence.findMany({
     where: { supplierId: supplier.id, manualHotelTourId: { not: null } },
-    orderBy: [{createdAt: "desc"}, {version: "desc"}],
+    orderBy: hotelOfferSourceOrder,
     distinct: ["manualHotelTourId", "manualHotelStayKey"],
     take: 25,
     select: { ...offerPolicySelect, manualHotelTourId: true, manualHotelStayKey: true, manualHotelTour: { select: { title: true } } },
@@ -227,9 +228,9 @@ export default async function SupplierDetailPage({
       checkIn: offer.stay[1], checkOut: offer.stay[2], sourceAnchor: `received-offer-${offer.id}`,
     })),
   ].flatMap(({offer, ...stay}) => {
-    if (!offer || offer.reviewStatus !== "TERMS_VERIFIED" || ["REJECTED", "SUPERSEDED"].includes(offer.acceptanceStatus)) return [];
-    const terms = hotelOfferTerms.safeParse(offer.reviewedTerms);
-    return terms.success && hotelOfferPolicyFields.some(field => terms.data[field]) ? [{...stay, offer, terms: terms.data}] : [];
+    if (!offer) return [];
+    const terms = verifiedHotelOfferTerms(offer);
+    return terms && hotelOfferPolicyFields.some(field => terms[field]) ? [{...stay, offer, terms}] : [];
   }).sort((a, b) => a.checkIn.localeCompare(b.checkIn));
   const policiesHref = `/admin/suppliers/${encodeURIComponent(supplier.id)}?tab=policies#supplier-workspace`;
   const today = deadlineReminderToday();
@@ -614,7 +615,7 @@ export default async function SupplierDetailPage({
       </section>
 
       {(offerInquiries.length > 0 || manualOffersWithStay.length > 0) && <section className="space-y-3 rounded-2xl border bg-white p-5">
-        <h2 className="text-lg font-semibold">Received hotel offers</h2>
+        <h2 id="hotel-received-offers" className="scroll-mt-24 text-lg font-semibold">Received hotel offers</h2>
         {manualOffersWithStay.map(({ id: offerId, manualHotelTourId, manualHotelStayKey, manualHotelTour, stay }) => {
           const [city, checkIn, checkOut] = stay;
           return <div key={`${manualHotelTourId}:${manualHotelStayKey}`} id={`received-offer-${offerId}`} className="scroll-mt-28 space-y-1 text-sm">

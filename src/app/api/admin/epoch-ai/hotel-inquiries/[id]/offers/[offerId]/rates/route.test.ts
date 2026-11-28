@@ -34,6 +34,13 @@ const terms = {
   payment: "", cancellation: "", validity: "10 days", other: "Rates include breakfast and VAT.",
 };
 
+const currentOffer = {
+  id: "offer", supplierId: "hotel", version: 2, reviewStatus: "TERMS_VERIFIED",
+  acceptanceStatus: "NOT_ESTABLISHED", reviewedTerms: terms,
+  sourceDate: new Date("2026-11-25T00:00:00Z"),
+  supplier: {name: "Ibis", status: "ACTIVE"}, events: [{id: "rate-approved"}],
+};
+
 const approval = {
   ...prepareHotelOfferRateDraft(terms),
   unit: "PER_ROOM_PER_NIGHT", taxIncluded: true, supplierConfirmation: "Confirmed by Hotel Sales in email May 1",
@@ -58,9 +65,9 @@ describe("Supplier rates from reviewed hotel offers", () => {
     vi.resetAllMocks();
     db.tx.supplierCommercialEvidence.findFirst.mockResolvedValueOnce({
       id: "offer", supplierId: "hotel", reviewStatus: "TERMS_VERIFIED", reviewedTerms: terms, version: 2,
-      hotelInquiry: {supplierId: "hotel", destination: "Belgrade", checkIn: "2027-05-17", checkOut: "2027-05-19"},
+      hotelInquiry: {tourId: "balkans", supplierId: "hotel", destination: "Belgrade", checkIn: "2027-05-17", checkOut: "2027-05-19"},
     }).mockResolvedValueOnce(null);
-    db.tx.supplierCommercialEvidence.findMany.mockResolvedValue([{id: "earlier-offer"}]);
+    db.tx.supplierCommercialEvidence.findMany.mockResolvedValue([currentOffer, {...currentOffer, id: "earlier-offer", version: 3, sourceDate: new Date("2026-11-19"), reviewStatus: "REVIEW_PENDING"}]);
     db.tx.supplier.findUnique.mockResolvedValue({id: "hotel", status: "ACTIVE", type: "HOTEL", country: "Serbia"});
     db.tx.supplierService.findMany.mockResolvedValue([{id: "accommodation"}]);
   });
@@ -145,12 +152,13 @@ describe("Supplier rates from reviewed hotel offers", () => {
 
     const dates = "&startDate=2027-05-17&endDate=2027-05-19";
     db.eligibleOffers.mockImplementation(async (args) => args.where.OR[0].hotelInquiry.tourId === "balkans"
-      ? [{id: "offer", supplierId: "hotel", acceptanceStatus: "NOT_ESTABLISHED", reviewedTerms: terms}]
+      ? [currentOffer]
       : []);
     const matching = await (await quote("&tourId=balkans" + dates)).json();
     expect(db.eligibleOffers).toHaveBeenCalledWith(expect.objectContaining({
       where: expect.objectContaining({
-        id: {in: ["offer"]}, reviewStatus: "TERMS_VERIFIED", newerEvidence: {none: {}},
+        acceptanceStatus: {notIn: ["REJECTED", "SUPERSEDED"]},
+        OR: expect.arrayContaining([expect.objectContaining({hotelInquiry: expect.objectContaining({tourId: "balkans"})})]),
       }),
     }));
     expect(matching.hotels.find((item: {rate: {staySpecific: boolean}}) => item.rate.staySpecific)).toMatchObject({
@@ -165,7 +173,7 @@ describe("Supplier rates from reviewed hotel offers", () => {
     expect(otherTour.hotels).toHaveLength(1);
     expect(noTour.hotels).toHaveLength(1);
     db.eligibleOffers.mockResolvedValue([{
-      id: "offer", supplierId: "hotel", acceptanceStatus: "NOT_ESTABLISHED",
+      ...currentOffer,
       sourceDate: new Date("2020-01-01"), reviewedTerms: {...terms, validity: "Valid for 10 days from receipt"},
     }]);
     const expired = await (await quote("&tourId=balkans" + dates)).json();
@@ -174,6 +182,36 @@ describe("Supplier rates from reviewed hotel offers", () => {
     });
     expect(otherDates.hotels).toHaveLength(1);
     expect(otherDates.hotels[0].rate.staySpecific).toBe(false);
+  });
+
+  it("blocks an older reviewed offer when the later supplier reply still needs review", async () => {
+    db.tx.supplierCommercialEvidence.findMany.mockResolvedValue([
+      {...currentOffer, id: "newer", version: 3, sourceDate: new Date("2026-11-26"), reviewStatus: "REVIEW_PENDING"},
+      currentOffer,
+    ]);
+    const response = await save(approval);
+    expect(response.status).toBe(409);
+    expect(await response.json()).toMatchObject({error: expect.stringContaining("2026-11-26")});
+    expect(db.tx.supplierRate.createMany).not.toHaveBeenCalled();
+  });
+
+  it("explains absent CRM rates even when no accommodation service exists", async () => {
+    db.supplier.findMany.mockResolvedValue([]);
+    db.eligibleOffers.mockResolvedValue([{...currentOffer, events: []}]);
+    const response = await quote("&tourId=balkans&startDate=2027-05-17&endDate=2027-05-19");
+    expect(await response.json()).toMatchObject({
+      hotels: [], offerStatuses: [{supplierName: "Ibis", status: "APPROVE_RATES"}],
+    });
+  });
+
+  it("keeps quoted base prices separate from combined tax and insurance", () => {
+    expect(prepareHotelOfferRateDraft({...terms,
+      doubleTwin: "44.62 EUR per person per day + 1.79 EUR tax and insurance per person per day.",
+      single: "79.25 EUR + 1.79 EUR tax and insurance per day.",
+      triple: "33.08 EUR per person per day + 1.79 EUR tax and insurance per person per day.",
+      cityTax: "1.79 EUR tax and insurance per person per day included in stated prices.",
+    })).toMatchObject({doubleTwin: "44.62", single: "79.25", triple: "33.08", unit: "",
+      currency: "EUR", cityTaxIncluded: false, cityTax: {amount: "", unit: ""}});
   });
 
   it("returns the existing result when the same approval is retried", async () => {

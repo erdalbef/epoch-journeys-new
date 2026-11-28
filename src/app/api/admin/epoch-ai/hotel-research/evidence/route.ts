@@ -49,7 +49,7 @@ export async function POST(request:Request){
       }
     }
     const searchedAt = new Date().toISOString();
-    function compile() {
+    function compile(includeReviewedContact = false) {
       const pages = [...pagesByUrl.values()];
       const officialPages = selectHotelOfficialSiteCandidates(hotelName, pages, pages.length);
       const candidateUrls = new Set(officialPages.map(candidate => candidate.sourceUrl));
@@ -58,7 +58,10 @@ export async function POST(request:Request){
       const prioritizedPages = [...pages].sort((a, b) => priority(b) - priority(a));
       const structuredResearch = extractStructuredHotelResearch(hotelName, prioritizedPages);
       const report = compileHotelEvidence(hotelName, city, country, pages, searchedAt);
-      const supplierResearch = buildHotelSupplierResearch(hotelName, city, pages, officialPages, structuredResearch.contacts, report.findings);
+      const supplierResearch = buildHotelSupplierResearch(
+        hotelName, city, pages, officialPages, structuredResearch.contacts, report.findings,
+        includeReviewedContact ? country : undefined,
+      );
       const crmEntries = buildHotelCrmEntries(city, pages, officialPages, supplierResearch, structuredResearch.capacities);
       return {report, structuredResearch, officialSiteCandidates: officialPages.slice(0, 5), supplierResearch, crmEntries};
     }
@@ -95,7 +98,7 @@ export async function POST(request:Request){
       await tryFollowup(`${property} official website street address postal code`);
     }
     return respond({
-      ...research,
+      ...compile(true),
       partial: lists.length !== queries.length || followupFailed,
       pagesReviewed: pagesByUrl.size
     });

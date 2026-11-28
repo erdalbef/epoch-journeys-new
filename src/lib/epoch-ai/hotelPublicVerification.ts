@@ -78,6 +78,17 @@ const ROGNER_TIRANA_PUBLIC_VERIFICATION: PublicHotelVerification = {
   reviewedOn: "25 Nov 2026"
 };
 
+const COLOSSEO_TIRANA_PUBLIC_VERIFICATION: PublicHotelVerification = {
+  email: "reservations@hotelcolosseotirana.com",
+  contactType: "reservations",
+  phone: "+355 4 223 0004",
+  source: "https://hotelcolosseotirana.com/contact",
+  facilitiesSource: "",
+  publishedFacts: ["Hotel contact page lists a reservations address and property telephone"],
+  openQuestions: ["Group availability and commercial terms", "Walk-in showers and lifts", "Coach access and porterage"],
+  reviewedOn: "28 Nov 2026",
+};
+
 const SCANDIC_GRAND_MARINA_PUBLIC_VERIFICATION: PublicHotelVerification = {
   email: "grandmarina@scandichotels.com",
   contactType: "general",
@@ -164,6 +175,10 @@ export function hotelPublicResearchName(name: string, city?: string, country?: s
 
 export function publishedHotelVerification(name: string, city?: string, country?: string): PublicHotelVerification | undefined {
   const key = fold(name);
+  if (/^(?:hotel colosseo(?:,? tirana)?|colosseo hotel tirana)$/.test(key) &&
+      /^tiran[ae]$/.test(fold(city)) && fold(country) === "albania") {
+    return COLOSSEO_TIRANA_PUBLIC_VERIFICATION;
+  }
   if (/^hyatt regency kotor bay(?: resort)?$/.test(key) &&
       /^(?:kotor(?: bay)?|donji stoliv)$/.test(fold(city)) && fold(country) === "montenegro") {
     return HYATT_KOTOR_BAY_PUBLIC_VERIFICATION;
